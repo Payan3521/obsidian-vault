@@ -1,0 +1,249 @@
+{
+  "Argo CD": {
+    "que": "Controlador de entrega continua declarativa bajo el paradigma GitOps nativo de Kubernetes. Sincroniza continuamente el estado deseado definido en repositorios Git (manifiestos YAML, charts de Helm o Kustomize) con el estado en vivo de uno o varios clústeres.",
+    "para": "Elimina los despliegues manuales con kubectl apply y los pipelines de CI que requieren credenciales administrativas del clúster para empujar cambios (modelo push). Resuelve el configuration drift detectando y revirtiendo automáticamente modificaciones fuera de Git, garantizando trazabilidad y rollbacks inmediatos mediante git revert.",
+    "como": "Se ejecuta dentro del clúster mediante tres componentes principales: argocd-server (API y UI), argocd-repo-server (clona el repositorio Git y renderiza manifiestos) y argocd-application-controller (bucle de reconciliación). Un recurso personalizado Application vincula un origen Git con un clúster y namespace de destino. El controlador compara periódicamente (cada 3 minutos por defecto o al instante mediante webhooks) el estado renderizado contra la API de Kubernetes calculando un diff. Si detecta divergencia (OutOfSync) y la sincronización automática está activa, aplica los recursos respetando sync-waves y hooks de ciclo de vida (PreSync, Sync, PostSync).",
+    "practicas": [
+      "Separar el repositorio de código fuente (CI) del repositorio de manifiestos (CD) para evitar bucles infinitos de compilación y mantener un historial de auditoría limpio.",
+      "Usar ApplicationSet para generar aplicaciones dinámicamente entre múltiples clústeres o entornos en lugar de duplicar definiciones Application.",
+      "Nunca almacenar secretos en texto plano en Git; combinar Argo CD con External Secrets Operator o Sealed Secrets.",
+      "Argo CD (pull-based en Kubernetes) vs Jenkins/GitHub Actions (push-based): Argo CD mantiene los permisos del clúster dentro del propio clúster y corrige drift continuamente, mientras un pipeline tradicional solo ejecuta un disparo puntual."
+    ],
+    "ejemplo": "apiVersion: argoproj.io/v1alpha1\nkind: Application\nmetadata:\n  name: api-pagos\nspec:\n  source:\n    repoURL: https://github.com/org/gitops.git\n    path: apps/pagos/prod\n  destination: { server: https://kubernetes.default.svc, namespace: prod }\n  syncPolicy: { automated: { prune: true, selfHeal: true } }",
+    "entrevista": "Argo CD convierte a Git en la única fuente de verdad para Kubernetes mediante un bucle pull continuo que corrige el configuration drift y evita exponer credenciales del clúster al pipeline de CI."
+  },
+  "Docker Compose": {
+    "que": "Herramienta y especificación declarativa en YAML (compose.yaml) para definir, conectar y ejecutar aplicaciones multicontenedor sobre un mismo host Docker. Centraliza la configuración de servicios, redes, volúmenes, variables de entorno y dependencias de arranque en un único archivo.",
+    "para": "Simplifica el levantamiento de entornos locales de desarrollo, pruebas de integración y despliegues pequeños en un solo servidor donde encadenar comandos docker run sería frágil y repetitivo. Permite replicar topologías completas (API, base de datos, caché y proxy inverso) con un solo comando.",
+    "como": "El plugin Compose V2 (docker compose) lee compose.yaml, resuelve la interpolación de variables desde archivos .env y traduce cada servicio en llamadas a la API REST del daemon dockerd. Primero crea las redes bridge aisladas y los volúmenes nombrados declarados, configurando el DNS interno de Docker (127.0.0.11) para que los contenedores se resuelvan por nombre de servicio. Finalmente ordena la creación y arranque según depends_on (pudiendo esperar condiciones service_healthy basadas en healthchecks) y gestiona el ciclo de vida conjunto.",
+    "practicas": [
+      "Combinar depends_on con condition: service_healthy para esperar a que la base de datos acepte conexiones reales y no solo a que arranque su proceso.",
+      "Adoptar compose.yaml conforme a la Compose Specification moderna en lugar del antiguo docker-compose.yml con clave version obsoleta.",
+      "Separar ajustes locales de desarrollo (bind mounts de código, puertos de depuración) en compose.override.yaml para no mezclarlos con la configuración base.",
+      "Docker Compose vs Kubernetes: Compose orquesta contenedores en un único nodo sin failover ni autoescalado horizontal; Kubernetes gestiona clústeres multi-nodo con reconciliación distribuida."
+    ],
+    "ejemplo": "services:\n  api:\n    build: .\n    ports: [\"8080:8080\"]\n    depends_on:\n      db: { condition: service_healthy }\n  db:\n    image: postgres:alpine\n    volumes: [pgdata:/var/lib/postgresql/data]\nvolumes: { pgdata: {} }",
+    "entrevista": "Docker Compose orquesta entornos multicontenedor en un único host mediante un archivo declarativo, automatizando redes aisladas, DNS interno y dependencias de arranque para desarrollo y pruebas reproducibles."
+  },
+  "Docker Hub": {
+    "que": "Registro de imágenes de contenedores público y alojado (SaaS) mantenido por Docker, compatible con la especificación OCI Distribution. Almacena repositorios de imágenes etiquetadas junto con imágenes oficiales verificadas y artefactos de editores asociados.",
+    "para": "Actúa como repositorio central por defecto para distribuir imágenes base (alpine, python, nginx) y publicar artefactos de aplicaciones accesibles desde cualquier máquina o pipeline de CI/CD. Resuelve el intercambio estandarizado de entornos empaquetados sin tener que construir todo desde el código fuente.",
+    "como": "Al ejecutar docker pull, el motor consulta el endpoint HTTPS registry-1.docker.io/v2/, negocia un token Bearer en auth.docker.io y descarga el manifest (o manifest list multiarquitectura como linux/amd64 y linux/arm64). El manifiesto enumera los digests SHA-256 de la configuración JSON y de cada capa comprimida (blobs). El motor descarga únicamente las capas faltantes en su caché local y las ensambla mediante OverlayFS; docker push invierte el flujo subiendo solo las capas nuevas.",
+    "practicas": [
+      "Fijar etiquetas específicas o digests inmutables (@sha256:...) en producción en lugar de :latest, que puede cambiar silenciosamente y romper builds reproducibles.",
+      "Contemplar los límites de tasa (rate limits) para descargas anónimas usando autenticación, una caché local (pull-through cache) o registros privados como ECR.",
+      "Preferir Docker Official Images o Verified Publishers y ejecutar escaneos de vulnerabilidades (CVE) antes de adoptarlas como imagen base.",
+      "Nunca publicar imágenes con secretos, archivos .env o claves SSH en capas intermedias; aunque se borren con rm en un RUN posterior, permanecen en el historial de capas."
+    ],
+    "ejemplo": "docker login\ndocker build -t mi-org/api:1.4.2 .\ndocker push mi-org/api:1.4.2\ndocker manifest inspect nginx:alpine",
+    "entrevista": "Docker Hub es el registro OCI por defecto que distribuye imágenes por capas direccionadas por contenido (SHA-256), por lo que en producción conviene fijar tags o digests para garantizar despliegues reproducibles y evitar sorpresas de rate limiting."
+  },
+  "Docker": {
+    "que": "Plataforma de contenedorización que permite empaquetar, distribuir y ejecutar aplicaciones junto con sus dependencias en unidades aisladas y portables llamadas contenedores. Integra una CLI, el demonio dockerd, el constructor de imágenes BuildKit y gestión de redes y volúmenes sobre primitivas del kernel Linux.",
+    "para": "Elimina la inconsistencia entre entornos de desarrollo, pruebas y producción garantizando portabilidad con una fracción del costo de una máquina virtual. Permite aislar dependencias conflictivas entre servicios en un mismo host y acelerar el ciclo de entrega continua.",
+    "como": "Al ejecutar docker run, la CLI envía una petición REST a dockerd, que delega el ciclo de vida a containerd vía gRPC; containerd invoca al runtime OCI runc para crear el proceso aislado. runc configura namespaces del kernel (PID, mount, network, IPC, UTS, user) para aislar la visibilidad, cgroups para limitar CPU y memoria, y un rootfs montado con OverlayFS combinando capas de solo lectura de la imagen más una capa superior escribible (copy-on-write). Antes de hacer execve sobre el binario, aplica filtros seccomp, AppArmor/SELinux y recorta capabilities de Linux.",
+    "practicas": [
+      "Ejecutar el proceso principal con un usuario no-root (USER) dentro del contenedor para reducir el impacto ante una vulnerabilidad o escape de contenedor.",
+      "Usar imágenes base mínimas (Alpine, Distroless) y un archivo .dockerignore exhaustivo para acelerar compilaciones y reducir la superficie de ataque.",
+      "Tratar los contenedores como procesos efímeros e inmutables: un proceso principal por contenedor, logs hacia stdout/stderr y datos persistentes en volúmenes externos.",
+      "Docker vs máquina virtual: los contenedores comparten el kernel del host arrancando en milisegundos con baja sobrecarga, mientras las VMs virtualizan hardware y ejecutan un kernel completo por invitado."
+    ],
+    "ejemplo": "docker run -d --name web \\\n  --read-only --cap-drop=ALL \\\n  --memory=256m --cpus=0.5 \\\n  -p 8080:80 nginx:alpine",
+    "entrevista": "Docker no es un hipervisor sino una abstracción sobre namespaces, cgroups y sistemas de archivos por capas del kernel Linux que aísla procesos de forma portable con sobrecarga mínima."
+  },
+  "Dockerfile multi-stage": {
+    "que": "Patrón de construcción de imágenes que define múltiples instrucciones FROM secuenciales en un mismo Dockerfile, separando etapas de compilación (builder) de la imagen final de ejecución (runtime). Permite copiar únicamente los artefactos finales entre etapas mediante COPY --from.",
+    "para": "Resuelve el problema de las imágenes monolíticas infladas con compiladores, gestores de paquetes y dependencias de desarrollo o credenciales temporales de build. Reduce drásticamente el tamaño final de la imagen, acelera los despliegues en red y disminuye la superficie de ataque con menos binarios expuestos.",
+    "como": "BuildKit analiza el Dockerfile como un grafo acíclico dirigido (DAG) identificando cada bloque FROM ... AS <etapa>. Ejecuta cada etapa de manera aislada, pudiendo paralelizar etapas independientes y reutilizando la caché por cada instrucción sin cambios. En la última etapa —habitualmente basada en alpine, distroless o scratch— solo se ejecuta COPY --from=builder sobre el binario o paquete generado, descartando automáticamente todo el sistema de archivos y herramientas de compilación de las etapas previas.",
+    "practicas": [
+      "Ordenar las instrucciones de menor a mayor frecuencia de cambio (copiar primero manifiestos de dependencias e instalarlas, y copiar el código fuente después) para maximizar el aprovechamiento de caché.",
+      "Usar scratch o imágenes distroless para binarios compilados estáticamente (Go, Rust), eliminando shell y gestores de paquetes en producción.",
+      "Aprovechar --mount=type=cache en instrucciones RUN con BuildKit para acelerar compilaciones sin grabar cachés dentro de las capas finales.",
+      "Multi-stage vs dos Dockerfiles con script shell intermedio: multi-stage es declarativo, atómico, portable y fácil de auditar en un solo archivo."
+    ],
+    "ejemplo": "FROM golang:alpine AS builder\nWORKDIR /src\nCOPY go.mod go.sum ./\nRUN go mod download\nCOPY . .\nRUN CGO_ENABLED=0 go build -o /app/server .\nFROM gcr.io/distroless/static\nCOPY --from=builder /app/server /server\nUSER nonroot:nonroot\nENTRYPOINT [\"/server\"]",
+    "entrevista": "El Dockerfile multi-stage separa el entorno de compilación del de ejecución en un único archivo declarativo, entregando imágenes mínimas, más rápidas de distribuir y con menor superficie de ataque."
+  },
+  "ECR": {
+    "que": "Amazon Elastic Container Registry es el registro administrado de imágenes de contenedores, charts de Helm y artefactos OCI dentro de AWS. Proporciona almacenamiento privado cifrado con control de acceso granular integrado de forma nativa con AWS IAM.",
+    "para": "Sirve para hospedar imágenes cerca de servicios de cómputo de AWS (ECS, EKS, Fargate y Lambda) reduciendo la latencia de descarga y los costos de transferencia de datos. Resuelve el almacenamiento seguro, el análisis automatizado de vulnerabilidades y la purga programada de versiones antiguas.",
+    "como": "El cliente solicita una contraseña temporal (válida por 12 horas) mediante aws ecr get-login-password, llamada firmada con credenciales IAM. Con ese token, docker push o kubelet autentica contra el endpoint HTTPS regional (<cuenta>.dkr.ecr.<región>.amazonaws.com). Internamente ECR guarda los blobs cifrados en S3 (SSE-S3 o KMS), dispara escaneos de CVE al recibir nuevas imágenes (básico o mejorado con Amazon Inspector) y evalúa reglas de Lifecycle Policies para expirar imágenes sin etiqueta o excedentes históricos.",
+    "practicas": [
+      "Activar tag immutability en repositorios productivos para impedir que un pipeline sobrescriba accidentalmente una etiqueta ya desplegada.",
+      "Configurar Lifecycle Policies que eliminen imágenes untagged y limiten la antigüedad o cantidad de etiquetas para controlar costos de almacenamiento.",
+      "Utilizar VPC Endpoints (ecr.api, ecr.dkr y S3 gateway) cuando ECS o EKS operan en subredes privadas sin salida a internet.",
+      "ECR vs Docker Hub: ECR se integra nativamente con roles IAM sin necesidad de secretos estáticos en los nodos y soporta replicación automática multirregión dentro de AWS."
+    ],
+    "ejemplo": "aws ecr get-login-password --region us-east-1 \\\n  | docker login --username AWS --password-stdin 123456789012.dkr.ecr.us-east-1.amazonaws.com\ndocker tag api:1.0 123456789012.dkr.ecr.us-east-1.amazonaws.com/api:1.0\ndocker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/api:1.0",
+    "entrevista": "ECR ofrece almacenamiento OCI privado integrado con IAM y S3 que acelera los pulls en ECS/EKS, soporta inmutabilidad de tags y elimina credenciales estáticas de registro en AWS."
+  },
+  "ECS": {
+    "que": "Amazon Elastic Container Service es el orquestador de contenedores propietario y completamente administrado por AWS para desplegar, escalar y operar tareas contenedorizadas. Su plano de control no tiene costo adicional y se integra de forma nativa con VPC, Elastic Load Balancing, IAM y CloudWatch.",
+    "para": "Permite ejecutar microservicios y procesos batch en producción sin administrar planos de control ni asumir la curva operativa de Kubernetes. Se elige cuando la arquitectura está centrada en AWS y el equipo prioriza simplicidad operativa e integración directa con servicios gestionados.",
+    "como": "La unidad de definición es la Task Definition (JSON con imágenes, CPU/memoria, puertos y roles IAM). Un Service mantiene la cantidad deseada de Tasks en ejecución, registrando sus IP en un Target Group de un ALB/NLB y reemplazando tareas fallidas automáticamente. Las tareas corren dentro de un Cluster respaldado por instancias EC2 (donde el ecs-agent coordina con el plano de control vía HTTPS/WebSockets) o sobre AWS Fargate; en modo de red awsvpc, cada tarea recibe una interfaz ENI propia con Security Group independiente.",
+    "practicas": [
+      "Usar siempre el modo de red awsvpc para otorgar una IP y Security Group dedicados por tarea en lugar de compartir puertos en el host.",
+      "Separar el Task Execution Role (permisos de infraestructura para descargar imágenes de ECR y enviar logs) del Task Role (permisos de negocio para la aplicación).",
+      "Habilitar Deployment Circuit Breaker con rollback automático para detener despliegues defectuosos antes de reemplazar todas las réplicas sanas.",
+      "ECS vs EKS: ECS ofrece operación más simple, integración inmediata con AWS y plano de control gratuito a cambio de acoplamiento al proveedor; EKS aporta portabilidad estándar Kubernetes."
+    ],
+    "ejemplo": "{\n  \"family\": \"api-servicio\",\n  \"networkMode\": \"awsvpc\",\n  \"requiresCompatibilities\": [\"FARGATE\"],\n  \"cpu\": \"256\", \"memory\": \"512\",\n  \"containerDefinitions\": [{\n    \"name\": \"api\",\n    \"image\": \"123456789012.dkr.ecr.us-east-1.amazonaws.com/api:1.0\",\n    \"portMappings\": [{ \"containerPort\": 8080 }] }]\n}",
+    "entrevista": "ECS simplifica la orquestación de contenedores dentro de AWS mediante Task Definitions y Services integrados con IAM y ALB, evitando el costo y complejidad de mantener un plano de control de Kubernetes."
+  },
+  "EKS": {
+    "que": "Amazon Elastic Kubernetes Service es el servicio de Kubernetes administrado por AWS que opera el plano de control en alta disponibilidad de forma gestionada. Ejecuta Kubernetes certificado upstream integrando autenticación IAM, redes VPC y almacenamiento EBS/EFS.",
+    "para": "Elimina el esfuerzo y riesgo de instalar, escalar, respaldar y actualizar etcd y los componentes maestros de Kubernetes por cuenta propia. Se usa cuando se requiere portabilidad multicloud/híbrida o aprovechar el ecosistema CNCF (Helm, Argo CD, Istio, operadores) sobre infraestructura AWS.",
+    "como": "AWS aprovisiona y administra kube-apiserver, kube-scheduler, kube-controller-manager y etcd distribuidos en múltiples Zonas de Disponibilidad detrás de un endpoint gestionado. Los nodos trabajadores se conectan mediante Managed Node Groups (EC2), Karpenter (aprovisionamiento justo a tiempo según Pods pendientes) o perfiles Fargate. El plugin Amazon VPC CNI asigna IPs reales de la VPC directamente a cada Pod, el AWS Load Balancer Controller traduce objetos Ingress/Service en ALBs/NLBs y EKS Pod Identity (o IRSA) entrega credenciales IAM temporales por ServiceAccount.",
+    "practicas": [
+      "Asignar permisos AWS granulares por Pod mediante EKS Pod Identity o IRSA en lugar de otorgar permisos amplios al rol de instancia de los nodos EC2.",
+      "Adoptar Karpenter en lugar de Cluster Autoscaler tradicional para aprovisionar instancias óptimas en segundos según los requisitos reales de los Pods pendientes.",
+      "Planificar el consumo de direcciones IP en las subredes por el VPC CNI, habilitando prefix delegation o subredes secundarias dedicadas para Pods.",
+      "EKS vs ECS: EKS brinda portabilidad y compatibilidad total con el ecosistema Kubernetes pagando por hora el plano de control; ECS es más simple y nativo de AWS sin costo por control plane."
+    ],
+    "ejemplo": "aws eks update-kubeconfig --region us-east-1 --name prod-cluster\nkubectl get nodes\neksctl create iamserviceaccount \\\n  --name s3-reader --cluster prod-cluster \\\n  --attach-policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess --approve",
+    "entrevista": "EKS delega en AWS la operación y alta disponibilidad del plano de control y etcd, mientras integra redes VPC, balanceadores e identidad IAM con la portabilidad estándar de Kubernetes."
+  },
+  "Fargate": {
+    "que": "Motor de cómputo serverless para contenedores en AWS compatible tanto con Amazon ECS como con Amazon EKS. Abstrae por completo la gestión, dimensionamiento y parcheo de servidores EC2 subyacentes, facturando únicamente por la vCPU, memoria y almacenamiento efímero reservados por tarea o Pod.",
+    "para": "Elimina la carga operativa de administrar nodos trabajadores, grupos de autoescalado y capacidad ociosa en clústeres. Resulta ideal para cargas con picos variables, microservicios web, trabajos programados o equipos pequeños que prefieren operar a nivel de contenedor sin administrar sistemas operativos.",
+    "como": "Al programar una tarea ECS o un Pod en un perfil Fargate, AWS aprovisiona bajo demanda un entorno de ejecución aislado mediante microVMs gestionadas (basadas en Firecracker/Nitro) exclusivas para esa carga de trabajo. No hay acceso SSH ni compartición de kernel entre clientes; Fargate adjunta una interfaz ENI en la VPC del usuario, descarga la imagen desde el registro y envía logs y métricas a CloudWatch o FireLens. Cuando la tarea termina o escala a la baja, la capacidad subyacente se libera automáticamente.",
+    "practicas": [
+      "Ajustar con exactitud las combinaciones válidas de vCPU y memoria solicitadas, ya que Fargate factura por los recursos reservados aunque el uso real sea menor.",
+      "Usar FARGATE_SPOT en ECS para cargas tolerantes a interrupciones (workers asíncronos, procesamiento batch) y reducir sustancialmente el costo.",
+      "Optimizar el tamaño de las imágenes de contenedor porque cada nueva tarea inicia en frío y descarga la imagen sobre la red.",
+      "Fargate vs nodos EC2: Fargate elimina mantenimiento de OS y ofrece aislamiento por microVM, mientras EC2 es más rentable en cargas estables densas y soporta GPUs, DaemonSets completos y personalización del host."
+    ],
+    "ejemplo": "aws ecs create-service \\\n  --cluster prod-cluster \\\n  --service-name worker-pagos \\\n  --task-definition worker-pagos:3 \\\n  --desired-count 2 \\\n  --launch-type FARGATE \\\n  --network-configuration \"awsvpcConfiguration={subnets=[subnet-aaa],securityGroups=[sg-bbb]}\"",
+    "entrevista": "Fargate convierte la ejecución de contenedores en serverless mediante microVMs aisladas por tarea o Pod, eliminando el parcheo y capacidad ociosa de nodos EC2 a cambio de un costo unitario mayor por vCPU/RAM."
+  },
+  "Healthchecks": {
+    "que": "Sondeos periódicos automatizados que comprueban si una aplicación dentro de un contenedor no solo mantiene vivo su proceso principal, sino que responde correctamente y está apta para operar. Se configuran mediante HEALTHCHECK en Dockerfile, healthcheck en Compose o probes en Kubernetes.",
+    "para": "Evita que un contenedor bloqueado en un deadlock, sin conexión a su base de datos o saturado siga recibiendo tráfico de usuarios simplemente porque su PID 1 no ha terminado. Permite que balanceadores y orquestadores retiren réplicas degradadas, reinicien procesos congelados y ejecuten despliegues sin caída (zero-downtime).",
+    "como": "En Docker, el daemon ejecuta periódicamente el comando definido (por ejemplo curl -f) cada interval segundos esperando código de salida 0 (healthy) o marcando unhealthy tras superar retries fallos seguidos; Compose usa este estado en depends_on. En Kubernetes, kubelet ejecuta sondas HTTP, TCP, gRPC o exec diferenciadas en tres fases: startupProbe protege arranques lentos inhibiendo las demás sondas hasta tener éxito; readinessProbe decide si la IP del Pod entra o sale de los Endpoints del Service; livenessProbe reinicia el contenedor si falla reiteradamente.",
+    "practicas": [
+      "Separar liveness (verifica solo que el proceso/event-loop no esté bloqueado) de readiness (comprueba dependencias externas o warmup) para evitar reinicios en cascada si falla una base de datos.",
+      "Mantener los endpoints de salud ligeros y con timeouts acotados para no consumir recursos ni provocar falsos negativos bajo carga alta.",
+      "Emplear startupProbe en aplicaciones de arranque lento (como JVM o carga de modelos) en lugar de inflar excesivamente initialDelaySeconds.",
+      "En Kubernetes, omitir readinessProbe provoca errores 502 durante rollouts porque el Service envía tráfico tan pronto inicia el proceso."
+    ],
+    "ejemplo": "startupProbe:\n  httpGet: { path: /healthz, port: 8080 }\n  failureThreshold: 30\nreadinessProbe:\n  httpGet: { path: /readyz, port: 8080 }\n  periodSeconds: 5\nlivenessProbe:\n  httpGet: { path: /healthz, port: 8080 }\n  periodSeconds: 10\n  failureThreshold: 3",
+    "entrevista": "Distinguir entre livenessProbe para reiniciar procesos bloqueados y readinessProbe para retirar tráfico temporalmente evita caídas en cascada y garantiza despliegues zero-downtime."
+  },
+  "Helm": {
+    "que": "Gestor de paquetes estándar para Kubernetes que agrupa conjuntos de recursos YAML parametrizados en unidades versionadas denominadas Charts. Permite instalar, actualizar, inspeccionar y revertir aplicaciones complejas en un clúster bajo un ciclo de vida unificado llamado Release.",
+    "para": "Elimina la duplicación manual de manifiestos YAML entre entornos y facilita la instalación reproducible de software de terceros (bases de datos, Prometheus, ingress controllers) desde repositorios HTTP u OCI. Centraliza las diferencias por entorno en archivos values.yaml mantenibles.",
+    "como": "Un Chart contiene metadatos (Chart.yaml), configuración base (values.yaml) y plantillas Go con funciones Sprig (templates/*.yaml). Al invocar helm upgrade --install, el cliente fusiona los valores base con overrides (-f o --set), renderiza localmente los manifiestos y los envía al kube-apiserver. Helm guarda el historial completo de cada revisión del release (manifiestos aplicados y valores) en un Secret dentro del namespace destino, permitiendo ejecutar hooks (pre-install, post-upgrade), inspeccionar cambios o revertir con helm rollback.",
+    "practicas": [
+      "Previsualizar y validar siempre el YAML final con helm template o helm diff antes de aplicar cambios en producción.",
+      "Versionar archivos values-prod.yaml en Git en lugar de depender de largas cadenas de flags --set difíciles de auditar.",
+      "Evitar sobrecargar plantillas Go con lógica excesiva cuando solo se personalizan manifiestos internos; en esos casos Kustomize suele ser más limpio.",
+      "Helm vs Kustomize: Helm destaca para empaquetar, versionar y distribuir software con rollbacks y dependencias; Kustomize aplica parches declarativos sin plantillas integrado directamente en kubectl."
+    ],
+    "ejemplo": "helm repo add bitnami oci://registry-1.docker.io/bitnamicharts\nhelm upgrade --install mi-redis oci://registry-1.docker.io/bitnamicharts/redis \\\n  -n cache --create-namespace -f values-prod.yaml --atomic\nhelm rollback mi-redis 1 -n cache",
+    "entrevista": "Helm parametriza y versiona aplicaciones completas de Kubernetes como Releases con historial de revisiones y rollback, mientras Kustomize es preferible para aplicar parches ligeros sin plantillas sobre YAML propio."
+  },
+  "Istio - Linkerd": {
+    "que": "Implementaciones de referencia de Service Mesh (malla de servicios) para Kubernetes: Istio (basado en proxies Envoy o modo Ambient) y Linkerd (ultraligero con micro-proxy propio escrito en Rust). Introducen una capa de infraestructura transparente para gobernar la comunicación L4/L7 entre servicios fuera del código de la aplicación.",
+    "para": "Resuelve el cifrado mutuo, la observabilidad uniforme y la resiliencia de red en arquitecturas de microservicios políglotas sin duplicar librerías de mTLS, reintentos, timeouts, circuit breaking ni trazas en cada lenguaje. Permite además enrutamiento fino de tráfico como despliegues canary por porcentaje o cabeceras.",
+    "como": "Se dividen en control plane (istiod o linkerd-destination/identity) y data plane distribuido. En la arquitectura sidecar clásica, un webhook de admisión inyecta un proxy junto a cada contenedor de aplicación y configura reglas iptables o eBPF/CNI para interceptar todo el tráfico de red del Pod. El control plane distribuye rutas dinámicamente (API xDS en Istio) y emite certificados X.509 efímeros ligados al ServiceAccount (identidad SPIFFE) para establecer mTLS automático y exportar métricas y trazas. En Istio Ambient Mesh, el data plane se traslada a agentes por nodo (ztunnel) y waypoints L7 opcionales para reducir sobrecarga.",
+    "practicas": [
+      "Adoptar un Service Mesh solo cuando el volumen de microservicios justifique el costo adicional de latencia, consumo de RAM/CPU de proxies y complejidad operativa.",
+      "Coordinar timeouts y reintentos entre la malla y el código de aplicación (y restringir reintentos a métodos idempotentes) para evitar tormentas de tráfico.",
+      "Activar mTLS inicialmente en modo PERMISSIVE antes de pasar a STRICT durante migraciones graduales.",
+      "Istio vs Linkerd: Linkerd prioriza simplicidad operativa y bajo consumo con su proxy en Rust; Istio ofrece capacidades L7 más ricas, extensibilidad Envoy, multiclúster avanzado y modo Ambient sin sidecars."
+    ],
+    "ejemplo": "apiVersion: networking.istio.io/v1\nkind: VirtualService\nmetadata: { name: pagos-ruta }\nspec:\n  hosts: [pagos]\n  http:\n  - route:\n    - { destination: { host: pagos, subset: v1 }, weight: 90 }\n    - { destination: { host: pagos, subset: v2 }, weight: 10 }",
+    "entrevista": "Un Service Mesh como Istio o Linkerd descarga en el data plane el mTLS automático, la telemetría y el enrutamiento L7 sin tocar el código de negocio, aunque añade sobrecarga de red y operación que debe justificarse."
+  },
+  "K3s": {
+    "que": "Distribución de Kubernetes ligera, certificada por la CNCF y empaquetada en un único binario menor a 100 MB, creada originalmente por Rancher. Reemplaza dependencias pesadas de un clúster convencional por alternativas compactas manteniendo plena compatibilidad con la API estándar de Kubernetes.",
+    "para": "Permite ejecutar Kubernetes completo en hardware con recursos restringidos como dispositivos Edge/IoT, servidores bare-metal modestos, laboratorios locales y runners de CI/CD. Resuelve la alta huella de memoria RAM y complejidad de despliegue de Kubernetes estándar mediante una instalación en un comando.",
+    "como": "Empaqueta dentro de un único proceso (k3s server o k3s agent) kube-apiserver, kube-controller-manager, kube-scheduler, containerd, Flannel (CNI), CoreDNS, Traefik y Klipper ServiceLB. Sustituye etcd por defecto usando SQLite embebido a través de kine (un traductor de API etcd hacia SQLite, PostgreSQL o MySQL, aunque admite etcd embebido para alta disponibilidad). Además elimina controladores heredados de proveedores cloud y binarios redundantes, logrando iniciar un plano de control funcional por debajo de 512 MB de RAM.",
+    "practicas": [
+      "Desactivar componentes integrados (--disable traefik, --disable servicelb) en la instalación si se planea usar otro Ingress Controller o MetalLB.",
+      "Para producción multi-nodo en alta disponibilidad, configurar etcd embebido (--cluster-init) o una base de datos externa en lugar de SQLite de un solo nodo.",
+      "Recordar que K3s aligera el plano de control, pero las aplicaciones desplegadas consumen exactamente la misma memoria y CPU que en cualquier clúster.",
+      "K3s vs Kind/Minikube: K3s corre de forma nativa en Linux y sirve tanto para producción ligera/edge como para desarrollo; Kind y Minikube están pensados únicamente para pruebas locales y CI."
+    ],
+    "ejemplo": "curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC=\"--disable=traefik\" sh -\ncurl -sfL https://get.k3s.io | K3S_URL=https://10.0.0.10:6443 K3S_TOKEN=<token> sh -\nkubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes",
+    "entrevista": "K3s es Kubernetes certificado en un solo binario optimizado para edge y entornos ligeros gracias a la consolidación de procesos y al uso opcional de SQLite vía kine en lugar de etcd."
+  },
+  "Kubernetes": {
+    "que": "Plataforma abierta de orquestación de contenedores que automatiza el despliegue, escalado, autorecuperación y conectividad de aplicaciones distribuidas sobre un clúster de máquinas. Opera bajo una arquitectura declarativa regida por bucles de reconciliación que convergen el estado real hacia el estado deseado.",
+    "para": "Resuelve los retos de operar contenedores en producción a través de múltiples servidores: ubicar cargas según capacidad disponible, reiniciar contenedores o reprogramar nodos caídos, descubrir servicios dinámicamente, desplegar actualizaciones progresivas sin downtime y escalar ante demanda variable.",
+    "como": "El Control Plane alberga a kube-apiserver (único punto de acceso REST), etcd (almacén clave-valor distribuido con consenso Raft para el estado), kube-scheduler (asigna Pods a nodos evaluando filtros y pesos) y kube-controller-manager (reconcilia objetos como Deployment, ReplicaSet y Node). En cada Worker Node corren kubelet (vigila sus Pods asignados y ordena al runtime CRI como containerd crearlos con sus namespaces, cgroups y sondas), kube-proxy (mantiene reglas iptables o IPVS para IPs virtuales de Service) y un plugin CNI para enrutar la red entre Pods.",
+    "practicas": [
+      "Definir siempre requests y limits adecuados en los contenedores, evitando limits de CPU innecesariamente estrictos que provoquen throttling y vigilando la memoria frente a OOMKill.",
+      "Proteger cargas críticas con PodDisruptionBudget (PDB), reglas de anti-affinity entre zonas de disponibilidad y sondas readiness/liveness.",
+      "Nunca desplegar Pods sueltos en producción; encapsularlos siempre en controladores como Deployment, StatefulSet, DaemonSet o Job.",
+      "Kubernetes vs Docker Compose: Kubernetes aporta alta disponibilidad multi-nodo, auto-healing y escalado horizontal a costa de una mayor complejidad arquitectónica y operativa."
+    ],
+    "ejemplo": "apiVersion: apps/v1\nkind: Deployment\nmetadata: { name: api }\nspec:\n  replicas: 3\n  selector: { matchLabels: { app: api } }\n  template:\n    metadata: { labels: { app: api } }\n    spec:\n      containers: [{ name: api, image: mi-org/api:1.0, ports: [{ containerPort: 8080 }] }]",
+    "entrevista": "Kubernetes es un sistema distribuido basado en bucles de control declarativos donde el API Server y etcd mantienen la fuente de verdad y controladores como scheduler y kubelet reconcilian el estado real de los Pods."
+  },
+  "Podman": {
+    "que": "Motor de contenedores compatible con imágenes OCI y con la sintaxis CLI de Docker, diseñado bajo una arquitectura daemonless (sin demonio central) y con ejecución rootless nativa. Permite además crear y administrar Pods de contenedores al estilo Kubernetes directamente en un host.",
+    "para": "Elimina el punto único de fallo y el riesgo de seguridad que supone un demonio permanente ejecutándose como root para gestionar contenedores. Se utiliza en servidores Linux empresariales, entornos con requisitos estrictos de mínimo privilegio y para prototipar Pods localmente antes de migrar a Kubernetes.",
+    "como": "En lugar de enviar comandos por socket a un demonio central, podman aplica el modelo clásico fork/exec: cada contenedor corre como proceso hijo del usuario invocador supervisado por un monitor ligero llamado conmon y el runtime OCI crun o runc. En modo rootless, mapea un usuario sin privilegios del host a UID 0 interno mediante user namespaces (subuid/subgid), monta capas con overlay sin privilegios o fuse-overlayfs y gestiona red en userspace con pasta o slirp4netns. Soporta integración nativa con systemd mediante Quadlets y genera o ejecuta YAML de Kubernetes con podman kube play.",
+    "practicas": [
+      "Ejecutar contenedores en modo rootless por defecto en servidores compartidos o agentes de CI para impedir escaladas a root ante un compromiso.",
+      "Usar archivos Quadlet (.container, .pod) de systemd para administrar contenedores como servicios nativos del sistema operativo.",
+      "Habilitar el socket compatible bajo demanda (podman.socket) únicamente cuando herramientas externas o SDKs dependan de la API REST de Docker.",
+      "Podman vs Docker: Podman carece de daemon central, es rootless nativo y entiende Pods/YAML de Kubernetes; Docker destaca por su experiencia integrada con Docker Desktop y BuildKit."
+    ],
+    "ejemplo": "podman run -d --name api -p 8080:80 nginx:alpine\npodman pod create --name mi-pod -p 8080:80\npodman run -d --pod mi-pod --name web nginx:alpine\npodman generate kube mi-pod > mi-pod.yaml",
+    "entrevista": "Podman sustituye el demonio root centralizado de Docker por un modelo fork/exec daemonless con user namespaces nativos, ofreciendo mayor aislamiento de seguridad y soporte directo para Pods y systemd."
+  },
+  "Portainer": {
+    "que": "Plataforma web ligera de administración y observabilidad para Docker, Docker Swarm, Podman y Kubernetes. Se despliega como un contenedor y provee una interfaz gráfica unificada junto con control de acceso basado en roles (RBAC) y gestión básica de stacks.",
+    "para": "Facilita las tareas operativas cotidianas (revisar logs, abrir consolas interactivas, inspeccionar volúmenes o desplegar archivos Compose) para equipos mixtos o entornos pequeños sin necesidad de repartir acceso SSH ni credenciales administrativas de clúster a cada desarrollador.",
+    "como": "El servidor de Portainer se monta sobre el socket local (/var/run/docker.sock) o se comunica mediante TLS/túnel inverso con instancias remotas de Portainer Agent o Edge Agent. Traduce las acciones realizadas desde la UI o su API REST en peticiones hacia la API del motor Docker o al kube-apiserver. Permite definir Stacks conectados a repositorios Git (con sincronización periódica o webhooks para un GitOps sencillo), ofrecer catálogos de plantillas y auditar permisos por equipo.",
+    "practicas": [
+      "Nunca exponer el puerto web de Portainer ni el del Portainer Agent directamente a internet sin TLS, VPN o autenticación robusta detrás de un proxy inverso.",
+      "Desplegar Portainer Agent en nodos remotos en lugar de habilitar el puerto TCP 2375 sin cifrar de Docker, lo que equivaldría a acceso root remoto abierto.",
+      "Evitar editar manualmente desde la UI recursos ya controlados por Argo CD o Terraform para no introducir configuration drift.",
+      "Portainer vs k9s/Lens: Portainer es una consola web centralizada y multiusuario con RBAC y gestión de stacks; k9s y Lens son herramientas cliente enfocadas en operación individual de Kubernetes."
+    ],
+    "ejemplo": "docker volume create portainer_data\ndocker run -d -p 9443:9443 --name portainer \\\n  --restart=always \\\n  -v /var/run/docker.sock:/var/run/docker.sock \\\n  -v portainer_data:/data \\\n  portainer/portainer-ce:latest",
+    "entrevista": "Portainer aporta una capa visual centralizada con RBAC y gestión de stacks sobre Docker y Kubernetes, útil para agilizar operaciones y restringir accesos sin entregar SSH directo al host."
+  },
+  "Traefik": {
+    "que": "Proxy inverso y balanceador de carga L4/L7 moderno, escrito en Go y diseñado específicamente para entornos dinámicos de contenedores y nube. Descubre servicios en tiempo real sin recargas manuales y gestiona certificados TLS de forma automática.",
+    "para": "Resuelve la exposición y enrutamiento de microservicios cuyas IPs y réplicas cambian constantemente en Docker, Swarm o Kubernetes. Elimina la edición manual de configuraciones estáticas y la renovación artesanal de certificados SSL/TLS gracias a su soporte nativo del protocolo ACME (Let's Encrypt).",
+    "como": "Sus Providers se suscriben a eventos de infraestructura en tiempo real (etiquetas de contenedores vía Docker socket o recursos Ingress/IngressRoute/Gateway en Kubernetes). A partir de esos eventos actualiza dinámicamente en memoria cuatro abstracciones: EntryPoints (puertos de escucha como :80 y :443), Routers (reglas por Host, PathPrefix o cabeceras), Middlewares (rate limiting, redirecciones, autenticación) y Services (balanceo hacia las IPs activas de los contenedores). Cuando un router requiere TLS, Traefik resuelve automáticamente el desafío ACME (HTTP-01, TLS-ALPN-01 o DNS-01) sin cortar conexiones.",
+    "practicas": [
+      "Evitar habilitar --api.insecure=true en producción; proteger el dashboard detrás de TLS, autenticación y reglas de router restringidas.",
+      "Aislar los contenedores expuestos en una red Docker compartida dedicada y usar un socket-proxy de solo lectura frente a /var/run/docker.sock en entornos sensibles.",
+      "Preferir IngressRoute o Kubernetes Gateway API sobre el Ingress básico cuando se necesiten middlewares encadenados, tráfico TCP/UDP o pesos canary.",
+      "Traefik vs nginx: Traefik destaca en descubrimiento dinámico de contenedores y ACME nativo sin recargas; nginx destaca en velocidad pura de archivos estáticos, caché HTTP y control granular estático."
+    ],
+    "ejemplo": "services:\n  api:\n    image: mi-org/api:1.0\n    labels:\n      - \"traefik.enable=true\"\n      - \"traefik.http.routers.api.rule=Host(`api.ejemplo.com`)\"\n      - \"traefik.http.routers.api.entrypoints=websecure\"\n      - \"traefik.http.routers.api.tls.certresolver=letsencrypt\"\n      - \"traefik.http.services.api.loadbalancer.server.port=8080\"",
+    "entrevista": "Traefik automatiza el enrutamiento edge y TLS con Let's Encrypt escuchando eventos de Docker o Kubernetes en tiempo real, evitando configuraciones estáticas y recargas manuales cuando los contenedores escalan."
+  },
+  "Volúmenes": {
+    "que": "Mecanismo de almacenamiento persistente gestionado por el motor de contenedores (y abstraído en Kubernetes mediante Volume y PersistentVolume) que desacopla los datos de la capa efímera escribible del contenedor. En Docker abarca Named Volumes (gestionados por el daemon), Bind Mounts (rutas del host) y tmpfs (memoria RAM).",
+    "para": "Impide la pérdida de datos cuando un contenedor se detiene, se reemplaza o se actualiza, y evita la degradación de rendimiento de OverlayFS (copy-on-write) en bases de datos con escritura intensiva. También permite compartir configuraciones o archivos entre varios contenedores.",
+    "como": "Al arrancar el contenedor, el runtime OCI monta el almacenamiento directamente en la ruta destino dentro del mount namespace del proceso, puenteando el sistema de archivos por capas de la imagen. En Docker, los Named Volumes residen bajo /var/lib/docker/volumes e inicializan su contenido desde la imagen la primera vez que se montan vacíos; los Bind Mounts enlazan directamente un directorio del host; tmpfs escribe solo en RAM sin tocar disco. En Kubernetes, un PersistentVolumeClaim (PVC) solicita capacidad a un driver CSI (EBS, NFS, Ceph) para aprovisionar un PersistentVolume y montarlo en el nodo antes de iniciar el Pod.",
+    "practicas": [
+      "Usar Named Volumes en lugar de Bind Mounts para datos en producción sobre un solo host, por portabilidad, gestión de permisos y facilidad de respaldo.",
+      "Asegurar coincidencia de UID/GID entre el usuario no-root del contenedor y los permisos del directorio montado en disco para evitar errores de escritura.",
+      "En Docker Desktop (macOS/Windows), alojar carpetas pesadas como node_modules en Named Volumes para evitar la lentitud de I/O de bind mounts a través de la VM.",
+      "En Kubernetes, configurar reclaimPolicy: Retain en StorageClass críticas para evitar el borrado irreversible del disco en la nube si se elimina el PVC."
+    ],
+    "ejemplo": "docker volume create pg_data\ndocker run -d --name postgres \\\n  -v pg_data:/var/lib/postgresql/data \\\n  -v $(pwd)/init.sql:/docker-entrypoint-initdb.d/init.sql:ro \\\n  --mount type=tmpfs,destination=/tmp \\\n  postgres:alpine",
+    "entrevista": "Los volúmenes puentean la capa copy-on-write de OverlayFS para ofrecer almacenamiento persistente y rendimiento nativo de I/O independiente del ciclo de vida efímero del contenedor."
+  },
+  "nginx": {
+    "que": "Servidor HTTP, proxy inverso, balanceador de carga L4/L7 y caché de contenido de alto rendimiento basado en una arquitectura asíncrona dirigida por eventos. En arquitecturas modernas se usa tanto empaquetado para servir SPAs y assets como en forma de NGINX Ingress Controller dentro de Kubernetes.",
+    "para": "Resuelve la terminación TLS, compresión de respuestas, caché, rate limiting, servicio ultrarrápido de archivos estáticos y distribución de tráfico hacia backends internos que no deben exponerse directamente. Sobresale manejando decenas de miles de conexiones concurrentes con un consumo mínimo de memoria RAM.",
+    "como": "A diferencia de modelos tradicionales de un hilo o proceso por conexión, nginx lanza un proceso master (lee la configuración, abre puertos privilegiados y realiza recargas sin cortes de servicio) y múltiples procesos worker de un solo hilo (habitualmente uno por núcleo de CPU). Cada worker opera un bucle de eventos no bloqueante sobre epoll (Linux) o kqueue para multiplexar miles de conexiones simultáneamente. Las peticiones atraviesan bloques server (seleccionados por puerto y SNI/Host) y location (por precedencia exacta, prefijo o regex) usando sendfile() zero-copy para estáticos o proxy_pass hacia grupos upstream.",
+    "practicas": [
+      "Ajustar worker_processes auto junto con worker_connections y los límites de descriptores abiertos (ulimit -n) acorde a la concurrencia esperada.",
+      "Reenviar siempre las cabeceras Host, X-Real-IP, X-Forwarded-For y X-Forwarded-Proto en proxy_pass para que el backend conserve la identidad y esquema del cliente.",
+      "Dentro de contenedores, mantener el proceso en primer plano (daemon off;), enviar logs a stdout/stderr y configurar resolver DNS cuando las IPs de los upstreams cambien dinámicamente.",
+      "nginx vs Traefik: nginx brinda mayor rendimiento en caché y estáticos con control fino de bajo nivel, pero requiere recargas o integraciones adicionales para descubrir contenedores dinámicos."
+    ],
+    "ejemplo": "upstream backend { server api1:8080; server api2:8080; }\nserver {\n  listen 80;\n  location /api/ {\n    proxy_pass http://backend;\n    proxy_set_header Host $host;\n    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n  }\n}",
+    "entrevista": "nginx escala a miles de conexiones concurrentes con mínima memoria gracias a su arquitectura event-driven no bloqueante sobre epoll, siendo la pieza estándar para terminación TLS, estáticos y proxy inverso L7."
+  }
+}

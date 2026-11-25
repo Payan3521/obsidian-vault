@@ -1,0 +1,391 @@
+{
+  "Apache Avro": {
+    "que": "Apache Avro es un sistema de serialización binaria orientado a filas que depende estrictamente de esquemas definidos en JSON. A diferencia de otros formatos binarios, los datos codificados no incluyen etiquetas ni nombres de campo junto a cada valor, lo que reduce notablemente el tamaño del payload.",
+    "para": "Sirve para intercambiar mensajes compactos en pipelines de streaming como Apache Kafka y almacenar registros masivos en data lakes (por ejemplo en S3 antes de transformarlos a formatos columnares como Parquet). Se elige cuando se requiere alta densidad de datos, serialización rápida y evolución de esquemas sin generar código obligatorio.",
+    "como": "Durante la escritura, el serializador recorre el objeto siguiendo el orden exacto de los campos declarados en el esquema escritor (writer schema) y codifica enteros con ZigZag + varint, cadenas con prefijo de longitud y uniones con su índice de rama. En archivos de contenedor (.avro), la cabecera almacena el esquema completo y un marcador de sincronización cada bloque; en Kafka, cada mensaje antepone un magic byte (0x00) y el ID de 4 bytes del esquema en el Schema Registry. Al leer, el consumidor obtiene tanto el writer schema como su propio reader schema, aplicando reglas de resolución campo por campo por nombre y asignando valores por defecto cuando faltan campos.",
+    "practicas": [
+      "Usa siempre un Schema Registry en streaming en lugar de incrustar el esquema JSON en cada mensaje, ya que de otro modo perderías la ventaja de compacidad.",
+      "Evita renombrar campos directamente; si necesitas cambiar un nombre manteniendo compatibilidad, utiliza el atributo aliases en el esquema.",
+      "Avro vs Protobuf: Avro destaca en ecosistemas Hadoop/Kafka con tipado dinámico (GenericRecord) sin paso de compilación, mientras Protobuf ofrece mejor ergonomía para RPC tipado en gRPC.",
+      "Avro vs Parquet: Avro es orientado a filas (ideal para escritura secuencial y eventos); Parquet es columnar (ideal para consultas analíticas en S3/Redshift)."
+    ],
+    "ejemplo": "{\n  \"type\": \"record\",\n  \"name\": \"PagoEvento\",\n  \"namespace\": \"com.acme.pagos\",\n  \"fields\": [\n    {\"name\": \"id\", \"type\": \"string\"},\n    {\"name\": \"monto_centavos\", \"type\": \"long\"},\n    {\"name\": \"moneda\", \"type\": \"string\", \"default\": \"USD\"}\n  ]\n}",
+    "entrevista": "Avro logra payloads mínimos omitiendo etiquetas de campo en el binario porque empareja dinámicamente el writer schema y el reader schema mediante resolución por nombre."
+  },
+  "Apache Thrift": {
+    "que": "Apache Thrift es un framework de RPC multi-lenguaje y sistema de serialización binaria creado originalmente en Facebook a partir de un lenguaje de definición de interfaces (IDL). Permite definir tipos de datos y contratos de servicio una sola vez para generar clientes, servidores y serializadores en decenas de lenguajes.",
+    "para": "Resuelve la comunicación de baja latencia entre microservicios heterogéneos donde el formato de transporte y el protocolo deben desacoplarse de la lógica de negocio. Se usa en sistemas internos de alto rendimiento (como bases de datos distribuidas o motores de búsqueda) que necesitan alternar entre transporte enmarcado, comprimido o HTTP.",
+    "como": "Un archivo .thrift define structs, enums, excepciones y bloques service, que el compilador thrift traduce a código fuente nativo mediante generadores por lenguaje. En tiempo de ejecución, la arquitectura se divide en capas ortogonales: TProtocol serializa los datos (TBinaryProtocol, TCompactProtocol con varints y ZigZag, o TJSONProtocol) y TTransport gestiona los bytes en red o memoria (TSocket, TFramedTransport, THttpClient). TProcessor recibe los bytes del transporte, los decodifica con el protocolo, invoca la implementación del servicio y serializa la respuesta o excepción de vuelta.",
+    "practicas": [
+      "Utiliza TCompactProtocol sobre TFramedTransport en producción para reducir ancho de banda con codificación varint y evitar lecturas bloqueantes sin longitud conocida.",
+      "Asigna IDs numéricos positivos y estables a cada campo (1: i64 id) y nunca reutilices el ID de un campo eliminado.",
+      "Marca explícitamente los campos nuevos como optional para preservar compatibilidad hacia atrás y hacia adelante entre clientes y servidores desfasados.",
+      "Thrift vs gRPC/Protobuf: Thrift integra transporte y generación de RPC en un solo paquete con más protocolos intercambiables, pero Protobuf + gRPC domina el ecosistema cloud-native actual sobre HTTP/2."
+    ],
+    "ejemplo": "struct Usuario {\n  1: required i64 id,\n  2: required string email,\n  3: optional string alias\n}\nservice UsuarioService {\n  Usuario obtenerPorId(1: i64 id)\n}",
+    "entrevista": "Thrift separa la capa de serialización (TProtocol) de la capa de red (TTransport), permitiendo cambiar entre formato binario compacto, JSON o sockets enmarcados sin tocar la lógica del servicio."
+  },
+  "Avro schema": {
+    "que": "Un Avro schema es un contrato de datos escrito en formato JSON que describe de manera estricta la estructura, tipos primitivos y tipos complejos de un registro Avro. Constituye la única fuente de verdad para interpretar los bytes sin etiquetas de un mensaje Avro.",
+    "para": "Sirve para validar la estructura de eventos antes de emitirlos, generar clases tipadas opcionales y gobernar la evolución de datos entre productores y consumidores desacoplados. Es indispensable en arquitecturas orientadas a eventos y lagos de datos donde los registros perduran años y los consumidores evolucionan de forma independiente.",
+    "como": "El esquema declara un tipo raíz (habitualmente record con name, namespace y una lista ordenada de fields) junto a tipos primitivos (null, boolean, int, long, float, double, bytes, string) y complejos (enum, array, map, fixed, union). La nulabilidad no es un modificador implícito: se modela explícitamente como una unión JSON, por ejemplo [\"null\", \"string\"]. Cuando existen tipos lógicos (logicalType como decimal, uuid o timestamp-millis), estos decoran un tipo subyacente (bytes, string o long) para añadir semántica sin romper el formato binario base.",
+    "practicas": [
+      "Coloca \"null\" como primer elemento de una unión [\"null\", \"string\"] junto con \"default\": null para que los campos opcionales puedan añadirse o eliminarse de forma compatible.",
+      "Usa logicalType (timestamp-millis sobre long, decimal sobre bytes) en lugar de guardar fechas como strings arbitrarios o dinero en float/double.",
+      "Fija siempre el atributo namespace para evitar colisiones de nombres al generar clases Java, C# o Python.",
+      "Avro schema vs JSON Schema: el esquema de Avro es obligatorio para poder decodificar los bytes y es más conciso; JSON Schema solo valida texto JSON ya autodescriptivo."
+    ],
+    "ejemplo": "{\n  \"type\": \"record\",\n  \"name\": \"Factura\",\n  \"fields\": [\n    {\"name\": \"uuid\", \"type\": {\"type\": \"string\", \"logicalType\": \"uuid\"}},\n    {\"name\": \"emitida_en\", \"type\": {\"type\": \"long\", \"logicalType\": \"timestamp-millis\"}},\n    {\"name\": \"notas\", \"type\": [\"null\", \"string\"], \"default\": null}\n  ]\n}",
+    "entrevista": "En un Avro schema la nulabilidad se declara explícitamente mediante uniones [\"null\", T] con valor por defecto null, lo que garantiza evolución de esquema segura y determinista."
+  },
+  "BigInt → string en JavaScript": {
+    "que": "La conversión de BigInt a string es la estrategia estándar de serialización en JavaScript/JSON para representar enteros arbitrariamente grandes o de 64 bits sin truncamiento ni errores de tipo. Surge porque JSON solo soporta números de punto flotante IEEE 754 de doble precisión y el tipo nativo BigInt lanza TypeError al pasarse a JSON.stringify.",
+    "para": "Sirve para preservar la exactitud de identificadores de 64 bits (como Snowflake IDs de Twitter/Discord, claves primarias BIGINT de PostgreSQL o transacciones financieras en satoshis/wei) al viajar por APIs REST/JSON hacia navegadores o servicios Node.js. Sin esta práctica, valores superiores a Number.MAX_SAFE_INTEGER (2^53 - 1 = 9007199254740991) sufren pérdida silenciosa de precisión en los bits menos significativos.",
+    "como": "JavaScript representa el tipo number mediante IEEE 754 binary64, que solo asigna 53 bits a la mantisa; cualquier entero mayor a 9,007,199,254,740,991 se redondea al número representable más cercano al ejecutarse JSON.parse. Al intentar serializar un BigInt nativo, la especificación ECMAScript exige que JSON.stringify lance TypeError: Do not know how to serialize a BigInt. Para evitarlo, el backend (en Go, Java, Python o Node.js) serializa el campo como cadena decimal en JSON, o se define un replacer en JSON.stringify y un reviver o esquema Zod/TypeScript en el cliente para reconstruir BigInt(val).",
+    "practicas": [
+      "Serializa los IDs de 64 bits y montos enteros grandes como strings en tus contratos OpenAPI/JSON desde el primer día; cambiar de number a string después es un breaking change.",
+      "Evita definir BigInt.prototype.toJSON globalmente en librerías compartidas, ya que muta prototipos nativos y puede romper dependencias; usa un replacer explícito o DTOs tipados.",
+      "En el frontend, opera con esos campos como cadenas opacas si son IDs, o reconstrúyelos con BigInt(str) solo si requieres aritmética.",
+      "Recuerda que Protobuf también sigue esta convención en su mapeo canónico a JSON (proto3 JSON mapping convierte int64/uint64 a string)."
+    ],
+    "ejemplo": "const payload = { txId: 9007199254740993n, monto: 500n };\nconst json = JSON.stringify(payload, (_, v) =>\n  typeof v === \"bigint\" ? v.toString() : v\n);\n// Resultado: '{\"txId\":\"9007199254740993\",\"monto\":\"500\"}'",
+    "entrevista": "Como JSON solo garantiza enteros exactos hasta 2^53 - 1 por IEEE 754 y JSON.stringify rechaza BigInt, los enteros de 64 bits deben viajar como string para evitar corrupción silenciosa de IDs."
+  },
+  "CBOR": {
+    "que": "CBOR (Concise Binary Object Representation, RFC 8949) es un formato de serialización binaria sin esquema obligatorio, diseñado como una alternativa compacta y extensible al modelo de datos de JSON. A diferencia de JSON, soporta de forma nativa bytes crudos, claves de mapa de cualquier tipo y etiquetas semánticas.",
+    "para": "Resuelve el intercambio de datos estructurados en entornos con recursos muy restringidos (IoT, sistemas embebidos) y protocolos de seguridad modernos donde el tamaño de código del parser y la eficiencia energética son críticos. Es el formato estándar subyacente en WebAuthn/FIDO2 (CTAP2), COSE (firma y cifrado de objetos) y CoAP.",
+    "como": "Cada elemento de datos comienza con un byte inicial dividido en 3 bits de tipo mayor (0: entero positivo, 1: negativo, 2: byte string, 3: UTF-8 string, 4: array, 5: map, 6: tag semántico, 7: floats/simples) y 5 bits de información adicional. Si el valor o longitud es menor a 24, se incrusta directamente en esos 5 bits; para valores mayores se usan 1, 2, 4 u 8 bytes siguientes (o longitud indefinida por streaming). Los tags (tipo mayor 6) permiten añadir semántica estandarizada como fechas RFC 3339 (tag 0), epoch seconds (tag 1) o bignums (tags 2 y 3), y RFC 8949 define codificación determinista para firmas criptográficas.",
+    "practicas": [
+      "Usa CBOR determinista (CDE / Deterministic Encoding) cuando vayas a firmar o hashear el payload (como en COSE o WebAuthn), ordenando claves de mapa canónicamente.",
+      "Prefiere CBOR sobre JSON cuando transportes blobs binarios (claves públicas, certificados, imágenes), evitando el overhead del 33% de Base64.",
+      "CBOR vs MessagePack: CBOR es un estándar abierto de la IETF (RFC 8949) con tags semánticos extensibles y modo determinista oficial; MessagePack carece de estándar IETF formal y usa extensiones propietarias.",
+      "Valida límites de profundidad de anidación y tamaño de memoria declarada al decodificar CBOR no confiable para mitigar ataques de denegación de servicio."
+    ],
+    "ejemplo": "// Diagnóstico CBOR para {\"id\": 10, \"raw\": h'deadbeef'}\nA2          // map(2)\n  62 6964   // text(2) \"id\"\n  0A        // unsigned(10)\n  63 726177 // text(3) \"raw\"\n  44 DEADBEEF // bytes(4)",
+    "entrevista": "CBOR es el sucesor binario estandarizado de JSON (RFC 8949): soporta bytes nativos y tags semánticos con un parser mínimo, siendo la base de WebAuthn y COSE."
+  },
+  "CSV": {
+    "que": "CSV (Comma-Separated Values, formalizado parcialmente en RFC 4180) es un formato textual tabular donde cada línea representa un registro y los campos se separan mediante un delimitador, habitualmente la coma. Carece de sistema de tipos nativo, esquema integrado y representación estándar para estructuras anidadas.",
+    "para": "Sirve para importar, exportar y volcar grandes volúmenes de datos tabulares planos entre bases de datos, hojas de cálculo (Excel), herramientas de BI y scripts de análisis. Se utiliza por su compatibilidad universal, facilidad de procesamiento en streaming línea a línea y bajísimo overhead en datos homogéneos.",
+    "como": "Un archivo CSV opcionalmente inicia con una fila de cabecera que nombra las columnas, seguida de registros separados por CRLF o LF. Cuando un campo contiene el delimitador, saltos de línea o comillas dobles, el serializer lo envuelve entre comillas dobles y escapa las comillas internas duplicándolas (\"\"). Sin embargo, múltiples variantes en producción alteran el delimitador (punto y coma en configuraciones regionales europeas, tabulador en TSV) y la codificación de caracteres (UTF-8 con o sin BOM para Excel).",
+    "practicas": [
+      "Usa siempre un parser RFC 4180 dedicado (como csv en Python o PapaParse) en lugar de hacer line.split(','), pues fallará ante comas o saltos de línea dentro de campos entrecomillados.",
+      "Sanitiza celdas que comiencen por =, +, -, @ o tabulador al exportar CSV destinados a usuarios finales para prevenir ataques de CSV/Formula Injection en Excel.",
+      "Especifica explícitamente UTF-8 y considera añadir BOM (\\ufeff) solo si el archivo debe abrirse haciendo doble clic en Microsoft Excel sobre Windows.",
+      "CSV vs JSONL: usa CSV solo para datos planos tabulares; ante campos opcionales frecuentes o jerarquías anidadas, cambia a JSONL o Parquet."
+    ],
+    "ejemplo": "id,cliente,notas,total\n101,\"García, Ana\",\"Entrega \"\"urgente\"\"\",125.50\n102,Luis Pérez,Sin observaciones,40.00",
+    "entrevista": "Aunque CSV es universal para datos tabulares en streaming, carece de tipos, codificación obligatoria y anidamiento, por lo que exige parsers RFC 4180 y protección contra Formula Injection."
+  },
+  "Campos reserved - unknown fields": {
+    "que": "Los campos reservados (reserved) y los campos desconocidos (unknown fields) son mecanismos de los formatos binarios basados en identificadores numéricos (como Protobuf) para preservar la compatibilidad del esquema a lo largo del tiempo. `reserved` bloquea nombres o números de campo retirados para que nadie los reutilice, mientras los unknown fields conservan en memoria datos que un nodo antiguo no reconoce.",
+    "para": "Sirven para evitar la corrupción silenciosa de datos al eliminar campos en esquemas evolutivos y para permitir que intermediarios o proxies reenvíen mensajes sin perder información añadida por servicios más nuevos. Son esenciales en sistemas distribuidos con despliegues graduales (canary/rolling updates).",
+    "como": "Cuando se retira un campo en un archivo .proto, añadir `reserved 4, 9 to 11;` y `reserved \"antiguo_nombre\";` hace que el compilador `protoc` aborte la compilación si un desarrollador intenta reasignar ese tag numérico o nombre. Por otro lado, cuando un lector antiguo recibe un mensaje con un tag numérico que no figura en su esquema compilado, el parser lee el wire type para saber cuántos bytes saltar y almacena ese par (tag, bytes) en una estructura interna `UnknownFieldSet` (en proto2 y proto3 moderno) en lugar de descartarlo, reescribiéndolo intacto si reserializa el mensaje.",
+    "practicas": [
+      "Nunca borres un campo de un archivo .proto sin añadir su número y su nombre a una sentencia reserved; reutilizar un tag antiguo causará errores de tipo o lectura de datos erróneos.",
+      "Ten en cuenta que la preservación de unknown fields solo aplica en serialización binaria; al convertir a JSON o reasignar DTOs manualmente, los campos desconocidos suelen perderse.",
+      "En APIs REST con JSON Schema, decide explícitamente si usar additionalProperties: false (rechazo estricto) o permitir campos desconocidos (tolerancia para compatibilidad hacia adelante).",
+      "Verifica la política de deserializadores como Jackson o Pydantic en tus clientes: por defecto suelen fallar o descartar campos desconocidos según configuración (FAIL_ON_UNKNOWN_PROPERTIES)."
+    ],
+    "ejemplo": "message Orden {\n  reserved 2, 15, 9 to 11;\n  reserved \"descuento_legacy\";\n  string id = 1;\n  int64 total_centavos = 3;\n}",
+    "entrevista": "En Protobuf, `reserved` impide reutilizar tags retirados evitando corrupción de tipos, mientras los unknown fields permiten que servicios intermedios antiguos preserven y reenvíen campos nuevos sin conocerlos."
+  },
+  "Codec": {
+    "que": "Un codec (acrónimo de coder-decoder) es un componente de software o hardware que implementa tanto la transformación de datos hacia una representación compacta o transportable (codificación/serialización/compresión) como la operación inversa (decodificación). En software distribuido suele acoplar serialización de tipos y, opcionalmente, algoritmos de compresión o cifrado.",
+    "para": "Sirve para encapsular y estandarizar el formato de cable (wire format) en clientes RPC, productores de colas de mensajes, drivers de bases de datos y pipelines multimedia. Permite cambiar el formato de transporte (por ejemplo, de JSON a Protobuf o añadir compresión Zstd) sin modificar la lógica de dominio.",
+    "como": "El codec expone una interfaz simétrica con métodos como `encode(obj) -> bytes` y `decode(bytes) -> obj` (o streams). En frameworks como gRPC, Netty, Kafka (`Serde` = Serializer + Deserializer) o HTTP clients, los codecs se registran por `Content-Type` o tipo de dato y forman un pipeline: primero transforman la estructura en memoria a bytes (ej. Protobuf) y luego un codec envolvente aplica compresión (gzip, lz4, zstd) antes de entregar el buffer al socket.",
+    "practicas": [
+      "Mantén los codecs puros y libres de estado mutable por petición para que puedan reutilizarse de forma segura entre múltiples hilos.",
+      "Separa el codec de serialización estructural del codec de compresión para poder negociar ambos independientemente (Content-Type vs Content-Encoding).",
+      "En Apache Kafka, configura explícitamente tanto el key Serde como el value Serde, y alinea el codec con el Schema Registry.",
+      "Evita mezclar lógica de negocio o llamadas de red dentro de un codec (salvo el cacheo local de esquemas por ID)."
+    ],
+    "ejemplo": "class JsonCodec:\n    def encode(self, data: dict) -> bytes:\n        return json.dumps(data, separators=(\",\", \":\")).encode(\"utf-8\")\n    def decode(self, raw: bytes) -> dict:\n        return json.loads(raw.decode(\"utf-8\"))",
+    "entrevista": "Un codec abstrae la pareja simétrica de codificación y decodificación, permitiendo intercambiar formatos de cable o compresión en RPC y mensajería sin acoplar la lógica de dominio."
+  },
+  "Compatibilidad hacia adelante - atrás": {
+    "que": "La compatibilidad hacia atrás (backward compatibility) garantiza que código con un esquema nuevo pueda leer datos escritos con un esquema anterior; la compatibilidad hacia adelante (forward compatibility) garantiza que código con un esquema antiguo pueda leer datos escritos con un esquema nuevo. La combinación de ambas se denomina compatibilidad total (full compatibility).",
+    "para": "Sirve para desplegar productores y consumidores de eventos o clientes y servidores API de forma independiente, sin ventanas de mantenimiento ni coordinación sincronizada. Es obligatoria en temas de Kafka de larga retención y aplicaciones móviles donde los usuarios tardan meses en actualizar.",
+    "como": "El orden de actualización determina qué garantía necesitas: si actualizas primero a los consumidores, los datos en cola aún usan el esquema viejo, por lo que necesitas compatibilidad hacia atrás (ej. añadir un campo nuevo con valor por defecto). Si actualizas primero a los productores, los consumidores antiguos recibirán el formato nuevo, exigiendo compatibilidad hacia adelante (ej. el consumidor ignora campos desconocidos y no depende de campos recién eliminados que tenían defecto). En Protobuf, Avro y Schema Registry estas reglas se verifican automáticamente comparando el AST del esquema candidato contra versiones previas.",
+    "practicas": [
+      "Para lograr full compatibility (backward + forward): solo añade campos opcionales (con default) y solo elimina campos que ya eran opcionales (con default en el esquema antiguo).",
+      "En streaming (Kafka), actualiza primero los consumidores si garantizas backward compatibility; actualiza primero los productores si garantizas forward compatibility.",
+      "Nunca cambies el tipo de un campo de manera incompatible (como string a int) ni alteres su significado semántico aunque el tipo coincida.",
+      "Configura el modo de compatibilidad en el Schema Registry según tu ciclo de despliegue (BACKWARD, FORWARD, FULL o *_TRANSITIVE)."
+    ],
+    "ejemplo": "// Evolución FULL compatible en Avro:\n// v1: {id: string, pais?: string = \"ES\"}\n// v2: añade telefono?: string = null (backward OK)\n//     elimina pais porque tenía default (forward OK)",
+    "entrevista": "Backward significa que el lector nuevo entiende datos viejos; forward, que el lector viejo tolera datos nuevos; añadir o quitar solo campos con valores por defecto logra compatibilidad total."
+  },
+  "Content-Type": {
+    "que": "Content-Type es una cabecera estándar de HTTP y MIME (RFC 9110 / RFC 2045) que indica el media type exacto del cuerpo del mensaje (payload) y parámetros opcionales como la codificación de caracteres (`charset`) o límites multiparte (`boundary`). Actúa como el metadato de contrato que indica al receptor qué parser o codec debe invocar.",
+    "para": "Sirve para que servidores, navegadores, API gateways y proxies interpreten correctamente los bytes recibidos sin adivinar el formato (evitando MIME sniffing). Permite además la negociación de contenido junto con la cabecera `Accept` para servir JSON, Protobuf, XML o HTML desde un mismo endpoint.",
+    "como": "Su sintaxis sigue el patrón `tipo/subtipo; parametro=valor`, por ejemplo `application/json`, `application/problem+json` (RFC 9457), `application/x-protobuf` o `application/vnd.api+json`. Cuando un cliente envía un POST, el framework web (FastAPI, Spring, Express) inspecciona `Content-Type` para enrutar el flujo de bytes al deserializador correspondiente; si no coincide con los soportados, responde `415 Unsupported Media Type`. En respuestas HTTP, los navegadores modernos combinan `Content-Type` con `X-Content-Type-Options: nosniff` para bloquear ejecución accidental de scripts.",
+    "practicas": [
+      "Envía siempre `Content-Type` explícito en peticiones con cuerpo y valida en el servidor respondiendo `415 Unsupported Media Type` ante formatos inesperados.",
+      "Incluye `X-Content-Type-Options: nosniff` en respuestas HTTP para impedir que el navegador reinterprete archivos subidos por usuarios como HTML o JavaScript.",
+      "No añadas `; charset=utf-8` a `application/json` si no es necesario; según RFC 8259, JSON en intercambio abierto siempre es UTF-8 y algunos parsers estrictos no esperan parámetros.",
+      "Usa sufijos estructurados (+json, +xml) o vendor types (`application/vnd.empresa.v2+json`) para versionado de medios y formatos estándar como `application/problem+json`."
+    ],
+    "ejemplo": "POST /api/v1/eventos HTTP/1.1\nHost: api.ejemplo.com\nAccept: application/x-protobuf, application/json;q=0.9\nContent-Type: application/json\n\n{\"evento\":\"login\",\"ok\":true}",
+    "entrevista": "Content-Type declara el media type exacto del payload para seleccionar el deserializador adecuado, habilitar negociación de contenido con Accept y prevenir ataques de MIME sniffing."
+  },
+  "Decimal vs float": {
+    "que": "La distinción entre Decimal y float enfrenta los números decimales de base 10 de precisión exacta (Decimal / BigDecimal / NUMERIC) contra los números de punto flotante binarios de base 2 (IEEE 754 float/double). Mientras float sacrifica exactitud en fracciones decimales por velocidad en hardware, Decimal representa exactamente potencias de 10.",
+    "para": "Sirve para evitar errores de redondeo acumulativos y descuadres contables en cálculos financieros, facturación, impuestos, tipos de cambio y sistemas médicos. Se usa float/double exclusivamente para gráficos 3D, simulaciones científicas, ML y coordenadas geográficas donde la velocidad vectorial (FPU/SIMD) importa más que el último céntimo.",
+    "como": "Un `float` (32 bits) o `double` (64 bits) codifica valores como `mantisa × 2^exponente`; fracciones simples en base 10 como `0.1` o `0.2` son periódicas infinitas en binario (`0.000110011...`), produciendo `0.1 + 0.2 === 0.30000000000000004`. Por el contrario, un tipo `Decimal` (como `Decimal` en Python, `BigDecimal` en Java o `NUMERIC(18,4)` en SQL) almacena el coeficiente entero en base 10 junto con una escala decimal fija o controlada, aplicando reglas explícitas de redondeo (como `ROUND_HALF_EVEN` o redondeo bancario). Al serializar en JSON, los decimales deben viajar como string (o como entero en la unidad mínima, ej. centavos) porque JSON parsea los números literales como `double` en la mayoría de lenguajes.",
+    "practicas": [
+      "Nunca uses float ni double para dinero, porcentajes financieros o cantidades contables; usa Decimal/BigDecimal o enteros en la unidad mínima (centavos/satoshis).",
+      "En JSON, serializa importes decimales como string (\"19.99\") o como entero en centavos (1999) con la moneda explícita; un número JSON como 19.99 puede perder exactitud al pasar por JS.",
+      "Al instanciar Decimal/BigDecimal en código, pásale siempre un string (Decimal(\"0.1\")), nunca un literal float (Decimal(0.1) hereda el error binario previo).",
+      "En Avro y Protobuf usa `logicalType: decimal` (sobre bytes) o estructuras dedicadas como `google.type.Money` (units int64 + nanos int32)."
+    ],
+    "ejemplo": "from decimal import Decimal\n# Incorrecto con float: 0.1 + 0.2 -> 0.30000000000000004\n# Incorrecto: Decimal(0.1) -> Decimal('0.100000000000000005551115...')\nprecio = Decimal(\"0.10\") + Decimal(\"0.20\")  # Exacto: Decimal('0.30')",
+    "entrevista": "Los floats binarios IEEE 754 no pueden representar exactamente fracciones base-10 como 0.1, por eso dinero y métricas exactas exigen tipos Decimal serializados en JSON como string o enteros en centavos."
+  },
+  "Encoding - Decoding": {
+    "que": "Encoding (codificación) es la transformación de una secuencia de caracteres, datos estructurados o bytes en una representación de bytes o texto acorde a una regla formal (como UTF-8, Base64 o varint); Decoding (decodificación) es el proceso inverso de reconstrucción. Aunque a veces se solapa con serialización, encoding opera a nivel de representación de símbolos o bytes más que de grafos de objetos.",
+    "para": "Sirve para asegurar que el texto internacional se almacene sin corrupción (UTF-8), transportar datos binarios por canales solo textuales (Base64 en emails, URLs o JWT) y compactar números o estructuras a nivel de bits. Es la capa fundamental que previene errores de mojibake y fallos de seguridad por interpretaciones ambiguas.",
+    "como": "En codificación de caracteres (UTF-8), cada code point Unicode se asigna a entre 1 y 4 bytes mediante prefijos de bits (`0xxxxxxx` para ASCII de 1 byte, `110xxxxx 10xxxxxx` para 2 bytes, etc.). En codificación binario-a-texto (Base64), se agrupan bloques de 3 bytes (24 bits) y se dividen en cuatro índices de 6 bits mapeados a un alfabeto ASCII seguro de 64 caracteres, añadiendo relleno `=` si no es múltiplo de 3. En formatos binarios como Protobuf, el encoding numérico utiliza varint (7 bits de datos + 1 bit de continuación) y ZigZag para enteros con signo.",
+    "practicas": [
+      "Estandariza UTF-8 sin BOM en todo tu stack (archivos fuente, HTTP, bases de datos `utf8mb4` en MySQL) para evitar mojibake al mezclar Latin-1/Windows-1252.",
+      "Usa Base64url (`-` y `_` sin padding `=`) en lugar de Base64 estándar cuando incrustes tokens o hashes en URLs, cabeceras o JWTs.",
+      "No confundas encoding con cifrado ni con hashing: Base64 y Hex son completamente reversibles y no aportan confidencialidad alguna.",
+      "Decodifica la entrada del usuario de forma canónica una sola vez antes de validar reglas de seguridad para evitar evasiones por doble encoding (%252e)."
+    ],
+    "ejemplo": "import base64\nraw = \"café\".encode(\"utf-8\")            # b'caf\\xc3\\xa9'\nb64 = base64.urlsafe_b64encode(raw)    # b'Y2Fmw6k='\ntexto = base64.urlsafe_b64decode(b64).decode(\"utf-8\")",
+    "entrevista": "Encoding traduce caracteres o bytes a una representación de transporte como UTF-8 o Base64 de forma reversible, por lo que nunca debe confundirse con cifrado ni omitirse al cruzar fronteras de sistema."
+  },
+  "Enums": {
+    "que": "Un enum (tipo enumerado) es un tipo de dato restringido a un conjunto cerrado y nombrado de valores constantes posibles. En serialización, plantea el dilema de representar cada variante por su nombre simbólico legible (string) o por un código numérico compacto (int/tag).",
+    "para": "Sirve para validar estados de dominio finitos (como estado de un pedido, rol de usuario o código de moneda) tanto en tiempo de compilación como en contratos de API. Sin una estrategia cuidadosa, añadir una nueva variante en el servidor rompe deserializadores estrictos en clientes antiguos.",
+    "como": "En JSON y OpenAPI, los enums suelen serializarse como strings (`\"PAID\"`, `\"PENDING\"`), lo que facilita el debugging y evita errores por reordenamiento, aunque ocupa más bytes. En Protobuf y Thrift, los enums se codifican en el cable como enteros `varint`; Protobuf exige por convención que el valor `0` sea `UNSPECIFIED` porque `0` es el valor por defecto de todo campo entero cuando no está presente en el mensaje. Si un cliente antiguo recibe un valor numérico desconocido en proto3, lo preserva en el campo pero un switch exhaustivo sin rama `default` puede fallar si no contempla valores no reconocidos.",
+    "practicas": [
+      "Define siempre el valor 0 como `<NOMBRE>_UNSPECIFIED` en Protobuf (proto3) para distinguir un campo omitido de un estado de negocio real.",
+      "Prefiere strings descriptivos sobre enteros mágicos en APIs JSON públicas (`\"CANCELLED\"` en lugar de `3`) para mantener legibilidad y evitar desincronización de tablas.",
+      "Diseña los consumidores para tratar los enums como conjuntos abiertos (open enums): maneja siempre un caso por defecto/desconocido para no romper forward compatibility.",
+      "Nunca reasignes el número de un miembro existente ni elimines un valor sin marcarlo como `reserved`."
+    ],
+    "ejemplo": "enum EstadoPago {\n  ESTADO_PAGO_UNSPECIFIED = 0;\n  ESTADO_PAGO_PENDIENTE = 1;\n  ESTADO_PAGO_APROBADO = 2;\n}",
+    "entrevista": "Los enums en contratos distribuidos deben tratarse como conjuntos abiertos: en JSON viajan mejor como strings, y en Protobuf el valor 0 debe reservarse para UNSPECIFIED para no confundir omisión con un estado válido."
+  },
+  "FlatBuffers": {
+    "que": "FlatBuffers es una librería de serialización binaria sin copia (zero-copy) creada por Google, donde los datos serializados se estructuran directamente como un buffer en memoria listo para leerse sin paso de parsing previo. Soporta evolución de esquemas hacia adelante y hacia atrás usando archivos `.fbs`.",
+    "para": "Sirve en aplicaciones con presupuestos estrictos de latencia, memoria o CPU por frame, como motores de videojuegos, realidad aumentada, sistemas embebidos, clientes móviles Android/iOS y IPC de alto rendimiento. Se elige cuando el costo de deserializar (asignar objetos en el heap, copiar strings y activar el garbage collector) en Protobuf o JSON resulta inaceptable.",
+    "como": "El compilador `flatc` genera código de acceso a partir de un esquema `.fbs`. A diferencia de Protobuf que empaqueta bytes secuencialmente, FlatBuffers escribe las tablas de atrás hacia adelante y añade una tabla virtual de desplazamientos (vtable) que indica el offset exacto en bytes de cada campo dentro del buffer alineado. Al recibir el array de bytes, el lector solo envuelve el puntero en la clase generada y lee campos puntuales calculando `puntero_tabla + offset_vtable`, sin asignar memoria extra ni recorrer el resto del mensaje (acceso O(1) por campo).",
+    "practicas": [
+      "Usa FlatBuffers cuando leas solo un subconjunto de campos de mensajes grandes o cuando la presión sobre el garbage collector sea crítica.",
+      "Usa `struct` dentro de `.fbs` para tipos de tamaño fijo sin evolución (vectores 3D, matrices) porque evitan el overhead de la vtable, y `table` cuando necesites campos opcionales y evolución.",
+      "Ten presente que construir un FlatBuffer es más verboso (bottom-up con FlatBufferBuilder) y ligeramente menos compacto en bytes que Protobuf porque no usa varints por defecto sino alineación de memoria.",
+      "FlatBuffers vs Protobuf: elige FlatBuffers por velocidad de lectura zero-copy y cero asignaciones; elige Protobuf por menor tamaño en red y mejor integración estándar con gRPC."
+    ],
+    "ejemplo": "namespace Juego;\ntable Jugador {\n  id: ulong;\n  nombre: string;\n  vida: short = 100;\n}\nroot_type Jugador;",
+    "entrevista": "FlatBuffers permite lectura zero-copy en O(1) usando vtables de offsets directamente sobre el buffer binario alineado, eliminando el parsing y las asignaciones en memoria."
+  },
+  "Go gob": {
+    "que": "Go `encoding/gob` es el formato de serialización binaria autodescriptiva integrado en la biblioteca estándar de Go para intercambiar valores entre programas escritos exclusivamente en Go. Transmite definiciones de tipos junto con el flujo de datos sin requerir archivos de esquema externos.",
+    "para": "Sirve para comunicación RPC interna entre procesos Go (`net/rpc`), cachés locales en disco o memoria compartida entre servicios Go homogéneos dentro de una frontera de confianza. No está pensado para APIs públicas ni comunicación multi-lenguaje.",
+    "como": "Un `gob.Encoder` mantiene un registro por conexión/stream de los tipos Go que ya ha enviado. La primera vez que codifica un struct `Usuario`, emite un descriptor binario del tipo (nombres de campos exportados y tipos) asociado a un `typeId` entero; en mensajes sucesivos sobre el mismo stream solo envía el `typeId` seguido de los valores codificados con varint. El `gob.Decoder` empareja campos por nombre entre el tipo recibido y el tipo destino en memoria (ignorando campos no exportados o desconocidos), de forma similar a la resolución de esquemas sin archivo externo.",
+    "practicas": [
+      "No uses gob para comunicación entre servicios de distintos lenguajes o almacenamiento a largo plazo donde el formato deba sobrevivir a migraciones fuera de Go.",
+      "Nunca decodifiques flujos gob provenientes de fuentes no confiables: aunque no ejecuta código arbitrario por reflexión como pickle, los payloads manipulados pueden provocar asignaciones masivas de memoria (OOM) o panics (riesgo de DoS).",
+      "Reutiliza la misma instancia de Encoder/Decoder en conexiones persistentes para amortizar el envío de descriptores de tipo.",
+      "Recuerda que gob solo serializa campos exportados (inicial en mayúscula) y falla si intentas codificar funciones o canales."
+    ],
+    "ejemplo": "var buf bytes.Buffer\nenc := gob.NewEncoder(&buf)\n_ = enc.Encode(Evento{ID: 42, Tipo: \"sync\"})\nvar out Evento\n_ = gob.NewDecoder(&buf).Decode(&out)",
+    "entrevista": "Go gob es un formato binario exclusivo para entornos Go confiables que envía descriptores de tipo una vez por stream y empareja campos exportados por nombre sin archivo de esquema."
+  },
+  "ISO-8601 para fechas": {
+    "que": "ISO-8601 (complementado en internet por el perfil estricto RFC 3339) es el estándar internacional para representar fechas y horas como texto de forma inequívoca y ordenable lexicográficamente. Sigue el formato decreciente `YYYY-MM-DDTHH:mm:ss.sssZ` o con desplazamiento horario explícito.",
+    "para": "Sirve para serializar instantes temporales, fechas calendario y duraciones en APIs JSON, OpenAPI, logs estructurados y bases de datos sin sufrir ambigüedades regionales (`04/05/2026` ¿abril o mayo?) ni pérdida de zona horaria. Es la convención universal en REST y estándares web modernos.",
+    "como": "Ordena los componentes de mayor a menor magnitud (año de 4 dígitos, mes, día, separador `T`, hora de 24h, minutos, segundos, fracción opcional) seguidos de `Z` (UTC, Zulu) o un offset (`-05:00`, `+02:00`). Como cada campo tiene ancho fijo con ceros a la izquierda, ordenar cadenas ISO-8601 en UTC alfabéticamente produce exactamente el mismo orden que ordenar cronológicamente. RFC 3339 restringe algunas libertades de ISO-8601 (como semanas `2026-W48` o formato compacto sin guiones `20261125`) para facilitar el parsing en APIs web.",
+    "practicas": [
+      "Almacena y transmite instantes pasados o logs siempre en UTC terminado en `Z` (ej. `2026-11-25T05:23:28Z`); evita timestamps sin zona horaria (naive datetimes).",
+      "Para eventos futuros recurrentes en la agenda de un usuario (ej. 'alarma a las 08:00 en Madrid'), guarda la hora local más la zona IANA (`Europe/Madrid`), porque los offsets futuros cambian por horario de verano.",
+      "Prefiere el perfil RFC 3339 (`format: date-time` en OpenAPI/JSON Schema) frente a variantes exóticas de ISO-8601 para máxima interoperabilidad.",
+      "Para fechas sin hora (fecha de nacimiento, vencimiento fiscal), usa `YYYY-MM-DD` sin `T00:00:00Z` para evitar que un cambio de zona horaria desplace el día."
+    ],
+    "ejemplo": "// Instante exacto en UTC (RFC 3339 / ISO-8601)\n\"creado_en\": \"2026-11-25T05:23:28.120Z\",\n// Con offset local explícito\n\"facturado_en\": \"2026-11-25T00:23:28-05:00\"",
+    "entrevista": "ISO-8601/RFC 3339 elimina ambigüedades regionales, preserva el offset o UTC con `Z` y permite ordenar timestamps cronológicamente con una simple comparación lexicográfica."
+  },
+  "JSON Schema": {
+    "que": "JSON Schema es una especificación declarativa escrita en JSON que define la estructura, tipos, restricciones de valor y documentación esperada de un documento JSON. A diferencia de Protobuf o Avro, no modifica ni compacta el formato en el cable, sino que actúa como capa de validación y contrato.",
+    "para": "Sirve para validar entradas y salidas en APIs REST (es el núcleo de OpenAPI 3.1), verificar archivos de configuración en IDEs, generar formularios dinámicos y gobernar eventos JSON en Kafka Schema Registry. Permite detectar payloads malformados en los bordes del sistema antes de que lleguen a la lógica de negocio.",
+    "como": "Un esquema declara palabras clave de tipo (`type`, `properties`, `required`), restricciones (`minimum`, `maxLength`, `pattern`, `format` como `email` o `date-time`) y combinadores lógicos (`allOf`, `anyOf`, `oneOf`, `not`). Un validador (como Ajv en JS, jsonschema/Pydantic en Python) compila el esquema en un árbol de reglas o función optimizada y evalúa el JSON ya parseado recolectando errores por ruta JSON Pointer. El estándar evolucionó en borradores (Draft-07, 2019-09, 2020-12); OpenAPI 3.1 adoptó directamente JSON Schema Draft 2020-12.",
+    "practicas": [
+      "Fija explícitamente el campo `$schema` con la versión del borrador (ej. `2020-12`) para evitar comportamientos distintos entre validadores.",
+      "Define `additionalProperties: false` en comandos estrictos donde quieras detectar typos del cliente, pero omítelo o déjalo en `true` si priorizas tolerancia hacia adelante.",
+      "Evita expresiones regulares complejas en `pattern` vulnerables a ReDoS (catastrophic backtracking) cuando valides entradas externas.",
+      "JSON Schema vs Avro/Protobuf: JSON Schema valida documentos autodescriptivos textuales; no aporta compresión binaria ni numeración de campos por tag."
+    ],
+    "ejemplo": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"type\": \"object\",\n  \"required\": [\"id\", \"email\"],\n  \"properties\": {\n    \"id\": {\"type\": \"integer\", \"minimum\": 1},\n    \"email\": {\"type\": \"string\", \"format\": \"email\"}\n  },\n  \"additionalProperties\": false\n}",
+    "entrevista": "JSON Schema aporta validación declarativa y contratos tipados sobre JSON sin cambiar el formato textual, sirviendo además como base del modelado de datos en OpenAPI 3.1."
+  },
+  "JSON": {
+    "que": "JSON (JavaScript Object Notation, RFC 8259) es un formato textual de intercambio de datos ligero, legible por humanos y basado en pares clave-valor y listas ordenadas. Soporta únicamente seis tipos: string, number, boolean, null, object y array.",
+    "para": "Es el estándar de facto para APIs web REST, GraphQL, respuestas HTTP, payloads de webhooks y logs estructurados. Se utiliza siempre que la interoperabilidad universal entre navegador, backend y herramientas de debugging (curl, Postman, OpenAPI) supere la necesidad de máxima compacidad o latencia mínima.",
+    "como": "Los datos se serializan a texto UTF-8 usando delimitadores `{}` para objetos (claves siempre entre comillas dobles), `[]` para arrays y comas como separadores sin comas finales permitidas ni comentarios. Al recibir el texto, el parser ejecuta análisis léxico y sintáctico reconstruyendo un árbol AST o mapeando directamente a structs/objetos tipados mediante reflexión o generadores de código. Al carecer de esquema obligatorio, cada mensaje repite los nombres de todas sus claves y codifica números y booleanos como texto ASCII.",
+    "practicas": [
+      "Nunca permitas comentarios ni trailing commas en JSON de intercambio; RFC 8259 los prohíbe y la mayoría de parsers estándar los rechazan.",
+      "Usa `BigInt` o `Decimal` serializados como string y fechas en ISO-8601 UTC (`Z`), ya que JSON no tiene tipo fecha ni distingue enteros de floats.",
+      "Activa compresión HTTP (`gzip`, `br` o `zstd`) para respuestas JSON medianas o grandes, reduciendo el impacto de repetir claves textuales.",
+      "JSON vs Protobuf: usa JSON en fronteras públicas y web por simplicidad e inspección inmediata; usa Protobuf en comunicación interna de alto tráfico o streaming estricto."
+    ],
+    "ejemplo": "{\n  \"usuarioId\": \"9007199254740995\",\n  \"activo\": true,\n  \"roles\": [\"admin\", \"editor\"],\n  \"ultimoAcceso\": \"2026-11-25T05:23:28Z\"\n}",
+    "entrevista": "JSON domina las APIs web por su legibilidad y soporte universal, pero exige convenciones explícitas para fechas, decimales y enteros de 64 bits porque solo posee seis tipos nativos."
+  },
+  "JSONL - NDJSON": {
+    "que": "JSONL (JSON Lines) o NDJSON (Newline Delimited JSON) es un formato textual donde cada línea independiente contiene un documento JSON válido completo, separado por un salto de línea `\\n`. A diferencia de un archivo JSON estándar con un array raíz `[...]`, no requiere envoltorio global ni comas entre registros.",
+    "para": "Sirve para procesar logs estructurados, volcados masivos de datos, respuestas de streaming (LLM token/event streaming o exportaciones) y trabajos ETL en Unix/BigQuery/Spark. Resuelve el problema de memoria del JSON estándar: permite leer, añadir (append) y paralelizar registros de gigabytes línea por línea.",
+    "como": "Cada registro se serializa en formato compacto (sin pretty-print ni saltos de línea sin escapar dentro de strings) seguido de `\\n` (LF, opcionalmente `\\r\\n`). Un consumidor lee el stream por líneas (`BufferedReader`, `jq`, `grep`, `split('\\n')`) e invoca `JSON.parse()` sobre cada línea individualmente con memoria constante O(tamaño de 1 línea). Si un registro queda truncado por un fallo de red o disco, solo esa línea falla al parsearse, dejando intactas todas las anteriores.",
+    "practicas": [
+      "Serializa siempre cada objeto en una sola línea compacta (sin indentación); cualquier salto de línea literal en un string debe ir escapado como `\\n`.",
+      "Usa el media type `application/x-ndjson` o `application/jsonl` cuando envíes streams NDJSON sobre HTTP.",
+      "Prefiere JSONL sobre un array JSON gigante en logs, backups incrementales y pipelines batch porque permite `append` O(1) y procesamiento paralelo por chunks de bytes.",
+      "JSONL vs CSV: JSONL soporta objetos anidados, listas y tipos explícitos por registro sin problemas de comillas ni delimitadores regionales."
+    ],
+    "ejemplo": "{\"ts\":\"2026-11-25T05:20:01Z\",\"lvl\":\"INFO\",\"msg\":\"start\"}\n{\"ts\":\"2026-11-25T05:20:02Z\",\"lvl\":\"ERROR\",\"code\":503}\n{\"ts\":\"2026-11-25T05:20:03Z\",\"lvl\":\"INFO\",\"msg\":\"retry\"}",
+    "entrevista": "JSONL/NDJSON separa cada objeto JSON válido por salto de línea, habilitando streaming, append O(1) y tolerancia a fallos parciales con consumo constante de memoria."
+  },
+  "Java Serializable": {
+    "que": "Java `Serializable` es el mecanismo nativo de serialización binaria de la JVM basado en la interfaz marcadora `java.io.Serializable`, que convierte grafos completos de objetos Java en un flujo de bytes y viceversa. Almacena metadatos de clase, jerarquía de herencia y estado interno de los campos.",
+    "para": "Historicamente se usó para RMI, replicación de sesiones HTTP en servidores de aplicaciones y caché en disco dentro de la JVM. En la ingeniería moderna se considera legado y desaconsejado para intercambio de datos o persistencia debido a su fragilidad evolutiva y graves riesgos de seguridad.",
+    "como": "`ObjectOutputStream` inspecciona mediante reflexión el grafo de objetos alcanzables, escribe un identificador mágico (`AC ED 00 05`), el nombre completo de cada clase, su `serialVersionUID` (un hash de la firma de clase si no se declara manualmente) y los valores de todos los campos no `transient` ni `static`. Al llamar a `ObjectInputStream.readObject()`, la JVM instancia dinámicamente las clases indicadas en el stream e invoca métodos mágicos `readObject()` presentes en el classpath antes de devolver el objeto al código llamante. Si existen clases auxiliares en librerías del classpath (gadget chains, como versiones antiguas de Commons Collections), un atacante puede disparar ejecución remota de código (RCE) durante el propio `readObject()` (OWASP A08:2021).",
+    "practicas": [
+      "Nunca deserialices bytes no confiables con ObjectInputStream; si heredas código que lo requiere, configura filtros estrictos con ObjectInputFilter (JEP 290) en allowlist.",
+      "Reemplaza Java Serializable por JSON (Jackson), Protobuf o Avro en APIs, colas y caches distribuidas como Redis.",
+      "Si estás obligado a mantener Serializable en clases internas, declara explícitamente `private static final long serialVersionUID = 1L;` y marca credenciales o recursos no serializables como `transient`.",
+      "Recuerda que un cambio aparentemente inocente en un campo privado modifica el serialVersionUID autogenerado y lanza `InvalidClassException`."
+    ],
+    "ejemplo": "// Riesgo OWASP A08: evitar readObject() sin ObjectInputFilter\nObjectInputStream ois = new ObjectInputStream(inputStream);\nois.setObjectInputFilter(info ->\n  info.serialClass() == MiDTO.class ? Status.ALLOWED : Status.REJECTED);\nMiDTO dto = (MiDTO) ois.readObject();",
+    "entrevista": "Java Serializable acopla la persistencia a la estructura interna de la clase (serialVersionUID) y ejecuta lógica de instanciación sobre clases del classpath durante readObject(), abriendo vectores de RCE por gadget chains (OWASP A08)."
+  },
+  "Marshalling - Unmarshalling": {
+    "que": "Marshalling es el proceso de empaquetar un objeto o estructura en memoria (a menudo incluyendo metadatos de contexto, tipos o referencias remotas) para enviarlo a otro proceso o dominio de ejecución; Unmarshalling es la reconstrucción en el receptor. Aunque en uso coloquial se intercambia con serialización, marshalling enfatiza la adaptación entre fronteras de comunicación o lenguajes (RPC, FFI, HTTP).",
+    "para": "Sirve para cruzar límites de proceso, máquina o lenguaje (por ejemplo, de un struct en Go a un cuerpo JSON, de un objeto Python a argumentos C vía ctypes/FFI, o de objetos en RMI/gRPC). Resuelve diferencias de endianness, alineación de memoria, convenciones de llamada y representación de tipos entre emisor y receptor.",
+    "como": "En bibliotecas como `encoding/json` de Go (`json.Marshal` / `json.Unmarshal`) o JAXB en Java, el marshaller recorre la estructura destino guiado por anotaciones o struct tags (`json:\"user_id,omitempty\"`), valida reglas de mapeo y delega la escritura de bytes al formato subyacente. En RPC clásico o FFI, además de convertir valores a bytes, puede envolver cabeceras de método, punteros opacos o proxies de objetos remotos. En el receptor, el unmarshaller parsea el flujo y puebla una instancia o struct preasignado aplicando conversiones de tipo y valores por defecto.",
+    "practicas": [
+      "Usa etiquetas de mapeo explícitas (como struct tags en Go o anotaciones `@JsonProperty` en Java) para desacoplar los nombres internos del código del contrato de red.",
+      "Valida los datos justo después del unmarshalling (ej. campos requeridos o rangos numéricos), ya que el unmarshaller suele dejar valores cero silenciosos si faltan campos.",
+      "Serialización vs Marshalling: habla de serialización cuando el foco es convertir estado a secuencia de bytes para almacenar o transmitir; habla de marshalling cuando el foco es adaptar argumentos/objetos para cruzar una frontera RPC o de lenguaje."
+    ],
+    "ejemplo": "type Orden struct {\n    ID     string `json:\"id\"`\n    Total  int64  `json:\"total_centavos\"`\n    Oculto string `json:\"-\"`\n}\nbytes, err := json.Marshal(orden)\nerr = json.Unmarshal(bytes, &destino)",
+    "entrevista": "Mientras serializar transforma estado en bytes, marshalling enfatiza adaptar y empaquetar objetos con sus metadatos de mapeo para cruzar fronteras de proceso, RPC o lenguaje."
+  },
+  "MessagePack": {
+    "que": "MessagePack (msgpack) es un formato de serialización binaria sin esquema obligatorio diseñado como reemplazo compacto y rápido de JSON. Conserva prácticamente el mismo modelo de datos (mapas, arrays, enteros, floats, strings, booleanos, null) añadiendo un tipo nativo para datos binarios crudos y tipos de extensión.",
+    "para": "Sirve para reducir latencia y tamaño de payload en caches como Redis (scripts Lua integrados), mensajería en tiempo real (como SignalR o Fluentd), telemetría y RPC interno cuando no se desea mantener archivos `.proto` ni un compilador de esquemas. Permite migrar desde JSON con cambios mínimos de código.",
+    "como": "Cada valor comienza con un byte de tipo/etiqueta: los enteros positivos de 0 a 127 (`0x00–0x7f`) y negativos pequeños (`0xe0–0xff`) se codifican en un solo byte sin cabecera extra (fixint); strings cortos (hasta 31 bytes), arrays y mapas pequeños también usan un solo byte de cabecera (`fixstr`, `fixarray`, `fixmap`). Para datos mayores usa cabeceras de 2, 3 o 5 bytes con tamaño explícito en big-endian. A diferencia de Protobuf o Avro, los mapas siguen incluyendo el nombre de cada clave en cada mensaje, por lo que su ganancia frente a JSON proviene de eliminar comillas, espacios y codificar números y longitudes en binario.",
+    "practicas": [
+      "No esperes la compacidad extrema de Protobuf/Avro en streams repetitivos: MessagePack sigue repitiendo los nombres de clave en cada objeto a menos que uses arrays posicionales.",
+      "Configura límites estrictos de tamaño y profundidad al decodificar MessagePack desde redes externas para evitar ataques de asignación de memoria (OOM por cabeceras falsas de tamaño gigante).",
+      "MessagePack vs CBOR: MessagePack suele tener mensajes marginalmente más cortos en enteros pequeños, pero CBOR tiene estandarización IETF (RFC 8949), tags semánticos oficiales y modo determinista.",
+      "Úsalo cuando quieras acelerar comunicación interna JSON-like sin introducir generación de código ni gestión de esquemas."
+    ],
+    "ejemplo": "// Equivalente en bytes de {\"ok\": true, \"n\": 5}:\n// JSON:        15 bytes -> {\"ok\":true,\"n\":5}\n// MessagePack:  9 bytes -> 82 a2 6f 6b c3 a1 6e 05\nimport msgpack\nraw = msgpack.packb({\"ok\": True, \"n\": 5})",
+    "entrevista": "MessagePack ofrece un reemplazo binario drop-in para JSON con soporte de bytes crudos y fixints de 1 byte, ganando velocidad y compacidad sin requerir esquemas, aunque sigue repitiendo las claves."
+  },
+  "NaN - Infinity": {
+    "que": "`NaN` (Not a Number) e `Infinity` / `-Infinity` son valores especiales definidos por el estándar IEEE 754 de punto flotante para representar resultados indeterminados (ej. `0.0 / 0.0`) o desbordamientos matemáticos (ej. `1.0 / 0.0`). Carecen de representación válida en la especificación estándar de JSON (RFC 8259).",
+    "para": "Comprender su comportamiento sirve para prevenir fallos silenciosos, corrupción de contratos JSON entre distintos lenguajes y errores de validación en APIs, pipelines analíticos y modelos de Machine Learning. Es un bug clásico cuando Python (`json.dumps` permite `NaN` por defecto) habla con JavaScript, Go o PostgreSQL (`jsonb`), que los rechazan.",
+    "como": "Según IEEE 754, cualquier comparación con `NaN` devuelve `false`, incluso `NaN === NaN` es falso, lo que rompe búsquedas, ordenamientos o deduplicación si se filtra en estructuras. En JSON RFC 8259, la gramática numérica solo permite dígitos finitos; por ello `JSON.parse('{\"x\":NaN}')` en JavaScript lanza `SyntaxError` y `JSON.stringify({x: NaN, y: Infinity})` los convierte silenciosamente en `null`. En contraste, `json.dumps` de Python emite literales inválidos `NaN`/`Infinity` a menos que se pase `allow_nan=False`, rompiendo clientes estrictos. En formatos como Protobuf, CBOR y Parquet sí existen representaciones binarias nativas para `NaN` e `Infinity` en `float`/`double`.",
+    "practicas": [
+      "Pasa siempre `allow_nan=False` (o usa `orjson`/`pydantic` en modo estricto) en backends Python para detectar métricas `NaN`/`Infinity` antes de emitir JSON inválido.",
+      "Sanea divisiones por cero y valores faltantes de DataFrames (`df.fillna` o conversión explícita a `None`/`null`) antes de serializar respuestas API.",
+      "Si realmente debes transportar `NaN` o `Infinity` por JSON (p. ej. gráficas científicas), acuérdalo explícitamente en el esquema usando strings (\"NaN\", \"Infinity\") o usa un formato binario IEEE-754 compatible.",
+      "Nunca compares con `x == float('nan')`; usa siempre `math.isnan(x)` / `Number.isNaN(x)`."
+    ],
+    "ejemplo": "import json\n# Por defecto Python genera JSON inválido según RFC 8259:\n# json.dumps({\"v\": float(\"nan\")}) -> '{\"v\": NaN}'\n# Forma segura (lanza ValueError temprano):\njson.dumps({\"v\": float(\"nan\")}, allow_nan=False)",
+    "entrevista": "RFC 8259 prohíbe NaN e Infinity en JSON; Python los emite por defecto generando payloads inválidos que rompen parsers de JS o Go, por lo que deben bloquearse con allow_nan=False o mapearse a null."
+  },
+  "ORC": {
+    "que": "Apache ORC (Optimized Row Columnar) es un formato de almacenamiento columnar de código abierto altamente optimizado para cargas analíticas en el ecosistema Apache Hive, Spark, Trino y Presto. Almacena datos organizados en franjas independientes (stripes) con índices estadísticos ligeros integrados.",
+    "para": "Sirve para acelerar consultas OLAP de petabytes en data lakes reduciendo drásticamente el I/O de disco o de red en almacenamiento de objetos. Se usa sobre todo en clústeres Hive/Hadoop y motores SQL distribuidos donde la compresión agresiva y el filtrado por índices integrados (predicate pushdown) son prioritarios.",
+    "como": "Un archivo ORC se divide en stripes (típicamente de 64 MB a 256 MB), cada uno compuesto por datos de índice, datos de filas agrupados por columna y un footer de stripe. Para cada columna y cada grupo de 10,000 filas (row group), ORC guarda estadísticas (min, max, sum, count, hasNull) y opcionalmente Bloom filters en memoria o cabecera. Al ejecutar una consulta con `WHERE fecha = '2026-11-25'`, el motor lee el footer y los índices primero y salta stripes o bloques enteros de 10,000 filas sin descomprimirlos ni leerlos de disco; las columnas leídas se decodifican mediante RLE, diccionario y compresión Zlib/Zstd/Snappy.",
+    "practicas": [
+      "Habilita Bloom filters en columnas de alta cardinalidad usadas frecuentemente en filtros de igualdad o joins (como `user_id` o `order_id`).",
+      "Ajusta el tamaño de stripe y el tamaño de archivo resultante (idealmente 128 MB–1 GB) para evitar el problema de miles de archivos pequeños en S3/HDFS.",
+      "ORC vs Parquet: ORC suele lograr compresión ligeramente superior y posee índices integrados más ricos para Hive/Trino, mientras Parquet domina por su soporte universal en Spark, AWS Athena, Redshift Spectrum, DuckDB y Snowflake.",
+      "Usa Zstd o Snappy según tu cuello de botella: Snappy/LZ4 para velocidad de lectura en CPU limitada, Zstd para mejor ratio de compresión."
+    ],
+    "ejemplo": "-- Creación de tabla externa Hive/Trino respaldada por ORC con Zstd\nCREATE TABLE eventos_orc (id BIGINT, pais STRING, monto DOUBLE)\nSTORED AS ORC\nTBLPROPERTIES ('orc.compress'='ZSTD', 'orc.bloom.filter.columns'='id');",
+    "entrevista": "ORC combina almacenamiento columnar con stripes e índices min/max y Bloom filters integrados cada 10,000 filas, permitiendo saltar bloques completos en consultas analíticas."
+  },
+  "Objetos cíclicos": {
+    "que": "Los objetos cíclicos son grafos de referencias en memoria donde un nodo apunta directa o indirectamente a sí mismo (por ejemplo, `nodoA.padre = nodoB` y `nodoB.hijos.push(nodoA)`). Mientras los formatos basados en árboles puros como JSON no pueden representarlos de forma nativa, algunos formatos nativos o extensiones de grafos los soportan mediante tablas de referencias.",
+    "para": "Detectarlos y manejarlos sirve para evitar desbordamientos de pila o bucles infinitos (`TypeError: Converting circular structure to JSON`, `RecursionError`) al serializar entidades ORM con relaciones bidireccionales, árboles DOM o grafos de estado. Es un fallo frecuente al pasar directamente modelos de Hibernate, TypeORM o SQLAlchemy a una respuesta HTTP.",
+    "como": "Un serializador estándar de JSON o Protobuf recorre las propiedades de forma recursiva esperando un DAG (grafo acíclico dirigido); al encontrar un ciclo vuelve a visitar el mismo objeto infinitamente hasta agotar la pila o detectar la referencia repetida en un `WeakSet`/`Set` de objetos activos. Formatos orientados a grafos (como Java Serializable, Python pickle o Jackson con `@JsonIdentityInfo`) mantienen una tabla de identidad: la primera vez que ven un objeto emiten sus datos con un ID sintético (`@id: 1`) y en las apariciones posteriores emiten solo una referencia a ese ID. En APIs REST/JSON estándar, la solución limpia es romper el ciclo proyectando hacia DTOs planos o usando referencias por clave primaria.",
+    "practicas": [
+      "Nunca serialices entidades ORM con relaciones bidireccionales directamente en tus endpoints; mapea a DTOs explícitos que definan una dirección clara (árbol).",
+      "Si necesitas grafos complejos en JSON (p. ej. nodos y aristas), modélalos explícitamente como listas planas `{ \"nodos\": [...], \"aristas\": [...] }` en lugar de confiar en punteros mágicos.",
+      "En Java/Jackson usa `@JsonManagedReference` / `@JsonBackReference` o `@JsonIdentityInfo` solo si no puedes refactorizar hacia DTOs.",
+      "En debugging con `JSON.stringify`, usa un `replacer` con un `WeakSet` de ancestros para sustituir ciclos por `\"[Circular]\"` en los logs."
+    ],
+    "ejemplo": "const a = { nombre: \"A\" };\na.self = a;\n// JSON.stringify(a) -> TypeError: Converting circular structure to JSON\nconst seen = new WeakSet();\nJSON.stringify(a, (_, v) => (typeof v === \"object\" && v !== null) ?\n  (seen.has(v) ? \"[Circular]\" : (seen.add(v), v)) : v);",
+    "entrevista": "JSON representa árboles, no grafos con ciclos; intentar serializar relaciones bidireccionales directamente falla en tiempo de ejecución y debe resolverse proyectando a DTOs acíclicos o separando nodos y aristas por ID."
+  },
+  "Parquet": {
+    "que": "Apache Parquet es un formato binario de almacenamiento columnar, comprimido y tipado, diseñado para el ecosistema analítico moderno (Spark, DuckDB, Snowflake, BigQuery, Redshift Spectrum, AWS Athena). Almacena los valores de una misma columna de forma contigua en disco en lugar de hacerlo fila por fila.",
+    "para": "Sirve para almacenar tablas analíticas masivas en data lakes (como S3 o GCS) y acelerar consultas OLAP que leen pocas columnas de millones o miles de millones de filas. Reduce tanto los costos de almacenamiento (hasta 5-10x frente a CSV/JSON) como el volumen escaneado por motores serverless que cobran por TB leído.",
+    "como": "Un archivo Parquet se divide en Row Groups (típicamente 128 MB), cada Row Group en Column Chunks (uno por columna) y cada Column Chunk en Pages (~1 MB). Como todos los valores de una Page pertenecen al mismo tipo de dato homogéneo, aplica codificaciones muy eficientes como Dictionary Encoding (sustituye strings repetidos por enteros cortos), Run-Length Encoding (RLE) y Bit-Packing para booleanos y niveles de repetición/definición (algoritmo Dremel para soportar esquemas anidados), seguido de compresión Snappy o Zstd. El footer del archivo guarda el esquema y estadísticas min/max/null_count por Column Chunk, permitiendo projection pushdown (leer solo columnas pedidas) y predicate pushdown (saltar Row Groups enteros).",
+    "practicas": [
+      "Evita generar miles de archivos Parquet diminutos en S3; compacta los lotes para que cada archivo tenga entre 128 MB y 1 GB y los Row Groups aprovechen el prefetch.",
+      "Combina Parquet con particionamiento en rutas tipo Hive (`year=2026/month=11/`) y ordénalo por claves de filtro frecuentes para maximizar el salto de Row Groups mediante estadísticas min/max.",
+      "Elige Zstd en almacenamiento frío/data lakes (mayor compresión con velocidad excelente) o Snappy cuando la compatibilidad heredada lo requiera.",
+      "Avro vs Parquet: ingesta eventos en tiempo real en Avro/JSONL (row-oriented) y consolida en Parquet (column-oriented) para analítica y data warehousing."
+    ],
+    "ejemplo": "# Conversión de JSONL a Parquet comprimido con Zstd usando DuckDB\nCOPY (\n  SELECT * FROM read_json_auto('eventos.jsonl')\n) TO 'eventos.parquet' (FORMAT PARQUET, COMPRESSION ZSTD);",
+    "entrevista": "Parquet almacena datos de forma columnar con codificación Dremel, diccionario, RLE y estadísticas min/max en el footer, habilitando projection y predicate pushdown para reducir I/O y costos en data lakes."
+  },
+  "Payload": {
+    "que": "El payload (carga útil) es la porción real de datos de negocio transportados dentro de un mensaje, petición HTTP, paquete de red o evento, excluyendo las cabeceras, sobres de protocolo, metadatos de enrutamiento y bits de control. Representa el 'qué' se comunica frente al 'cómo' se entrega.",
+    "para": "Distinguir el payload del envoltorio (envelope/headers) sirve para diseñar arquitecturas desacopladas donde proxies, gateways o brokers de mensajería enrutan, autentican y miden mensajes leyendo solo metadatos sin necesidad de deserializar ni inspeccionar el cuerpo completo. También delimita qué parte está sujeta a cifrado extremo a extremo, firma o límites de tamaño.",
+    "como": "En HTTP, el payload corresponde al cuerpo del mensaje tras la línea vacía que separa las cabeceras (p. ej. el JSON o Protobuf serializado de un POST). En Kafka o sistemas de eventos, un mensaje se compone de `key`, `headers` (trazabilidad W3C `traceparent`, `schema-id`), `timestamp` y `value`, siendo este último el payload; en CloudEvents o patrones Envelope, un sobre JSON estándar rodea el atributo `data` (el payload de dominio). Al calcular límites de red (MTU, límite de 256 KB en SQS o 1 MB por defecto en Kafka), es el tamaño del payload serializado más cabeceras lo que determina si debe aplicarse compresión o el patrón Claim Check (guardar el payload en S3 y enviar solo su URL).",
+    "practicas": [
+      "Aplica el patrón Claim Check cuando el payload supere los límites del broker (ej. >256 KB en SQS o >1 MB en Kafka): guarda el blob en S3/GCS y envía solo la referencia.",
+      "Mantén los metadatos de enrutamiento, correlación (`correlation_id`, `trace_id`) e idempotencia en cabeceras o en el envelope para evitar deserializar el payload en middleware o routers.",
+      "No registres payloads completos sin redacción en los logs para evitar exponer PII, tokens o sobrecargar el sistema de observabilidad.",
+      "Mide siempre el tamaño del payload serializado en producción (bytes tras compresión), no solo el número de campos."
+    ],
+    "ejemplo": "POST /pagos HTTP/1.1\nContent-Type: application/json\nX-Trace-Id: 4bf92f3577b34da6\n\n{\"ordenId\": \"ORD-99\", \"monto\": 4500}  <-- Payload",
+    "entrevista": "El payload es la carga útil de negocio separada de cabeceras y metadatos de transporte; aislarlo permite enrutar por headers sin deserializar y aplicar el patrón Claim Check si crece demasiado."
+  },
+  "Protocol Buffers (protobuf)": {
+    "que": "Protocol Buffers (protobuf) es un formato de serialización binaria estructurada e independiente del lenguaje, desarrollado por Google, basado en esquemas definidos en archivos `.proto`. Identifica cada campo por un número de etiqueta entero (field number/tag) en lugar de su nombre textual.",
+    "para": "Es el estándar dominante para comunicación RPC de alto rendimiento (gRPC) entre microservicios y para contratos estrictos de eventos en Apache Kafka. Se utiliza cuando se busca bajo tamaño de mensaje, deserialización muy rápida, tipado fuerte generado en múltiples lenguajes y evolución de esquema segura.",
+    "como": "A partir de un archivo `.proto`, el compilador `protoc` genera clases y parsers específicos por lenguaje. En el formato binario de cable (wire format), cada campo presente se codifica como un `varint` clave que empaqueta `(field_number << 3) | wire_type` seguido del valor (varint para enteros/booleans, IEEE-754 fijo para float/double/fixed, o longitud + bytes para strings y submensajes). Los enteros con signo negativos usan codificación ZigZag (`sint32`/`sint64`) para evitar varints de 10 bytes, y los campos con valor por defecto (0, false, \"\") en proto3 ni siquiera se escriben en el buffer.",
+    "practicas": [
+      "Trata los números de tag (1..15 ocupan solo 1 byte de cabecera) como identificadores inmutables; reserva 1..15 para los campos más frecuentes y nunca reutilices el número de un campo borrado (usa `reserved`).",
+      "Usa `sint32`/`sint64` cuando el campo almacene números negativos con frecuencia, ya que `int32`/`int64` sin ZigZag serializa negativos en 10 bytes.",
+      "En proto3, si necesitas distinguir entre 'campo ausente' y 'valor 0 / vacío', decláralo con el modificador `optional` (habilita `hasField()`).",
+      "Protobuf vs JSON: Protobuf reduce el tamaño entre 3x y 10x y acelera el parsing órdenes de magnitud, a costa de requerir el `.proto` para depurar el binario (salvo usando Protobuf JSON mapping o herramientas como grpcurl)."
+    ],
+    "ejemplo": "syntax = \"proto3\";\npackage pagos.v1;\nmessage Cobro {\n  string id = 1;\n  sint64 ajuste_centavos = 2;\n  optional string cupon = 3;\n}",
+    "entrevista": "Protobuf logra payloads mínimos identificando campos por tags numéricos en lugar de nombres y codificando enteros con varint/ZigZag, siendo la base tipada de gRPC y contratos estrictos en Kafka."
+  },
+  "Python pickle": {
+    "que": "Python `pickle` es el protocolo de serialización binaria nativo de Python capaz de convertir prácticamente cualquier objeto Python (clases personalizadas, funciones, grafos cíclicos, lambdas por referencia) en un flujo de bytes y reconstruirlo en memoria. No es un protocolo de datos declarativo sino un pequeño lenguaje de máquina virtual basado en pila.",
+    "para": "Sirve exclusivamente para persistir estado complejo de Python dentro de procesos confiables propios, como compartir objetos entre subprocesos (`multiprocessing`), caché local de cómputo científico o guardado rápido de prototipos en disco. Está estrictamente contraindicado para APIs, redes abiertas o intercambio entre servicios.",
+    "como": "`pickle.dumps` recorre el objeto y emite instrucciones de bytecode (opcodes) para la Pickle Virtual Machine (`pickletools.dis` permite inspeccionarlas), guardando referencias por nombre de módulo y clase junto con los atributos de instancia y una tabla `memo` para resolver objetos cíclicos. Durante `pickle.loads`, la VM ejecuta esos opcodes secuencialmente; el opcode `REDUCE` permite invocar cualquier función importable (`os.system`, `subprocess.Popen`, `eval`) con argumentos arbitrarios definidos en el propio payload. Por diseño, si una clase implementa `__reduce__()`, un atacante puede fabricar un payload malicioso que logra ejecución remota de código (RCE) en el instante mismo de deserializar (OWASP A08:2021).",
+    "practicas": [
+      "Nunca llames a `pickle.loads()` ni `joblib.load()` sobre archivos, mensajes de red, cookies o modelos descargados de fuentes no confiables (RCE inmediato).",
+      "Incluso para modelos de Machine Learning (PyTorch/scikit-learn), sustituye pickle por formatos seguros de solo tensores como `safetensors` o ONNX.",
+      "No almacenes datos a largo plazo en pickle: refactorizar o mover el módulo de una clase en tu código rompe la carga de pickles antiguos (`ModuleNotFoundError` / `AttributeError`).",
+      "Usa JSON, MessagePack o Parquet para cualquier intercambio de datos o persistencia general."
+    ],
+    "ejemplo": "# Peligro: cualquier payload con __reduce__ ejecuta código al cargarse\nimport pickle\n# payload = b\"cos\\nsystem\\n(S'id'\\ntR.\"  -> ejecutaría 'id' en shell\n# Regla: usa pickle SOLO en memoria/IPC confiable; nunca en entrada externa.",
+    "entrevista": "Python pickle es una máquina virtual de opcodes donde `__reduce__` permite invocar funciones arbitrarias durante `loads()`, convirtiendo la deserialización de datos no confiables en RCE instantáneo (OWASP A08)."
+  },
+  "Schema Registry (Confluent)": {
+    "que": "Confluent Schema Registry es un servicio centralizado y versionado que almacena, valida y gobierna los esquemas (Avro, Protobuf y JSON Schema) intercambiados en plataformas de streaming como Apache Kafka. Desacopla la metadata estructural del flujo de mensajes para mantener los eventos compactos y evolucionables.",
+    "para": "Sirve para evitar que un productor publique mensajes malformados o con cambios incompatibles que rompan a decenas de consumidores aguas abajo, y elimina la necesidad de incrustar el esquema completo dentro de cada evento Kafka. Proporciona un catálogo único de contratos de datos entre equipos.",
+    "como": "El registro expone una API REST donde los esquemas se registran bajo un `subject` (por defecto `<topic>-value` o `<topic>-key`), recibiendo un `schema_id` entero único y global. Al producir un mensaje, el serializador registra u obtiene el `schema_id` en caché y escribe en el payload Kafka un prefijo de 5 bytes: un magic byte (`0x00`) más el `schema_id` en 4 bytes big-endian, seguido del binario Avro/Protobuf o texto JSON. Antes de aceptar una nueva versión bajo el subject, el servidor verifica las reglas de compatibilidad configuradas (`BACKWARD`, `FORWARD`, `FULL` o variantes `TRANSITIVE`); en el consumidor, el deserializador lee los primeros 5 bytes, descarga el writer schema una sola vez y lo guarda en caché local.",
+    "practicas": [
+      "Configura la compatibilidad en `BACKWARD_TRANSITIVE` o `FULL_TRANSITIVE` en temas de retención larga para validar contra todas las versiones históricas y no solo la última.",
+      "Activa validación en el broker o en los productores mediante `auto.register.schemas=false` en producción para exigir que los esquemas pasen por CI/CD antes de desplegar código.",
+      "Elige la estrategia de nombres de subject adecuada: `TopicNameStrategy` (un esquema por topic) o `RecordNameStrategy` (múltiples tipos de evento en un mismo topic).",
+      "Despliega Schema Registry en alta disponibilidad (respaldado por el topic interno `_schemas` de Kafka) y recuerda que el cliente cachea esquemas por ID, por lo que una caída momentánea no frena el tráfico ya conocido."
+    ],
+    "ejemplo": "// Estructura de bytes en Kafka con Schema Registry (Wire Format):\n// [0x00 (1 byte)] + [Schema ID big-endian (4 bytes)] + [Datos Avro/Protobuf]\n// Ejemplo de consulta REST al registro:\ncurl -s http://schema-registry:8081/subjects/pagos-value/versions/latest",
+    "entrevista": "Schema Registry antepone solo 5 bytes (magic byte + schema ID) a cada mensaje Kafka y aplica reglas automáticas de compatibilidad en el registro, evitando payloads inflados y rupturas entre productores y consumidores."
+  }
+}

@@ -2,10 +2,12 @@
 titulo: "HTML / CSS"
 categoria:
   - "3. Lenguajes, runtimes y build"
+  - "37. Desarrollo web"
 tags:
   - "mapa-tecnologico"
   - "nivel-conocer"
   - "lenguajes-runtimes-y-build"
+  - "desarrollo-web"
 nivel: conocer
 estrella: false
 relacionado_con:

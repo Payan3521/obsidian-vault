@@ -30,7 +30,7 @@ Este vault se generó desde `secdev.md` con `generar_secdev.py`. Es el mapa de t
 | `conocer` | Sabes qué es y cuándo se usa, sin configurarlo de memoria. |
 | `especialidad` | Tu barra vertical: esta carpeta entera. |
 
-> Nadie domina las 1073 notas. Esto es un mapa de especialización, no un examen.
+> Nadie domina las 1173 notas. Esto es un mapa de especialización, no un examen.
 
 ## Diferencia con STACK-TECNOLOGICO
 
@@ -40,7 +40,7 @@ Este vault se generó desde `secdev.md` con `generar_secdev.py`. Es el mapa de t
 
 ## Estructura final del vault
 
-- `SECDEV/` — 28 categorías, `SECDEV.md`, `grafo.md`, `PLAN-DE-GUIAS.md` y notas.
+- `SECDEV/` — 29 categorías, `SECDEV.md`, `grafo.md`, `PLAN-DE-GUIAS.md` y notas.
 - `STACK-TECNOLOGICO/` — el mapa general; queda intacto.
 - `proyectos/` — queda aparte e intacto.
 

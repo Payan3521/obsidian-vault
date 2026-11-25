@@ -1,0 +1,392 @@
+{
+  "Access token": {
+    "que": "Un Access token es una credencial emitida por un Authorization Server (AS) en OAuth 2.0 que representa la autorización delegada otorgada por un Resource Owner a una aplicación cliente. Generalmente adopta el formato de bearer token opaco o de JWT firmado (RFC 9068) con claims de alcance (`scope`), audiencia (`aud`) y expiración (`exp`).",
+    "para": "Sirve para que una aplicación cliente consuma APIs protegidas en un Resource Server sin que el usuario tenga que exponer ni reenviar sus credenciales primarias en cada petición. Permite desacoplar la autenticación (realizada en el IdP/AS) del control de acceso granular a microservicios.",
+    "como": "Tras completar un flujo OAuth 2.0 (como Authorization Code con PKCE), el cliente intercambia el código de autorización en el endpoint `/token` del AS y recibe el access token. El cliente incluye dicho token en la cabecera HTTP `Authorization: Bearer <token>` al invocar el Resource Server. Si el token es un JWT, el Resource Server valida localmente la firma con las claves públicas del JWKS, verifica `iss`, `aud`, `exp` y evalúa los `scope` o permisos; si es opaco, consulta el endpoint de introspección (RFC 7662) del AS.",
+    "practicas": [
+      "Mantener tiempos de vida (TTL) cortos (5 a 15 minutos) para reducir la ventana de exposición si el token es interceptado, renovándolo mediante un Refresh token.",
+      "Validar siempre la audiencia (`aud`) y el emisor (`iss`) en cada Resource Server para evitar que un token válido en una API sea aceptado indebidamente en otra.",
+      "Error típico: usar el Access token para autenticar al usuario en el frontend o leer sus datos de perfil; para identidad del usuario en el cliente se debe usar el ID token (OIDC).",
+      "Comparación: un token JWT autocontenido evita latencia de red al validarse localmente, pero dificulta la revocación inmediata frente a un token opaco con introspección."
+    ],
+    "ejemplo": "GET /api/v1/orders HTTP/1.1\nHost: api.ejemplo.com\nAuthorization: Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6IjEifQ.eyJpc3MiOiJodHRwczovL2F1dGguZWplbXBsby5jb20iLCJhdWQiOiJodHRwczovL2FwaS5lamVtcGxvLmNvbSIsInNjb3BlIjoib3JkZXJzOnJlYWQiLCJleHAiOjE3MzAwMDAwMDB9.sig",
+    "entrevista": "Un Access token autoriza llamadas a APIs mediante scopes y audiencia durante una ventana corta de tiempo, y nunca debe usarse como prueba de identidad del usuario ni almacenarse en lugares accesibles vía XSS."
+  },
+  "Account takeover": {
+    "que": "El Account takeover (ATO) es un tipo de compromiso de identidad en el que un atacante obtiene acceso no autorizado y control efectivo sobre la cuenta legítima de un usuario en una aplicación o plataforma. No se trata de una única vulnerabilidad técnica, sino del resultado final de explotar debilidades en autenticación, gestión de sesiones o recuperación de cuentas.",
+    "para": "Desde la perspectiva defensiva, estudiar el ATO sirve para modelar amenazas de extremo a extremo sobre todo el ciclo de vida de la identidad: registro, login, MFA, cambio de correo/contraseña y cierre de sesión. Ayuda a priorizar controles en flujos críticos que un atacante encadena para apropiarse de cuentas con saldo, datos sensibles o privilegios.",
+    "como": "El atacante suele comenzar obteniendo acceso inicial mediante credential stuffing, phishing (AiTM), password spraying o secuestro de sesión (XSS o robo de cookies). Una vez dentro, ejecuta acciones de persistencia como cambiar el correo de recuperación, registrar un nuevo factor MFA, rotar la contraseña o generar tokens API de larga duración. En aplicaciones mal diseñadas, también logra ATO directamente explotando fallos lógicos en el flujo de 'olvidé mi contraseña', IDOR en endpoints de perfil o race conditions al vincular identidades externas.",
+    "practicas": [
+      "Exigir reautenticación (step-up authentication) y confirmación por el canal previo antes de cambiar correo, teléfono, contraseña o factores MFA.",
+      "Invalidar todas las sesiones activas y refresh tokens existentes inmediatamente después de un restablecimiento de contraseña o cambio de credenciales.",
+      "Implementar detección de anomalías (autenticación adaptativa) y alertas al usuario ante inicios de sesión desde dispositivos o ubicaciones inusuales.",
+      "Comparación: el credential stuffing es la técnica de entrada automatizada; el ATO es el objetivo completo que incluye la consolidación del control sobre la cuenta."
+    ],
+    "ejemplo": "POST /api/account/email HTTP/1.1\nCookie: session=...\n\n{\"new_email\":\"atacante@evil.tld\",\"current_password_required\":false}",
+    "entrevista": "Para prevenir el Account Takeover no basta con proteger el login; hay que blindar la recuperación de cuenta, exigir step-up auth en cambios sensibles e invalidar todas las sesiones tras modificar credenciales."
+  },
+  "Active Directory": {
+    "que": "Active Directory (AD, formalmente Active Directory Domain Services o AD DS) es el servicio de directorio empresarial de Microsoft que centraliza la gestión de identidades, equipos, grupos, políticas de seguridad (GPO) y relaciones de confianza en redes Windows. Combina un repositorio jerárquico accesible por LDAP con un centro de distribución de claves Kerberos (KDC) y replicación multimaster.",
+    "para": "Resuelve la administración unificada de miles de usuarios y máquinas en redes corporativas, permitiendo autenticación única (SSO) en recursos internos y aplicación centralizada de configuraciones. En AppSec y DevSecOps es clave entenderlo porque las aplicaciones internas suelen integrarse con AD para autenticar empleados o heredar permisos mediante grupos.",
+    "como": "AD organiza objetos (usuarios, equipos, OU) en dominios y bosques almacenados en la base de datos `NTDS.dit` de los Domain Controllers (DC). Cuando un usuario inicia sesión en un equipo unido al dominio, el KDC del DC valida sus credenciales y emite un Ticket Granting Ticket (TGT) de Kerberos; luego, para acceder a una aplicación web o servidor de archivos, solicita un Service Ticket (TGS) asociado a un Service Principal Name (SPN). Las aplicaciones externas consultan atributos y pertenencia a grupos mediante LDAP/LDAPS o delegan el acceso vía ADFS o sincronización con Entra ID.",
+    "practicas": [
+      "Usar siempre LDAPS (puerto 636) o LDAP con StartTLS y firma obligatoria (LDAP Signing + Channel Binding) para evitar robo de credenciales y ataques de relay.",
+      "Aplicar el modelo de privilegios por niveles (Tiering) y cuentas de servicio administradas por grupo (gMSA) para que una aplicación comprometida no escale a Domain Admin.",
+      "Trampa clásica: autenticar usuarios web haciendo 'LDAP bind' directo con credenciales sin validar certificados del DC o sin limitar el filtro LDAP (LDAP Injection).",
+      "Comparación: Active Directory on-premises se apoya en Kerberos/LDAP y GPOs en red local, mientras que Entra ID es su equivalente cloud orientado a OIDC, SAML y SCIM."
+    ],
+    "ejemplo": "ldapsearch -H ldaps://dc01.corp.local:636 -D \"CN=app_svc,OU=Services,DC=corp,DC=local\" -W -b \"DC=corp,DC=local\" \"(&(objectClass=user)(sAMAccountName=jdoe))\" memberOf",
+    "entrevista": "Active Directory actúa simultáneamente como directorio LDAP y KDC Kerberos, por lo que integrarlo de forma segura en aplicaciones exige usar LDAPS con validación de certificados, filtros parametrizados y mínimo privilegio en la cuenta de servicio."
+  },
+  "Amazon Cognito": {
+    "que": "Amazon Cognito es el servicio administrado de identidad y gestión de usuarios (CIAM) de AWS, compuesto principalmente por User Pools (directorio de usuarios e IdP compatible con OIDC/OAuth 2.0) e Identity Pools (intercambio de tokens por credenciales temporales de AWS IAM vía STS). Permite añadir registro, login, MFA y federación sin operar infraestructura de autenticación propia.",
+    "para": "Resuelve la necesidad de implementar autenticación escalable para aplicaciones web y móviles en AWS, además de otorgar a usuarios finales acceso directo y temporal a recursos AWS (como S3 o DynamoDB) sin incrustar claves IAM estáticas en el cliente.",
+    "como": "En un User Pool, el usuario se autentica (con SRP, contraseña o proveedor federado SAML/OIDC) y Cognito emite tres JWT firmados con RS256: `id_token`, `access_token` y `refresh_token`. El backend valida estos tokens contra el endpoint JWKS del User Pool (`https://cognito-idp.<region>.amazonaws.com/<userPoolId>/.well-known/jwks.json`). Si la app usa Identity Pools, el cliente intercambia el `id_token` en Cognito por credenciales STS temporales asociadas a un rol IAM cuyo alcance se define mediante políticas.",
+    "practicas": [
+      "Validar tanto `iss` como `client_id` (en access tokens) o `aud` (en ID tokens) y el claim `token_use` (`access` vs `id`) al verificar JWT de Cognito.",
+      "Restringir las políticas de los roles IAM asignados a usuarios autenticados y no autenticados en Identity Pools para evitar acceso indebido a buckets S3 o APIs.",
+      "Error típico: habilitar el autorregistro en User Pools o la escritura en atributos personalizados (`custom:role`) por parte del usuario y confiar en ellos para autorización.",
+      "Comparación: User Pools gestiona quién es el usuario (autenticación OIDC/OAuth), mientras que Identity Pools traduce esa identidad en credenciales AWS IAM temporales."
+    ],
+    "ejemplo": "aws cognito-idp initiate-auth \\\n  --auth-flow USER_PASSWORD_AUTH \\\n  --client-id 1abc234def567ghi890 \\\n  --auth-parameters USERNAME=ana,PASSWORD='S3cr3t!Pass'",
+    "entrevista": "En Amazon Cognito debemos verificar siempre el claim `token_use` junto con firma, `iss` y `client_id`/`aud`, y no permitir que el usuario modifique atributos custom usados para decisiones de autorización."
+  },
+  "Argon2": {
+    "que": "Argon2 es una función de derivación de claves (KDF) y hashing de contraseñas ganadora de la Password Hashing Competition (PHC) de 2015, especificada en el RFC 9106. Destaca por ser *memory-hard*, lo que significa que obliga a consumir una cantidad configurable de memoria RAM además de ciclos de CPU y paralelismo.",
+    "para": "Sirve para almacenar contraseñas de forma segura en bases de datos y derivar claves criptográficas a partir de secretos humanos de baja entropía. Su diseño frena drásticamente los ataques offline masivos ejecutados con GPUs, FPGAs o ASICs tras una filtración de base de datos.",
+    "como": "Argon2 combina un salt aleatorio único por usuario con la contraseña y llena una matriz de memoria RAM de tamaño `m` (memory cost) en múltiples pasadas `t` (time cost) usando `p` hilos en paralelo. Existen tres variantes: Argon2d (accesos a memoria dependientes de datos, vulnerable a side-channel), Argon2i (accesos independientes, resistente a side-channel) y Argon2id (híbrida, comienza como 2i y termina como 2d). El resultado se codifica en formato PHC incluyendo versión, parámetros, salt en Base64 y hash.",
+    "practicas": [
+      "Usar siempre la variante **Argon2id**, ya que equilibra resistencia frente a ataques de canal lateral (cache-timing) y ataques de craqueo en GPU/ASIC.",
+      "Ajustar parámetros según la guía OWASP (por ejemplo, al menos 19 MiB de memoria, 2 iteraciones y 1 hilo, o 46 MiB / 1 iteración) midiendo el impacto de latencia en el servidor.",
+      "Error típico: asignar memoria excesiva sin limitar la concurrencia en el endpoint de login, exponiendo la aplicación a denegación de servicio (OOM) bajo tráfico simultáneo.",
+      "Comparación: Argon2id supera a bcrypt (limitado a 72 bytes de contraseña y poca memoria) y a scrypt (menor flexibilidad para ajustar memoria y tiempo por separado)."
+    ],
+    "ejemplo": "$argon2id$v=19$m=19456,t=2,p=1$c2FsdGFsZWF0b3JpbzEyMw$H8kP3xQz9L2vR7wN1mY5tB4jK6sD0fG2hJ8lM3nP9qA",
+    "entrevista": "Argon2id es el estándar recomendado para password hashing porque su propiedad memory-hard encarece exponencialmente el craqueo en GPUs y ASICs, superando el límite de 72 bytes y bajo uso de RAM de bcrypt."
+  },
+  "Autenticación adaptativa": {
+    "que": "La autenticación adaptativa (o *risk-based authentication*) es un enfoque dinámico de control de acceso que evalúa en tiempo real señales de contexto y riesgo en cada intento de inicio de sesión o transacción sensible para ajustar el nivel de fricción exigido al usuario. Combina datos de red, dispositivo, comportamiento e inteligencia de amenazas para calcular una puntuación de riesgo.",
+    "para": "Resuelve el equilibrio entre seguridad y experiencia de usuario: evita pedir MFA fuerte o verificaciones molestas en sesiones habituales y legítimas, mientras bloquea o exige verificación adicional (step-up) cuando detecta anomalías propias de un atacante.",
+    "como": "Durante el login, el motor de riesgo (en el IdP o un servicio dedicado) recopila señales como dirección IP, geolocalización, ASN/uso de Tor o VPN residencial, velocidad de viaje imposible (*impossible travel*), huella del navegador/dispositivo, reputación de credenciales filtradas y horario habitual. Un motor de reglas o modelo de ML clasifica el riesgo en bajo, medio o alto. Según la política, permite el acceso directo, solicita un segundo factor fuerte (FIDO2/TOTP) o deniega la autenticación.",
+    "practicas": [
+      "No depender exclusivamente de reglas ingenuas de IP/país, ya que redes móviles CG-NAT y VPNs corporativas generan falsos positivos constantes.",
+      "Combinar señales de riesgo con factores resistentes a phishing (WebAuthn/FIDO2) cuando el nivel de riesgo sea elevado en lugar de usar SMS OTP.",
+      "Registrar todas las señales y decisiones de riesgo en logs de auditoría para afinar umbrales y facilitar la respuesta ante incidentes.",
+      "Comparación: el MFA estático pide siempre el segundo factor sin importar el contexto; la autenticación adaptativa modula qué factor o bloqueo aplicar según el riesgo calculado."
+    ],
+    "ejemplo": "if risk_score >= 80:\n    action = \"BLOCK_AND_ALERT\"\nelif risk_score >= 40 or is_new_device:\n    action = \"REQUIRE_WEBAUTHN_STEP_UP\"\nelse:\n    action = \"ALLOW_SESSION\"",
+    "entrevista": "La autenticación adaptativa calcula un puntaje de riesgo con señales de dispositivo, red y comportamiento para aplicar fricción proporcional, exigiendo step-up MFA solo cuando el contexto se desvía del patrón legítimo."
+  },
+  "Autenticación": {
+    "que": "La autenticación (AuthN) es el proceso mediante el cual un sistema verifica de forma confiable que una entidad (usuario humano, servicio o dispositivo) es realmente quien dice ser. Se fundamenta en la validación de uno o más factores de prueba: algo que se sabe (contraseña), algo que se tiene (token criptográfico) o algo que se es/hace (biometría).",
+    "para": "Constituye la puerta de entrada de cualquier arquitectura de seguridad: sin una verificación sólida de la identidad, los controles posteriores de autorización, auditoría y no repudio pierden validez. Se aplica en accesos humanos a aplicaciones y en comunicaciones máquina a máquina (M2M).",
+    "como": "El sujeto presenta un identificador reclamado (`username`, `email`, `client_id`) junto con una prueba criptográfica o secreto (contraseña, firma asimétrica WebAuthn, certificado cliente mTLS o código TOTP). El verificador compara la prueba contra la referencia almacenada en el directorio o IdP (por ejemplo, verificando el hash Argon2id o la firma con clave pública). Si la prueba es válida, se establece un contexto autenticado emitiendo un identificador de sesión seguro o un token firmado.",
+    "practicas": [
+      "Separar estrictamente autenticación (AuthN: quién eres) de autorización (AuthZ: qué puedes hacer) tanto en código como en arquitectura.",
+      "Devolver mensajes de error genéricos en el fallo de login ('Usuario o contraseña inválidos') y mantener tiempos de respuesta uniformes para prevenir enumeración de usuarios.",
+      "Implementar protocolos estándar (OIDC, SAML, WebAuthn, mTLS) en lugar de diseñar esquemas de autenticación propios.",
+      "Comparación: AuthN responde 'quién eres' (HTTP 401 si falla), mientras que AuthZ responde 'qué permisos tienes' (HTTP 403 si falla)."
+    ],
+    "ejemplo": "HTTP/1.1 401 Unauthorized\nWWW-Authenticate: Bearer realm=\"api\", error=\"invalid_token\"\nContent-Type: application/json\n\n{\"error\": \"Authentication required\"}",
+    "entrevista": "La autenticación verifica la identidad mediante factores criptográficos o secretos y es un prerrequisito estricto, aunque separado, de la autorización, fallando con 401 antes de evaluar permisos."
+  },
+  "Auth0": {
+    "que": "Auth0 (actualmente parte de Okta) es una plataforma comercial de identidad como servicio (IDaaS / CIAM) orientada a desarrolladores que provee autenticación, autorización, SSO y gestión de usuarios mediante estándares abiertos. Ofrece Universal Login alojado, reglas de extensibilidad (Actions), MFA y conectores para múltiples IdPs empresariales y sociales.",
+    "para": "Sirve para delegar toda la complejidad de implementar flujos OAuth 2.0/OIDC, almacenamiento seguro de contraseñas, protección contra ataques de fuerza bruta y federación B2B/B2C sin mantener servidores de identidad propios como Keycloak.",
+    "como": "La aplicación redirige al usuario al endpoint `/authorize` del tenant de Auth0 (Universal Login con PKCE), evitando que el frontend o backend propio toque la contraseña del usuario. Auth0 ejecuta la autenticación, aplica sus protecciones (Attack Protection, Actions en Node.js para enriquecer claims o validar contexto) y devuelve un código de autorización. El cliente lo canjea en `/oauth/token` por un ID token y un Access token firmados (habitualmente RS256), que las APIs validan usando el JWKS del tenant.",
+    "practicas": [
+      "Utilizar Universal Login en lugar de Embedded Login (ROPC) para evitar exponer credenciales en el código de la app y habilitar protección anti-bot y passkeys sin reescribir la UI.",
+      "Espaciar (namespace) los custom claims añadidos mediante Auth0 Actions con una URL única para cumplir con OIDC y evitar colisiones con claims estándar.",
+      "Error típico: olvidar validar el parámetro `aud` del Access token en el backend, aceptando tokens emitidos para la API de Management u otra aplicación del mismo tenant.",
+      "Comparación: Auth0 destaca por su enfoque SaaS developer-first y Actions flexibles frente a Keycloak, que es open source autoalojado con control total de infraestructura."
+    ],
+    "ejemplo": "exports.onExecutePostLogin = async (event, api) => {\n  const ns = 'https://api.miapp.com';\n  if (event.authorization) {\n    api.accessToken.setCustomClaim(`${ns}/roles`, event.authorization.roles);\n  }\n};",
+    "entrevista": "Al integrar Auth0 se debe usar Universal Login con Authorization Code + PKCE, añadir custom claims con namespace en Actions y validar siempre firma, emisor y audiencia específica de nuestra API en cada microservicio."
+  },
+  "Biometría": {
+    "que": "La biometría en autenticación es el uso de características fisiológicas (huella dactilar, reconocimiento facial, iris) o conductuales del usuario como factor de verificación ('algo que eres'). En arquitecturas web y móviles modernas se implementa casi siempre de forma local en el dispositivo mediante enclaves seguros y criptografía asimétrica, sin enviar plantillas biométricas al servidor.",
+    "para": "Resuelve la fricción de memorizar contraseñas o copiar códigos OTP manteniendo una alta vinculación entre la presencia física del usuario legítimo y el desbloqueo de una credencial criptográfica fuerte (por ejemplo, en WebAuthn/Passkeys).",
+    "como": "En un esquema seguro (FIDO2/WebAuthn), el usuario registra su biometría en el sistema operativo (Secure Enclave en iOS/macOS, Keystore/TEE en Android, TPM/Windows Hello). El servidor nunca recibe ni almacena el dato biométrico; en su lugar recibe una clave pública. Al autenticar, el servidor envía un desafío (`challenge`) aleatorio, el usuario supera la verificación biométrica local y el chip seguro desbloquea la clave privada para firmar el desafío (devolviendo un flag UV —User Verified— en la aserción).",
+    "practicas": [
+      "Nunca almacenar ni transmitir plantillas biométricas crudas o hashes biométricos al backend: un dato biométrico comprometido no se puede revocar ni rotar como una contraseña.",
+      "Implementar biometría siempre como desbloqueo local de una clave criptográfica asimétrica (FIDO2/WebAuthn) en lugar de un simple booleano `isAuthenticated = true` en el cliente.",
+      "Error típico en apps móviles: usar APIs biométricas locales (`BiometricPrompt` sin `CryptoObject`) que permiten a un atacante con Frida o dispositivo rooteado saltarse el check sin clave criptográfica.",
+      "Comparación: la biometría local vinculada a hardware (Passkeys) ofrece alta seguridad y privacidad, mientras que la biometría centralizada en servidor crea un honeypot irreversible."
+    ],
+    "ejemplo": "const promptInfo = new BiometricPrompt.PromptInfo.Builder()\n  .setTitle(\"Confirmar firma\")\n  .setAllowedAuthenticators(BIOMETRIC_STRONG)\n  .build();\nbiometricPrompt.authenticate(promptInfo, new BiometricPrompt.CryptoObject(signature));",
+    "entrevista": "La biometría segura nunca viaja al servidor: debe actuar exclusivamente como mecanismo local para desbloquear una clave privada en el enclave seguro del dispositivo (como en WebAuthn o CryptoObject móvil)."
+  },
+  "Bloqueo de cuenta": {
+    "que": "El bloqueo de cuenta (account lockout) es un mecanismo defensivo que suspende temporal o permanentemente la capacidad de iniciar sesión sobre un identificador de usuario tras superar un umbral consecutivo de intentos fallidos de autenticación. Su objetivo es frenar ataques automatizados dirigidos contra una cuenta específica.",
+    "para": "Sirve para mitigar ataques de fuerza bruta y credential stuffing focalizados sobre cuentas individuales, reduciendo la probabilidad de que un atacante pruebe miles de contraseñas sobre un usuario concreto.",
+    "como": "El servidor o IdP mantiene un contador de fallos asociado al `user_id` o `username` normalizado en un almacén rápido (como Redis). Cada intento fallido incrementa el contador dentro de una ventana de tiempo; al alcanzar el umbral (por ejemplo, 5 a 10 fallos), la cuenta entra en estado bloqueado y rechaza autenticaciones posteriores durante un cooldown progresivo o hasta desbloqueo manual/por enlace verificado. Un login exitoso antes del umbral reinicia el contador.",
+    "practicas": [
+      "Aplicar bloqueo temporal exponencial (progressive delay) combinado con rate limiting por IP/dispositivo en lugar de bloqueo permanente, para evitar que un atacante cause Denegación de Servicio (DoS) masiva bloqueando cuentas de usuarios legítimos.",
+      "No devolver un mensaje distinto cuando la cuenta está bloqueada si se quiere evitar la enumeración de usuarios válidos, o exigir un segundo factor/enlace seguro antes de desbloquear.",
+      "Recordar que el bloqueo por cuenta no detiene el *password spraying* (1 o 2 intentos por cuenta contra miles de usuarios), por lo que debe complementarse con límites globales y detección de IPs.",
+      "Comparación: el bloqueo de cuenta protege un usuario específico (contador por `user_id`), mientras que el rate limiting limita el volumen de peticiones por origen (IP, subred o fingerprint)."
+    ],
+    "ejemplo": "attempts = redis.incr(f\"login_fail:{user_id}\")\nif attempts == 1:\n    redis.expire(f\"login_fail:{user_id}\", 900)\nif attempts >= 5:\n    raise AccountTemporarilyLockedError(retry_after=900)",
+    "entrevista": "El bloqueo de cuenta debe ser temporal y progresivo para evitar DoS autoinfligido sobre usuarios legítimos, y siempre combinarse con rate limiting para cubrir también el password spraying."
+  },
+  "CAPTCHA": {
+    "que": "Un CAPTCHA (Completely Automated Public Turing test to tell Computers and Humans Apart) es un mecanismo de desafío-respuesta diseñado para distinguir tráfico humano de scripts automatizados y bots. Las implementaciones modernas combinan telemetría de comportamiento, pruebas criptográficas de entorno y retos interactivos solo en casos ambiguos.",
+    "para": "Sirve para añadir fricción económica y computacional a ataques automatizados contra endpoints públicos críticos como login, registro masivo, recuperación de contraseñas y formularios sin autenticación.",
+    "como": "El frontend carga el widget del proveedor (como Cloudflare Turnstile, hCaptcha o reCAPTCHA), el usuario completa la verificación invisible o interactiva y el proveedor genera un token de un solo uso firmado. El cliente envía dicho token junto al formulario hacia el backend. Antes de procesar el login o registro, el servidor verifica el token mediante una llamada servidor-a-servidor al endpoint del proveedor enviando su clave secreta y opcionalmente la IP del cliente.",
+    "practicas": [
+      "Validar obligatoriamente el token del CAPTCHA en el servidor y verificar que sea de un solo uso y corresponda al hostname y acción esperada; confiar en validaciones solo en frontend es trivialmente evadible.",
+      "Activar el CAPTCHA de forma adaptativa (tras 2 o 3 fallos o desde IPs sospechosas) para no degradar la accesibilidad y conversión de usuarios legítimos.",
+      "Error típico: olvidar consumir o expirar el token de CAPTCHA en el backend, permitiendo ataques de replay con el mismo token válido para miles de peticiones de credential stuffing.",
+      "Comparación: el CAPTCHA frena bots genéricos mediante fricción humana/telemetría, mientras que el rate limiting impone cuotas estrictas de red incluso frente a granjas humanas de resolución de CAPTCHAs."
+    ],
+    "ejemplo": "resp = requests.post(\"https://challenges.cloudflare.com/turnstile/v0/siteverify\", data={\n  \"secret\": os.environ[\"TURNSTILE_SECRET\"],\n  \"response\": req.form[\"cf-turnstile-response\"],\n  \"remoteip\": req.remote_addr\n}).json()\nif not resp.get(\"success\"): abort(403)",
+    "entrevista": "Un CAPTCHA solo aporta seguridad si su token se verifica servidor a servidor en cada petición sensible y es de un solo uso, y debe usarse como capa complementaria al rate limiting y nunca como sustituto."
+  },
+  "CSRF token": {
+    "que": "Un CSRF token (Anti-CSRF token o Synchronizer Token) es un valor criptográficamente aleatorio, impredecible y vinculado a la sesión del usuario que el servidor exige en peticiones que modifican estado. Demuestra que la solicitud fue originada intencionalmente desde la propia interfaz de la aplicación y no forjada por un sitio externo.",
+    "para": "Sirve para prevenir ataques Cross-Site Request Forgery (CSRF), donde una página maliciosa induce al navegador de una víctima autenticada a enviar peticiones no deseadas aprovechando que el navegador adjunta automáticamente las cookies de sesión.",
+    "como": "Al crear la sesión o renderizar un formulario, el servidor genera un token con un CSPRNG (mínimo 128 bits de entropía) y lo asocia en el almacenamiento de sesión del servidor (o lo firma con HMAC usando el ID de sesión). El token se inyecta en un campo oculto del formulario HTML o en una cabecera personalizada en llamadas XHR/Fetch (`X-CSRF-Token`). Al recibir la petición `POST`/`PUT`/`DELETE`, el servidor compara en tiempo constante el token enviado en el cuerpo o cabecera contra el token esperado de esa sesión y rechaza con HTTP 403 si falta o no coincide.",
+    "practicas": [
+      "Asegurar que los endpoints `GET` sean idempotentes y nunca realicen cambios de estado, ya que las protecciones CSRF suelen aplicarse a métodos mutadores.",
+      "Usar comparación en tiempo constante (`hmac.compare_digest`) y un CSPRNG real para generar el token; nunca derivarlo de valores predecibles como el timestamp o solo el ID de usuario.",
+      "Error típico: aceptar el CSRF token en la query string de la URL (donde se filtra en logs y cabecera `Referer`) o permitir que una petición JSON se procese sin comprobar `Content-Type` ni cabecera anti-CSRF.",
+      "Comparación: el Synchronizer Token requiere estado en servidor, mientras que el patrón Double Submit Cookie compara una cookie contra una cabecera sin estado en servidor (aunque es más frágil ante subdominios comprometidos)."
+    ],
+    "ejemplo": "<form action=\"/transfer\" method=\"POST\">\n  <input type=\"hidden\" name=\"csrf_token\" value=\"9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c\">\n  <input type=\"text\" name=\"amount\" value=\"100\">\n</form>",
+    "entrevista": "El CSRF token funciona porque la Same-Origin Policy impide a un sitio atacante leer el token de nuestra app para incluirlo en el cuerpo o cabecera personalizada, anulando el envío automático de cookies."
+  },
+  "Confusión de algoritmos JWT": {
+    "que": "La confusión de algoritmos JWT (*JWT algorithm confusion*) es una vulnerabilidad crítica en la verificación de firmas JSON Web Token en la que un atacante manipula la cabecera `alg` del token para forzar al servidor a validarlo con un algoritmo distinto al esperado. Sus variantes clásicas son el ataque `alg: none` y la confusión asimétrica-a-simétrica (`RS256` a `HS256`).",
+    "para": "Entender esta vulnerabilidad es fundamental en AppSec para auditar y configurar correctamente librerías JWT en APIs y gateways, evitando que un atacante falsifique tokens arbitrarios con privilegios de administrador sin conocer la clave privada del servidor.",
+    "como": "En la variante `alg: none`, el atacante cambia la cabecera del JWT a `{\"alg\":\"none\"}`, modifica los claims (ej. `sub: \"admin\"`) y elimina la firma; un verificador mal implementado acepta el token sin validar firma. En la variante `RS256` a `HS256`, el servidor espera una firma asimétrica RSA pero confía ciegamente en el campo `alg` del token entrante: el atacante obtiene la clave pública RSA (pública en `/jwks.json` o certificado TLS), cambia `alg` a `HS256` y firma el JWT falsificado usando los bytes de esa clave pública como secreto simétrico HMAC.",
+    "practicas": [
+      "Fijar explícitamente en el verificador una lista blanca con el único algoritmo esperado (por ejemplo `algorithms=[\"RS256\"]`), ignorando lo que declare la cabecera `alg` del token entrante.",
+      "No usar nunca la misma variable de clave para algoritmos asimétricos y simétricos en la función de verificación.",
+      "Deshabilitar el soporte para `alg: none` y rechazar cabeceras peligrosas como `jku`, `x5u` o `jwk` incrustadas en tokens no confiables.",
+      "Comparación: mientras `alg: none` suprime por completo la firma, la confusión `RS256 -> HS256` produce una firma HMAC matemáticamente válida aprovechando que el verificador confunde una clave pública con un secreto compartido."
+    ],
+    "ejemplo": "// VULNERABLE: lee alg desde el token y pasa publicKey como secreto genérico\njwt.verify(token, publicKey);\n\n// SEGURO: restringe explícitamente los algoritmos permitidos\njwt.verify(token, publicKey, { algorithms: ['RS256'] });",
+    "entrevista": "La confusión de algoritmos JWT ocurre cuando el servidor confía en la cabecera `alg` del token no verificado, permitiendo `alg: none` o firmar con `HS256` usando la clave pública RSA; se mitiga fijando una allowlist estricta de algoritmos en la verificación."
+  },
+  "Cookie HttpOnly": {
+    "que": "La bandera `HttpOnly` es un atributo de seguridad definido en la cabecera HTTP `Set-Cookie` (RFC 6265) que prohíbe el acceso a esa cookie desde scripts del lado cliente mediante APIs del DOM como `document.cookie`. Solo el navegador puede leerla y adjuntarla automáticamente en las peticiones HTTP hacia el origen correspondiente.",
+    "para": "Sirve para reducir el impacto de vulnerabilidades Cross-Site Scripting (XSS): si un atacante logra ejecutar JavaScript arbitrario en la aplicación, no podrá exfiltrar directamente el identificador de sesión o refresh token almacenado en una cookie `HttpOnly`.",
+    "como": "Cuando el servidor autentica al usuario, responde con `Set-Cookie: session_id=...; HttpOnly`. El motor del navegador almacena la cookie en su almacén protegido y la excluye de la cadena devuelta por `document.cookie` o inspecciones JS en la página. Sin embargo, el navegador sigue enviando la cookie automáticamente en cada solicitud HTTP saliente que cumpla con `Domain`, `Path`, `Secure` y `SameSite`.",
+    "practicas": [
+      "Marcar siempre con `HttpOnly` toda cookie que transporte identificadores de sesión, refresh tokens o credenciales.",
+      "Recordar que `HttpOnly` no evita que un ataque XSS realice acciones autenticadas desde el propio navegador de la víctima (request riding), ni protege contra CSRF; se necesita además CSP y tokens/SameSite.",
+      "Error típico: guardar el access token o refresh token en `localStorage` o en una cookie sin `HttpOnly` para que el SPA lo lea con JS; en su lugar conviene usar el patrón BFF (Backend for Frontend) con cookies `HttpOnly`.",
+      "Comparación: `HttpOnly` bloquea la lectura vía JavaScript (defensa ante robo por XSS), mientras que `Secure` protege la cookie en tránsito cifrado."
+    ],
+    "ejemplo": "Set-Cookie: sid=d41d8cd98f00b204e9800998ecf8427e; Path=/; HttpOnly; Secure; SameSite=Lax",
+    "entrevista": "La bandera `HttpOnly` impide que `document.cookie` lea la cookie de sesión tras un XSS, aunque no previene que el XSS haga peticiones autenticadas ni protege frente a CSRF por sí sola."
+  },
+  "Cookie SameSite": {
+    "que": "El atributo `SameSite` en `Set-Cookie` controla si el navegador debe adjuntar una cookie en peticiones iniciadas desde un sitio externo (*cross-site*), aceptando los valores `Strict`, `Lax` o `None`. Es un mecanismo nativo de navegador para acotar el envío automático de credenciales entre orígenes distintos.",
+    "para": "Sirve como defensa primaria o en profundidad contra ataques Cross-Site Request Forgery (CSRF) y fugas de información por navegación cross-site (XS-Leaks), evitando que sitios de terceros disparen peticiones autenticadas de forma silenciosa.",
+    "como": "El navegador compara el sitio (*schemeful eTLD+1*) de la URL en la barra de direcciones con el sitio destino de la petición. Con `SameSite=Strict`, la cookie nunca se envía en peticiones cross-site, ni siquiera al hacer clic en un enlace externo. Con `SameSite=Lax` (valor por defecto en navegadores modernos), se bloquea en subrecursos (`<img>`, `fetch`, formularios `POST`) cross-site pero se permite en navegaciones top-level seguras (`GET` desde enlaces). Con `SameSite=None`, se envía siempre, exigiendo obligatoriamente el atributo `Secure`.",
+    "practicas": [
+      "Usar `SameSite=Lax` para sesiones web generales (permite llegar logueado desde un enlace externo) o `SameSite=Strict` en portales críticos como banca o consolas administrativas.",
+      "No confiar únicamente en `SameSite=Lax` como única defensa anti-CSRF si existen navegaciones `GET` con efectos secundarios, subdominios no confiables (ya que comparten el mismo *site* eTLD+1) o clientes antiguos.",
+      "Combinar siempre `SameSite=None` con `Secure` (por ejemplo en flujos SSO/OIDC con POST cross-site), de lo contrario los navegadores rechazan la cookie.",
+      "Comparación: `SameSite` se evalúa a nivel de *site* (eTLD+1, por lo que `evil.ejemplo.com` es same-site respecto a `app.ejemplo.com`), mientras que la Same-Origin Policy evalúa esquema, host exacto y puerto."
+    ],
+    "ejemplo": "Set-Cookie: session=xyz987; Path=/; HttpOnly; Secure; SameSite=Strict",
+    "entrevista": "`SameSite` mitiga el CSRF restringiendo el envío de cookies en peticiones cross-site, pero no protege frente a ataques desde subdominios hermanos porque comparten el mismo site (eTLD+1), por lo que sigue siendo buena práctica combinarlo con CSRF tokens."
+  },
+  "Cookie Secure": {
+    "que": "La bandera `Secure` es un atributo booleano de la cabecera `Set-Cookie` que instruye al navegador a transmitir esa cookie únicamente a través de canales cifrados mediante HTTPS (TLS) y nunca en texto claro sobre HTTP. Los navegadores modernos solo consideran confiable el contexto HTTPS (y `localhost` en desarrollo).",
+    "para": "Sirve para prevenir el secuestro de sesión pasivo y activo en red (sniffing en Wi-Fi públicas, ataques MitM o downgrade HTTP) donde un atacante interceptaría el identificador de sesión si alguna petición o subrecurso se solicitara por HTTP plano.",
+    "como": "Cuando el servidor emite `Set-Cookie: sid=...; Secure`, el navegador marca la cookie como restringida a esquemas seguros. Si el usuario navega accidentalmente a `http://app.ejemplo.com` o una página carga una imagen por HTTP del mismo dominio, el navegador omite por completo esa cookie en la cabecera `Cookie`. Además, bajo el estándar RFC 6265bis (Cookie Store / Schemeful), impedir el establecimiento o sobreescritura de cookies `Secure` desde orígenes HTTP no seguros evita ataques de *cookie tossing* o *session fixation* desde red plana.",
+    "practicas": [
+      "Incluir `Secure` en todas las cookies de sesión y autenticación, sin excepciones en entornos productivos.",
+      "Complementar con HSTS (`Strict-Transport-Security` con `includeSubDomains`) para evitar que un atacante fuerce tráfico HTTP plano o sobrescriba cookies desde un subdominio sin TLS.",
+      "Usar el prefijo de nombre `__Host-` (que exige `Secure`, `Path=/` y ausencia de atributo `Domain`) para blindar aún más la cookie frente a sobreescritura por subdominios.",
+      "Comparación: `Secure` protege la cookie en tránsito (red), mientras que `HttpOnly` la protege en reposo dentro del navegador frente a JavaScript."
+    ],
+    "ejemplo": "Set-Cookie: __Host-session=a1b2c3d4; Path=/; Secure; HttpOnly; SameSite=Lax",
+    "entrevista": "La bandera `Secure` garantiza que la cookie solo viaje sobre TLS, y combinarla con HSTS y el prefijo `__Host-` impide además que un atacante en red o un subdominio comprometido sobrescriba la sesión."
+  },
+  "Credential stuffing": {
+    "que": "El credential stuffing es un ataque automatizado de acceso no autorizado en el que el atacante inyecta masivamente pares de usuario/correo y contraseña obtenidos de filtraciones previas de otros servicios contra el formulario o API de login de una aplicación objetivo. Explota directamente la reutilización de contraseñas por parte de los usuarios.",
+    "para": "En defensa de aplicaciones, entender el credential stuffing permite diseñar controles específicos en el perímetro de autenticación y en la monitorización de cuentas, ya que no depende de que la aplicación objetivo tenga una brecha previa ni de adivinar contraseñas débiles.",
+    "como": "El atacante descarga *combolists* (`email:password`) de brechas pasadas y las carga en herramientas automatizadas (como OpenBullet, Sentry MBA o scripts con Playwright) configuradas con proxies residenciales rotativos para evadir bloqueos por IP. La herramienta envía peticiones paralelas imitando cabeceras de navegador legítimas al endpoint `/login` o API móvil. Por cada respuesta exitosa (`200 OK`, redirección o emisión de token), registra la cuenta comprometida para venderla o ejecutar Account Takeover.",
+    "practicas": [
+      "Implementar MFA (preferiblemente resistente a phishing como Passkeys/FIDO2) para invalidar el uso exclusivo de contraseñas filtradas.",
+      "Comprobar contraseñas en registro y cambio contra bases de datos de brechas conocidas (como Have I Been Pwned mediante k-anonymity) y forzar reseteo si se detectan credenciales comprometidas.",
+      "Combinar rate limiting por cuenta, IP y huella TLS/dispositivo, detección de proxies residenciales y CAPTCHA adaptativo tras fallos.",
+      "Comparación: el credential stuffing prueba pares `usuario:contraseña` distintos ya filtrados (ratio de éxito 0.1%-2%), mientras que el password spraying prueba unas pocas contraseñas comunes contra muchos usuarios."
+    ],
+    "ejemplo": "POST /api/login HTTP/1.1\nX-Forwarded-For: 198.51.100.42\nUser-Agent: Mozilla/5.0 ...\n\n{\"email\":\"victima@correo.com\",\"password\":\"Verano2021!\"}",
+    "entrevista": "El credential stuffing explota la reutilización de contraseñas filtradas usando proxies rotativos, por lo que el rate limiting por IP no basta y se requiere MFA, detección adaptativa y bloqueo de contraseñas comprometidas."
+  },
+  "Device fingerprinting": {
+    "que": "El device fingerprinting (huella digital del dispositivo) es una técnica que recopila atributos técnicos del navegador, hardware, red y sistema operativo del cliente para generar un identificador probabilístico único de ese dispositivo sin depender de cookies persistentes. Suele combinar propiedades pasivas de red/cabeceras con APIs activas del navegador.",
+    "para": "En AppSec y prevención de fraude sirve como señal contextual para autenticación adaptativa, detección de bots en credential stuffing, reconocimiento de sesiones robadas (token/session hijacking) y vinculación blanda de dispositivos de confianza.",
+    "como": "Un script en el cliente o el edge recopila atributos como `User-Agent`, resolución de pantalla, zona horaria, fuentes instaladas, renderizado Canvas/WebGL, capacidades de audio, plugins y parámetros TLS (huella JA3/JA4) o HTTP/2 en el servidor. Estos atributos se normalizan y se pasan por una función hash para generar un `device_id`. Al comparar la huella actual con la registrada cuando se emitió la sesión, el motor de riesgo detecta cambios abruptos (por ejemplo, una cookie de sesión de macOS usada repentinamente desde Linux headless).",
+    "practicas": [
+      "Usar el device fingerprinting únicamente como señal auxiliar de riesgo o detección de anomalías, nunca como factor de autenticación ni sustituto de tokens criptográficos.",
+      "Tener presente que las huellas de navegador son falsificables por atacantes avanzados (herramientas antidetect, modificación de cabeceras) y varían legítimamente tras actualizaciones del navegador.",
+      "Respetar normativas de privacidad (GDPR/ePrivacy) limitando la recolección estrictamente a prevención de fraude y seguridad.",
+      "Comparación: el device fingerprinting es probabilístico y no requiere almacenamiento local, mientras que el *token binding* (mTLS o DPoP) vincula criptográficamente una sesión a una clave privada no exportable del dispositivo."
+    ],
+    "ejemplo": "const fpData = [navigator.platform, screen.width + 'x' + screen.height, Intl.DateTimeFormat().resolvedOptions().timeZone, getCanvasHash()].join('|');\nconst deviceHash = await sha256(fpData);",
+    "entrevista": "El device fingerprinting ayuda a detectar robo de sesiones y bots dentro de una estrategia de autenticación adaptativa, pero al ser falsificable no debe sustituir nunca a un factor criptográfico ni al token binding."
+  },
+  "Directorio de usuarios": {
+    "que": "Un directorio de usuarios es una base de datos especializada, optimizada para lecturas frecuentes y búsquedas jerárquicas o indexadas, que almacena identidades digitales, credenciales, atributos de perfil y membresías a grupos. Ejemplos representativos son OpenLDAP, Microsoft Active Directory, FreeIPA o directorios cloud integrados en IdPs.",
+    "para": "Sirve como fuente autoritativa (*source of truth*) centralizada de cuentas dentro de una organización o plataforma, evitando que cada aplicación mantenga su propia tabla aislada de usuarios, contraseñas y roles inconsistentes.",
+    "como": "El directorio estructura las entradas según un esquema definido (por ejemplo, clases de objeto `inetOrgPerson`, `organizationalUnit` y `groupOfNames`) identificadas por un Distinguished Name (DN) o UUID único. Las aplicaciones e Identity Providers consultan el directorio mediante protocolos estándar como LDAP/LDAPS para autenticar credenciales (`Bind`) y resolver atributos/grupos (`Search`), mientras que los sistemas de RRHH aprovisionan altas, bajas y cambios de rol automáticamente usando protocolos como SCIM.",
+    "practicas": [
+      "Evitar exponer el directorio de usuarios directamente a Internet; situarlo detrás de un IdP (OIDC/SAML) o gateway con TLS mutuo.",
+      "Separar los permisos de lectura y escritura en el directorio: las aplicaciones solo deben tener acceso de lectura a los atributos mínimos necesarios (principio de mínimo privilegio).",
+      "Automatizar el ciclo de vida Joiner-Mover-Leaver mediante SCIM conectado al sistema de RRHH para evitar cuentas huérfanas de exempleados.",
+      "Comparación: el directorio de usuarios almacena y organiza las identidades y atributos, mientras que el Identity Provider (IdP) utiliza ese directorio para emitir tokens federados (OIDC/SAML) hacia las aplicaciones."
+    ],
+    "ejemplo": "dn: uid=mgarcia,ou=Engineering,dc=empresa,dc=com\nobjectClass: inetOrgPerson\ncn: Maria Garcia\nmail: mgarcia@empresa.com\nmemberOf: cn=appsec-team,ou=Groups,dc=empresa,dc=com",
+    "entrevista": "El directorio de usuarios es el repositorio autoritativo de identidades y grupos, y en arquitecturas modernas no se expone directamente a las apps sino a través de un IdP con OIDC/SAML y aprovisionamiento automatizado vía SCIM."
+  },
+  "Double submit cookie": {
+    "que": "El patrón Double Submit Cookie es una técnica sin estado (stateless) de protección contra Cross-Site Request Forgery (CSRF) en la que el servidor exige que un mismo token aleatorio sea enviado simultáneamente en una cookie y en un parámetro o cabecera HTTP personalizada de la petición.",
+    "para": "Resuelve la protección contra CSRF en arquitecturas distribuidas o backends sin almacenamiento de sesión en memoria/Redis donde no es viable mantener el Synchronizer Token tradicional en servidor.",
+    "como": "Al autenticar al usuario o iniciar la navegación, el servidor genera un valor aleatorio y lo guarda en una cookie (legible por JS si va en SPA, o preferiblemente firmado con HMAC usando la identidad de sesión del usuario: *Signed Double Submit Cookie*). En cada petición mutadora (`POST`, `PUT`, `DELETE`), el frontend lee o recibe el token y lo incluye en una cabecera personalizada como `X-CSRF-Token`. El servidor valida que la cookie y la cabecera coincidan (y verifica el HMAC si está firmado), aprovechando que un sitio atacante externo no puede leer la cookie ni forjar cabeceras arbitrarias cross-origin.",
+    "practicas": [
+      "Implementar **Signed Double Submit Cookie** (vinculando el token mediante `HMAC(secret, session_id + random)`), ya que la versión ingenua sin firma es vulnerable si un subdominio comprometido o MitM inyecta una cookie arbitraria (cookie tossing).",
+      "Usar el prefijo `__Host-` y `Secure` en la cookie CSRF para evitar que un subdominio hermano sobrescriba el valor de la cookie.",
+      "Asegurarse de que la aplicación esté libre de XSS, porque si la cookie CSRF no lleva `HttpOnly` para que el SPA la lea, cualquier XSS puede leer ambos valores.",
+      "Comparación: frente al Synchronizer Token (que almacena el secreto en sesión del servidor), el Double Submit Cookie es stateless pero requiere firma criptográfica y prefijo `__Host-` para igualar robustez."
+    ],
+    "ejemplo": "POST /api/profile HTTP/1.1\nCookie: __Host-csrf=v1.9f8a7b.HMAC_SIG; __Host-sid=sess123\nX-CSRF-Token: v1.9f8a7b.HMAC_SIG\n\n{\"displayName\":\"Ana\"}",
+    "entrevista": "El patrón Double Submit Cookie evita estado en servidor exigiendo el token tanto en cookie como en cabecera personalizada, pero en producción debe ir firmado con HMAC y vinculado a la sesión para resistir ataques de cookie tossing desde subdominios."
+  },
+  "Entra ID": {
+    "que": "Microsoft Entra ID (anteriormente Azure Active Directory) es el servicio administrado de gestión de identidades y accesos (IAM/IdP) en la nube de Microsoft. Provee autenticación corporativa, Single Sign-On, acceso condicional, MFA y gobernanza para aplicaciones SaaS, recursos de Azure y aplicaciones propias mediante OAuth 2.0, OIDC, SAML 2.0 y SCIM.",
+    "para": "Sirve para centralizar el acceso de empleados, socios (B2B) y clientes (External ID) bajo políticas unificadas de Zero Trust, integrando dispositivos administrados y señales de riesgo sin desplegar servidores ADFS propios.",
+    "como": "Las organizaciones pueden usar Entra ID de forma nativa en la nube o sincronizar sus usuarios de Active Directory on-premises mediante Entra Connect (Password Hash Sync o Pass-through Authentication). Cuando un usuario accede a una aplicación registrada (*App Registration* / *Enterprise Application*), Entra ID autentica al usuario, evalúa políticas de *Conditional Access* (riesgo de usuario, cumplimiento del dispositivo en Intune, ubicación, MFA) y emite tokens JWT (OIDC/OAuth) o aserciones SAML con los claims y grupos configurados.",
+    "practicas": [
+      "Validar siempre el claim `tid` (Tenant ID) además de `iss`, `aud` y firma en aplicaciones multitenant para impedir que usuarios de otro tenant de Entra ID accedan a datos ajenos.",
+      "Aplicar principio de mínimo privilegio en App Registrations, diferenciando entre permisos delegados (en nombre del usuario) y de aplicación (`Application Permissions`, de alto impacto).",
+      "Error típico: confiar en el claim `groups` del JWT sin considerar que, si un usuario pertenece a demasiados grupos (>200), Entra ID omite la lista y envía un claim de *overage* (`_claim_names`) que exige consultar Microsoft Graph.",
+      "Comparación: Entra ID opera con estándares web (OIDC, SAML, OAuth, SCIM) orientados a nube y SaaS, a diferencia de Active Directory on-premises basado en Kerberos y LDAP."
+    ],
+    "ejemplo": "GET https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/authorize?\n  client_id=<app-id>&response_type=code&scope=openid%20profile%20api://<app-id>/access_as_user\n  &code_challenge=<pkce>&code_challenge_method=S256",
+    "entrevista": "Al integrar aplicaciones con Microsoft Entra ID es crítico validar firma, audiencia y `tid` en aplicaciones multitenant, distinguir permisos delegados frente a permisos de aplicación y gestionar el group overage cuando se autoriza por grupos."
+  },
+  "FIDO2": {
+    "que": "FIDO2 es el estándar abierto de autenticación sin contraseñas y multifac­tor resistente al phishing desarrollado por la FIDO Alliance y el W3C. Se compone de dos especificaciones complementarias: **WebAuthn** (API del navegador/sistema hacia el servidor) y **CTAP2** (Client to Authenticator Protocol, comunicación entre el dispositivo cliente y autenticadores externos por USB, NFC o BLE).",
+    "para": "Resuelve de raíz las debilidades estructurales de contraseñas, SMS y códigos TOTP frente a ataques de phishing en tiempo real (AiTM / reverse proxy), credential stuffing y reutilización de secretos entre sitios.",
+    "como": "Durante el registro, el servidor (*Relying Party*) envía un desafío aleatorio y su `rpId` (dominio). El autenticador (llave física o plataforma TPM/Secure Enclave) genera un par de claves asimétricas único para ese `rpId`, guarda la clave privada dentro del hardware tras verificar presencia/biometría local y envía la clave pública al servidor. En la autenticación, el navegador verifica que el origen coincida estrictamente con el `rpId`, lo pasa al autenticador vía CTAP2 o API nativa, y este firma el desafío y el origen; si un proxy de phishing suplanta el dominio (`mi-banco-login.evil`), el origen no coincide y la autenticación falla criptográficamente.",
+    "practicas": [
+      "Validar estrictamente en el servidor el `challenge` (de un solo uso y con TTL corto), el `origin` exacto y el `rpIdHash`, además de verificar la bandera `UV` (User Verified) cuando se requiera MFA en un solo gesto.",
+      "Permitir registrar al menos dos autenticadores (por ejemplo, passkey sincronizada + llave física de respaldo) para evitar bloqueos por pérdida de dispositivo.",
+      "No deshabilitar el contador de firmas (`signCount`) en llaves hardware que lo soportan, ya que un retroceso detecta posible clonación del autenticador.",
+      "Comparación: a diferencia de TOTP (donde el usuario puede teclear el código en un dominio falso), FIDO2 vincula la firma criptográfica al origen DNS real del sitio, haciendo inútil el phishing proxy."
+    ],
+    "ejemplo": "navigator.credentials.get({\n  publicKey: {\n    challenge: Uint8Array.from(serverChallenge),\n    rpId: \"app.ejemplo.com\",\n    userVerification: \"required\"\n  }\n});",
+    "entrevista": "FIDO2 (WebAuthn + CTAP2) elimina el phishing porque cada credencial usa criptografía asimétrica ligada por el navegador al origen exacto (`rpId`), impidiendo que un proxy AiTM reenvíe la aserción a otro dominio."
+  },
+  "Federated identity": {
+    "que": "La identidad federada (*Federated identity*) es un modelo de confianza entre dominios de seguridad independientes que permite a un usuario utilizar una única identidad gestionada por un Identity Provider (IdP) para acceder a aplicaciones de distintas organizaciones o proveedores de servicio (SP / Relying Party). Se apoya en estándares de intercambio de aserciones y tokens como SAML 2.0, OpenID Connect y OAuth 2.0.",
+    "para": "Resuelve el problema de proliferación de cuentas y contraseñas entre empresas asociadas (B2B), ecosistemas de SaaS o múltiples unidades de negocio, reduciendo la superficie de ataque y centralizando la revocación de accesos cuando un usuario abandona su organización.",
+    "como": "El proveedor de servicios (SP) establece previamente una relación de confianza con el IdP intercambiando metadatos criptográficos (certificados X.509 en SAML o URL de descubrimiento OIDC/JWKS, `client_id` y `redirect_uri`). Cuando el usuario intenta entrar al SP, es redirigido al IdP; tras autenticarse allí, el IdP emite una aserción SAML o un ID token OIDC firmado que incluye identificadores federados (`sub`, `NameID`) y atributos. El SP valida la firma del IdP, crea la sesión local o aprovisiona la cuenta (JIT provisioning) y otorga acceso.",
+    "practicas": [
+      "Vincular al usuario federado mediante identificadores inmutables (`sub` + `iss` en OIDC, o `NameID` persistente) en lugar de usar únicamente el correo electrónico, que puede cambiar o ser reciclado.",
+      "Aislar la relación de confianza por organización/tenant: en aplicaciones B2B, nunca permitir que un IdP federado afirme identidades pertenecientes al dominio de correo de otro cliente.",
+      "Error típico: olvidar el *account linking* seguro; si alguien inicia sesión federada con un email ya existente sin verificar propiedad previa, puede producirse un Account Takeover.",
+      "Comparación: el SSO tradicional ocurre dentro de un mismo dominio administrativo u organización, mientras que la identidad federada extiende esa confianza entre organizaciones o dominios distintos."
+    ],
+    "ejemplo": "https://sp.saas.com/sso/oidc/callback?code=SplxlOBeZQQYbYS6WxSbIA&state=xyz987\n# El SP valida `state`, intercambia `code` en el IdP federado y vincula (iss, sub).",
+    "entrevista": "La identidad federada delega la autenticación entre dominios distintos mediante confianza criptográfica en un IdP externo, y exige vincular cuentas por el par inmutable `(iss, sub)` verificando la propiedad del dominio para evitar toma de cuentas."
+  },
+  "Filtración de credenciales": {
+    "que": "Una filtración de credenciales (*credential leak* o *credential exposure*) es la divulgación no autorizada de pares de usuario y contraseña, hashes, claves API o tokens hacia repositorios públicos, mercados clandestinos o logs accesibles. Puede originarse por brechas en bases de datos de terceros, infostealers en equipos de usuarios o commits accidentales en repositorios Git.",
+    "para": "En AppSec y DevSecOps es crítico monitorear y mitigar filtraciones de credenciales tanto de usuarios finales (para frenar credential stuffing y ATO) como de desarrolladores y servicios (secretos en código fuente o CI/CD que dan acceso directo a infraestructura).",
+    "como": "Cuando ocurre una brecha externa o un infostealer roba contraseñas guardadas del navegador, las credenciales circulan en listas públicas o feeds de inteligencia de amenazas. En el caso de secretos de software, bots escanean commits públicos en GitHub en segundos tras un `git push`. Defensivamente, la aplicación compara contraseñas nuevas contra hashes filtrados usando protocolos preservadores de privacidad (prefijo SHA-1 de 5 caracteres en Have I Been Pwned), mientras que en CI/CD herramientas de secret scanning interceptan tokens antes de integrarse.",
+    "practicas": [
+      "Integrar comprobación de contraseñas comprometidas (HIBP k-anonymity) en registro, cambio de contraseña y login, forzando rotación si se detecta exposición.",
+      "Ejecutar secret scanning en pre-commit, CI/CD y sobre el historial completo de Git (con herramientas como Gitleaks o TruffleHog) y recordar que borrar un secreto en un commit posterior no lo elimina del historial: hay que revocarlo.",
+      "Evitar loguear cabeceras `Authorization`, cookies o cuerpos de petición de `/login` en sistemas de observabilidad como ELK o Datadog.",
+      "Comparación: una filtración de credenciales de usuarios requiere MFA y rotación de password, mientras que una filtración de secretos de máquina exige revocación inmediata y migración a credenciales efímeras (OIDC/Workload Identity)."
+    ],
+    "ejemplo": "# Consulta k-anonymity a HIBP enviando solo los 5 primeros caracteres del SHA-1\nprefix=$(printf '%s' \"$PASS\" | sha1sum | cut -c1-5 | tr 'a-f' 'A-F')\ncurl -s \"https://api.pwnedpasswords.com/range/${prefix}\" | grep -i \"${rest_of_sha1}\"",
+    "entrevista": "Frente a filtraciones de credenciales, las contraseñas de usuarios deben validarse mediante k-anonymity contra brechas conocidas y protegerse con MFA, mientras que cualquier secreto filtrado en Git o logs debe revocarse de inmediato porque la limpieza del historial no basta."
+  },
+  "Fuerza bruta": {
+    "que": "Un ataque de fuerza bruta (*brute force*) consiste en probar sistemáticamente todas las combinaciones posibles de caracteres, o un diccionario amplio de palabras y mutaciones, contra una credencial o secreto hasta dar con el valor correcto. Puede ejecutarse de forma online (contra un endpoint de login o verificación OTP) u offline (contra hashes filtrados o tokens capturados).",
+    "para": "Conocer la mecánica de la fuerza bruta permite dimensionar la entropía necesaria de contraseñas, códigos OTP y tokens de sesión, así como aplicar controles de limitación de tasa que hagan inviable el ataque en el mundo real.",
+    "como": "En fuerza bruta online, el atacante automatiza peticiones HTTP contra `/login`, `/verify-otp` o `/reset-password` variando el secreto para un único usuario objetivo; la velocidad está limitada por la red y las defensas del servidor. En fuerza bruta offline (por ejemplo tras robar una base de datos de hashes), el atacante usa GPUs con herramientas como Hashcat para calcular millones o miles de millones de hashes por segundo sin ningún límite de tasa, probando diccionarios más reglas de mutación.",
+    "practicas": [
+      "Proteger la fuerza bruta online con rate limiting estricto, bloqueo temporal progresivo y expiración corta (especialmente en OTPs de 6 dígitos donde solo hay 1.000.000 de combinaciones).",
+      "Proteger contra fuerza bruta offline almacenando contraseñas con KDFs memory-hard (Argon2id) con salt único y exigiendo longitud mínima adecuada (>= 12-14 caracteres).",
+      "Error típico: aplicar rate limiting solo al endpoint `/login` y olvidarlo en `/api/mfa/verify`, `/forgot-password` o endpoints GraphQL con aliasing.",
+      "Comparación: la fuerza bruta concentra múltiples intentos sobre una cuenta o hash; el *password spraying* distribuye unos pocos intentos comunes entre miles de cuentas para evadir el bloqueo por usuario."
+    ],
+    "ejemplo": "# Ejemplo conceptual de ataque offline con diccionario + reglas sobre hashes robados\nhashcat -m 3200 -a 0 hashes_bcrypt.txt rockyou.txt -r rules/best64.rule",
+    "entrevista": "La fuerza bruta online se frena con rate limiting, bloqueo progresivo y MFA/OTP con límites de intentos, mientras que la fuerza bruta offline exige alta entropía y funciones memory-hard como Argon2id con salt único."
+  },
+  "Hardware token": {
+    "que": "Un hardware token (token físico de seguridad) es un dispositivo electrónico dedicado que almacena secretos o claves privadas en un elemento seguro resistente a manipulación física (*tamper-resistant*) para generar pruebas de autenticación. Incluye desde llaves FIDO2/U2F (como YubiKey) y tarjetas inteligentes PIV/CAC hasta tokens OTP dedicados.",
+    "para": "Sirve para proporcionar el nivel más alto de garantía de autenticación en cuentas privilegiadas (administradores cloud, producción, repositorios críticos, finanzas), eliminando la posibilidad de copiar el secreto mediante malware en el sistema operativo o ataques de SIM swapping.",
+    "como": "Las claves criptográficas o semillas secretas se generan e inyectan dentro del chip criptográfico (Secure Element) y nunca pueden exportarse hacia el host. En tokens FIDO2/WebAuthn, el navegador envía un desafío vía USB/NFC usando CTAP2, el usuario toca físicamente el sensor capacitivo (*User Presence*) o lector de huella (*User Verification*), y el chip firma el desafío ligado al origen. En tokens OTP hardware, un reloj interno o contador genera códigos TOTP/HOTP que el usuario lee en pantalla.",
+    "practicas": [
+      "Priorizar hardware tokens basados en FIDO2/WebAuthn frente a tokens TOTP en hardware, ya que solo FIDO2 protege criptográficamente contra phishing en tiempo real.",
+      "Provisionar al menos dos llaves físicas por usuario privilegiado (principal y respaldo custodiado en lugar seguro) para no recurrir a códigos de recuperación débiles.",
+      "Verificar el nivel de aseguramiento (por ejemplo, AAL3 del NIST SP 800-63B) exigiendo autenticación criptográfica basada en hardware con verificación de usuario para roles críticos.",
+      "Comparación: un hardware token FIDO2 aísla la clave privada en un chip externo no extraíble, mientras que un autenticador de software (app TOTP en móvil) depende de la integridad del SO del teléfono."
+    ],
+    "ejemplo": "# Generación de clave SSH respaldada por hardware token FIDO2\nssh-keygen -t ed25519-sk -O resident -O verify-required -C \"admin@prod-bastion\"",
+    "entrevista": "Un hardware token FIDO2 ofrece el mayor nivel de aseguramiento (AAL3) porque la clave privada jamás abandona el elemento seguro del dispositivo y requiere presencia física más verificación ligada al origen para firmar."
+  },
+  "ID token": {
+    "que": "Un ID token es un JSON Web Token (JWT) firmado especificado por OpenID Connect (OIDC) que contiene declaraciones (*claims*) verificables sobre el evento de autenticación y la identidad del usuario final. A diferencia del Access token, está diseñado exclusivamente para ser consumido e inspeccionado por la aplicación cliente (*Relying Party*).",
+    "para": "Resuelve la necesidad de que el cliente sepa con certeza criptográfica quién se ha autenticado, cuándo y mediante qué proveedor (IdP), sin tener que interpretar tokens de acceso opacos ni realizar llamadas extra para obtener datos básicos de perfil.",
+    "como": "Durante un flujo OIDC (tras incluir el scope `openid`), el Identity Provider emite el ID token junto al Access token en el endpoint `/token`. Su payload incluye claims estándar obligatorios como `iss` (emisor), `sub` (identificador único e inmutable del usuario en ese emisor), `aud` (el `client_id` de la app), `exp`, `iat` y `nonce` (para evitar ataques de replay). El cliente verifica la firma con el JWKS del IdP, comprueba todos los claims estándar y utiliza la información (por ejemplo `name`, `email`, `amr`) para crear la sesión local del usuario.",
+    "practicas": [
+      "Nunca enviar el ID token como Bearer token para autorizar llamadas hacia APIs o Resource Servers; para eso existe el Access token.",
+      "Validar siempre el claim `nonce` frente al valor generado en el inicio de sesión para prevenir inyección o repetición de ID tokens.",
+      "Usar el par `(iss, sub)` como clave primaria federada en la base de datos en vez de `email`, ya que el correo puede cambiar y en algunos proveedores no está verificado (`email_verified: false`).",
+      "Comparación: el ID token certifica identidad hacia el cliente (`aud` = client_id), mientras que el Access token autoriza acceso hacia APIs (`aud` = Resource Server)."
+    ],
+    "ejemplo": "{\n  \"iss\": \"https://accounts.ejemplo.com\",\n  \"sub\": \"usr_248289761001\",\n  \"aud\": \"web-app-client-id\",\n  \"exp\": 1730003600,\n  \"iat\": 1730000000,\n  \"nonce\": \"n-0S6_WzA2Mj\",\n  \"email_verified\": true\n}",
+    "entrevista": "El ID token es un JWT de OpenID Connect destinado al cliente para probar quién se autenticó y cuándo; nunca debe enviarse a APIs en lugar del Access token y siempre requiere validar firma, `iss`, `aud` y `nonce`."
+  },
+  "Identidad digital": {
+    "que": "Una identidad digital es el conjunto estructurado de atributos, identificadores únicos y credenciales que representan a una entidad (persona humana, carga de trabajo, servicio o dispositivo) dentro de un sistema informático o red. Permite correlacionar acciones, permisos y auditoría con un sujeto concreto a lo largo del tiempo.",
+    "para": "Constituye la base de cualquier arquitectura IAM y Zero Trust: sin identidades digitales bien definidas, únicas y con ciclo de vida controlado, es imposible aplicar el principio de mínimo privilegio ni atribuir acciones en logs forenses.",
+    "como": "Cada entidad recibe un identificador inmutable (UUID, `sub`, Distinguished Name o ARN/SPIFFE ID en máquinas) al que se asocian atributos descriptivos (correo, departamento, estado activo/suspendido), credenciales de autenticación (claves públicas, contraseñas, certificados) y vínculos de autorización (roles o grupos). El ciclo de vida completo —aprovisionamiento, modificación de atributos/permisos y revocación al causar baja— se gestiona desde directorios o IdPs mediante estándares como SCIM o IAM as Code.",
+    "practicas": [
+      "Separar las identidades humanas de las identidades de máquina (service accounts, workloads) y evitar cuentas compartidas entre varios operadores para preservar la trazabilidad.",
+      "Usar identificadores inmutables (UUID/`sub`) como referencia interna en bases de datos en lugar de atributos mutables como correo electrónico o nombre de usuario.",
+      "Automatizar el desaprovisionamiento inmediato (bajas de empleados o servicios retirados) para eliminar identidades huérfanas con permisos latentes.",
+      "Comparación: la identidad digital es la representación completa de la entidad y sus atributos en el sistema, mientras que la autenticación es el acto puntual de probar que quien interactúa controla esa identidad."
+    ],
+    "ejemplo": "spiffe://prod.empresa.internal/ns/payments/sa/checkout-api\n# Identidad criptográfica inmutable (SPIFFE ID) para una carga de trabajo no humana",
+    "entrevista": "Una identidad digital sólida combina un identificador inmutable, atributos verificados y un ciclo de vida automatizado desde el alta hasta la revocación, separando estrictamente cuentas humanas de identidades de máquina."
+  },
+  "Identity provider (IdP)": {
+    "que": "Un Identity Provider (IdP) es el sistema centralizado encargado de gestionar identidades digitales, verificar credenciales de autenticación y emitir aserciones o tokens criptográficos firmados hacia aplicaciones cliente o proveedores de servicio (SP / Relying Parties). Ejemplos habituales son Keycloak, Entra ID, Okta/Auth0 y Ping Identity.",
+    "para": "Resuelve la duplicación insegura de pantallas de login y bases de contraseñas en decenas de aplicaciones, permitiendo centralizar el SSO, el MFA, la autenticación adaptativa y la revocación de accesos en un único punto endurecido.",
+    "como": "Cuando un usuario intenta acceder a un SP sin sesión activa, el SP lo redirige al IdP mediante OIDC/OAuth 2.0 (`AuthnRequest` en SAML o `/authorize` en OIDC). El IdP consulta su directorio de usuarios conectado (LDAP, AD o BD propia), aplica políticas de MFA y riesgo, y valida los factores del usuario. Tras autenticarlo, el IdP firma un token JWT o aserción XML SAML con su clave privada y devuelve al usuario al SP, quien valida la firma con la clave pública del IdP.",
+    "practicas": [
+      "Endurecer al máximo la seguridad del IdP (MFA obligatorio, protección DDoS/bots, auditoría en tiempo real), ya que comprometer el IdP compromete todas las aplicaciones conectadas.",
+      "Implementar rotación periódica de claves de firma (JWKS con `kid` en OIDC o rollover de certificados en SAML) sin interrumpir sesiones en curso.",
+      "Validar estrictamente las `redirect_uri` / URLs ACS registradas en el IdP usando coincidencia exacta para evitar robos de códigos o tokens vía Open Redirect.",
+      "Comparación: el IdP verifica quién es el usuario y emite pruebas firmadas de identidad, mientras que el Service Provider (SP) o Resource Server confía en esas pruebas para conceder acceso local."
+    ],
+    "ejemplo": "GET https://idp.empresa.com/.well-known/openid-configuration\n# Documento de descubrimiento OIDC del IdP con authorization_endpoint, token_endpoint y jwks_uri",
+    "entrevista": "El IdP centraliza la autenticación, el MFA y el SSO emitiendo aserciones SAML o tokens OIDC firmados para los Service Providers, convirtiéndose en el componente crítico Tier-0 que elimina la dispersión de contraseñas entre apps."
+  },
+  "JWT": {
+    "que": "Un JSON Web Token (JWT, RFC 7519) es un estándar abierto y compacto para representar de forma segura un conjunto de declaraciones (*claims*) en formato JSON entre dos partes. Habitualmente se presenta firmado como JWS (`header.payload.signature` en Base64URL) o cifrado como JWE cuando requiere confidencialidad.",
+    "para": "Sirve para transmitir identidad (ID token) o autorización (Access token) de manera autocontenida y verificable sin estado en arquitecturas distribuidas y microservicios, evitando consultar a una base de datos central en cada petición HTTP.",
+    "como": "Un JWT firmado (JWS) consta de tres segmentos separados por puntos y codificados en Base64URL: el *Header* (indica el tipo `JWT` y el algoritmo como `RS256` o `ES256` más el `kid`), el *Payload* (contiene claims registrados como `iss`, `sub`, `aud`, `exp` y claims personalizados), y la *Signature* (calculada aplicando el algoritmo declarado sobre `base64url(header) + \".\" + base64url(payload)`). El receptor decodifica cabecera y carga, verifica criptográficamente la firma usando la clave esperada para el algoritmo permitido y evalúa la vigencia y audiencia de los claims.",
+    "practicas": [
+      "No olvidar que un JWS está **firmado pero NO cifrado**: cualquiera puede decodificar el Base64URL del payload; nunca incluir secretos, contraseñas ni datos personales sensibles sin usar JWE.",
+      "Fijar siempre la lista de algoritmos permitidos en el verificador (evitando confusión de algoritmos y `alg: none`) y validar `exp`, `iss` y `aud`.",
+      "Mantener los JWT pequeños y con expiración corta, ya que son difíciles de revocar de inmediato antes de `exp` (requeriría listas negras con estado o rotación corta con refresh tokens).",
+      "Comparación: frente a un token opaco o cookie de sesión tradicional (referencia a estado en servidor), el JWT es autocontenido y escalable en lectura, pero más costoso de revocar y peligroso si se expone información en el payload."
+    ],
+    "ejemplo": "// Header: {\"alg\":\"ES256\",\"typ\":\"JWT\",\"kid\":\"k1\"}\n// Payload: {\"sub\":\"u123\",\"aud\":\"api\",\"exp\":1730000900}\neyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImsxIn0.eyJzdWIiOiJ1MTIzIiwiYXVkIjoiYXBpIiwiZXhwIjoxNzMwMDAwOTAwfQ.MEUCIQDg...",
+    "entrevista": "Un JWT JWS garantiza integridad y autenticidad mediante firma pero no confidencialidad (el payload es Base64URL legible); su verificación segura exige fijar el algoritmo permitido, validar `iss`/`aud`/`exp` y mantener TTL cortos dada la dificultad de revocarlo."
+  }
+}

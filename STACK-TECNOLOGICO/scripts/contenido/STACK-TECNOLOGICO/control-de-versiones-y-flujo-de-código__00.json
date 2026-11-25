@@ -1,0 +1,288 @@
+{
+  "Bitbucket": {
+    "que": "Plataforma de alojamiento de repositorios Git y automatización DevOps desarrollada por Atlassian, disponible en versión cloud (Bitbucket Cloud) y autogestionada (Bitbucket Data Center). Integra gestión de código fuente, Pull Requests, control de acceso granular y pipelines de CI/CD en un mismo entorno.",
+    "para": "Sirve para centralizar repositorios Git corporativos y conectar el ciclo de desarrollo con herramientas de gestión y documentación de Atlassian como Jira y Confluence. Se utiliza habitualmente en organizaciones que ya operan bajo el ecosistema Atlassian y requieren trazabilidad directa entre incidencias, ramas, revisiones y despliegues.",
+    "como": "Almacena los repositorios en servidores remotos accesibles mediante los protocolos Git Smart HTTP y SSH, autenticando con claves SSH o tokens de aplicación/OAuth. Su motor de CI/CD (Bitbucket Pipelines) lee el archivo `bitbucket-pipelines.yml` de la raíz del repositorio y ejecuta cada paso dentro de contenedores Docker efímeros (en la nube o mediante Runners propios). Para proteger ramas principales aplica Branch Permissions y Merge Checks, validando compilaciones exitosas y aprobaciones de revisores antes de permitir la fusión.",
+    "practicas": [
+      "Vincular claves de incidencias de Jira en nombres de rama y mensajes de commit (ej. `PROJ-123`) para habilitar transiciones automáticas de estado.",
+      "Configurar Merge Checks obligatorios (mínimo de aprobaciones, cero tareas pendientes y pipeline en verde) en las ramas `main` y `release/*`.",
+      "Usar caché de dependencias y artefactos en `bitbucket-pipelines.yml` para evitar descargas repetitivas en cada contenedor efímero.",
+      "Comparación: frente a GitHub o GitLab, su mayor ventaja es la integración nativa con Jira/Atlassian, aunque su ecosistema público de acciones y comunidad open source es menor."
+    ],
+    "ejemplo": "image: node:20\npipelines:\n  pull-requests:\n    '**':\n      - step:\n          name: Lint and Test\n          caches: [node]\n          script:\n            - npm ci && npm test",
+    "entrevista": "Bitbucket es una plataforma Git empresarial cuya principal ventaja competitiva es la trazabilidad bidireccional nativa con Jira y la ejecución de CI/CD en contenedores mediante Bitbucket Pipelines."
+  },
+  "Cherry-pick": {
+    "que": "Operación de Git (`git cherry-pick`) que extrae los cambios introducidos por uno o varios commits específicos de cualquier rama y los aplica como nuevos commits sobre el `HEAD` actual. A diferencia de un merge o rebase completo, traslada cambios puntuales de forma selectiva.",
+    "para": "Sirve para portar correcciones críticas (hotfixes) a ramas de mantenimiento o versiones anteriores sin arrastrar código en desarrollo que aún no está listo. También resulta útil para rescatar un commit útil de una rama experimental o abandonada.",
+    "como": "Internamente calcula la diferencia entre el commit seleccionado (`C`) y su commit padre (`P`), ejecutando una fusión a tres vías (3-way merge) donde `P` actúa como base común, `C` como origen de cambios y el `HEAD` actual como destino. Si el diff se aplica limpiamente, Git crea un nuevo commit con un hash SHA distinto (ya que cambian el padre y el timestamp), manteniendo el mensaje y el autor originales. Si existen conflictos en las mismas líneas, detiene el proceso marcando los archivos en conflicto en el índice hasta ejecutar `git cherry-pick --continue` o `--abort`.",
+    "practicas": [
+      "Usar el flag `-x` (`git cherry-pick -x <hash>`) al portar hotfixes entre ramas de release para añadir en el mensaje el hash del commit original y conservar trazabilidad.",
+      "Evitar abusar de `cherry-pick` como flujo habitual entre ramas vivas; genera commits duplicados con distinto hash que pueden provocar conflictos en futuros merges.",
+      "Emplear `--no-commit` (`-n`) cuando se quieren agrupar varios commits puntuales en un único commit antes de confirmar.",
+      "Comparación: `cherry-pick` copia commits concretos de forma selectiva, mientras que `merge` y `rebase` integran historiales completos de ramas."
+    ],
+    "ejemplo": "# Aplicar un hotfix desde main hacia la rama de soporte v2.1 dejando rastro del SHA original\ngit switch release/2.1\ngit cherry-pick -x a1b2c3d\n# En caso de conflicto, resolver archivos y continuar:\ngit add src/auth.ts && git cherry-pick --continue",
+    "entrevista": "Cherry-pick realiza un merge a tres vías usando al padre del commit elegido como base común para replicar un cambio puntual en otra rama con un nuevo hash."
+  },
+  "Code review": {
+    "que": "Práctica de ingeniería en la que uno o más desarrolladores inspeccionan de forma sistemática los cambios de código propuestos por un compañero antes de integrarlos en la rama principal. Combina verificación de corrección lógica, diseño arquitectónico, seguridad y mantenibilidad.",
+    "para": "Sirve para detectar defectos tempranos que las pruebas automatizadas no cubren, garantizar estándares de calidad uniformes y distribuir el conocimiento del sistema entre todo el equipo. Reduce el factor de bus (bus factor) y evita la acumulación silenciosa de deuda técnica.",
+    "como": "Se ejecuta de forma asíncrona sobre un diff generado entre la rama fuente y la rama destino dentro de un Pull Request o Merge Request, apoyado por comprobaciones automáticas previas (linters, tests, análisis estático SAST). El autor aporta contexto, alcance e instrucciones de prueba; los revisores inspeccionan línea a línea, dejan comentarios clasificados (bloqueantes vs. sugerencias menores) y emiten un estado (`Approve` o `Request changes`). Plataformas modernas enrutan automáticamente la revisión mediante archivos `CODEOWNERS` que asignan propietarios según rutas de archivos modificadas.",
+    "practicas": [
+      "Mantener Pull Requests pequeños y cohesivos (idealmente por debajo de 200-400 líneas modificadas) para evitar revisiones superficiales por fatiga.",
+      "Automatizar formato, estilo y reglas sintácticas en CI antes de pedir revisión humana; el revisor debe centrarse en lógica, bordes, seguridad y arquitectura.",
+      "Distinguir explícitamente los comentarios bloqueantes de las preferencias estilísticas (p. ej. usando prefijos como `nit:` o Conventional Comments).",
+      "Error típico: aprobar sin leer ni cuestionar cambios grandes («LGTM») o convertir la revisión en una discusión de ego sobre estilo personal."
+    ],
+    "ejemplo": "# .github/CODEOWNERS — asignación automática de revisores por módulo\n/services/payments/   @equipo-pagos @lead-backend\n/infra/terraform/     @equipo-sre\n*.sql                 @equipo-dba",
+    "entrevista": "El code review efectivo automatiza lo mecánico en CI para que la revisión humana se enfoque en invariantes de negocio, diseño, casos límite y transferencia de conocimiento."
+  },
+  "Conventional Commits": {
+    "que": "Especificación ligera y estandarizada sobre el formato de los mensajes de commit que impone una estructura legible tanto por humanos como por máquinas. Define un prefijo semántico que clasifica la naturaleza del cambio realizado en el repositorio.",
+    "para": "Sirve para eliminar mensajes ambiguos en el historial de Git y habilitar la automatización completa del ciclo de versiones. Permite generar archivos `CHANGELOG.md`, determinar incrementos de Semantic Versioning y disparar flujos de CI/CD de forma determinista.",
+    "como": "La especificación exige la gramática `<tipo>[ámbito opcional][!]: <descripción>`, seguida opcionalmente de un cuerpo y pies de página (footers). Los tipos principales son `feat` (nueva funcionalidad, correlacionado con `MINOR` en SemVer) y `fix` (corrección de error, correlacionado con `PATCH`), además de otros convencionales como `chore`, `refactor`, `docs`, `ci` o `test`. Un cambio incompatible se señala añadiendo `!` antes de los dos puntos o incluyendo un footer `BREAKING CHANGE: <detalle>`, lo que dispara un incremento `MAJOR` en herramientas como `semantic-release` o `release-please`.",
+    "practicas": [
+      "Validar el formato automáticamente en local con `commitlint` + hook `commit-msg` y revalidarlo en CI para cubrir commits hechos con `--no-verify`.",
+      "Escribir la descripción en modo imperativo, minúsculas y sin punto final, enfocada en qué hace el cambio al aplicarse.",
+      "Usar Squash Merge con título validado por Conventional Commits en PRs para mantener un historial lineal limpio en `main` sin frenar a los autores durante el desarrollo.",
+      "Error típico: mezclar un cambio de arquitectura incompatible bajo un commit `fix:` sin marcar `!` ni `BREAKING CHANGE:`, rompiendo el versionado automático."
+    ],
+    "ejemplo": "feat(auth)!: migrar tokens de sesión a JWT con firma Ed25519\n\nReemplaza las cookies opacas por tokens firmados sin estado.\n\nBREAKING CHANGE: los clientes deben renovar sesión tras el despliegue.\nRefs: #412",
+    "entrevista": "Conventional Commits convierte el historial de Git en una API estructurada que permite automatizar el versionado SemVer, los changelogs y los releases sin intervención manual."
+  },
+  "ESLint - Prettier": {
+    "que": "Combinación estándar en el ecosistema JavaScript/TypeScript donde ESLint actúa como linter de análisis estático de calidad de código y Prettier como formateador determinista de estilo. Cada herramienta cubre una responsabilidad ortogonal: corrección lógica frente a formato visual.",
+    "para": "Sirve para detectar errores potenciales, malas prácticas e inconsistencias de API antes de ejecutar el código, mientras se garantiza que todo el equipo produzca código visualmente idéntico. Elimina discusiones de formato en code reviews y reduce el ruido en los diffs de Git.",
+    "como": "ESLint convierte el código fuente en un Árbol de Sintaxis Abstracta (AST) mediante parsers como `espree` o `@typescript-eslint/parser`, recorre sus nodos y evalúa reglas configuradas (ej. `no-unused-vars`, `eqeqeq` o reglas con información de tipos), aplicando `--fix` cuando existe una transformación segura. Prettier, por su parte, parsea el archivo a un AST descartando el formato previo y lo reimprime desde cero mediante un algoritmo de diseño (basado en el pretty-printer de Wadler) respetando `printWidth`, comillas e indentación. Para evitar conflictos cuando ESLint intenta aplicar reglas estilísticas, se añade `eslint-config-prettier` al final de la configuración de ESLint para desactivarlas.",
+    "practicas": [
+      "Separar estrictamente las responsabilidades: usar ESLint para reglas de calidad/lógica y Prettier solo para formato; nunca usar `eslint-plugin-prettier` si penaliza la velocidad.",
+      "Colocar `eslint-config-prettier` como última entrada en el array de `eslint.config.mjs` (Flat Config) para sobrescribir reglas de estilo heredadas.",
+      "Ejecutar `eslint --fix` y `prettier --write` sobre archivos preparados con `lint-staged` en `pre-commit` y verificar sin modificar archivos (`eslint` y `prettier --check`) en CI.",
+      "Comparación: frente a herramientas unificadas más recientes en Rust como Biome o Ruff (en Python), ESLint + Prettier mantiene el mayor ecosistema de plugins específicos de frameworks."
+    ],
+    "ejemplo": "// eslint.config.mjs (Flat Config)\nimport js from '@eslint/js';\nimport prettier from 'eslint-config-prettier';\n\nexport default [\n  js.configs.recommended,\n  { rules: { 'no-console': 'warn' } },\n  prettier // siempre al final para desactivar reglas de estilo\n];",
+    "entrevista": "ESLint analiza el AST buscando errores lógicos y antipatrones, mientras que Prettier reimprime el código de forma determinista; `eslint-config-prettier` evita que colisionen."
+  },
+  "Firma GPG": {
+    "que": "Mecanismo criptográfico mediante GNU Privacy Guard (estándar OpenPGP) que adjunta una firma digital asimétrica a commits y tags de Git. Permite demostrar de forma verificable quién creó un cambio y que este no ha sido alterado desde su firma.",
+    "para": "Sirve para prevenir la suplantación de identidad en Git, ya que por defecto cualquiera puede configurar `user.name` y `user.email` con los datos de otra persona antes de hacer un commit. Es un requisito habitual de seguridad y cumplimiento (compliance) en proyectos open source críticos, banca y entornos regulados.",
+    "como": "El desarrollador genera un par de claves asimétricas (p. ej. Ed25519 o RSA-4096), sube la clave pública a la plataforma (GitHub/GitLab/Bitbucket) y configura `user.signingkey` en Git. Al ejecutar `git commit -S` (o activar `commit.gpgsign = true`), Git serializa los metadatos del commit (tree, parent, author, committer, mensaje), invoca al cliente `gpg` (o `ssh-keygen` si `gpg.format = ssh`), firma el contenido con la clave privada e inserta la cabecera `gpgsig` dentro del objeto commit antes de calcular su hash SHA. Cualquier par o servidor verifica la firma recalculando la validez contra la clave pública registrada mediante `git log --show-signature`.",
+    "practicas": [
+      "Activar la firma automática global (`git config --global commit.gpgsign true` y `tag.gpgsign true`) y proteger la clave privada con frase de paso cacheada en `gpg-agent`.",
+      "Asegurar que el correo asociado a la clave GPG coincida exactamente con el `user.email` de Git y con un correo verificado en la cuenta del forge para obtener la insignia `Verified`.",
+      "Considerar claves SSH para firma (`gpg.format = ssh`) o llaves hardware (YubiKey) para simplificar la gestión y proteger la clave privada fuera del disco.",
+      "En proyectos con CI/merge en plataforma, habilitar *Vigorous/Vigilant Mode* y exigir commits firmados en reglas de protección de rama."
+    ],
+    "ejemplo": "git config --global user.signingkey 3AA5C34371567BD2\ngit config --global commit.gpgsign true\ngit commit -S -m \"feat: validar firma en webhook\"\ngit log --show-signature -1",
+    "entrevista": "Como `user.name` y `user.email` en Git son texto plano falsificable, la firma GPG aporta autenticidad criptográfica e integridad al incrustar una firma asimétrica dentro del objeto commit."
+  },
+  "Git": {
+    "que": "Sistema de control de versiones distribuido (DVCS) diseñado originalmente por Linus Torvalds que almacena la historia de un proyecto como una secuencia de instantáneas (snapshots) inmutables del árbol de archivos. Cada copia clonada contiene el historial completo y autónomo del repositorio.",
+    "para": "Sirve para rastrear la evolución de código fuente y activos digitales, trabajar en paralelo mediante ramas aisladas sin depender de conexión continua a un servidor central y revertir o auditar cambios con precisión. Es el estándar de facto de la industria para colaboración en ingeniería de software.",
+    "como": "Internamente funciona como un sistema de archivos direccionable por contenido dentro de `.git/objects`, donde cada objeto se identifica por el hash SHA-1 (o SHA-256 experimental) de su cabecera y contenido comprimido con zlib: `blob` (contenido de archivo), `tree` (directorio que mapea nombres a blobs/trees), `commit` (puntero a un tree raíz, commits padres y metadatos formando un Grafo Acíclico Dirigido o DAG) y `tag` anotado. El flujo local coordina tres áreas: Working Directory, Staging Area/Index (`.git/index`, árbol propuesto para el próximo commit) y el repositorio local apuntado por ramas mutables (`refs/heads/*`) y el puntero simbólico `HEAD`. En red, negocia qué objetos faltan y transfiere packfiles comprimidos por deltas mediante protocolo Smart HTTP o SSH.",
+    "practicas": [
+      "Realizar commits atómicos que representen una única unidad lógica de cambio para facilitar `git bisect`, `revert` y revisiones.",
+      "Nunca versionar secretos, binarios pesados ni artefactos compilados en el historial; usar `.gitignore` y herramientas como `git-lfs` o `gitleaks`.",
+      "Conocer `git reflog` como red de seguridad para recuperar commits perdidos localmente tras un `reset --hard` o `rebase` fallido antes de que el garbage collector (`git gc`) los purgue.",
+      "Comparación: frente a sistemas centralizados como SVN (que almacenan deltas por archivo en un servidor único), Git almacena snapshots completos en un DAG distribuido haciendo ramificar y fusionar operaciones locales instantáneas."
+    ],
+    "ejemplo": "# Inspeccionar la estructura interna de objetos del último commit\ngit cat-file -p HEAD\ngit ls-tree HEAD\ngit reflog -n 5",
+    "entrevista": "Git es un sistema de archivos direccionable por contenido que modela el historial como un DAG de snapshots inmutables (blobs, trees y commits), separando directorio de trabajo, índice y repositorio."
+  },
+  "GitFlow": {
+    "que": "Modelo formal de ramificación para Git propuesto por Vincent Driessen que organiza el desarrollo en dos ramas permanentes (`main` y `develop`) y tres tipos de ramas temporales de soporte (`feature/*`, `release/*` y `hotfix/*`).",
+    "para": "Sirve para gestionar productos con versiones explícitas, ciclos de lanzamiento planificados y soporte simultáneo de múltiples versiones en producción (como aplicaciones móviles, firmware o software on-premise). Ofrece aislamiento estricto entre trabajo nuevo, estabilización de entregas y parches urgentes.",
+    "como": "La rama `main` refleja exclusivamente el estado exacto de producción y cada despliegue lleva un tag de versión, mientras `develop` actúa como rama de integración continua del siguiente ciclo. Las funcionalidades nacen en `feature/*` desde `develop` y regresan a `develop`; cuando llega el cierre de versión se abre `release/X.Y.Z` desde `develop` para estabilizar y corregir bugs sin bloquear nuevas features, fusionándose finalmente tanto en `main` (con tag) como de vuelta en `develop`. Los errores críticos en producción se atienden creando `hotfix/*` desde `main` y fusionándolos tanto en `main` como en `develop` para no perder el parche.",
+    "practicas": [
+      "Limitar su uso a software con releases versionados y ventanas de QA formales; evitarlo en microservicios o SaaS con despliegue continuo.",
+      "Fusionar siempre las ramas `release/*` y `hotfix/*` de vuelta a `develop` (y no solo a `main`) para evitar regresiones en la siguiente entrega.",
+      "Proteger `main` y `develop` contra commits directos y automatizar la creación de tags tras el merge a `main`.",
+      "Comparación: frente a GitHub Flow o Trunk-based development, GitFlow introduce alta ceremonia y riesgo de conflictos por ramas de larga duración, por lo que no se alinea bien con Continuous Delivery."
+    ],
+    "ejemplo": "git switch -c release/1.4.0 develop\n# ... correcciones de estabilización y bump de versión ...\ngit switch main && git merge --no-ff release/1.4.0\ngit tag -a v1.4.0 -m \"Release 1.4.0\"\ngit switch develop && git merge --no-ff release/1.4.0",
+    "entrevista": "GitFlow separa integración (`develop`) y producción (`main`) mediante ramas `feature`, `release` y `hotfix`; es sólido para entregas versionadas pero demasiado pesado para despliegue continuo."
+  },
+  "GitHub Flow": {
+    "que": "Flujo de trabajo ligero basado en ramas creado para entornos de entrega continua, estructurado alrededor de una única rama permanente (`main`) que se mantiene siempre desplegable. Todas las funcionalidades y correcciones se desarrollan en ramas cortas integradas mediante Pull Requests.",
+    "para": "Sirve para equipos de aplicaciones web, APIs y servicios SaaS que despliegan con frecuencia y no necesitan mantener múltiples versiones paralelas en producción. Reduce la fricción operativa frente a modelos con ramas intermedias como `develop`.",
+    "como": "Cuando inicia una tarea, el desarrollador crea una rama descriptiva directamente desde `main` (por ejemplo `feat/checkout-retry`) y sube commits frecuentes al remoto para respaldar su avance y disparar pruebas en CI. Una vez completado o listo para retroalimentación, abre un Pull Request hacia `main`, donde se ejecutan verificaciones automáticas y revisión de código. Tras aprobarse, los cambios pueden desplegarse en un entorno de staging o producción (a veces incluso desde la rama antes del merge para verificar comportamiento real) y finalmente se fusionan en `main` borrando la rama temporal.",
+    "practicas": [
+      "Mantener `main` estrictamente estable mediante Branch Protection y pipelines de CI obligatorios en cada Pull Request.",
+      "Mantener las ramas con vida corta (idealmente pocos días) y sincronizadas con `main` para minimizar conflictos de fusión.",
+      "Usar Feature Flags cuando una funcionalidad grande requiera integrarse en `main` antes de quedar expuesta a todos los usuarios.",
+      "Comparación: a diferencia de GitFlow, prescinde de `develop` y `release/*`; frente a Trunk-based development estricto, tolera ramas de varios días siempre centradas en Pull Requests."
+    ],
+    "ejemplo": "git switch main && git pull --ff-only\ngit switch -c fix/timeout-redis\ngit push -u origin fix/timeout-redis\n# Abrir PR -> CI + Code Review -> Merge a main -> Despliegue automático",
+    "entrevista": "GitHub Flow simplifica el flujo a una sola rama `main` siempre desplegable y ramas cortas integradas por Pull Request, optimizando la velocidad de entrega continua."
+  },
+  "GitHub": {
+    "que": "Plataforma en la nube líder para alojamiento de repositorios Git, colaboración en software, automatización CI/CD y seguridad de la cadena de suministro. Añade sobre Git una capa social, APIs, control de acceso y herramientas integradas de ingeniería.",
+    "para": "Sirve para alojar código fuente público o privado, coordinar Pull Requests y Code Reviews, ejecutar pipelines de integración y despliegue continuo y gestionar vulnerabilidades en dependencias. Es el estándar principal para proyectos open source y ampliamente adoptado en entornos empresariales (GitHub Enterprise).",
+    "como": "Gestiona el almacenamiento distribuido de objetos Git detrás de endpoints SSH/HTTPS y expone cada cambio a eventos webhook que alimentan su ecosistema. Sus Pull Requests comparan ramas o forks, aplican reglas de `CODEOWNERS` y bloquean fusiones mediante Branch Protection Rules o Repository Rulesets hasta satisfacer status checks y Merge Queues. GitHub Actions ejecuta flujos declarados en `.github/workflows/*.yml` sobre máquinas virtuales efímeras (hosted o self-hosted runners) disparadas por eventos (`push`, `pull_request`, `workflow_dispatch`), complementado por Dependabot, Secret Scanning y CodeQL para análisis de seguridad.",
+    "practicas": [
+      "Usar Repository Rulesets y Merge Queues en repositorios activos para garantizar que las pruebas pasen sobre la combinación real de commits antes de llegar a `main`.",
+      "Fijar las acciones de terceros en GitHub Actions por hash SHA del commit (en lugar de tags mutables como `@v4`) y aplicar permisos mínimos en `GITHUB_TOKEN`.",
+      "Habilitar Push Protection y Secret Scanning para bloquear credenciales antes de que entren al historial remoto.",
+      "Comparación: frente a GitLab (enfocado en suite DevSecOps única todo-en-uno) o Bitbucket (ecosistema Atlassian), destaca por su mercado de Actions, adopción comunitaria y Copilot/ecosistema de integraciones."
+    ],
+    "ejemplo": "# .github/workflows/ci.yml\non: [pull_request]\npermissions:\n  contents: read\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: npm ci && npm test",
+    "entrevista": "GitHub combina alojamiento Git con Pull Requests, Rulesets, Merge Queues, GitHub Actions y seguridad de cadena de suministro integrada como Dependabot y Secret Scanning."
+  },
+  "GitLab": {
+    "que": "Plataforma DevSecOps integral (disponible en SaaS y autohospedada) que unifica repositorios Git, seguimiento de incidencias, CI/CD, registro de contenedores/paquetes y escaneo de seguridad en una única aplicación.",
+    "para": "Sirve para cubrir todo el ciclo de vida del software desde la planificación hasta el despliegue y monitoreo sin ensamblar múltiples herramientas externas. Es muy elegida por empresas que requieren instalación on-premise, cumplimiento estricto o gobernanza centralizada de pipelines.",
+    "como": "Sirve repositorios Git mediante Gitaly (capa RPC optimizada para acceso a almacenamiento Git) y gestiona revisiones mediante Merge Requests (equivalentes a Pull Requests). Su motor CI/CD lee `.gitlab-ci.yml` y organiza trabajos en `stages` secuenciales o grafos acíclicos dirigidos (`needs:`), despachando su ejecución a procesos independientes llamados GitLab Runners (en Docker, Kubernetes o shell) que descargan el código, pasan artefactos/cachés y reportan cobertura o vulnerabilidades (SAST/DAST). En repositorios de alto tráfico ofrece Merge Trains para validar especulativamente varios Merge Requests en paralelo antes de fusionar.",
+    "practicas": [
+      "Aprovechar la palabra clave `needs` en `.gitlab-ci.yml` para ejecutar trabajos en DAG sin esperar a que termine todo el `stage` anterior.",
+      "Usar `Review Apps` dinámicos por Merge Request para validar cambios de frontend o API en entornos efímeros antes de fusionar.",
+      "Centralizar plantillas de pipeline seguras mediante `include:` desde un repositorio de plataforma gobernado por DevSecOps.",
+      "Comparación: a diferencia de GitHub (más modular vía Marketplace), GitLab prioriza tener CI/CD, Container Registry, Terraform state y escáneres de seguridad nativos bajo un solo modelo de permisos."
+    ],
+    "ejemplo": "stages: [test, build]\nunit_test:\n  stage: test\n  image: python:3.12-slim\n  script:\n    - pip install -r requirements.txt\n    - pytest -q\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"",
+    "entrevista": "GitLab es una plataforma DevSecOps unificada donde Gitaly gestiona Git y `.gitlab-ci.yml` orquesta pipelines DAG en GitLab Runners, con Merge Trains y seguridad nativa integrados."
+  },
+  "Hooks - pre-commit": {
+    "que": "Mecanismo nativo de extensibilidad de Git basado en scripts ejecutables almacenados en el directorio de hooks (por defecto `.git/hooks/`), siendo `pre-commit` el disparador que se ejecuta justo antes de crear un objeto commit.",
+    "para": "Sirve para imponer controles rápidos de calidad y seguridad en la máquina del desarrollador antes de que código defectuoso, mal formateado o con secretos entre al historial local o llegue al servidor de CI. Ahorra ciclos de revisión y fallos evitables en pipelines remotos.",
+    "como": "Al invocar `git commit`, Git consulta `core.hooksPath` (o `.git/hooks/` si no está configurado) buscando un archivo ejecutable llamado `pre-commit` y lo lanza de forma síncrona antes de abrir el editor de mensajes o escribir el árbol en `.git/objects`. Si el script devuelve código de salida `0`, el commit continúa; cualquier código distinto de cero aborta inmediatamente la operación (salvo que el usuario pase explícitamente `--no-verify`). Como `.git/` no se versiona ni se clona, los equipos suelen versionar los scripts en el repositorio y apuntar `core.hooksPath` hacia ellos o delegar su instalación en gestores como Husky, Lefthook o `pre-commit`.",
+    "practicas": [
+      "Mantener el hook `pre-commit` rápido (idealmente menor a 3-5 segundos) analizando solo archivos preparados (`--cached`) para no incentivar el uso de `--no-verify`.",
+      "Recordar siempre que los hooks locales son una ayuda al desarrollador, nunca una barrera de seguridad definitiva; toda regla crítica debe repetirse en CI.",
+      "No depender de copiar scripts manualmente en `.git/hooks/`; versionarlos en el repo y configurarlos con `git config core.hooksPath` o un gestor dedicado.",
+      "Incluir detección rápida de secretos (p. ej. `gitleaks`) y errores de sintaxis en `pre-commit`, dejando suites de tests lentas para `pre-push` o CI."
+    ],
+    "ejemplo": "#!/usr/bin/env sh\n# .git/hooks/pre-commit (chmod +x)\nstaged=$(git diff --cached --name-only --diff-filter=ACM | grep '\\.py$')\nif [ -n \"$staged\" ]; then\n  ruff check $staged || exit 1\nfi",
+    "entrevista": "El hook `pre-commit` es un script local síncrono que Git invoca antes de confirmar el commit; si retorna distinto de cero aborta, aunque siempre debe respaldarse en CI porque `--no-verify` puede saltárselo."
+  },
+  "Husky": {
+    "que": "Herramienta del ecosistema Node.js/JavaScript que automatiza la instalación y el versionado de Git hooks dentro de un proyecto. Resuelve la limitación nativa de Git de no versionar ni compartir automáticamente el contenido de `.git/hooks/` al clonar un repositorio.",
+    "para": "Sirve para que cualquier integrante de un equipo JavaScript/TypeScript reciba automáticamente los mismos hooks (`pre-commit`, `commit-msg`, `pre-push`) al ejecutar `npm install` (o `pnpm`/`yarn`). Se usa habitualmente junto a `lint-staged` y `commitlint`.",
+    "como": "Al ejecutarse el script de ciclo de vida `\"prepare\": \"husky\"` en `package.json` durante la instalación de dependencias, Husky configura la propiedad local `core.hooksPath` de Git apuntando al directorio versionado `.husky/` (con sus inicializadores internos en `.husky/_`). Cuando Git dispara un evento como `pre-commit` o `commit-msg`, lee dicha ruta y ejecuta directamente el script shell correspondiente ubicado en `.husky/pre-commit` o `.husky/commit-msg`, propagando su código de salida y argumentos (como la ruta del archivo temporal del mensaje de commit).",
+    "practicas": [
+      "En entornos CI o contenedores Docker donde no se necesitan hooks locales, omitir la ejecución o usar la guarda recomendada (`husky || true` / variables `CI`) si `devDependencies` no se instalan.",
+      "Combinar Husky con `lint-staged` en `.husky/pre-commit` y `commitlint` en `.husky/commit-msg` para validar formato y mensajes en segundos.",
+      "Mantener los scripts dentro de `.husky/` en POSIX shell simple para garantizar portabilidad entre Linux, macOS y Git Bash en Windows.",
+      "Comparación: frente a `lefthook` o `pre-commit` (Python), Husky es ideal en proyectos puramente Node.js, pero introduce dependencia de Node si el repositorio es políglota."
+    ],
+    "ejemplo": "// package.json (fragmento) y .husky/pre-commit\n// \"scripts\": { \"prepare\": \"husky\" }\n\n// Archivo .husky/pre-commit:\nnpx lint-staged\nnpm run typecheck",
+    "entrevista": "Husky versiona los Git hooks en `.husky/` y configura automáticamente `git config core.hooksPath` mediante el script `prepare` al instalar dependencias en proyectos Node.js."
+  },
+  "Monorepo": {
+    "que": "Estrategia de arquitectura y control de versiones en la que múltiples proyectos, aplicaciones, librerías compartidas o microservicios coexisten dentro de un único repositorio Git. Se diferencia de un código monolítico en que los módulos mantienen fronteras lógicas, dependencias explícitas y despliegues independientes.",
+    "para": "Sirve para compartir código y tipos entre servicios y frontends sin publicar versiones intermedias en registros externos, ejecutar refactorizaciones atómicas cross-servicio en un solo Pull Request y unificar herramientas de build, lint y CI. Se usa ampliamente desde medianas empresas hasta grandes tecnológicas.",
+    "como": "Un gestor de espacios de trabajo (`pnpm workspaces`, `Cargo workspaces`, etc.) enlaza paquetes internos mediante symlinks locales, mientras un orquestador de monorepo (como Turborepo, Nx o Bazel) construye un grafo acíclico dirigido (DAG) de dependencias entre tareas (`build`, `test`, `lint`). Ante cada cambio, calcula los paquetes afectados comparando `git diff` contra la rama base y propagando por el grafo qué nodos dependen de los archivos modificados. Además, calcula un hash de las entradas de cada tarea (código fuente, variables, lockfile) para reutilizar artefactos desde una caché local o remota sin recompilar lo que no cambió.",
+    "practicas": [
+      "Implementar detección de afectados (`affected`) y caché remota en CI; reconstruir y testear todo el repositorio en cada PR vuelve inviable el monorepo al escalar.",
+      "Definir límites estrictos de propiedad con `CODEOWNERS` por carpeta y reglas de frontera de dependencias (ej. evitar que un servicio importe archivos internos no exportados de otro).",
+      "No confundir monorepo con monolito acoplado: cada aplicación debe poder versionarse, compilarse y desplegarse de forma independiente.",
+      "Comparación: frente a polyrepo (un repo por servicio), simplifica refactorizaciones atómicas y sharing de código, pero exige mejor infraestructura de CI, Git sparse-checkout en repos gigantes y gobernanza de permisos."
+    ],
+    "ejemplo": "// turbo.json — ejecución con grafo de dependencias y caché\n{\n  \"tasks\": {\n    \"build\": { \"dependsOn\": [\"^build\"], \"outputs\": [\"dist/**\"] },\n    \"test\": { \"dependsOn\": [\"build\"] }\n  }\n}",
+    "entrevista": "Un monorepo centraliza múltiples proyectos independientes en un solo historial Git, apoyándose en grafos de dependencias, detección de cambios afectados y caché remota para escalar builds y refactors atómicos."
+  },
+  "Pull Requests": {
+    "que": "Mecanismo de colaboración proporcionado por plataformas Git (llamado Merge Request en GitLab) mediante el cual un desarrollador solicita revisar e integrar los cambios de una rama o repositorio bifurcado (fork) hacia una rama destino.",
+    "para": "Sirve como puerta de control técnica y de gobernanza antes de modificar ramas protegidas como `main`. Centraliza en un único hilo el diff de código, la conversación de Code Review, el estado de los pipelines de CI y la trazabilidad de aprobaciones para auditoría.",
+    "como": "Internamente el forge mantiene referencias virtuales al head de la rama origen, la rama destino y su ancestro común (merge-base), calculando el diff de tres puntos (`base...head`) para mostrar únicamente los cambios introducidos por la rama propuesta. Al abrirse o actualizarse (`synchronize`), dispara eventos webhook que ejecutan tests, linters y escaneos de seguridad reportados como Status Checks. Una vez cumplidas las reglas de protección (aprobaciones, conversaciones resueltas, checks en verde), el forge realiza la integración eligiendo entre Merge Commit (preserva todo el grafo), Squash and Merge (condensa en un commit) o Rebase and Merge (reaplica linealmente).",
+    "practicas": [
+      "Utilizar plantillas de PR (`.github/pull_request_template.md`) que obliguen a explicar qué cambia, por qué, cómo se probó y qué riesgos o migraciones implica.",
+      "Abrir PRs en estado `Draft` de forma temprana para recibir feedback de arquitectura o validar CI sin solicitar revisión formal todavía.",
+      "Elegir la estrategia de fusión según la política del equipo: `Squash` mantiene `main` limpio con un commit por PR; `Merge --no-ff` conserva el contexto de commits intermedios.",
+      "Habilitar el borrado automático de la rama origen tras fusionar para evitar acumulación de ramas obsoletas en el remoto."
+    ],
+    "ejemplo": "# Creación y revisión rápida desde GitHub CLI\ngit push -u origin feat/oauth-pkce\ngh pr create --title \"feat(auth): soporte PKCE en OAuth\" --body \"Cierra #88\" --draft\ngh pr ready && gh pr checks --watch",
+    "entrevista": "Un Pull Request calcula un diff de tres puntos desde el merge-base para someter un cambio a revisión humana y checks de CI antes de integrarlo mediante merge, squash o rebase."
+  },
+  "Rebase vs Merge": {
+    "que": "Las dos estrategias fundamentales en Git para integrar la historia de una rama en otra. Mientras `merge` une dos líneas divergentes creando un nodo de unión que conserva ambas trayectorias, `rebase` trasplanta los commits locales sobre un nuevo punto base reescribiendo un historial lineal.",
+    "para": "Sirve para resolver la divergencia de ramas cuando múltiples desarrolladores trabajan en paralelo sobre una base común. Elegir uno u otro determina si el equipo prioriza la fidelidad histórica exacta de cuándo ocurrieron las bifurcaciones (`merge`) o la legibilidad de una historia lineal y limpia (`rebase`).",
+    "como": "Al ejecutar `git merge feature`, Git localiza el ancestro común (merge-base) entre `HEAD` y `feature`, realiza un merge a tres vías (o un simple avance de puntero Fast-Forward si `HEAD` no divergió) y genera un commit especial con dos padres que ata ambos grafos. En cambio, `git rebase main` identifica los commits exclusivos de la rama actual respecto a `main`, mueve temporalmente el puntero a la punta de `main` y aplica cada commit secuencialmente como parche mediante `cherry-pick` interno. Esto genera nuevos commits con distinto hash SHA-1, por lo que si la rama ya existía en el remoto requerirá `git push --force-with-lease`.",
+    "practicas": [
+      "Cumplir la regla de oro del rebase: nunca hacer `rebase` de ramas compartidas o públicas (`main`, `develop`) porque reescribe hashes y rompe el historial de otros colaboradores.",
+      "Preferir `git pull --rebase` al actualizar trabajo local no publicado para evitar commits triviales de tipo `Merge branch 'main' of ...`.",
+      "Usar siempre `--force-with-lease` (nunca `--force` a ciegas) tras rebasar una rama de feature ya subida, evitando sobrescribir commits de otro compañero.",
+      "Usar `git rebase -i` (interactivo) para limpiar, reordenar o fusionar (`squash`/`fixup`) commits locales antes de abrir un Pull Request."
+    ],
+    "ejemplo": "# Actualizar una rama de feature privada reescribiéndola sobre el último main\ngit fetch origin\ngit switch feat/buscador\ngit rebase origin/main\ngit push --force-with-lease origin feat/buscador",
+    "entrevista": "Merge preserva la topología real mediante un commit de dos padres (o fast-forward), mientras que rebase reaplica los commits sobre una nueva base reescribiendo sus hashes; por eso solo se rebasa historial privado."
+  },
+  "Semantic Versioning": {
+    "que": "Especificación estándar de numeración de versiones de software con formato `MAJOR.MINOR.PATCH` (p. ej. `2.4.1`) más sufijos opcionales de pre-lanzamiento y metadatos de compilación. Comunica de forma contractual el impacto y compatibilidad de cada cambio respecto a la API pública.",
+    "para": "Sirve para que consumidores, gestores de paquetes (`npm`, `pip`, `cargo`, `maven`) y sistemas dependientes evalúen de forma automatizada si actualizar una librería o API es seguro o requiere cambios de código. Previene el llamado «infierno de dependencias» cuando decenas de paquetes interactúan entre sí.",
+    "como": "A partir de la versión estable `1.0.0`, los números se incrementan estrictamente según la compatibilidad hacia atrás: `MAJOR` aumenta cuando se introducen cambios incompatibles en la API pública (reseteando `MINOR` y `PATCH` a `0`); `MINOR` aumenta cuando se añade funcionalidad compatible hacia atrás (reseteando `PATCH` a `0`); `PATCH` aumenta solo con correcciones de bugs compatibles hacia atrás. Las versiones `0.y.z` indican desarrollo inicial con API inestable. Los gestores de dependencias usan operadores sobre esta estructura: la virgulilla `~1.2.3` permite actualizaciones `PATCH` (`>=1.2.3 <1.3.0`), mientras el circunflejo `^1.2.3` permite `MINOR` y `PATCH` (`>=1.2.3 <2.0.0`).",
+    "practicas": [
+      "Definir con claridad qué constituye la API pública de cada proyecto (endpoints, esquemas, exports, CLI flags); cambiar comportamiento observable documentado también puede ser un `MAJOR`.",
+      "Usar identificadores de pre-release (`1.3.0-alpha.1`, `2.0.0-rc.2`) para validar candidatos antes de publicar la versión estable.",
+      "Acompañar SemVer con archivos lockfile (`package-lock.json`, `poetry.lock`, `Cargo.lock`) en aplicaciones finales para garantizar builds reproducibles aunque existan rangos `^`.",
+      "Trampa frecuente: publicar cambios incompatibles bajo `0.x.y` olvidando que bajo el estándar `^0.2.3` solo fija el último dígito (`<0.3.0`)."
+    ],
+    "ejemplo": "2.4.1-rc.1+build.20261125\n# 2 -> MAJOR (cambio incompatible / breaking change)\n# 4 -> MINOR (nueva funcionalidad compatible)\n# 1 -> PATCH (bugfix compatible)\n# -rc.1 -> pre-lanzamiento | +build... -> metadato sin precedencia",
+    "entrevista": "SemVer codifica la compatibilidad de la API pública en `MAJOR.MINOR.PATCH`, permitiendo a los gestores de dependencias resolver rangos seguros (`^` y `~`) de forma automática."
+  },
+  "Tags y releases": {
+    "que": "Los tags en Git son referencias inmutables que marcan un punto específico del historial (normalmente una versión), mientras que los Releases son entidades de alto nivel en plataformas como GitHub o GitLab construidas sobre un tag para distribuir notas de cambio y artefactos binarios.",
+    "para": "Sirven para identificar de manera inequívoca qué estado exacto del código fuente se entregó en producción o se publicó en un registro, permitiendo auditar incidentes y reproducir builds históricos. Además, los pushes de tags actúan como disparadores estándar de pipelines de publicación y despliegue.",
+    "como": "Git distingue dos tipos de tags en `.git/refs/tags/`: los tags ligeros (un simple puntero directo a un hash de commit) y los tags anotados (`git tag -a`), que crean un objeto Git propio almacenado en `.git/objects` con autor, fecha, mensaje y una firma GPG/SSH opcional. A diferencia de las ramas, los tags no avanzan con nuevos commits y `git push` no los sube automáticamente salvo que se indique el tag o `--follow-tags`. Al recibir un tag `v*`, la plataforma o el pipeline de CI genera el Release adjuntando el changelog autogenerado, binarios compilados, imágenes Docker y sumas de verificación (checksums/SBOM).",
+    "practicas": [
+      "Usar siempre tags anotados (`git tag -a v1.2.0 -m \"...\"`) para versiones y entregas oficiales, reservando los ligeros solo para marcadores locales temporales.",
+      "Preferir `git push origin --follow-tags` o especificar el tag concreto (`git push origin v1.2.0`) en lugar de `--tags`, que puede subir etiquetas personales no deseadas.",
+      "No mover ni reutilizar un tag ya publicado en producción; si la entrega falló, publicar un nuevo patch tag (`v1.2.1`) para no invalidar cachés ni checksums de clientes.",
+      "Automatizar la creación de tags y releases desde CI (ej. con `release-please` o `semantic-release`) tras fusionar en `main`."
+    ],
+    "ejemplo": "git tag -a v1.5.0 -m \"Versión 1.5.0: soporte WebAuthn\"\ngit push origin v1.5.0\n# Crear Release en GitHub CLI adjuntando binario compilado\ngh release create v1.5.0 ./dist/app-linux-amd64 --generate-notes",
+    "entrevista": "Un tag anotado en Git es un objeto inmutable con metadatos y firma opcional que apunta a un commit, mientras que un Release añade sobre ese tag changelog, binarios y artefactos de distribución en el forge."
+  },
+  "Trunk-based development": {
+    "que": "Modelo de ramificación en el que todos los desarrolladores integran cambios pequeños y frecuentes directamente sobre una única rama principal compartida (el «tronco» o `main`), o mediante ramas de vida ultracorta de apenas horas o un máximo de 1-2 días.",
+    "para": "Sirve para maximizar la velocidad de entrega continua y eliminar los «merge hell» causados por ramas divergentes que viven semanas sin integrarse. Es una de las prácticas técnicas centrales asociadas con equipos de alto rendimiento según la investigación DORA.",
+    "como": "Los equipos evitan ramas paralelas de larga duración y dividen el trabajo en incrementos pequeños integrados diariamente en `main`, protegida por pruebas automatizadas veloces y Merge Queues. Cuando una funcionalidad requiere varios días o semanas para completarse, se integra código parcial de forma segura detrás de Feature Flags (interruptores de configuración en tiempo de ejecución) o mediante el patrón Branch by Abstraction (mantener ambas implementaciones tras una interfaz hasta completar el reemplazo). Si se necesita estabilizar una versión puntual para clientes sin frenar el tronco, se corta una rama `release/*` solo de lectura/cherry-pick muy breve desde `main`.",
+    "practicas": [
+      "Apoyarse en Feature Flags y Branch by Abstraction para integrar código incompleto sin exponerlo ni romper producción.",
+      "Invertir en una suite de tests automatizados rápida y confiable (idealmente < 10 minutos en CI); sin CI sólido, integrar directo al tronco genera regresiones.",
+      "Mantener los Pull Requests de ramas cortas por debajo de 1-2 días de vida y revisar con prioridad alta para evitar cuellos de botella.",
+      "Comparación: frente a GitFlow (ramas largas, integración tardía), Trunk-based development adelanta la integración a cada hora o día, reduciendo drásticamente conflictos."
+    ],
+    "ejemplo": "// Branch / Feature Flag para integrar código incremental en main de forma segura\nif (featureFlags.isEnabled('nuevo-motor-precios', user.id)) {\n  return calcularPrecioV2(carrito);\n}\nreturn calcularPrecioActual(carrito);",
+    "entrevista": "Trunk-based development integra incrementos diarios sobre una sola rama `main` respaldada por CI rápido y Feature Flags, eliminando conflictos de ramas largas y habilitando entrega continua."
+  },
+  "commitlint": {
+    "que": "Herramienta de linting especializada en validar que los mensajes de commit cumplan una convención definida antes de ser aceptados en el repositorio. Se utiliza de forma casi universal junto a las reglas de `@commitlint/config-conventional` para imponer Conventional Commits.",
+    "para": "Sirve para garantizar de manera automática y uniforme que ningún commit con mensaje ambiguo o mal estructurado rompa las herramientas posteriores de generación de changelogs y versionado semántico automático.",
+    "como": "Opera en dos puntos del flujo de trabajo: en local y en CI. En local se conecta al hook `commit-msg` (mediante Husky o Lefthook), recibiendo como argumento `$1` la ruta al archivo temporal donde Git escribió el mensaje (por ejemplo `.git/COMMIT_EDITMSG`); `commitlint --edit $1` parsea cabecera, tipo, ámbito, asunto, cuerpo y footers, evaluándolos contra las reglas de `commitlint.config.*` y devolviendo código de salida distinto de cero si hay infracción. En CI inspecciona rangos de commits nuevos (`commitlint --from origin/main --to HEAD`) para evitar bypasses con `--no-verify`.",
+    "practicas": [
+      "Ejecutar `commitlint` tanto en el hook local `commit-msg` (retroalimentación instantánea) como en el pipeline de CI del Pull Request.",
+      "Definir una lista acotada de `scope-enum` en monorepos para evitar proliferación de ámbitos inconsistentes (`auth` vs `authentication`).",
+      "En repositorios que usan Squash Merge en GitHub/GitLab, priorizar la validación del título del Pull Request en CI (ej. con `amannn/action-semantic-pull-request`) para no frustrar commits WIP locales.",
+      "Error típico: olvidar pasar `$1` o `--edit` en el hook `commit-msg`, provocando que commitlint falle esperando entrada estándar."
+    ],
+    "ejemplo": "// commitlint.config.mjs\nexport default {\n  extends: ['@commitlint/config-conventional'],\n  rules: {\n    'scope-enum': [2, 'always', ['api', 'web', 'infra', 'deps']]\n  }\n};\n// En .husky/commit-msg: npx --no -- commitlint --edit \"$1\"",
+    "entrevista": "commitlint valida la gramática de los mensajes de commit en el hook `commit-msg` y en CI para asegurar que la automatización de SemVer y changelogs no falle por mensajes mal formados."
+  },
+  "lefthook - pre-commit (Python)": {
+    "que": "Los dos principales gestores de Git hooks independientes de lenguaje: `lefthook` (binario nativo escrito en Go de alta velocidad y cero dependencias de runtime) y `pre-commit` (framework basado en Python que gestiona y aísla automáticamente los entornos de cada linter).",
+    "para": "Sirven para estandarizar hooks locales en repositorios políglotas (Go, Rust, Python, Terraform, Docker, JS) donde usar Husky resultaría inadecuado por acoplar el proyecto a Node.js. Ambos resuelven la instalación reproducible y la ejecución controlada de validaciones previas al commit o push.",
+    "como": "`lefthook` se configura en `lefthook.yml`, instala sus hooks con `lefthook install` y ejecuta comandos en paralelo filtrando archivos mediante plantillas nativas como `{staged_files}`, además de soportar `stage_fixed: true` para re-añadir correcciones automáticas al índice. Por su parte, `pre-commit` lee `.pre-commit-config.yaml`, descarga repositorios externos de hooks en una caché local, construye entornos virtuales aislados por lenguaje (Python, Node, Go, Ruby) según la versión declarada en `rev:` y ejecuta cada hook sobre los archivos staged filtrados por regex tras `pre-commit install`.",
+    "practicas": [
+      "Elegir `lefthook` cuando ya existen las herramientas instaladas en el proyecto y se busca máxima velocidad en paralelo, ejecución local de comandos propios y un único binario sin Python.",
+      "Elegir `pre-commit` (Python) cuando se desean hooks comunitarios listos para usar (`pre-commit-hooks`, `ruff`, `detect-secrets`, `tflint`) con versiones fijadas (`rev`) en entornos aislados sin instalar cada binario a mano.",
+      "Fijar `rev` en `.pre-commit-config.yaml` a tags o hashes concretos y actualizarlos periódicamente con `pre-commit autoupdate`.",
+      "Configurar el comando equivalente en CI (`pre-commit run --all-files` o `lefthook run pre-commit --all-files`) para asegurar paridad total entre entorno local y pipeline."
+    ],
+    "ejemplo": "# lefthook.yml\npre-commit:\n  parallel: true\n  commands:\n    ruff:\n      glob: \"*.py\"\n      run: ruff check --fix {staged_files}\n      stage_fixed: true\n# Equivalente conceptual en Python pre-commit: .pre-commit-config.yaml + pre-commit install",
+    "entrevista": "Para repositorios políglotas, `lefthook` aporta ejecución paralela ultrarrápida en Go sobre herramientas locales, mientras que `pre-commit` (Python) provisiona entornos aislados y reproducibles para hooks versionados."
+  },
+  "lint-staged": {
+    "que": "Utilidad CLI del ecosistema Node.js que ejecuta linters, formateadores y comprobaciones rápidas exclusivamente sobre los archivos que están actualmente en el Staging Area (preparados) de Git, en lugar de analizar todo el repositorio.",
+    "para": "Sirve para que los hooks `pre-commit` sean casi instantáneos incluso en bases de código enormes y para permitir adoptar reglas estrictas de calidad en proyectos heredados (legacy) aplicando validación únicamente sobre los archivos tocados en cada commit.",
+    "como": "Al invocarse desde un hook `pre-commit`, consulta el índice de Git (`git diff --cached --name-only --diff-filter=ACMR`) para obtener los archivos añadidos, copiados o modificados. Antes de ejecutar los comandos configurados por patrón glob, guarda una copia de seguridad de los cambios no preparados (hunks unstaged del working tree) para proteger modificaciones parciales hechas con `git add -p`. Luego ejecuta en paralelo los scripts (como `eslint --fix` y `prettier --write`) pasando las rutas coincidentes en lotes, re-añade (`git add`) las correcciones aplicadas al índice y finalmente restaura los cambios no preparados preservando intacto el estado parcial.",
+    "practicas": [
+      "Evitar añadir `git add` manual dentro de los comandos de `lint-staged`; versiones modernas re-añaden automáticamente los archivos modificados por los formateadores.",
+      "No ejecutar comandos que requieran analizar todo el proyecto pasando archivos individuales como argumento si no lo soportan (p. ej. `tsc --noEmit` debe invocarse como función `() => 'tsc --noEmit'` sin lista de archivos).",
+      "Mantener configuraciones separadas y rápidas en `lint-staged`, dejando compilaciones completas o pruebas e2e fuera del `pre-commit`.",
+      "Comparación: en proyectos fuera de Node.js, la misma funcionalidad de filtrar `{staged_files}` y re-preparar cambios la cubren de forma nativa `lefthook` (`stage_fixed: true`) o `pre-commit` (Python)."
+    ],
+    "ejemplo": "// package.json\n{\n  \"lint-staged\": {\n    \"*.{ts,tsx}\": [\"eslint --fix\", \"prettier --write\"],\n    \"*.{json,md,yml}\": [\"prettier --write\"]\n  }\n}",
+    "entrevista": "lint-staged filtra los archivos del índice de Git, resguarda hunks no preparados para no corromper commits parciales, ejecuta linters en paralelo por glob y re-prepara los arreglos automáticos."
+  }
+}

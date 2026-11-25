@@ -1,0 +1,262 @@
+{
+  "Auditoría": {
+    "que": "Proceso sistemático y trazable de registro, revisión y verificación de eventos, configuraciones, permisos y controles de seguridad de un sistema de software. Incluye tanto el registro inmutable de acciones (audit trail) como la evaluación formal frente a políticas internas o estándares como SOC 2, ISO 27001 o PCI-DSS.",
+    "para": "Sirve para detectar accesos indebidos, reconstruir incidentes forenses y demostrar cumplimiento normativo ante reguladores o clientes. Se implementa de forma continua en producción mediante logs estructurados y de forma periódica mediante auditorías técnicas externas o internas.",
+    "como": "La aplicación y la infraestructura emiten eventos estructurados (quién, qué recurso, acción, timestamp UTC, IP origen, resultado y correlation ID) hacia un colector centralizado (Fluent Bit, OpenTelemetry). Los logs se envían a un almacenamiento WORM (Write-Once-Read-Many) o SIEM como Amazon S3 con Object Lock, Elastic SIEM o Splunk, donde se firman o encadenan para impedir su alteración. Motores de reglas y análisis de anomalías correlacionan eventos críticos como escaladas de privilegios, cambios en IAM o fallos repetidos de autenticación. Paralelamente, herramientas como AWS Config, OpenSCAP o Lynis evalúan el estado de cumplimiento de la infraestructura contra benchmarks CIS.",
+    "practicas": [
+      "Nunca registres contraseñas, tokens JWT, claves API ni datos personales sensibles (PII) en los logs de auditoría; aplica enmascaramiento o tokenización antes de emitir el evento.",
+      "Separa los logs operativos (debug/rendimiento) de los audit logs de seguridad y envía estos últimos a una cuenta o almacenamiento aislado con permisos append-only para que ni un administrador comprometido pueda borrarlos.",
+      "Auditoría vs. Monitorización: la monitorización observa métricas y disponibilidad en tiempo real; la auditoría garantiza trazabilidad histórica, integridad probatoria y cumplimiento.",
+      "Sincroniza todos los nodos mediante NTP/chrony en UTC para poder correlacionar cronológicamente un ataque distribuido entre microservicios."
+    ],
+    "ejemplo": "{\n  \"timestamp\": \"2026-04-12T18:42:10Z\",\n  \"actor\": {\"id\": \"usr_941\", \"role\": \"admin\", \"ip\": \"198.51.100.24\"},\n  \"action\": \"iam.role.update\",\n  \"target\": \"role/billing-read\",\n  \"outcome\": \"success\",\n  \"request_id\": \"req_7f9c2a\"\n}",
+    "entrevista": "Una auditoría efectiva combina logs estructurados e inmutables con correlación en SIEM y verificación continua de controles, garantizando trazabilidad forense sin exponer secretos en los registros."
+  },
+  "Broken auth": {
+    "que": "Categoría de vulnerabilidades (identificada en el OWASP Top 10 como Identification and Authentication Failures) donde fallos en la gestión de identidades, credenciales o sesiones permiten a un atacante suplantar usuarios legítimos. Abarca desde fuerza bruta sin límite hasta tokens de sesión predecibles o mal invalidados.",
+    "para": "Comprender y mitigar el broken authentication es esencial para proteger el acceso a cuentas, paneles administrativos y APIs privadas. Se previene en cualquier sistema con login, recuperación de contraseña, OAuth/OIDC o emisión de sesiones y JWT.",
+    "como": "Durante la autenticación, un fallo típico ocurre cuando el servidor no limita intentos fallidos (credential stuffing), devuelve mensajes distintos para usuario inexistente vs. contraseña incorrecta (enumeración) o transmite el session ID en la URL. En la gestión de sesiones, si una cookie carece de flags HttpOnly, Secure y SameSite, o si un JWT acepta el algoritmo 'none' o usa una clave HMAC débil, el atacante puede secuestrar o falsificar la identidad. Asimismo, si al cerrar sesión o cambiar la contraseña el servidor no revoca los refresh tokens ni invalida el identificador de sesión previo (session fixation), el atacante conserva el acceso.",
+    "practicas": [
+      "Delega la autenticación en protocolos maduros (OIDC/OAuth 2.1 con PKCE) o proveedores probados y exige MFA resistente a phishing (WebAuthn/passkeys o TOTP).",
+      "Emite cookies de sesión con los atributos HttpOnly, Secure y SameSite=Lax/Strict, rota el ID de sesión tras el login y revoca sesiones activas al cambiar la contraseña.",
+      "Broken auth vs. Broken access control: broken auth permite hacerte pasar por alguien (identidad/sesión), mientras que broken access control permite hacer algo sin permiso aun estando bien autenticado (autorización/IDOR).",
+      "Aplica rate limiting progresivo, bloqueo temporal o verificación adaptativa en login y recuperación de cuenta, manteniendo mensajes de error genéricos y tiempos de respuesta constantes."
+    ],
+    "ejemplo": "Set-Cookie: sid=9f8a7c6b5e4d3a21; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=1800",
+    "entrevista": "Para evitar broken authentication hay que proteger todo el ciclo de vida de la identidad: hashing robusto, rate limiting contra credential stuffing, rotación e invalidación real de sesiones/tokens y MFA."
+  },
+  "Cifrado (AES - RSA)": {
+    "que": "Mecanismo criptográfico que transforma datos legibles (plaintext) en datos ininteligibles (ciphertext) mediante un algoritmo y una clave. AES (Advanced Encryption Standard) es el estándar simétrico de cifrado por bloques rápido para grandes volúmenes, mientras que RSA es un estándar asimétrico basado en factorización de enteros usado para intercambio de claves y firmas digitales.",
+    "para": "Sirve para garantizar la confidencialidad de datos en tránsito (TLS) y en reposo (bases de datos, discos, backups), además de autenticar origen e integridad cuando se combina con autenticación de mensajes o firmas. Se usa de forma híbrida en la práctica diaria.",
+    "como": "En AES (claves de 128, 192 o 256 bits), el mismo secreto cifra y descifra bloques de 128 bits mediante rondas de sustitución (SubBytes), permutación (ShiftRows), mezcla (MixColumns) y suma de subclaves (AddRoundKey); en modo autenticado AES-GCM se genera además un tag de integridad usando un nonce/IV único de 96 bits. En RSA (típicamente 2048 o 4096 bits), cada parte posee un par clave pública/privada derivado de dos primos grandes; solo quien tiene la clave privada descifra lo cifrado con la pública (usando padding OAEP) o firma hashes (usando PSS). En sistemas reales como TLS o envelope encryption con KMS, RSA/ECDH negocia o envuelve una clave simétrica efímera (DEK) y AES-GCM cifra los datos.",
+    "practicas": [
+      "Usa cifrado autenticado (AEAD) como AES-256-GCM o ChaCha20-Poly1305; evita modos heredados como AES-ECB (filtra patrones) o AES-CBC sin HMAC (vulnerable a padding oracle).",
+      "Nunca reutilices un mismo IV/nonce con la misma clave en AES-GCM, ya que rompe por completo la confidencialidad y la autenticidad del flujo.",
+      "AES vs. RSA: AES es órdenes de magnitud más rápido y sirve para cifrar datos masivos; RSA/ECC sirve para intercambio de claves, TLS handshake y firmas sobre hashes pequeños, no para cifrar archivos grandes directamente.",
+      "No implementes primitivas criptográficas propias: usa bibliotecas auditadas (OpenSSL, libsodium, Web Crypto API) y gestiona las claves mediante un KMS con rotación periódica."
+    ],
+    "ejemplo": "from cryptography.hazmat.primitives.ciphers.aead import AESGCM\nimport os\nkey = AESGCM.generate_key(bit_length=256)\nnonce = os.urandom(12)\nct = AESGCM(key).encrypt(nonce, b\"dato confidencial\", b\"aad-header\")",
+    "entrevista": "En producción se usa cifrado híbrido: criptografía asimétrica (RSA-OAEP o ECDHE) para autenticar e intercambiar claves, y cifrado simétrico autenticado (AES-256-GCM) para proteger el payload con mínimo coste computacional."
+  },
+  "Container scanning": {
+    "que": "Análisis automatizado de imágenes de contenedores OCI/Docker para detectar vulnerabilidades conocidas (CVE) en paquetes del sistema operativo y dependencias de aplicación, así como malas configuraciones de seguridad en el Dockerfile o manifiestos.",
+    "para": "Sirve para evitar que imágenes con librerías vulnerables, binarios obsoletos o usuarios root innecesarios lleguen a producción en clústeres de Kubernetes o servidores. Se ejecuta tanto en el pipeline CI/CD antes del push al registry como de forma continua sobre imágenes ya desplegadas.",
+    "como": "El escáner (como Trivy, Grype o Snyk Container) descarga o inspecciona las capas del tarball de la imagen OCI sin necesidad de ejecutarla. Extrae el inventario de paquetes del SO (dpkg, apk, rpm) y los manifiestos de lenguajes (package-lock.json, poetry.lock, go.mod, JARs) y genera un SBOM interno. Luego cruza cada componente y su versión contra bases de vulnerabilidades actualizadas (NVD, OSV, advisories de Debian/Alpine/Red Hat) filtrando por severidad y disponibilidad de parche. Finalmente, un policy engine (como OPA Gatekeeper o Kyverno) en el admission controller de Kubernetes puede bloquear el despliegue si la imagen supera el umbral de CVEs críticos o no está firmada.",
+    "practicas": [
+      "Usa imágenes base mínimas (distroless, scratch o Alpine) y builds multi-stage para eliminar compiladores, curl y gestores de paquetes de la imagen final.",
+      "Fija las imágenes base por digest SHA-256 en lugar de usar el tag mutable ':latest' y fírmalas con Cosign/Sigstore para asegurar procedencia.",
+      "Configura el Dockerfile con un usuario no-root (USER 10001), sistema de archivos de solo lectura cuando sea posible y capacidades Linux mínimas.",
+      "Container scanning vs. Runtime security: el escaneo detecta CVEs estáticos antes de desplegar, pero debe complementarse con monitoreo en runtime (Falco, Cilium Tetragon) para detectar comportamiento anómalo o zero-days."
+    ],
+    "ejemplo": "trivy image --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed ghcr.io/org/api:1.4.2",
+    "entrevista": "El container scanning en CI combinado con imágenes distroless, digests inmutables y admission controllers en Kubernetes impide que vulnerabilidades críticas conocidas lleguen a producción."
+  },
+  "Deserialización insegura → OWASP A08": {
+    "que": "Vulnerabilidad encuadrada en OWASP A08 (Software and Data Integrity Failures) que ocurre cuando una aplicación reconstruye objetos a partir de flujos de bytes o texto (Java Serialization, Python pickle, PHP unserialize, YAML/JSON tipado) controlados por un atacante sin validar su integridad o tipo.",
+    "para": "Permite a un atacante manipular atributos internos de objetos, eludir controles de autenticación o lograr ejecución remota de código (RCE) mediante cadenas de gadgets presentes en el classpath o entorno. Es crítica en APIs legacy, colas de mensajes, caché compartida y cookies serializadas.",
+    "como": "El atacante construye un payload serializado malicioso que instancia clases disponibles en las librerías de la aplicación (gadget chains, por ejemplo en Apache Commons Collections o bibliotecas de Java/PHP) cuyos métodos mágicos (__wakeup, __reduce__, readObject) se ejecutan automáticamente durante el proceso de deserialización, antes incluso de que el código de negocio valide el objeto resultante. Al invocar `ObjectInputStream.readObject()`, `pickle.loads()` o `yaml.load()`, el runtime instancia la cadena de objetos y dispara llamadas del sistema o manipulaciones de estado arbitrarias. Si además el formato viaja en cookies o tokens sin firma HMAC, el atacante puede alterar roles o permisos en memoria.",
+    "practicas": [
+      "Reemplaza la serialización nativa binaria (pickle, Java Serialization, BinaryFormatter) por formatos de intercambio de solo datos como JSON o Protobuf con validación estricta de esquema (JSON Schema, Pydantic).",
+      "Si es imprescindible deserializar objetos tipados, aplica firmas criptográficas (HMAC) antes de procesar el payload y restringe las clases permitidas mediante allowlists (ObjectInputFilter en Java, yaml.safe_load en Python).",
+      "Deserialización insegura vs. Inyección de código: en deserialización el código ya existe en las dependencias de la aplicación (gadgets) y se activa al reconstruir el objeto, sin necesidad de inyectar sintaxis ejecutable nueva.",
+      "Aplica aislamiento de privilegios mínimos al proceso que consume mensajes externos para acotar el impacto ante posibles fallos de integridad."
+    ],
+    "ejemplo": "# Inseguro: ejecuta __reduce__ arbitrario\n# data = pickle.loads(user_bytes)\n\n# Seguro: solo datos tipados y validados\nimport json, yaml\npayload = yaml.safe_load(user_yaml)  # o json.loads()",
+    "entrevista": "La deserialización insegura convierte datos no confiables en ejecución de código vía gadget chains; la defensa definitiva es usar formatos de datos planos como JSON/Protobuf o firmar y filtrar estrictamente las clases permitidas."
+  },
+  "GDPR - privacidad": {
+    "que": "El Reglamento General de Protección de Datos (GDPR) de la Unión Europea es el marco normativo que regula el tratamiento, almacenamiento y transferencia de datos personales (PII), imponiendo principios de privacidad desde el diseño (Privacy by Design) y por defecto en sistemas de software.",
+    "para": "Sirve para proteger los derechos fundamentales de los usuarios sobre sus datos (acceso, rectificación, portabilidad y olvido) y evitar sanciones legales y reputacionales graves. Aplica a cualquier producto digital que procese datos de residentes en la UE, independientemente de dónde estén alojados sus servidores.",
+    "como": "A nivel de arquitectura de software, cumplir con GDPR exige mapear el ciclo de vida del dato: capturar consentimiento granular y verificable antes de activar analítica o marketing, minimizar los campos recogidos y cifrar PII tanto en tránsito (TLS 1.3) como en reposo. El derecho al olvido (art. 17) requiere implementar pipelines de borrado lógico/físico o anonimización criptográfica (crypto-shredding, borrando la clave de cifrado por usuario) que alcancen bases de datos primarias, réplicas, índices de búsqueda y backups según políticas de retención. Además, ante una brecha de seguridad, los sistemas de auditoría deben permitir evaluar el alcance y notificar a la autoridad en un plazo de 72 horas.",
+    "practicas": [
+      "Implementa minimización de datos y retención automática (TTL): no recolectes campos que no necesitas ni conserves logs o cuentas inactivas indefinidamente.",
+      "Resuelve el derecho al olvido en sistemas append-only o backups mediante crypto-shredding (cifrar PII con clave individual destruible) o seudonimización separando la tabla de identidades.",
+      "Anonimización vs. Seudonimización: un dato seudonimizado (p. ej. un UUID o hash con clave) sigue siendo dato personal bajo GDPR si es reidentificable; solo el dato irreversiblemente anónimo queda fuera.",
+      "Separa los entornos de desarrollo y QA de producción usando datos sintéticos o anonimizados; nunca vuelques dumps de PII de producción en laptops de desarrolladores."
+    ],
+    "ejemplo": "-- Crypto-shredding: al solicitar borrado, se destruye la clave del usuario en KMS\nUPDATE users SET email = NULL, name = 'ANON', kms_key_id = NULL\nWHERE user_id = 'u_8492' AND deleted_at IS NOT NULL;",
+    "entrevista": "En ingeniería, cumplir GDPR significa diseñar el dato desde cero: minimización, consentimiento auditable, cifrado con separación de identidades y mecanismos automatizados de retención y crypto-shredding."
+  },
+  "Gestión de secretos": {
+    "que": "Conjunto de prácticas y sistemas dedicados a almacenar, distribuir, rotar y revocar credenciales sensibles (claves API, contraseñas de base de datos, certificados TLS, claves de cifrado y tokens) sin exponerlos en texto plano en código fuente, repositorios Git o variables de configuración estáticas.",
+    "para": "Resuelve el riesgo de filtración de credenciales por commits accidentales, acceso indebido a entornos CI/CD o compromiso de contenedores. Se utiliza en todo ciclo DevSecOps, desde desarrollo local hasta despliegues en nube y Kubernetes.",
+    "como": "En lugar de hardcodear credenciales o guardar archivos `.env` en Git, los secretos se almacenan cifrados en un gestor dedicado (HashiCorp Vault, AWS Secrets Manager, GCP Secret Manager, Azure Key Vault) protegido por un KMS. Cuando una carga de trabajo arranca, se autentica mediante identidad federada de plataforma (IAM Roles, IRSA/Workload Identity en Kubernetes, OIDC en GitHub Actions) sin necesitar un secreto inicial estático (secret zero problem). El gestor verifica la identidad, evalúa la política de menor privilegio y entrega el secreto en memoria (tmpfs o variables inyectadas en runtime) o emite credenciales dinámicas efímeras con TTL corto que se revocan automáticamente al expirar.",
+    "practicas": [
+      "Prefiere secretos dinámicos y efímeros (credenciales temporales de BD o tokens OIDC de corto TTL) frente a claves estáticas de larga duración.",
+      "Activa secret scanning (Gitleaks, TruffleHog, GitHub Secret Scanning) en pre-commit y CI para bloquear y revocar inmediatamente cualquier credencial filtrada en el historial de Git.",
+      "Secret Manager vs. KMS: un KMS gestiona claves criptográficas para cifrar/descifrar y firmar sin que la clave salga del hardware; un Secret Manager almacena y rota los secretos de aplicación (cadenas, certificados, passwords) usando un KMS por debajo.",
+      "En Kubernetes, evita almacenar secretos críticos solo en etcd sin cifrado envelope (EncryptionConfiguration) o sin sincronizarlos con External Secrets Operator / Vault Agent."
+    ],
+    "ejemplo": "# GitHub Actions con OIDC hacia AWS sin claves estáticas\npermissions:\n  id-token: write\n  contents: read\nsteps:\n  - uses: aws-actions/configure-aws-credentials@v4\n    with:\n      role-to-assume: arn:aws:iam::123456789012:role/deploy-ci",
+    "entrevista": "Una gestión de secretos madura elimina credenciales estáticas del repositorio y del CI usando identidad federada (OIDC/IAM), secretos en memoria y credenciales dinámicas con rotación automática."
+  },
+  "Hashing (bcrypt - Argon2)": {
+    "que": "Aplicación de funciones criptográficas unidireccionales y adaptativas diseñadas específicamente para almacenar contraseñas de forma segura. A diferencia de hashes rápidos como SHA-256, bcrypt y Argon2 incorporan salt único por usuario y factores de coste computacional y de memoria configurables para frenar ataques por fuerza bruta.",
+    "para": "Sirve para proteger credenciales en bases de datos de modo que, aunque un atacante robe toda la tabla de usuarios, no pueda recuperar las contraseñas originales en un tiempo viable. Es obligatorio en cualquier sistema que almacene contraseñas o respuestas secretas.",
+    "como": "Al registrar un usuario, la aplicación genera una salt aleatoria criptográfica (al menos 128 bits) y ejecuta la función de derivación sobre la contraseña. En bcrypt (basado en el cifrado Eksblowfish), el parámetro de coste (work factor, p. ej. 12) duplica exponencialmente el número de rondas CPU, aunque solo usa ~4 KB de RAM y trunca contraseñas a 72 bytes. En Argon2id (ganador de la Password Hashing Competition y estándar recomendado actual), se configuran tres parámetros: memoria (`m`, p. ej. 19-64 MiB), iteraciones (`t`) y paralelismo (`p`), combinando resistencia a ataques side-channel (Argon2i) y a GPUs/ASICs por alto consumo de RAM (Argon2d). El resultado guardado incluye algoritmo, parámetros, salt y digest en formato PHC.",
+    "practicas": [
+      "Usa Argon2id como primera opción en sistemas nuevos (calibrando memoria e iteraciones para tardar ~200-500 ms en tu hardware) o bcrypt con coste >= 12 si el entorno no soporta Argon2.",
+      "Nunca uses SHA-256, SHA-512 ni MD5 para contraseñas: están diseñados para ser ultrarrápidos y una GPU moderna calcula miles de millones de hashes por segundo.",
+      "Hashing vs. Cifrado: el cifrado es reversible con una clave (sirve para datos recuperables); el hashing es irreversible y se verifica re-hasheando el input del login.",
+      "En bcrypt, valida o pre-hashea adecuadamente si aceptas contraseñas largas para evitar el truncamiento silencioso a 72 bytes, y añade opcionalmente un pepper guardado en KMS fuera de la BD."
+    ],
+    "ejemplo": "from argon2 import PasswordHasher\nph = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4)\nhash_guardado = ph.hash(\"clave-segura-2026\")\nph.verify(hash_guardado, \"clave-segura-2026\")  # True o VerifyMismatchError",
+    "entrevista": "Las contraseñas nunca se cifran ni se pasan por SHA-256: se protegen con KDF lentas y con salt única como Argon2id (memory-hard contra GPUs) o bcrypt calibrado a cientos de milisegundos."
+  },
+  "Inyección SQL": {
+    "que": "Vulnerabilidad crítica de inyección (OWASP A03) en la que datos no confiables enviados por el usuario se concatenan directamente en una consulta SQL, alterando su árbol sintáctico y permitiendo ejecutar comandos arbitrarios en el motor de base de datos.",
+    "para": "Su prevención protege la confidencialidad, integridad y disponibilidad de la base de datos frente a robo masivo de registros, evasión de login, modificación de saldos o eliminación de tablas. Aplica a cualquier backend que construya consultas SQL, incluidas consultas dinámicas en ORMs.",
+    "como": "Cuando el código construye una sentencia mediante interpolación de cadenas (`\"SELECT * FROM users WHERE email = '\" + email + \"'\"`), el motor SQL no distingue entre código y datos. Un atacante envía `' OR '1'='1` o `'; DROP TABLE orders;--` (stacked queries) o usa `UNION SELECT` para extraer otras tablas, o payloads `SLEEP(5)` (Blind/Time-based SQLi) para inferir datos carácter a carácter. Con consultas parametrizadas (Prepared Statements), el driver envía primero la plantilla SQL compilada al motor con marcadores (`$1`, `?`) y posteriormente envía los parámetros por separado; el parser del SGBD trata el parámetro estrictamente como valor literal, nunca como estructura SQL.",
+    "practicas": [
+      "Usa siempre Prepared Statements / consultas parametrizadas o métodos seguros de tu ORM; evita interpolar strings en `.raw()`, `execute()` o cláusulas `ORDER BY` dinámicas.",
+      "Para identificadores que no se pueden parametrizar (nombres de columna o dirección ASC/DESC), valida contra una lista blanca estricta (allowlist) antes de construir la consulta.",
+      "Aplica el principio de menor privilegio al usuario SQL de la aplicación: no conectes la app con credenciales de `sa`, `postgres` superuser ni permisos DDL en producción.",
+      "Parametrización vs. WAF: un WAF actúa como defensa en profundidad para bloquear patrones obvios, pero nunca sustituye a los prepared statements porque los atacantes evaden filtros con codificaciones."
+    ],
+    "ejemplo": "# Inseguro: cursor.execute(f\"SELECT id FROM users WHERE email = '{email}'\")\n\n# Seguro: Prepared Statement (psycopg / PostgreSQL)\ncursor.execute(\"SELECT id, role FROM users WHERE email = %s\", (email,))",
+    "entrevista": "La inyección SQL ocurre al mezclar código y datos en el parser del SGBD; se erradica separando ambos con prepared statements y usando allowlists para identificadores dinámicos como columnas de ordenación."
+  },
+  "MFA": {
+    "que": "Autenticación Multifactor (Multi-Factor Authentication): mecanismo de control de acceso que exige al usuario verificar su identidad mediante al menos dos categorías independientes de evidencia: algo que sabe (contraseña), algo que tiene (llave FIDO2, app TOTP) o algo que es (biometría).",
+    "para": "Sirve para neutralizar ataques basados en contraseñas comprometidas, reutilización de credenciales (credential stuffing) y phishing básico. Es indispensable para cuentas administrativas, acceso a nube/VPN, repositorios Git y aplicaciones con datos sensibles.",
+    "como": "Tras validar el primer factor (contraseña), el servidor inicia un desafío de segundo factor en un estado de sesión intermedio sin conceder aún permisos plenos. En TOTP (RFC 6238), cliente y servidor comparten una semilla secreta y calculan códigos de 6 dígitos con HMAC-SHA1 sobre ventanas de 30 segundos. En FIDO2/WebAuthn (passkeys o llaves hardware YubiKey), el navegador firma un challenge único emitido por el servidor usando la clave privada almacenada en el enclave seguro del dispositivo, vinculando criptográficamente la firma al dominio exacto (Origin/RP ID), lo que bloquea ataques de phishing por proxy inverso.",
+    "practicas": [
+      "Prioriza WebAuthn/FIDO2 (passkeys o llaves hardware) para perfiles críticos porque son resistentes a phishing (origin-bound); usa apps TOTP como alternativa estándar.",
+      "Evita SMS o llamadas de voz como MFA principal debido a ataques de SIM swapping e interceptación SS7, y evita push notifications sin number matching (fatiga de MFA).",
+      "TOTP vs. FIDO2: TOTP se basa en un secreto compartido vulnerable a proxies de phishing en tiempo real (adversary-in-the-middle); FIDO2 verifica el dominio criptográficamente en el navegador.",
+      "Protege los códigos de recuperación (backup codes) guardándolos hasheados en servidor y exige re-autenticación MFA para acciones de alto impacto (cambiar email, crear API keys)."
+    ],
+    "ejemplo": "// Desafío WebAuthn en el navegador (FIDO2)\nconst credential = await navigator.credentials.get({\n  publicKey: { challenge: serverChallenge, rpId: \"app.ejemplo.com\", userVerification: \"required\" }\n});",
+    "entrevista": "El MFA frena la toma de cuentas tras robo de contraseñas, y la elección recomendada hoy es WebAuthn/FIDO2 porque vincula la firma criptográfica al dominio real y es resistente a phishing."
+  },
+  "OWASP Top 10": {
+    "que": "Documento de referencia estándar en la industria publicado por la fundación OWASP que clasifica las diez categorías de riesgos de seguridad más críticas en aplicaciones web según su prevalencia, detectabilidad e impacto.",
+    "para": "Sirve como línea base común para equipos de desarrollo, QA, seguridad y auditoría para priorizar remediaciones, diseñar requisitos de seguridad y configurar herramientas SAST/DAST. Se utiliza en revisiones de arquitectura, formación y cumplimiento.",
+    "como": "OWASP recopila datos estadísticos de vulnerabilidades reales aportados por organizaciones de seguridad y encuestas comunitarias, agrupando los fallos por causa raíz (CWEs) en diez categorías numeradas de A01 a A10 (en la edición 2021: A01 Broken Access Control, A02 Cryptographic Failures, A03 Injection, A04 Insecure Design, A05 Security Misconfiguration, A06 Vulnerable and Outdated Components, A07 Identification and Authentication Failures, A08 Software and Data Integrity Failures, A09 Security Logging and Monitoring Failures y A10 SSRF). Cada categoría detalla vectores de ataque, cómo verificar si una aplicación es vulnerable y controles concretos de mitigación. En la práctica se complementa con el estándar OWASP ASVS (Application Security Verification Standard) para convertir esos riesgos en pruebas verificables.",
+    "practicas": [
+      "Usa el OWASP Top 10 como punto de partida de concienciación y priorización, pero apóyate en OWASP ASVS para definir requisitos técnicos detallados y criterios de aceptación.",
+      "No trates las diez categorías como una lista de verificación superficial de final de proyecto; integra controles contra A01 (autorización) y A04 (diseño seguro) mediante threat modeling antes de programar.",
+      "OWASP Top 10 Web vs. OWASP API Security Top 10: las APIs modernas tienen riesgos específicos (BOLA, Broken Object Property Level Authorization, consumo sin límite de recursos) cubiertos en la lista específica de APIs.",
+      "Mapea tus reglas de SAST, DAST y WAF a las categorías OWASP para generar métricas comprensibles para producto y dirección."
+    ],
+    "ejemplo": "# Mapeo rápido de controles en CI/PR checklist:\n# A01 Access Control -> Tests de autorización / IDOR por rol\n# A03 Injection      -> Prepared statements + reglas Semgrep\n# A06 Components     -> Trivy / Dependabot en cada PR\n# A10 SSRF           -> Egress allowlist + bloqueo 169.254.169.254",
+    "entrevista": "El OWASP Top 10 es el mapa mínimo de los diez riesgos más críticos en aplicaciones web —con Broken Access Control, Cryptographic Failures e Injection en cabeza—, útil para priorizar controles y traducirlo a requisitos verificables con ASVS."
+  },
+  "Pentest": {
+    "que": "Prueba de penetración (Penetration Testing): evaluación práctica y autorizada en la que especialistas simulan ataques reales contra aplicaciones, APIs o infraestructura para descubrir vulnerabilidades explotables, encadenar fallos y medir el impacto real de negocio.",
+    "para": "Sirve para validar si los controles defensivos resisten un ataque humano creativo que los escáneres automáticos no detectan, como fallos de lógica de negocio o escaladas de privilegios encadenadas. Se realiza antes de lanzamientos mayores, tras cambios arquitectónicos críticos o anualmente por requisito normativo.",
+    "como": "Un pentest sigue metodologías como PTES u OWASP WSTG en fases estructuradas: 1) Alcance y reglas de enfrentamiento (autorización legal, ventanas de tiempo, entornos); 2) Reconocimiento y enumeración de superficie (subdominios, endpoints OpenAPI, puertos, tecnologías); 3) Análisis de vulnerabilidades y explotación manual (IDOR, bypass de autorización, race conditions, SSRF) usando proxies de intercepción como Burp Suite u OWASP ZAP; 4) Post-explotación controlada para demostrar impacto (acceso lateral, lectura de metadatos sin destruir datos); 5) Redacción del informe ejecutivo y técnico con evidencias reproducibles, puntuación CVSS y re-testing tras la corrección.",
+    "practicas": [
+      "Elige la modalidad adecuada: black-box (sin información previa), grey-box (con credenciales y documentación, el más eficiente en coste/profundidad para apps) o white-box (con código fuente).",
+      "Prioriza corregir fallos de lógica de negocio y encadenamiento de vulnerabilidades, no solo las severidades aisladas de CVSS.",
+      "Pentest vs. Escaneo de vulnerabilidades (DAST): un escáner busca firmas conocidas de forma automática y genera ruido; un pentest combina automatización con criterio humano para explotar lógica compleja y falsos negativos.",
+      "Incluye siempre un re-test pactado tras aplicar los parches para confirmar que la remediación no introdujo regresiones ni dejó bypasses alternativos."
+    ],
+    "ejemplo": "# Flujo típico grey-box con Burp Suite:\n1. Autenticar usuario A y usuario B\n2. Capturar GET /api/v1/invoices/1042 (de A)\n3. Repetir petición en Repeater con cookie/JWT de B\n4. Si responde 200 OK con datos de A -> BOLA/IDOR confirmado",
+    "entrevista": "Un pentest evalúa la explotabilidad real y los fallos de lógica de negocio mediante simulación controlada de ataques; frente a un DAST automático, aporta contexto humano y validación de impacto con re-test."
+  },
+  "Principio de menor privilegio": {
+    "que": "Principio de diseño de seguridad (Principle of Least Privilege, PoLP) que establece que todo usuario, proceso, servicio o contenedor debe operar únicamente con los permisos mínimos estrictamente necesarios para cumplir su función, y durante el menor tiempo posible.",
+    "para": "Sirve para reducir drásticamente el radio de explosión (blast radius) cuando una cuenta es comprometida, una dependencia es explotada o un desarrollador comete un error operativo. Se aplica de forma transversal en IAM en la nube, bases de datos, sistemas operativos y RBAC de aplicaciones.",
+    "como": "El mecanismo consiste en denegar por defecto (default-deny) y otorgar permisos granulares por acción, recurso y condición (por ejemplo, `s3:GetObject` solo sobre el prefijo `arn:aws:s3:::facturas/2026/*`, en lugar de `s3:*` sobre `*`). En arquitecturas modernas se complementa con acceso Just-In-Time (JIT): los humanos y pipelines no tienen permisos administrativos permanentes, sino que solicitan elevación temporal auditada con expiración automática. En contenedores y Linux se restringe mediante usuarios no-root, seccomp, AppArmor y eliminación de capabilities (`CAP_DROP ALL`).",
+    "practicas": [
+      "Evita comodines (`*`) en políticas IAM, permisos `cluster-admin` en Kubernetes y usuarios de base de datos con privilegios de superusuario o DDL para la app en runtime.",
+      "Implementa acceso Just-In-Time (JIT) para tareas administrativas en producción en lugar de mantener roles `AdministratorAccess` asignados permanentemente.",
+      "Menor privilegio vs. Separación de deberes (SoD): el menor privilegio minimiza los permisos de cada actor; la separación de deberes exige que acciones críticas (p. ej. aprobar y desplegar código o transferir fondos) requieran dos actores distintos.",
+      "Audita periódicamente los permisos no utilizados mediante herramientas como AWS IAM Access Analyzer para recortar privilegios acumulados (privilege creep)."
+    ],
+    "ejemplo": "{\n  \"Effect\": \"Allow\",\n  \"Action\": [\"s3:GetObject\", \"s3:PutObject\"],\n  \"Resource\": \"arn:aws:s3:::app-uploads-prod/invoices/*\"\n}",
+    "entrevista": "El principio de menor privilegio acota el radio de explosión ante cualquier brecha aplicando políticas default-deny granulares, usuarios no-root y elevación temporal Just-In-Time en lugar de permisos permanentes."
+  },
+  "SAST - DAST - SCA": {
+    "que": "Tres metodologías complementarias de pruebas de seguridad en el ciclo DevSecOps: SAST (Static Application Security Testing) analiza el código fuente sin ejecutarlo; DAST (Dynamic Application Security Testing) ataca la aplicación en ejecución desde el exterior; y SCA (Software Composition Analysis) audita dependencias de terceros y sus licencias.",
+    "para": "Sirven para detectar vulnerabilidades de forma temprana y continua en distintas capas: errores de codificación propios (SAST), vulnerabilidades de despliegue, cabeceras y runtime (DAST), y CVEs en librerías open source (SCA). Se integran en pull requests, pipelines CI y entornos de staging.",
+    "como": "El SAST (Semgrep, SonarQube, CodeQL) parsea el código fuente en un Árbol de Sintaxis Abstracta (AST) y ejecuta análisis de flujo de datos (taint analysis) desde fuentes controladas por el usuario hasta sumideros peligrosos (SQL, DOM, exec). El SCA (Snyk, Dependabot, Trivy, OWASP Dependency-Check) lee los lockfiles (`package-lock.json`, `pom.xml`, `requirements.txt`) y compara versiones resueltas contra bases de advisories (OSV, NVD, GitHub Advisory Database). El DAST (OWASP ZAP, Nuclei, Burp Enterprise) actúa como caja negra enviando peticiones HTTP maliciosas contra una instancia desplegada en staging para detectar XSS reflejados, cabeceras ausentes, rutas expuestas o inyecciones observables en respuestas.",
+    "practicas": [
+      "Ejecuta SAST y SCA en cada pull request (feedback rápido en minutos) y reserva DAST para despliegues efímeros o entornos de staging para no ralentizar ni dañar producción.",
+      "Afina las reglas SAST y usa baselines para minimizar falsos positivos; si una herramienta genera demasiado ruido, los desarrolladores terminan ignorándola.",
+      "SAST vs. DAST vs. SCA: SAST ve tu código pero no ve dependencias compiladas ni configuración de servidor; DAST ve el sistema vivo y su configuración HTTP pero no ve la línea exacta de código; SCA cubre únicamente código de terceros.",
+      "Bloquea el merge únicamente ante hallazgos de alta confianza y severidad crítica/alta con remediación clara, evitando bloquear por advertencias informativas."
+    ],
+    "ejemplo": "# Pipeline CI típico:\nsemgrep scan --config auto --error .          # SAST\ntrivy fs --scanners vuln --exit-code 1 .       # SCA\nzap-baseline.py -t https://staging.ejemplo.com # DAST",
+    "entrevista": "SAST audita nuestro código en reposo, SCA vigila las librerías de terceros que importamos y DAST prueba la aplicación corriendo en staging; juntos cubren código propio, cadena de suministro y configuración en runtime."
+  },
+  "SBOM": {
+    "que": "Software Bill of Materials (Lista de Materiales de Software): inventario formal y legible por máquina que detalla todos los componentes, librerías, versiones, relaciones de dependencia transitiva y licencias que integran un artefacto de software o imagen de contenedor.",
+    "para": "Sirve para conocer al instante qué aplicaciones están afectadas cuando aparece una vulnerabilidad crítica zero-day (como Log4Shell) y para cumplir requisitos regulatorios y de cadena de suministro (como la Orden Ejecutiva 14028 de EE. UU. o la Cyber Resilience Act europea). Se genera automáticamente en cada build de release.",
+    "como": "Durante el pipeline de compilación, herramientas como Syft, Trivy o CycloneDX CLI inspeccionan los lockfiles, el árbol de dependencias resuelto o las capas de una imagen OCI y generan un documento estandarizado en formato SPDX (Linux Foundation) o CycloneDX (OWASP), usando identificadores globales como PURL (Package URL) o CPE. El SBOM se firma criptográficamente (por ejemplo con Cosign como attestation in-toto) y se almacena junto al artefacto en el registry o en una plataforma de gestión como Dependency-Track. Cuando se publica un nuevo CVE, la plataforma consulta los SBOM almacenados sin necesidad de volver a descargar ni re-escanear cada binario.",
+    "practicas": [
+      "Adopta un estándar abierto como CycloneDX o SPDX y genera el SBOM a partir del artefacto final compilado o imagen OCI, no solo del manifiesto fuente sin resolver.",
+      "Firma el SBOM y adjúntalo como attestation al digest de la imagen para garantizar que no fue manipulado entre el build y el despliegue.",
+      "SBOM vs. Lockfile: un lockfile solo cubre un ecosistema de lenguaje; un SBOM unifica en un formato estándar dependencias de sistema operativo, múltiples lenguajes, licencias y metadatos de procedencia.",
+      "Complementa el SBOM con documentos VEX (Vulnerability Exploitability eXchange) para documentar cuándo una vulnerabilidad presente en una librería no es realmente alcanzable en tu contexto."
+    ],
+    "ejemplo": "syft ghcr.io/org/api:1.4.2 -o cyclonedx-json=sbom.cdx.json\ncosign attest --predicate sbom.cdx.json --type cyclonedx ghcr.io/org/api@sha256:...",
+    "entrevista": "El SBOM es el inventario firmado en formato CycloneDX o SPDX de todo lo que lleva un artefacto; permite responder en segundos qué servicios en producción usan una librería tras anunciarse un CVE crítico."
+  },
+  "SSRF": {
+    "que": "Server-Side Request Forgery (Falsificación de Peticiones del Lado del Servidor, OWASP A10): vulnerabilidad en la que un atacante manipula una URL o parámetro de entrada para forzar al servidor a realizar peticiones HTTP/red hacia destinos internos o externos no previstos.",
+    "para": "Comprender y mitigar SSRF es vital cuando una aplicación descarga webhooks, previsualiza enlaces, importa feeds o procesa archivos remotos (PDF/HTML renderers). Sin protección, permite escanear puertos de la intranet y robar credenciales temporales del servicio de metadatos en la nube.",
+    "como": "La aplicación recibe una URL del usuario (p. ej. `?avatar_url=...`) y ejecuta un cliente HTTP (`fetch`, `requests.get`, `curl`) desde dentro de la VPC o red privada. El atacante sustituye el destino por `http://127.0.0.1:8080/admin`, servicios internos de la VPC o el endpoint de metadatos de nube `http://169.254.169.254/latest/meta-data/iam/security-credentials/` para obtener tokens IAM. Aunque el código valide el string de la URL, el atacante puede evadir filtros simples usando redirecciones HTTP 302, notación IP octal/hexadecimal, IPv6 mapeado (`[::ffff:169.254.169.254]`) o DNS rebinding (un dominio que resuelve primero a una IP pública y milisegundos después a `127.0.0.1`).",
+    "practicas": [
+      "Si el caso de uso lo permite, aplica una lista blanca estricta (allowlist) de dominios y esquemas (`https` únicamente), deshabilitando redirecciones automáticas en el cliente HTTP.",
+      "Resuelve el DNS una sola vez antes de conectar, verifica que la IP resultante no pertenezca a rangos privados, loopback o link-local (`10.0.0.0/8`, `127.0.0.0/8`, `169.254.0.0/16`, `fc00::/7`) y conecta directamente a esa IP validada (o usa un proxy egress dedicado).",
+      "Exige IMDSv2 en AWS (o equivalente con cabeceras obligatorias en GCP/Azure) para que peticiones GET simples vía SSRF no puedan leer credenciales de instancia.",
+      "SSRF vs. CSRF: en CSRF el atacante abusa del navegador de la víctima usando sus cookies; en SSRF abusa del propio servidor víctima usando su posición privilegiada dentro de la red interna."
+    ],
+    "ejemplo": "# Defensa en AWS + cliente HTTP:\n# 1) Activar IMDSv2 (requiere PUT con X-aws-ec2-metadata-token-ttl-seconds)\n# 2) En app: allow_redirects=False + validar IP resuelta fuera de rangos RFC1918/link-local",
+    "entrevista": "El SSRF convierte al servidor en un proxy hacia la red interna y el metadata service; se mitiga con IMDSv2, allowlists de salida, desactivación de redirecciones y validación de la IP resuelta antes de abrir el socket."
+  },
+  "Security headers (CSP, HSTS)": {
+    "que": "Cabeceras HTTP de respuesta enviadas por el servidor o proxy inverso para instruir al navegador qué políticas de seguridad aplicar sobre el documento, mitigando ataques del lado del cliente como XSS, clickjacking, downgrade de TLS y MIME sniffing.",
+    "para": "Actúan como una capa de defensa en profundidad en el navegador para proteger sesiones y datos de usuario incluso si existe algún fallo en el frontend o enlaces maliciosos. Deben configurarse en toda aplicación web, CDN o API Gateway que sirva contenido a navegadores.",
+    "como": "Al recibir una respuesta HTTPS, el navegador lee y hace cumplir estas cabeceras antes de renderizar o ejecutar scripts. `Strict-Transport-Security` (HSTS) obliga al navegador a convertir automáticamente cualquier petición HTTP futura al dominio en HTTPS durante `max-age` segundos, impidiendo ataques SSL stripping. `Content-Security-Policy` (CSP) restringe los orígenes permitidos para scripts, estilos, imágenes y `connect-src`, bloqueando scripts inline inyectados salvo que incluyan un `nonce` criptográfico aleatorio por petición o un hash SHA-256 explícito. Otras cabeceras clave son `X-Content-Type-Options: nosniff` (evita interpretar texto/imágenes como JS), `Referrer-Policy` y `frame-ancestors 'none'` dentro de CSP (sustituye a `X-Frame-Options` contra clickjacking).",
+    "practicas": [
+      "Despliega CSP inicialmente en modo `Content-Security-Policy-Report-Only` enviando infracciones a un endpoint `report-to` para detectar scripts legítimos antes de activarla en modo bloqueo.",
+      "Evita `unsafe-inline` y `unsafe-eval` en `script-src`; usa nonces generados por petición o `strict-dynamic` para no anular la protección de CSP contra XSS.",
+      "CSP vs. Sanitización/Encoding: CSP es un cinturón de seguridad en el navegador si falla el código, pero nunca reemplaza el escape contextual de salida ni la sanitización de HTML.",
+      "Activa HSTS gradualmente (empezando con `max-age` bajo antes de subir a 1-2 años e incluir `includeSubDomains`) solo cuando todos los subdominios soporten HTTPS válido."
+    ],
+    "ejemplo": "Strict-Transport-Security: max-age=31536000; includeSubDomains\nContent-Security-Policy: default-src 'self'; script-src 'self' 'nonce-r4nd0m'; frame-ancestors 'none'; object-src 'none'\nX-Content-Type-Options: nosniff",
+    "entrevista": "Las cabeceras de seguridad endurecen el navegador: HSTS previene downgrades a HTTP y una CSP estricta con nonces y frame-ancestors bloquea la ejecución de XSS y el clickjacking como segunda línea de defensa."
+  },
+  "Sensitive data exposure": {
+    "que": "Exposición inadvertida de datos confidenciales (contraseñas, tokens, PII, datos financieros, secretos o trazas internas) en tránsito, en reposo o en respuestas y logs de aplicación, categorizada en OWASP 2021 como Cryptographic Failures (A02) junto con fallos de privacidad.",
+    "para": "Su prevención evita robos de identidad, fraudes financieros, secuestro de sesiones e incumplimientos de GDPR o PCI-DSS. Aplica al diseño de APIs, bases de datos, backups, almacenamiento en nube y mensajería.",
+    "como": "La exposición ocurre por múltiples vectores: tráfico sin TLS o con versiones obsoletas (TLS 1.0/1.1), almacenamiento de datos sensibles en texto plano o con cifrado débil, buckets S3 públicos, caches CDN que almacenan respuestas privadas (`Cache-Control` mal configurado) o DTOs de API que devuelven el modelo completo de base de datos incluyendo campos internos (Excessive Data Exposure). También es común en mensajes de error detallados (stack traces con credenciales o consultas SQL) y en entornos de pruebas alimentados con datos reales de producción.",
+    "practicas": [
+      "Clasifica los datos según su sensibilidad y aplica TLS 1.2/1.3 obligatorio en tránsito (incluyendo comunicación interna entre microservicios vía mTLS) y cifrado en reposo gestionado por KMS.",
+      "Usa DTOs o esquemas de serialización explícitos en tus APIs para devolver solo los campos necesarios y añade `Cache-Control: no-store` en respuestas con datos personales o tokens.",
+      "Sensitive data exposure vs. Broken access control: en el primero el sistema filtra datos por falta de cifrado, caching indebido o proyección excesiva en la respuesta; en el segundo un usuario accede a un recurso ajeno por falta de validación de permisos.",
+      "Desactiva stack traces detallados en producción, enmascara campos sensibles en logs y bloquea el acceso público por defecto en almacenamiento cloud (S3 Block Public Access)."
+    ],
+    "ejemplo": "HTTP/1.1 200 OK\nCache-Control: no-store, private\nContent-Type: application/json\n\n{\"id\": \"usr_42\", \"display_name\": \"Ana\", \"email_masked\": \"a***@ejemplo.com\"}",
+    "entrevista": "Para evitar sensitive data exposure hay que cifrar en tránsito y reposo con TLS 1.3 y KMS, proyectar respuestas con DTOs explícitos, marcar respuestas privadas con Cache-Control: no-store y sanear logs y errores."
+  },
+  "Snyk - Dependabot - Trivy": {
+    "que": "Tres herramientas referentes de seguridad en la cadena de suministro DevSecOps: Dependabot (integrado en GitHub para alertas y PRs de actualización), Snyk (plataforma comercial orientada al desarrollador para SCA, SAST, contenedores e IaC) y Trivy (escáner open source todo-en-uno de Aqua Security muy usado en CI y Kubernetes).",
+    "para": "Sirven para detectar de forma continua vulnerabilidades conocidas (CVE) en dependencias de aplicación, imágenes de contenedores y código IaC (Terraform, Helm, Kubernetes), reduciendo la ventana de exposición entre la publicación de un advisory y su parcheo.",
+    "como": "Dependabot monitoriza los manifiestos y lockfiles del repositorio frente al GitHub Advisory Database y abre automáticamente Pull Requests actualizando a la versión parcheada mínima o combinando updates agrupados. Snyk analiza el grafo de dependencias, calcula si la función vulnerable es realmente alcanzable (reachability analysis en algunos lenguajes) y ofrece remediación guiada tanto en IDE/PR como en CLI. Trivy ejecuta un binario ligero en CI/CD o como operador en Kubernetes (Trivy Operator) descargando su base de vulnerabilidades local para escanear sistemas de archivos, imágenes OCI, repositorios Git y manifiestos Terraform/K8s generando reportes JSON, SARIF o SBOMs.",
+    "practicas": [
+      "Usa Dependabot agrupando actualizaciones menores/parche para evitar fatiga de alertas, y configúralo junto a una suite de tests automatizados para fusionar parches con confianza.",
+      "Integra Trivy en el pipeline CI exportando resultados en formato SARIF hacia GitHub Code Scanning para centralizar hallazgos de imágenes, dependencias e IaC sin coste de licencia.",
+      "Trivy vs. Snyk vs. Dependabot: Dependabot destaca en automatización nativa de PRs en GitHub; Trivy brilla como escáner CLI/CI y operador Kubernetes open source sin fricción; Snyk aporta correlación empresarial, IDE feedback y análisis de alcanzabilidad.",
+      "Fija acciones de GitHub y dependencias críticas por SHA/hash y mantén una política de SLA clara por severidad (p. ej. parchear CVEs críticos explotables en 48-72 horas)."
+    ],
+    "ejemplo": "# .github/dependabot.yml\nversion: 2\nupdates:\n  - package-ecosystem: \"npm\"\n    directory: \"/\"\n    schedule:\n      interval: \"weekly\"\n    groups:\n      minor-and-patch: { update-types: [\"minor\", \"patch\"] }",
+    "entrevista": "En la práctica se combinan: Dependabot automatiza PRs de actualización en GitHub, Trivy escanea imágenes, IaC y lockfiles en CI/Kubernetes con salida SARIF/SBOM, y Snyk añade análisis de alcanzabilidad y remediación en IDE."
+  },
+  "XSS": {
+    "que": "Cross-Site Scripting (XSS): vulnerabilidad de inyección en el lado del cliente (incluida en OWASP A03 Injection) en la que una aplicación web incluye datos no confiables en una página sin validarlos ni escaparlos correctamente, permitiendo ejecutar JavaScript arbitrario en el navegador de la víctima.",
+    "para": "Prevenir XSS es fundamental para impedir el robo de sesiones o tokens, la ejecución de acciones en nombre del usuario, la modificación del DOM (defacement o phishing in-page) y la propagación de gusanos web. Aplica a cualquier frontend SSR, SPA, plantillas HTML o campos de texto enriquecido.",
+    "como": "Existen tres variantes principales: Reflected XSS (el payload viaja en la petición HTTP, como un query param, y el servidor lo devuelve inmediatamente en la respuesta), Stored XSS (el payload se guarda en base de datos, por ejemplo en un comentario, y se ejecuta cada vez que otro usuario carga la página) y DOM-based XSS (el script del navegador lee una fuente como `location.hash` o `postMessage` y la escribe en un sumidero inseguro como `element.innerHTML` sin tocar el servidor). Cuando el navegador parsea el HTML resultante, ejecuta el script dentro del mismo Origin de la aplicación, accediendo al DOM y a cookies no marcadas como `HttpOnly`.",
+    "practicas": [
+      "Aplica escape contextual automático usando motores de plantillas seguros o frameworks modernos (React JSX escapa por defecto), evitando sumideros peligrosos como `innerHTML`, `dangerouslySetInnerHTML`, `v-html` o `eval()`.",
+      "Si necesitas renderizar HTML escrito por usuarios (Markdown/rich text), sanitízalo con una librería mantenida basada en allowlist como DOMPurify antes de insertarlo en el DOM.",
+      "XSS vs. CSRF: el XSS ejecuta código en el navegador de la víctima dentro de tu origen (anulando protecciones anti-CSRF); el CSRF solo envía peticiones ciegas desde otro origen sin poder leer las respuestas.",
+      "Combina el escape en salida con cookies `HttpOnly` (evita robo directo vía `document.cookie`) y una cabecera CSP estricta sin `unsafe-inline` como segunda barrera."
+    ],
+    "ejemplo": "// Inseguro: el.innerHTML = userInput;\n\n// Seguro para texto plano:\nel.textContent = userInput;\n// Seguro para HTML enriquecido:\nel.innerHTML = DOMPurify.sanitize(userHtml);",
+    "entrevista": "El XSS ocurre al insertar datos no confiables en contextos ejecutables del navegador; se previene con escape contextual automático o `textContent`, DOMPurify para HTML permitido, cookies HttpOnly y CSP como defensa en profundidad."
+  }
+}

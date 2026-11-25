@@ -1,0 +1,158 @@
+{
+  "NDCG": {
+    "que": "Métrica de evaluación de rankings que mide la calidad de una lista ordenada de resultados considerando tanto su grado de relevancia graduada como la posición en que aparecen. Penaliza logarítmicamente los ítems relevantes situados más abajo y normaliza el resultado frente al ordenamiento ideal posible (IDCG), devolviendo un valor entre 0 y 1.",
+    "para": "Sirve para evaluar motores de búsqueda, sistemas de recomendación y la etapa de recuperación o re-ranking en pipelines RAG donde importa el orden de los documentos y existen múltiples niveles de relevancia. Se usa cuando métricas binarias como Precision@k o MRR resultan insuficientes para distinguir entre resultados buenos y excelentes en las primeras posiciones.",
+    "como": "Para un corte k, primero se calcula el DCG (Discounted Cumulative Gain) sumando la ganancia descontada de cada posición i de 1 a k, habitualmente mediante la fórmula exponencial (2^rel_i - 1) / log2(i + 1) o la variante lineal rel_i / log2(i + 1). Después, se ordenan los documentos relevantes conocidos de forma descendente por su puntuación de relevancia para obtener el ranking ideal y calcular el IDCG@k con la misma expresión. Finalmente, se divide NDCG@k = DCG@k / IDCG@k; si IDCG@k es 0 porque no existen documentos relevantes, se asigna 0.0 por convención.",
+    "practicas": [
+      "Usa relevancia graduada (p. ej. escala 0–3) con la fórmula exponencial 2^rel - 1 cuando quieras premiar fuertemente los aciertos exactos en las tres primeras posiciones.",
+      "NDCG@k vs MRR: MRR solo evalúa la posición del primer resultado relevante (ideal para preguntas con una única respuesta), mientras que NDCG evalúa la densidad y el orden de toda la lista top-k.",
+      "Trampa habitual: calcular el IDCG únicamente sobre los k documentos devueltos por el sistema en lugar de sobre todo el corpus etiquetado, lo que infla artificialmente el NDCG cuando el recuperador omite los mejores documentos.",
+      "Define de forma explícita cómo tratas las consultas sin relevantes (IDCG@k == 0), excluyéndolas del promedio o fijando 0, para mantener comparaciones consistentes entre versiones."
+    ],
+    "ejemplo": "import math\ndef ndcg_at_k(rels, k):\n    dcg = sum((2**r - 1) / math.log2(i + 2) for i, r in enumerate(rels[:k]))\n    ideal = sorted(rels, reverse=True)[:k]\n    idcg = sum((2**r - 1) / math.log2(i + 2) for i, r in enumerate(ideal))\n    return dcg / idcg if idcg > 0 else 0.0\n# Lista [3, 0, 2, 1] -> top-3: DCG=8.5, IDCG=9.0, NDCG@3=0.944",
+    "entrevista": "NDCG@k evalúa rankings con relevancia graduada descontando logarítmicamente las posiciones bajas y normalizando contra el orden ideal, por lo que es mi métrica principal cuando importa tanto la calidad del top-k como la jerarquía de relevancia."
+  },
+  "Perplejidad": {
+    "que": "Métrica intrínseca de modelos de lenguaje autorregresivos definida como la exponencial de la entropía cruzada promedio sobre una secuencia de tokens. Cuantifica el factor de ramificación efectivo —entre cuántas opciones equiprobables duda en promedio el modelo al predecir el siguiente token—; a menor perplejidad, mayor ajuste probabilístico al texto evaluado.",
+    "para": "Sirve para medir la fluidez lingüística y la calibración probabilística durante el preentrenamiento, el ajuste fino o la compresión de LLMs sin requerir etiquetas humanas externas. Se usa para comparar checkpoints de una misma familia con el mismo tokenizador o verificar cuánta capacidad se degrada tras cuantizar pesos a FP8 o INT4.",
+    "como": "Dada una secuencia tokenizada X = (t_1, ..., t_N), el modelo calcula la distribución de probabilidad condicional P(t_i | t_<i) en cada paso aplicando softmax sobre los logits de salida. Se obtiene la entropía cruzada media H = -(1/N) * sum(log P(t_i | t_<i)) y se aplica la exponencial PPL(X) = exp(H) (o 2^H si el logaritmo está en base 2). En documentos que superan la ventana de contexto se usa una ventana deslizante con paso configurable (stride) para conservar contexto previo sin contar dos veces la pérdida de cada token.",
+    "practicas": [
+      "Nunca compares directamente la perplejidad entre modelos con distinto tokenizador o vocabulario: una segmentación más fina reparte la probabilidad entre más tokens y distorsiona la métrica.",
+      "Perplejidad vs utilidad en tarea: una perplejidad baja garantiza texto estadísticamente verosímil, no exactitud factual ni seguimiento de instrucciones; complementa siempre con evals de tarea.",
+      "Vigila la contaminación de datos: una perplejidad anormalmente baja sobre un conjunto de prueba suele indicar que ese texto formó parte del preentrenamiento.",
+      "Al aplicar cuantización (p. ej. AWQ o GGUF), mide la perplejidad sobre un corpus estándar fijo como WikiText-2 antes y después para detectar degradación severa."
+    ],
+    "ejemplo": "import torch, torch.nn.functional as F\nlogits = model(input_ids).logits[:, :-1, :]\ntargets = input_ids[:, 1:]\nloss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))\nperplexity = torch.exp(loss).item()",
+    "entrevista": "La perplejidad es exp(cross_entropy) y mide qué tan sorprendido está un modelo de lenguaje por una secuencia real; es excelente para validar entrenamiento o cuantización con el mismo tokenizador, pero no mide veracidad ni cumplimiento de instrucciones."
+  },
+  "Precision y recall": {
+    "que": "Par de métricas complementarias para clasificación y recuperación que desglosan los aciertos y errores a partir de la matriz de confusión. La precisión (TP / (TP + FP)) mide qué fracción de las predicciones positivas es correcta, mientras que el recall o exhaustividad (TP / (TP + FN)) mide qué fracción de todos los positivos reales logró capturar el sistema.",
+    "para": "Sirven para gestionar compromisos asimétricos entre falsas alarmas y omisiones en clasificadores, detectores de toxicidad o PII, extracción de entidades y recuperación de documentos. Se usan siempre que la exactitud global (accuracy) resulta engañosa por clases desbalanceadas o cuando el costo de un falso positivo difiere del de un falso negativo.",
+    "como": "Al evaluar un conjunto etiquetado, cada predicción se contrasta con la verdad base acumulando verdaderos positivos (TP), falsos positivos (FP), verdaderos negativos (TN) y falsos negativos (FN). En modelos que emiten probabilidades continuas, variar el umbral de decisión tau traza la curva Precision-Recall: elevar tau incrementa habitualmente la precisión a costa de reducir el recall, y bajarlo invierte ese equilibrio. En clasificación multiclase las métricas se agregan mediante promedio macro (igual peso por clase) o micro (ponderado por número de instancias).",
+    "practicas": [
+      "Alinea el compromiso con el riesgo del dominio: prioriza recall en detección de fraude o filtros clínicos (omitir es crítico) y prioriza precisión en moderación automática punitiva o ejecución de acciones irreversibles.",
+      "Precision-Recall vs ROC-AUC: en conjuntos muy desbalanceados (p. ej. 1% de positivos), la curva Precision-Recall refleja con mucha mayor claridad la caída por falsos positivos que el ROC-AUC.",
+      "No reportes solo el promedio micro si existen clases minoritarias críticas; inspecciona siempre precisión y recall por clase junto con el promedio macro.",
+      "Ajusta el umbral tau usando únicamente el conjunto de validación (p. ej. optimizando F_beta), nunca sobre el conjunto de test final."
+    ],
+    "ejemplo": "from sklearn.metrics import precision_score, recall_score\ny_true = [1, 0, 1, 1, 0, 0]\ny_prob = [0.9, 0.6, 0.4, 0.8, 0.2, 0.1]\ny_pred = [1 if p >= 0.5 else 0 for p in y_prob]\n# TP=2, FP=1, FN=1 -> precision=0.667, recall=0.667\np, r = precision_score(y_true, y_pred), recall_score(y_true, y_pred)",
+    "entrevista": "La precisión controla el ruido de los falsos positivos y el recall controla las omisiones; en problemas reales con clases desbalanceadas calibro el umbral de decisión según cuál de los dos errores resulte más costoso."
+  },
+  "Pruebas de integración de IA": {
+    "que": "Pruebas automatizadas que verifican el funcionamiento conjunto de extremo a extremo entre el modelo de IA y el resto del sistema: pipelines de recuperación (RAG), invocación de herramientas (tool calling), parsers de salida estructurada, guardrails, cachés y APIs externas. Evalúan que el flujo completo respete contratos, latencias y coherencia funcional bajo entradas realistas.",
+    "para": "Sirven para detectar fallos sistémicos invisibles al probar el modelo aislado, como desajustes entre esquemas de herramientas y argumentos generados, degradación por un chunking deficiente en la base vectorial o fallos en cadenas de fallback. Se ejecutan en entornos de staging o preproducción antes de promover cambios en prompts, índices o código orquestador.",
+    "como": "El entorno de pruebas levanta las dependencias reales o contenedores efímeros (base vectorial con índice de prueba, servidor de herramientas o API) e inyecta escenarios end-to-end representativos. Cada caso ejecuta la cadena completa —preprocesamiento, cálculo de embeddings, recuperación, inferencia del LLM, validación de esquema Pydantic/JSON, ejecución de herramientas y guardrails— comprobando aserciones deterministas (códigos de estado, esquemas, citas, latencia) junto con métricas semánticas o de faithfulness.",
+    "practicas": [
+      "Separa las aserciones deterministas de infraestructura (conectividad, contratos de herramientas, esquemas válidos) de las comprobaciones estocásticas sobre la redacción final del LLM.",
+      "Pruebas de integración vs pruebas unitarias de IA: las unitarias validan piezas aisladas con mocks en segundos; las de integración validan el pipeline real (retriever + LLM + tools) y suelen ejecutarse en staging o merges a main.",
+      "Incluye casos negativos y de resiliencia: verifica cómo responde el flujo cuando la base vectorial devuelve cero documentos, una API externa responde 429/500 o el modelo trunca un JSON.",
+      "Registra trazas por ejecución (OpenTelemetry o plataformas de observabilidad LLM) para identificar qué etapa exacta introdujo una regresión."
+    ],
+    "ejemplo": "def test_rag_pipeline_end_to_end(rag_app, test_vectordb):\n    resp = rag_app.query(\"¿Cuál es la política de devoluciones?\", index=test_vectordb)\n    assert resp.status == \"ok\"\n    assert len(resp.citations) >= 1\n    assert \"30 días\" in resp.answer\n    assert resp.latency_ms < 2500",
+    "entrevista": "Las pruebas de integración de IA validan la interacción real entre retriever, modelo, herramientas y guardrails para asegurar que todo el pipeline cumple contratos, latencia y tolerancia a fallos antes de salir a producción."
+  },
+  "Pruebas unitarias de IA": {
+    "que": "Pruebas automatizadas rápidas y aisladas que verifican componentes individuales de una aplicación de IA: construcción de plantillas de prompt, lógica de chunking, validadores y guardrails, parsers de salida estructurada e invariantes básicas del modelo. Operan sobre entradas controladas empleando mocks, respuestas grabadas o aserciones robustas frente a variación léxica.",
+    "para": "Sirven para obtener retroalimentación en segundos dentro del ciclo local y de CI en cada commit sin depender de bases vectoriales ni consumir presupuesto elevado en llamadas a APIs. Se usan para blindar la lógica determinista que rodea al modelo y prevenir regresiones puntuales originadas por incidentes previos.",
+    "como": "El runner (como pytest, promptfoo o deepeval) ejecuta cada caso en aislamiento sustituyendo proveedores externos y bases de datos por dobles de prueba o fixtures grabados (cassettes). La lógica determinista —segmentación de texto, conteo de tokens, sanitización de PII, validación de esquemas— se verifica con igualdad exacta. Cuando una prueba sí invoca al modelo con temperatura 0 y semilla fija, evalúa invariantes estructurales, presencia de campos o etiquetas de clasificación en lugar de cadenas literales.",
+    "practicas": [
+      "Aísla todo el código determinista (chunkers, formateo de prompts, extractores y validadores Pydantic) para probarlo al 100% sin red ni llamadas reales al LLM.",
+      "Usa respuestas grabadas (replay/cassettes) en los commits diarios y reserva las llamadas reales a la API para un subconjunto mínimo de smoke tests.",
+      "Evita aserciones frágiles de coincidencia exacta de texto sobre salidas generativas; valida esquemas, tipos, entidades obligatorias o ausencia de patrones prohibidos.",
+      "Convierte cada fallo crítico o alucinación detectada en producción en una prueba unitaria de regresión permanente."
+    ],
+    "ejemplo": "from pydantic import BaseModel\nclass Intent(BaseModel):\n    action: str\n    confidence: float\n\ndef test_parser_extracts_valid_schema(mock_llm_client):\n    raw = mock_llm_client.complete(\"Cancela mi pedido 42\")\n    parsed = Intent.model_validate_json(raw)\n    assert parsed.action == \"cancel_order\"\n    assert 0.0 <= parsed.confidence <= 1.0",
+    "entrevista": "En sistemas de IA, las pruebas unitarias separan las piezas deterministas (prompts, chunking, parsers y guardrails con mocks) de las invariantes mínimas del modelo, dándonos validación rápida y barata en cada commit."
+  },
+  "Puerta de calidad de IA": {
+    "que": "Control automatizado (quality gate) integrado en el pipeline de CI/CD o de despliegue continuo que bloquea la promoción de un cambio si las métricas de evaluación no alcanzan los umbrales definidos o introducen regresiones frente a la línea base. Funciona como contrato ejecutable entre ingeniería, ciencia de datos y producto.",
+    "para": "Sirve para impedir que modificaciones aparentemente menores —editar un system prompt, actualizar un modelo base o cambiar el modelo de embeddings— degraden silenciosamente la exactitud, seguridad, latencia o costo en producción. Se utiliza en Pull Requests hacia la rama principal y en flujos automáticos de reentrenamiento o despliegue.",
+    "como": "Al modificar un prompt, modelo o índice, el pipeline de CI/CD lanza una suite de evaluación offline contra un dataset dorado versionado y un lote de pruebas adversariales. El evaluador calcula métricas de calidad (faithfulness, tasa de alucinación, Recall@k), seguridad y métricas operativas (latencia P95 y costo por petición), comparándolas contra cotas absolutas y tolerancias relativas respecto a la versión vigente en producción. Si alguna regla falla, el job finaliza con código distinto de cero e impide el merge o la promoción en el registro de modelos.",
+    "practicas": [
+      "Combina umbrales absolutos (p. ej. tasa_alucinacion <= 0.03) con umbrales relativos respecto a la baseline para evitar regresiones graduales entre versiones.",
+      "Incluye métricas operativas (latencia P95, consumo de tokens y costo por consulta) dentro de la puerta junto a las métricas de calidad semántica.",
+      "Puerta de calidad offline vs evaluación online: la puerta detiene regresiones conocidas antes del release, pero no reemplaza los despliegues canary ni el monitoreo de deriva en producción.",
+      "Divide el conjunto en una puerta rápida para cada PR y una puerta exhaustiva previa al pase a producción para equilibrar velocidad y cobertura."
+    ],
+    "ejemplo": "# Paso en GitHub Actions / CI\n- name: AI Quality Gate\n  run: |\n    python eval_runner.py --dataset golden_v4.jsonl --out report.json\n    python check_gate.py --report report.json \\\n      --min-faithfulness 0.92 --max-hallucination 0.03 --max-p95-ms 1800",
+    "entrevista": "Una puerta de calidad de IA convierte nuestras métricas de exactitud, seguridad, latencia y costo en criterios bloqueantes de CI/CD, asegurando que ningún cambio de prompt o modelo llegue a producción con regresiones."
+  },
+  "ROUGE": {
+    "que": "Familia de métricas automáticas para evaluar generación de texto (Recall-Oriented Understudy for Gisting Evaluation) basada en el solapamiento superficial de n-gramas o subsecuencias entre un texto candidato y una o varias referencias humanas. Sus variantes principales son ROUGE-N (n-gramas contiguos de orden N), ROUGE-L (subsecuencia común más larga) y ROUGE-Lsum (LCS aplicada a nivel de oración para resúmenes).",
+    "para": "Sirve para evaluar resúmenes automáticos y tareas de compresión de texto donde interesa verificar cuánto del contenido clave presente en la referencia fue cubierto por el sistema. Se usa como métrica rápida y económica de línea base o para detectar pérdida de cobertura informativa antes de emplear jueces LLM o revisión humana.",
+    "como": "El algoritmo normaliza y tokeniza candidato y referencia (aplicando opcionalmente stemming y filtrado de stopwords) para medir coincidencias léxicas. En ROUGE-N calcula el recall (n-gramas de referencia recuperados), la precisión (n-gramas del candidato válidos) y su media armónica F1. En ROUGE-L busca la longitud de la subsecuencia común más larga (LCS) preservando el orden relativo sin exigir contigüidad, y deriva sobre ella precisión, recall y F1; con múltiples referencias suele conservarse el máximo.",
+    "practicas": [
+      "ROUGE vs BLEU: BLEU prioriza precisión (pensado para traducción automática), mientras ROUGE prioriza recall de información clave en resúmenes, aunque en práctica suele reportarse su F1.",
+      "No dependas solo de ROUGE en resúmenes abstractivos con LLMs: penaliza sinónimos y paráfrasis correctas al exigir coincidencia léxica exacta.",
+      "Fija y documenta exactamente el tokenizador, idioma, stemmer y variante (p. ej. ROUGE-Lsum F1), porque variaciones de preprocesamiento alteran varios puntos el puntaje.",
+      "Combina ROUGE con métricas semánticas (BERTScore) o de fidelidad (faithfulness), ya que ROUGE no detecta contradicciones ni alucinaciones si coinciden palabras clave."
+    ],
+    "ejemplo": "from rouge_score import rouge_scorer\nscorer = rouge_scorer.RougeScorer([\"rouge1\", \"rougeL\"], use_stemmer=True)\nscores = scorer.score(\n    target=\"El servidor falló por falta de memoria en producción.\",\n    prediction=\"El servidor cayó por falta de memoria.\"\n)\nprint(round(scores[\"rougeL\"].fmeasure, 3))  # Solapamiento LCS F1",
+    "entrevista": "ROUGE mide cobertura léxica mediante n-gramas o subsecuencias comunes frente a referencias; es rápido y útil como línea base en resúmenes, pero ciego a paráfrasis y veracidad, por lo que debe ir acompañado de evaluación semántica."
+  },
+  "Recall@k": {
+    "que": "Métrica de evaluación para sistemas de recuperación de información que mide la proporción de documentos relevantes reales presentes dentro de los primeros k resultados devueltos. Toma valores en el rango [0, 1] y evalúa únicamente la presencia en el corte top-k sin penalizar el orden interno dentro de esos k ítems.",
+    "para": "Sirve para diagnosticar la capacidad de cobertura del recuperador (retriever) en motores de búsqueda, sistemas de recomendación y arquitecturas RAG. Se usa para responder si los fragmentos con la evidencia necesaria llegan realmente a la ventana de contexto del LLM antes de generar la respuesta.",
+    "como": "Para cada consulta q con un conjunto conocido de documentos relevantes R_q, el recuperador devuelve la lista ordenada de los k mejores candidatos C_k. En recuperación multi-documento se calcula la fracción |R_q ∩ C_k| / |R_q| y se promedia sobre todas las consultas del conjunto de prueba (en tareas de un único ítem relevante coincide con Hit Rate@k: 1 si existe al menos un acierto en C_k y 0 en caso contrario). Se suele medir en varios cortes crecientes (k = 1, 5, 10, 20) para dimensionar el tamaño óptimo de recuperación y re-ranking.",
+    "practicas": [
+      "Distingue claramente entre Recall@k (proporción de todos los documentos relevantes recuperados) y Hit Rate@k (porcentaje de consultas con al menos un acierto en el top-k).",
+      "Recall@k vs NDCG/MRR: maximiza Recall@k en la primera etapa de búsqueda (p. ej. k=20..50 híbrido BM25 + denso) y optimiza NDCG@5 o MRR en una segunda etapa con un re-ranker.",
+      "Subir k nunca reduce Recall@k, pero en RAG añade ruido, latencia y el efecto 'lost in the middle'; busca el menor k que cumpla tu objetivo de cobertura.",
+      "Evalúa el retriever de forma aislada con pares (consulta, chunk_relevante) para saber si un fallo en RAG proviene de la búsqueda o del generador."
+    ],
+    "ejemplo": "def recall_at_k(relevant_ids: set[str], retrieved_ids: list[str], k: int) -> float:\n    if not relevant_ids:\n        return 0.0\n    hits = len(relevant_ids.intersection(retrieved_ids[:k]))\n    return hits / len(relevant_ids)\n\n# relevant={\"doc2\", \"doc5\"}, top-3=[\"doc1\", \"doc2\", \"doc4\"] -> 1/2 = 0.5",
+    "entrevista": "En RAG, Recall@k es la métrica clave para auditar el retriever porque determina si la evidencia necesaria siquiera entró en los k documentos recuperados, independientemente de cómo redacte después el modelo."
+  },
+  "Rúbrica de evaluación": {
+    "que": "Matriz estructurada de criterios explícitos y niveles de puntuación (p. ej. escalas 1–5 o binario Pasa/Falla) que especifica qué hace que una salida de IA sea excelente, aceptable o inaceptable. Incorpora definiciones observables y ejemplos ancla para acotar la ambigüedad en cada nivel.",
+    "para": "Sirve para estandarizar la evaluación humana y el diseño de prompts para jueces automáticos (LLM-as-a-Judge) en tareas abiertas sin una única respuesta exacta, como asistentes conversacionales, resúmenes o generación de código. Se usa para alinear criterios entre producto, ingeniería y anotadores, garantizando mediciones repetibles.",
+    "como": "El diseño descompone la calidad esperada en dimensiones independientes (exactitud factual, completitud, formato, seguridad) asignando pesos o reglas de fallo bloqueante. Cada nivel se redacta con condiciones verificables acompañadas de ejemplos positivos, límite y negativos. Durante la evaluación, el revisor o el juez LLM puntúa cada criterio por separado —habitualmente generando una justificación paso a paso antes de la nota— y se mide la concordancia entre evaluadores (Cohen's kappa o Krippendorff's alpha) para refinar descripciones ambiguas.",
+    "practicas": [
+      "Usa escalas cortas y nítidas (binaria Pasa/Falla o 1–3/1–5 bien anclada) en vez de escalas 1–10 donde los grados intermedios carecen de significado consistente.",
+      "Prefiere rúbricas analíticas (una puntuación por dimensión) frente a una nota única global: facilitan diagnosticar qué falla y elevan la consistencia de LLM-as-a-Judge.",
+      "Mide el acuerdo entre evaluadores humanos y entre humano y juez automático; si el kappa es bajo, el problema suele estar en criterios ambiguos de la rúbrica.",
+      "Incluye siempre ejemplos ancla de casos límite directamente en las instrucciones de anotación o en el prompt del evaluador."
+    ],
+    "ejemplo": "criterio: \"Exactitud y soporte en contexto\"\nescala:\n  1: \"Contradice los documentos recuperados o inventa datos no soportados.\"\n  2: \"Parte correcta, pero incluye al menos una afirmación sin respaldo.\"\n  3: \"Todas las afirmaciones están respaldadas por el contexto sin omisiones graves.\"\nregla_bloqueo: \"Puntuación == 1 implica fallo automático de la respuesta.\"",
+    "entrevista": "Una rúbrica de evaluación convierte impresiones subjetivas en criterios discretos y observables con ejemplos ancla, haciendo que tanto anotadores humanos como LLM-as-a-Judge sean consistentes, auditables y depurables."
+  },
+  "Similitud semántica": {
+    "que": "Medida cuantitativa del grado de equivalencia de significado entre dos fragmentos de texto, más allá de que compartan vocabulario o sintaxis exacta. Se obtiene proyectando los textos en un espacio vectorial denso (embeddings) o mediante modelos de comparación textual y midiendo su proximidad geométrica.",
+    "para": "Sirve para evaluar salidas generativas frente a referencias cuando existen múltiples paráfrasis válidas, agrupar intenciones equivalentes y operar cachés semánticas. Se usa como complemento o sustituto de métricas puramente léxicas como BLEU o ROUGE que penalizan injustamente el uso de sinónimos.",
+    "como": "Un codificador (bi-encoder como BGE, E5 o modelos de embeddings comerciales) transforma la respuesta candidata A y la referencia B en vectores densos u y v en R^d, sobre los que se calcula la similitud coseno (u · v) / (||u|| ||v||) o el producto punto si están normalizados a norma unitaria. En enfoques por token como BERTScore se alinean los embeddings contextuales de cada token de A con los de B mediante similitud máxima para obtener precisión, recall y F1 semánticos. Para mayor precisión a mayor costo, un cross-encoder procesa conjuntamente ambos textos y devuelve un puntaje directo de similitud.",
+    "practicas": [
+      "Similitud semántica vs contradicción factual: frases opuestas como 'El paciente es alérgico' y 'El paciente no es alérgico' obtienen una similitud coseno muy alta; nunca la uses sola para validar hechos críticos.",
+      "Calibra los umbrales por modelo de embedding: la distribución del coseno varía según la anisotropía de cada modelo (un 0.80 en uno puede equivaler a 0.55 en otro).",
+      "Usa modelos NLI (Natural Language Inference) o cross-encoders cuando necesites distinguir implicación de contradicción, reservando bi-encoders para evaluación masiva o clustering.",
+      "Combina la similitud semántica con verificación exacta de entidades clave (fechas, importes, identificadores) para evitar que una paráfrasis fluida oculte un dato alterado."
+    ],
+    "ejemplo": "import numpy as np\n# u, v: embeddings de \"Cancela mi suscripción\" y \"Dar de baja el plan\"\ndef cosine_sim(u: np.ndarray, v: np.ndarray) -> float:\n    return float(np.dot(u, v) / (np.linalg.norm(u) * np.linalg.norm(v)))\n# Para alineamiento fino por tokens con sinónimos: BERTScore (F1 semántico)",
+    "entrevista": "La similitud semántica supera la rigidez léxica de ROUGE y BLEU al comparar significado en espacio de embeddings, pero como el coseno no distingue bien negaciones ni datos numéricos alterados, la combino con NLI o validación de entidades."
+  },
+  "Tasa de alucinación": {
+    "que": "Métrica de confiabilidad que cuantifica la proporción de respuestas —o de afirmaciones factuales atómicas dentro de ellas— en las que un modelo generativo inventa información, contradice las fuentes dadas o afirma hechos falsos. Distingue habitualmente entre alucinación intrínseca (contradice el contexto proporcionado) y extrínseca (introduce datos no respaldados por dicho contexto).",
+    "para": "Sirve para medir y controlar la fiabilidad de sistemas RAG, resumen clínico o legal, extracción estructurada y asistentes de soporte antes y durante su operación. Se usa para comparar estrategias de grounding, prompts o modelos y garantizar que el riesgo de desinformación se mantiene dentro de los límites tolerables.",
+    "como": "El cálculo sistemático suele descomponer cada respuesta del modelo en afirmaciones atómicas verificables (claims). Cada afirmación se contrasta frente a los documentos recuperados (para evaluar faithfulness o groundedness) o frente a una fuente de verdad externa (para correctitud factual) usando modelos NLI que clasifican en entailment, neutral o contradiction, evaluadores LLM-as-a-Judge o auditores humanos. Finalmente se computa la tasa como afirmaciones_no_soportadas / total_afirmaciones o como porcentaje de respuestas que contienen al menos una alucinación.",
+    "practicas": [
+      "Separa en tus reportes la infidelidad al contexto proporcionado (ungroundedness en RAG) de la falsedad respecto al conocimiento del mundo, pues se corrigen con técnicas distintas.",
+      "Mide tanto la tasa a nivel de respuesta completa (alineada con el impacto al usuario) como a nivel de afirmación atómica (más sensible para medir mejoras en textos largos).",
+      "Incluye casos sin respuesta en el conjunto de prueba para verificar que el modelo sabe abstenerse en lugar de inventar cuando falta evidencia.",
+      "Mitiga en producción combinando citas obligatorias verificables, temperatura baja y un guardrail NLI previo a la entrega al usuario."
+    ],
+    "ejemplo": "# Evaluación por afirmaciones atómicas (estilo RAGAS / FActScore)\nclaims = [\"La garantía dura 2 años.\", \"Cubre daños por agua.\"]\nsupported = [True, False]  # Contrastado frente al documento fuente\nhallucination_rate = supported.count(False) / len(claims)  # 0.50 (50%)",
+    "entrevista": "Mido la tasa de alucinación descomponiendo cada respuesta en afirmaciones atómicas y contrastándolas con las fuentes mediante NLI o jueces calibrados, evaluando también consultas sin respuesta para comprobar la capacidad de abstención."
+  },
+  "Umbral de aceptación": {
+    "que": "Valor límite numérico o regla compuesta mínima (o máxima en métricas de error) que debe cumplir una predicción individual o una métrica agregada de evaluación para aprobar una decisión o un despliegue. Actúa como frontera operativa entre la aceptación automática, el rechazo o el escalado.",
+    "para": "Sirve para traducir salidas continuas (probabilidades calibradas, similitudes vectoriales, puntajes de jueces o tasas de error) en decisiones discretas alineadas con el negocio. Se usa tanto en tiempo de inferencia (decidir si clasificar, responder o abstenerse) como en puertas de calidad de CI/CD para autorizar la salida a producción.",
+    "como": "En inferencia, el sistema compara el score del modelo contra uno o más umbrales: con un umbral simple tau aprueba si score >= tau; con doble umbral (tau_low, tau_high) aprueba por encima de tau_high, rechaza por debajo de tau_low y deriva la franja intermedia a revisión humana o fallback. En evaluación de modelos, se definen cotas mínimas sobre el conjunto de validación (p. ej. Recall@5 >= 0.90, tasa de alucinación <= 0.02, latencia P95 <= 1500 ms) calibradas a partir de curvas Precision-Recall y matrices de costo de error.",
+    "practicas": [
+      "Nunca dejes 0.5 como umbral automático en clasificadores: ajústalo en validación maximizando F_beta o minimizando el costo esperado de falsos positivos frente a falsos negativos.",
+      "Aplica calibración de probabilidades (p. ej. temperature scaling o Platt scaling) antes de fijar umbrales interpretables como niveles de confianza.",
+      "Usa zonas de abstención con doble umbral en flujos críticos para que los casos inciertos pasen a revisión humana en lugar de forzar una decisión automática.",
+      "Recalibra los umbrales periódicamente o tras cambios de distribución de datos (data drift) o actualizaciones del modelo base."
+    ],
+    "ejemplo": "def route_prediction(prob_fraud: float, t_low=0.25, t_high=0.85) -> str:\n    if prob_fraud >= t_high:\n        return \"BLOCK\"\n    if prob_fraud >= t_low:\n        return \"HUMAN_REVIEW\"\n    return \"APPROVE\"",
+    "entrevista": "El umbral de aceptación convierte puntuaciones continuas en decisiones alineadas con el riesgo del negocio; lo calibro en validación según el costo relativo de falsos positivos y negativos, y uso doble umbral cuando conviene abstenerse o escalar a un humano."
+  }
+}

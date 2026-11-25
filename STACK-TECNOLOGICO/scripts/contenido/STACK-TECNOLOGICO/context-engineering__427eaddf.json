@@ -1,0 +1,392 @@
+{
+  "Descripción de herramientas": {
+    "que": "Texto en lenguaje natural incluido en la definición de cada tool o función expuesta a un LLM para explicar qué hace, cuándo invocarla, qué efectos secundarios tiene y cómo interpretar sus parámetros. Forma parte del contrato semántico que el modelo lee antes de decidir una llamada mediante function calling o MCP.",
+    "para": "Evita que el modelo elija herramientas equivocadas, invente argumentos o duplique llamadas cuando dispone de múltiples capacidades similares. Resulta crítica en agentes con catálogos medianos o grandes de APIs, servidores MCP y utilidades locales.",
+    "como": "Durante la serialización de herramientas en la petición al modelo (por ejemplo en el campo tools de la API de chat o en ListTools de MCP), el orquestador inyecta el nombre, la descripción y el JSON Schema en el prefijo del prompt. El mecanismo de atención cruza la intención del usuario con esas descripciones para emitir un bloque tool_use con argumentos tipados. Si la descripción detalla precondiciones, límites y casos de exclusión frente a herramientas parecidas, el clasificador implícito del modelo reduce ambigüedades sin necesidad de ejemplos few-shot extensos.",
+    "practicas": [
+      "Especificar explícitamente cuándo NO usar la herramienta y qué alternativa preferir en su lugar.",
+      "Documentar unidades, formatos esperados (ISO-8601, rutas absolutas) y efectos secundarios (solo lectura vs mutación).",
+      "Error típico: redactar descripciones vagas de una línea ('Busca datos') que provocan colisiones entre tools.",
+      "Descripción clara vs prompt de sistema sobrecargado: mover las reglas específicas de cada tool a su descripción mantiene el system prompt limpio y modular."
+    ],
+    "ejemplo": "{\n  \"name\": \"search_logs\",\n  \"description\": \"Consulta logs de producción por servicio y rango ISO-8601. Solo lectura. No usar para métricas numéricas (usar query_metrics). Máximo 200 líneas por llamada.\"\n}",
+    "entrevista": "La descripción de una herramienta es el verdadero prompt de enrutamiento del agente: si el modelo elige mal una tool, casi siempre es un bug de contrato semántico antes que de razonamiento."
+  },
+  "Efecto lost in the middle": {
+    "que": "Fenómeno empírico observado en modelos de lenguaje basados en Transformers donde la capacidad de recuperar y utilizar información decae significativamente cuando el dato relevante se ubica en el centro de una ventana de contexto larga. La curva de rendimiento adopta una forma en U, privilegiando el inicio (primacy bias) y el final (recency bias).",
+    "para": "Explica por qué ampliar la ventana de contexto a cientos de miles de tokens no garantiza respuestas precisas en pipelines RAG o historiales extensos. Permite diagnosticar pérdidas silenciosas de recall cuando el documento correcto sí fue recuperado pero ignorado por el modelo.",
+    "como": "En la autoatención causal y en esquemas de codificación posicional como RoPE, los tokens iniciales actúan como attention sinks que estabilizan la distribución de pesos, mientras que los tokens finales mantienen alta proximidad relativa con el punto de generación. Los fragmentos intermedios quedan diluidos entre miles de claves competidoras, reduciendo la masa de atención asignada al hecho objetivo. Como resultado, el decodificador atiende con prioridad a las instrucciones del system prompt (inicio) y a la pregunta reciente (final), omitiendo evidencia enterrada en medio.",
+    "practicas": [
+      "Colocar las instrucciones críticas al principio y la evidencia más relevante o la consulta justo al final del prompt.",
+      "Aplicar reordenamiento post-retrieval (LongContextReorder) poniendo los chunks de mayor score en los extremos y los de menor score en el centro.",
+      "Error típico: inyectar 50 chunks de RAG ordenados linealmente de mayor a menor relevancia pensando que el primero basta.",
+      "Ventana grande vs contexto denso: un contexto de 8k tokens bien curado suele superar en precisión a 128k tokens sin filtrado."
+    ],
+    "ejemplo": "# Reordenamiento en U (LongContextReorder)\n# Entrada por score: [doc1(0.95), doc2(0.89), doc3(0.75), doc4(0.60)]\n# Orden en prompt:   [doc1, doc3, doc4, doc2]  -> extremos fuertes, centro débil",
+    "entrevista": "El efecto lost in the middle demuestra que en un Transformer no todos los tokens cuestan ni pesan igual: la posición dentro del prompt altera directamente la atención efectiva."
+  },
+  "Esquemas de herramientas": {
+    "que": "Especificación formal y tipada —habitualmente en JSON Schema— que define el nombre, los parámetros de entrada, los tipos de datos, las restricciones y los campos obligatorios de una herramienta invocable por un agente. Actúa como interfaz contractual entre el razonamiento probabilístico del LLM y la ejecución determinista del código.",
+    "para": "Garantiza que las llamadas generadas por el modelo puedan validarse y ejecutarse sin parseos frágiles ni errores de tipo en tiempo de ejecución. Se utiliza en function calling nativo, servidores MCP y pipelines de salida estructurada.",
+    "como": "El servidor o SDK traduce definiciones tipadas (por ejemplo modelos Pydantic, Zod o anotaciones TypeScript) a un objeto JSON Schema con properties, required, enum y pattern. Durante la inferencia, los motores modernos compilan ese esquema en una gramática libre de contexto (CFG) o máquina de estados finita que aplica constrained decoding sobre los logits del modelo. Antes de ejecutar la función real, el runtime valida el JSON emitido contra el esquema y devuelve errores estructurados si falta invariante semántica.",
+    "practicas": [
+      "Usar tipos estrictos (enum, format, minimum/maximum) para acotar el espacio de salida y prevenir alucinaciones de parámetros.",
+      "Mantener los esquemas planos y con pocos campos opcionales; anidamientos profundos degradan la fiabilidad del modelo.",
+      "Error típico: exponer objetos genéricos tipo dict o additionalProperties: true que devuelven estructuras impredecibles.",
+      "Constrained decoding vs validación post-hoc: la restricción en decodificación evita sintaxis inválida, pero requiere esquemas compatibles con el proveedor."
+    ],
+    "ejemplo": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"env\": { \"type\": \"string\", \"enum\": [\"staging\", \"prod\"] },\n    \"limit\": { \"type\": \"integer\", \"minimum\": 1, \"maximum\": 100 }\n  },\n  \"required\": [\"env\"],\n  \"additionalProperties\": false\n}",
+    "entrevista": "Un buen esquema de herramienta convierte un problema abierto de generación de texto en una máquina de estados acotada mediante tipos estrictos y decodificación restringida."
+  },
+  "Fuentes de contexto": {
+    "que": "Orígenes heterogéneos de información desde los cuales un sistema agéntico o aplicación LLM recopila datos para construir cada prompt de inferencia. Incluyen instrucciones de sistema, estado conversacional, bases vectoriales, APIs externas, sistemas de archivos, memoria persistente y salidas de herramientas.",
+    "para": "Clasificar las fuentes permite diseñar políticas diferenciadas de frescura, caché, permisos, latencia y presupuesto de tokens antes de ensamblar la petición. Evita tratar todo el conocimiento con el mismo mecanismo de inyección estática o RAG genérico.",
+    "como": "En cada turno del agente, el ensamblador consulta fuentes síncronas (perfil de usuario, reglas de proyecto) y fuentes bajo demanda (búsqueda semántica, servidores MCP, lectura de repositorio). Cada fuente aporta fragmentos etiquetados con metadatos de procedencia, timestamp, nivel de confianza y coste en tokens. Posteriormente, el pipeline de contexto normaliza, deduplica y ordena estos aportes según su prioridad en la ventana del modelo.",
+    "practicas": [
+      "Separar fuentes estáticas cacheables (prompt caching) de fuentes dinámicas por turno para reducir latencia y coste.",
+      "Etiquetar cada bloque con su origen y marca temporal para detectar información obsoleta o contradictoria.",
+      "Error típico: mezclar instrucciones confiables del sistema con datos no confiables de fuentes externas sin delimitadores, abriendo vectores de prompt injection.",
+      "Fuentes push (precargadas) vs pull (recuperadas por el agente): preferir pull cuando el volumen supera el presupuesto habitual."
+    ],
+    "ejemplo": "sources:\n  - id: system_rules\n    mode: static_prefix\n    cacheable: true\n  - id: repo_files\n    mode: just_in_time\n    max_tokens: 12000",
+    "entrevista": "Gestionar fuentes de contexto es diseñar la capa de I/O del LLM: cada origen tiene su propia latencia, nivel de confianza y estrategia de cacheo."
+  },
+  "Gestión de la ventana de contexto": {
+    "que": "Conjunto de técnicas de ingeniería destinadas a administrar el espacio finito de tokens que un modelo puede procesar simultáneamente entre entrada y salida. Abarca asignación de cuotas, compactación, truncamiento selectivo, descarga de artefactos y reutilización de caché KV.",
+    "para": "Impide desbordamientos de capacidad, degradación de calidad por ruido acumulado y picos de coste y latencia en sesiones largas o multi-paso. Es esencial en agentes autónomos que ejecutan decenas de llamadas a herramientas sobre código o documentos extensos.",
+    "como": "Un gestor de ventana monitoriza el conteo exacto mediante el tokenizador del modelo tras cada turno o tool call. Al superar un umbral (por ejemplo 70% de la capacidad efectiva), dispara estrategias escalonadas: primero podar salidas antiguas de herramientas sustituyéndolas por referencias o resúmenes; luego compactar turnos pasados preservando decisiones y estado clave; y finalmente mantener intacto el prefijo cacheable del sistema para aprovechar el prefix caching del proveedor.",
+    "practicas": [
+      "Reservar siempre un margen explícito para el razonamiento (thinking) y la respuesta final del modelo.",
+      "Medir la 'ventana efectiva' (donde la precisión no cae) en lugar de llenar hasta el límite teórico anunciado.",
+      "Error típico: usar truncamiento FIFO ciego que borra instrucciones iniciales o restricciones críticas de la tarea.",
+      "Compactación semántica vs ventana deslizante: la compactación conserva decisiones clave en pocos tokens, mientras que la ventana deslizante pierde continuidad."
+    ],
+    "ejemplo": "if token_count(messages) > int(MAX_EFFECTIVE_CTX * 0.75):\n    messages = prune_old_tool_outputs(messages, keep_last=4)\n    if token_count(messages) > int(MAX_EFFECTIVE_CTX * 0.75):\n        messages = summarize_history_preserving_state(messages)",
+    "entrevista": "La ventana de contexto es la memoria RAM del LLM: no se trata de llenarla al máximo, sino de mantener en ella solo el working set de mayor señal por token."
+  },
+  "Gestión de memoria del agente": {
+    "que": "Arquitectura y conjunto de procesos que gobiernan el ciclo completo de la memoria de un agente inteligente: captura, extracción, almacenamiento, actualización, consolidación, recuperación y borrado. Coordina la memoria de corto plazo en contexto con almacenes persistentes externos entre sesiones.",
+    "para": "Permite que un agente mantenga continuidad entre conversaciones, aprenda preferencias y hechos del entorno sin reintroducir historiales completos en cada prompt. Resuelve la amnesia natural de los LLMs sin estado tras finalizar una sesión.",
+    "como": "Al cierre de un turno o en segundo plano, un extractor analiza la traza conversacional para identificar hechos duraderos, episodios relevantes o procedimientos aprendidos. El gestor compara los candidatos contra registros existentes (vectoriales, relacionales o en grafo) para decidir operaciones CRUD: ADD, UPDATE, MERGE o DELETE ante contradicciones. En sesiones futuras, un módulo de recuperación consulta esos almacenes e inyecta solo los recuerdos relevantes en el ensamblado del contexto.",
+    "practicas": [
+      "Separar explícitamente la memoria de trabajo (scratchpad de sesión) de la memoria a largo plazo persistente.",
+      "Implementar resolución de conflictos cuando un hecho nuevo contradice uno antiguo (versionado o sobreescritura temporal).",
+      "Error típico: guardar transcripciones crudas sin filtrar, contaminando futuras recuperaciones con ruido conversacional.",
+      "Escritura síncrona vs asíncrona en background: la consolidación asíncrona evita penalizar la latencia percibida por el usuario."
+    ],
+    "ejemplo": "decision = memory_manager.reconcile(new_fact=\"El equipo migró de Jest a Vitest\", existing=hits)\n# Posibles acciones: ADD | UPDATE(id) | DELETE(id) | NOOP",
+    "entrevista": "La gestión de memoria no consiste en acumular todo en un vector store, sino en decidir qué merece persistirse, cómo actualizar contradicciones y qué olvidar."
+  },
+  "Graph memory": {
+    "que": "Paradigma de memoria persistente para agentes que modela entidades, conceptos, eventos y sus relaciones semánticas o temporales como un grafo de conocimiento dirigido y etiquetado (nodos y aristas). Permite representar dependencias multi-salto que la similitud vectorial plana no captura.",
+    "para": "Resuelve consultas relacionales complejas, trazabilidad causal y cambios de estado a lo largo del tiempo (por ejemplo quién aprobó qué cambio en qué servicio). Se utiliza en asistentes empresariales, agentes de ingeniería y soporte técnico con dominios altamente interconectados.",
+    "como": "Un pipeline de extracción (mediante LLM o NLP estructurado) transforma mensajes y eventos en tripletas (sujeto, predicado, objeto) junto con marcas temporales de validez. Estas tripletas se almacenan en una base de grafos (como Neo4j, FalkorDB o Kùzu), frecuentemente combinadas con embeddings sobre nodos y aristas para búsqueda híbrida. Durante la recuperación, el sistema localiza nodos semilla por similitud o coincidencia exacta y ejecuta recorridos de N saltos o consultas Cypher para devolver un subgrafo contextualizado.",
+    "practicas": [
+      "Modelar propiedades temporales en las aristas (valid_from, valid_to) para no perder historial ni mezclar estados vigentes con pasados.",
+      "Combinar búsqueda vectorial inicial (para encontrar nodos semilla) con expansión por grafo de 1 a 2 saltos.",
+      "Error típico: dejar que el LLM invente etiquetas de relación libres sin ontología, fragmentando el grafo en sinónimos.",
+      "Graph memory vs RAG vectorial plano: el grafo brilla en razonamiento relacional multi-hop; el vectorial es más simple para texto no estructurado."
+    ],
+    "ejemplo": "MATCH (u:User {id: $uid})-[r:PREFERS]->(t:Tool)\nWHERE r.valid_to IS NULL\nRETURN t.name, r.confidence",
+    "entrevista": "Graph memory aporta estructura relacional y temporal a la memoria del agente, permitiendo responder preguntas multi-salto donde la similitud coseno por sí sola falla."
+  },
+  "Ingeniería de contexto": {
+    "que": "Disciplina de ingeniería de software enfocada en diseñar, construir, evaluar y optimizar el conjunto completo de información, herramientas, memoria y formato que recibe un LLM en cada paso de ejecución. Evoluciona el enfoque artesanal de redactar prompts hacia sistemas reproducibles de ensamblado de contexto.",
+    "para": "Maximiza la fiabilidad, precisión y eficiencia en costes de aplicaciones y agentes de IA en producción, donde la mayoría de los fallos provienen de información faltante, obsoleta o ruidosa más que del modelo base. Se aplica en cualquier sistema que combine LLMs con datos dinámicos o ejecución multi-turno.",
+    "como": "Trata el contexto como una tubería de datos sujeta a un presupuesto de tokens y latencia. En cada invocación, recopila instrucciones, estado conversacional, memoria recuperada, esquemas de herramientas y datos externos en tiempo real (just-in-time). Luego filtra, compacta, ordena posicionalmente y serializa esos componentes respetando límites de seguridad y maximizando el aprovechamiento de caché de prefijo, midiendo el impacto mediante evaluaciones automatizadas.",
+    "practicas": [
+      "Diagnosticar los fallos de un agente inspeccionando primero exactamente qué vio el modelo en su ventana de entrada.",
+      "Versionar plantillas, reglas, herramientas y políticas de recuperación como artefactos probables con evals de regresión.",
+      "Error típico: intentar arreglar falta de contexto añadiendo más adjetivos o énfasis al prompt en lugar de mejorar la recuperación.",
+      "Ingeniería de contexto vs prompt engineering: el prompt engineering optimiza la redacción de una instrucción; la ingeniería de contexto orquesta todo el estado dinámico del sistema."
+    ],
+    "ejemplo": "context = assemble_context(\n    system=load_cached_prefix(),\n    memory=retrieve_user_memory(query),\n    tools=select_relevant_tools(intent),\n    evidence=fetch_jit_chunks(query, budget=6000)\n)",
+    "entrevista": "En sistemas agénticos de producción, el rendimiento del modelo depende menos de trucos retóricos en el prompt y mucho más de la ingeniería de contexto que entrega la información exacta en el momento justo."
+  },
+  "Instrucciones de sistema": {
+    "que": "Bloque inicial y prioritario de texto (system prompt o developer message) que define el rol, las directrices de comportamiento, las restricciones de seguridad, el formato de salida y las políticas operativas de un modelo durante toda la sesión. Ocupa una jerarquía superior frente a los mensajes de usuario y resultados de herramientas.",
+    "para": "Establece invariantes globales que no deben cambiar turno a turno, reduciendo la ambigüedad y mitigando desviaciones de comportamiento. Se utiliza como ancla normativa en asistentes, agentes autónomos y flujos de clasificación o extracción.",
+    "como": "La API del modelo separa el rol system/developer del rol user y assistant, aplicando plantillas de chat específicas entrenadas mediante alineación jerárquica (instruction hierarchy). Al colocarse al inicio fijo de la conversación, los proveedores pueden almacenar su estado KV en caché (prompt caching) para reutilizarlo entre peticiones a menor coste y latencia. Si hay conflicto entre una instrucción de sistema y texto proveniente de una herramienta o usuario, el entrenamiento de jerarquía induce al modelo a respetar el nivel superior.",
+    "practicas": [
+      "Mantener el prefijo de sistema estable y determinista (sin timestamps ni variables cambiantes arriba) para no invalidar el prompt caching.",
+      "Redactar reglas concretas, verificables y sin contradicciones internas; evitar muros de texto redundantes.",
+      "Error típico: volcar todo el manual de la empresa o decenas de ejemplos innecesarios en el system prompt consumiendo presupuesto fijo.",
+      "Instrucciones de sistema vs reglas del proyecto: las primeras definen identidad y políticas generales del agente; las segundas aportan convenciones locales del repositorio o tarea."
+    ],
+    "ejemplo": "messages = [\n  {\"role\": \"system\", \"content\": \"Eres un revisor de seguridad. Responde en JSON. Nunca ejecutes comandos destructivos sin confirmación.\"},\n  {\"role\": \"user\", \"content\": \"Audita auth.py\"}\n]",
+    "entrevista": "Las instrucciones de sistema son el contrato de alto nivel del agente: deben ser concisas, jerárquicamente claras e inmutables en su prefijo para aprovechar el cacheo."
+  },
+  "Just-in-time context": {
+    "que": "Estrategia de ingeniería de contexto que evita precargar grandes volúmenes de datos estáticos al inicio de una sesión y, en su lugar, dota al agente de referencias ligeras y herramientas para recuperar información específica justo en el instante en que la necesita.",
+    "para": "Reduce drásticamente el consumo inicial de tokens, el ruido en la ventana de atención y el riesgo de trabajar con copias desactualizadas. Es fundamental en agentes de programación sobre repositorios grandes y asistentes conectados a bases documentales vivas.",
+    "como": "En el prompt inicial solo se entregan metadatos compactos: índices, rutas de archivos, esquemas resumidos o identificadores (contexto puntero). Cuando el agente detecta una necesidad concreta durante su bucle de razonamiento, invoca herramientas dirigidas (como grep, lectura por rango de líneas, consultas SQL o búsqueda en APIs) que devuelven únicamente el fragmento pertinente. Ese resultado entra en la ventana activa durante los pasos necesarios y puede podarse después si deja de ser útil.",
+    "practicas": [
+      "Entregar índices o mapas ligeros (rutas, símbolos, tablas) en lugar de contenido completo por adelantado.",
+      "Combinar búsqueda rápida (ripgrep, glob, BM25) con lectura acotada por rangos para evitar volcados masivos.",
+      "Error típico: inyectar archivos completos 'por si acaso' al principio de la conversación, disparando el coste desde el turno uno.",
+      "Just-in-time vs precarga total: JIT intercambia un pequeño coste en pasos extra de tool calls por mucha mayor precisión y escalabilidad."
+    ],
+    "ejemplo": "# En lugar de volcar 20 archivos:\n1. Agente lista símbolos: rg -n \"def refresh_token\" src/\n2. Agente lee solo el bloque: read_file(\"src/auth.py\", start=45, end=110)",
+    "entrevista": "Just-in-time context aplica lazy loading al razonamiento del LLM: damos al agente punteros ligeros y herramientas precisas en lugar de saturar su ventana por adelantado."
+  },
+  "Lectura selectiva de archivos": {
+    "que": "Técnica operativa empleada por agentes de software para inspeccionar código o documentos de forma incremental y acotada —mediante búsqueda previa y lectura por rangos de líneas— en lugar de cargar ficheros completos en la ventana de contexto.",
+    "para": "Preserva el presupuesto de tokens cuando se trabaja con archivos extensos, logs o monorepositorios, evitando la dilución de atención sobre código irrelevante. Es indispensable en tareas de depuración, refactorización y auditoría a escala.",
+    "como": "El flujo consta de dos fases: primero, una herramienta de localización (como ripgrep, ctags, Tree-sitter o búsqueda semántica) identifica el archivo exacto y los números de línea donde se define o invoca un símbolo. Segundo, una herramienta de lectura recibe parámetros `start_line` y `end_line` (o límite de bytes) y devuelve únicamente la función, clase o sección relevante junto con su numeración. El agente repite lecturas puntuales siguiendo referencias solo cuando la traza lo exige.",
+    "practicas": [
+      "Siempre buscar antes de leer (`rg`, `grep`, definición de símbolo) para conocer el rango exacto.",
+      "Leer encabezados/imports más el bloque específico de interés en bloques de 80-150 líneas.",
+      "Error típico: leer archivos de 2.000 líneas completos repetidas veces en cada iteración del bucle.",
+      "Lectura selectiva vs resumen automático: leer el rango exacto conserva sintaxis y tipos literales necesarios para editar sin errores."
+    ],
+    "ejemplo": "# Paso 1: localizar símbolo\nrg -n \"class TokenBucket\" app/\n# Paso 2: leer solo el rango relevante\nread_file(path=\"app/rate_limit.py\", start_line=112, end_line=195)",
+    "entrevista": "La lectura selectiva de archivos es el equivalente a paginar bajo demanda en un agente de código: mantiene alta la densidad de señal y evita quemar la ventana en boilerplate."
+  },
+  "Lost in the middle": {
+    "que": "Patrón de degradación de rendimiento en modelos de lenguaje largos donde la información situada en posiciones centrales del prompt tiene una tasa de recuperación y uso mucho menor que la ubicada al principio o al final. Aunque suele estudiarse en RAG multi-documento, afecta también a historiales largos y listas extensas de herramientas.",
+    "para": "Guía el diseño de la disposición estructural (layout) de los bloques dentro de un prompt compuesto para proteger datos críticos frente a la caída de atención central. Se aplica al ensamblar resultados de búsqueda, historiales de chat y listas de ejemplos few-shot.",
+    "como": "Al procesar una secuencia larga, los mecanismos de atención asignan pesos desproporcionados a los primeros tokens (ancla inicial) y a los últimos (proximidad al token a predecir). Para mitigar esta asimetría durante el ensamblado de contexto, el orquestador aplica estrategias de posicionamiento: ubica reglas invariantes en el prefijo, reordena documentos recuperados en forma de U dejando lo menos relevante en el centro, y repite restricciones críticas o el objetivo actual justo antes de solicitar la generación.",
+    "practicas": [
+      "Aplicar la técnica del 'sándwich de contexto': instrucciones arriba, evidencia ordenada en U en medio, objetivo y formato requerido al final.",
+      "Limitar el número de documentos recuperados (top-k estricto con reranker) en vez de rellenar toda la ventana disponible.",
+      "Error típico: asumir que un benchmark 'needle in a haystack' al 100% garantiza razonamiento multi-hecho sin pérdida en el centro.",
+      "Mitigación por reordenamiento vs compactación: reordenar ayuda con pocos documentos; compactar o filtrar es obligatorio cuando sobra ruido."
+    ],
+    "ejemplo": "[SYSTEM] Reglas fijas e invariantes\n[CONTEXT HIGH] Documento top-1\n[CONTEXT LOW]  Documentos top-3, top-4 (centro)\n[CONTEXT HIGH] Documento top-2\n[USER] Pregunta actual + recordatorio de formato",
+    "entrevista": "Para mitigar lost in the middle en arquitectura de contexto, no basta con recuperar bien: hay que filtrar con un reranker y ubicar la evidencia de mayor señal en los extremos del prompt."
+  },
+  "Mapa de código": {
+    "que": "Representación estructural compacta de un repositorio (repo map) que resume archivos, módulos, clases, firmas de funciones y relaciones de dependencia clave sin incluir el cuerpo completo de la implementación. Se construye habitualmente mediante análisis sintáctico (AST).",
+    "para": "Proporciona al agente una visión global de la arquitectura del proyecto en pocos miles de tokens para que navegue y localice dónde intervenir sin adivinar rutas ni leer cientos de archivos. Es clave en asistentes de código como Aider o entornos IDE agénticos.",
+    "como": "Un parser basado en Tree-sitter analiza los archivos del repositorio para extraer definiciones de símbolos (clases, métodos, interfaces) y referencias entre ellos. Con esos nodos y aristas se construye un grafo de dependencias y se aplica un algoritmo de ranking (como PageRank personalizado desde los archivos actualmente abiertos o mencionados) para priorizar los símbolos más centrales. Finalmente se renderiza un árbol de texto truncado al presupuesto de tokens asignado.",
+    "practicas": [
+      "Generar el mapa mediante parsers AST (Tree-sitter) en lugar de usar un LLM para resumir cada archivo.",
+      "Ponderar el ranking del mapa según los archivos mencionados en la consulta o modificados recientemente en git.",
+      "Error típico: incluir implementación o comentarios largos dentro del mapa, destruyendo su ratio compresión/utilidad.",
+      "Mapa de código vs búsqueda vectorial de código: el mapa da estructura global y firmas exactas de interfaces; los embeddings encuentran similitud conceptual."
+    ],
+    "ejemplo": "src/auth/service.py:\n│class AuthService:\n│    def verify_jwt(token: str) -> Claims\n│    def rotate_keys() -> None\nsrc/api/middleware.py:\n│def require_auth(req: Request) -> Response",
+    "entrevista": "Un repo map basado en Tree-sitter y grafos de referencias le da al agente cartografía global del proyecto a una fracción mínima del coste de leer el código fuente."
+  },
+  "Memoria basada en embeddings": {
+    "que": "Mecanismo de almacenamiento y recuperación de memoria a largo plazo que convierte hechos, resúmenes de episodios o preferencias en vectores densos numéricos mediante modelos de embedding, indexándolos en una base vectorial para recuperarlos por similitud semántica.",
+    "para": "Permite recuperar recuerdos relevantes por significado aunque el usuario use sinónimos o formulaciones distintas a las guardadas originalmente. Es la base estándar para dotar a un agente de memoria asociativa escalable a miles o millones de entradas.",
+    "como": "Cuando se consolida un recuerdo, un modelo de embeddings (por ejemplo text-embedding-3 o BGE) proyecta el texto normalizado a un vector de alta dimensión que se inserta junto con metadatos (user_id, timestamp, tipo, confianza) en un índice ANN (como HNSW o IVF en pgvector, Qdrant o Milvus). En la fase de consulta, el prompt actual se vectoriza y se ejecuta una búsqueda por similitud coseno o producto escalar filtrada por tenant, aplicando opcionalmente un reranker cruzado o decaimiento temporal antes de inyectar los resultados.",
+    "practicas": [
+      "Almacenar afirmaciones atómicas y autocontenidas ('El usuario prefiere respuestas en Python 3.12') en lugar de fragmentos crudos dependientes de pronombres.",
+      "Combinar búsqueda vectorial con filtros estrictos de metadatos (user_id, ámbito) y búsqueda léxica (BM25) para identificadores exactos.",
+      "Error típico: confiar solo en similitud coseno sin ponderar recencia ni detectar contradicciones entre recuerdos antiguos y nuevos.",
+      "Memoria por embeddings vs memoria grafada: los embeddings capturan similitud temática rápida; los grafos resuelven relaciones explícitas entre entidades."
+    ],
+    "ejemplo": "hits = vector_db.query(\n    vector=embed(user_query),\n    filter={\"user_id\": uid, \"active\": True},\n    top_k=5\n)",
+    "entrevista": "La memoria basada en embeddings funciona bien solo cuando almacenas hechos atómicos con metadatos temporales y combinas similitud vectorial con filtros estrictos y reranking."
+  },
+  "Memoria de trabajo": {
+    "que": "Espacio de estado activo e inmediato que mantiene el agente durante la ejecución de una tarea en curso, equivalente al scratchpad o al conjunto de variables, observaciones intermedias, objetivos actuales y resultados recientes contenidos en la ventana de contexto.",
+    "para": "Sostiene la coherencia paso a paso en bucles de razonamiento y acción (como ReAct o planificación multi-paso) sin obligar a consultar almacenamiento externo en cada iteración. Se usa para rastrear subtareas completadas, hipótesis abiertas y datos recién extraídos.",
+    "como": "Se materializa dentro del bloque activo del prompt o en un artefacto estructurado de sesión (por ejemplo un bloque `<scratchpad>`, una lista de tareas o un objeto de estado en LangGraph). En cada ciclo del agente, los nuevos resultados de herramientas y reflexiones actualizan esta memoria, mientras un mecanismo de poda elimina observaciones ya consumidas para mantener el tamaño acotado. Al finalizar la tarea, la memoria de trabajo puede descartarse o destilarse hacia la memoria episódica/semántica.",
+    "practicas": [
+      "Externalizar el estado de tareas largas en una estructura compacta (checklist o JSON de estado) en vez de depender solo del historial textual.",
+      "Limpiar resultados intermedios voluminosos una vez extraída la conclusión necesaria.",
+      "Error típico: dejar crecer la memoria de trabajo sin poda hasta provocar deriva de objetivo (goal drift) o desbordar la ventana.",
+      "Memoria de trabajo vs memoria persistente: la primera es volátil, de alta frecuencia y específica de la tarea; la segunda sobrevive entre sesiones."
+    ],
+    "ejemplo": "{\n  \"goal\": \"Migrar endpoint /orders a paginación cursor\",\n  \"completed\": [\"Leer schema.sql\", \"Actualizar repositorio\"],\n  \"next_step\": \"Ejecutar pytest tests/test_orders.py\"\n}",
+    "entrevista": "La memoria de trabajo es el estado mutable de la ejecución actual: estructurarla explícitamente evita que el agente pierda el hilo entre decenas de llamadas a herramientas."
+  },
+  "Memoria episódica": {
+    "que": "Subsistema de memoria a largo plazo que registra experiencias concretas, interacciones pasadas, secuencias de acciones ejecutadas y sus resultados situados en un tiempo y contexto específicos. Responde a la pregunta de qué ocurrió en una sesión o evento anterior.",
+    "para": "Permite que el agente aprenda de éxitos y errores previos en casos análogos (few-shot dinámico basado en experiencia) y mantenga continuidad narrativa con el usuario. Resulta muy útil en soporte técnico, resolución de incidentes y flujos repetitivos.",
+    "como": "Al concluir una interacción o tarea relevante, un proceso de resumen estructura el episodio registrando contexto inicial, acciones tomadas, resultado obtenido (éxito/fallo), lección extraída y timestamp. El registro se indexa por embeddings y metadatos situacionales en una base persistente. Cuando surge un problema nuevo parecido, el recuperador busca episodios pasados análogos y los inyecta como experiencias de referencia en el contexto actual.",
+    "practicas": [
+      "Guardar tanto episodios exitosos como fallos documentados con su causa raíz para evitar repetir errores.",
+      "Indexar por el problema resuelto y síntomas, no solo por la transcripción literal de la charla.",
+      "Error típico: acumular miles de episodios triviales ('Hola, gracias') que degradan el recall de experiencias realmente valiosas.",
+      "Memoria episódica vs memoria semántica: la episódica guarda eventos situados en el tiempo ('ayer falló el deploy por timeout'); la semántica guarda hechos atemporales ('el timeout de prod es 30s')."
+    ],
+    "ejemplo": "{\n  \"type\": \"episodic\",\n  \"timestamp\": \"2026-11-10T14:20:00Z\",\n  \"situation\": \"Error 502 en webhook Stripe\",\n  \"resolution\": \"Faltaba verificar cabecera Stripe-Signature con raw body\"\n}",
+    "entrevista": "La memoria episódica dota al agente de experiencia situada: convierte trazas pasadas de éxito y fallo en ejemplos recuperables para problemas futuros similares."
+  },
+  "Memoria grafada": {
+    "que": "Implementación de memoria persistente para agentes estructurada sobre grafos de conocimiento temporales y semánticos, donde entidades, atributos y eventos se conectan mediante aristas tipadas que evolucionan conforme cambia la información.",
+    "para": "Soluciona la pérdida de relaciones estructurales y la incapacidad de actualizar hechos interdependientes que presentan los almacenes puramente vectoriales. Se emplea cuando el dominio exige trazabilidad entre personas, proyectos, decisiones y restricciones históricas.",
+    "como": "A partir de cada conversación o documento, un pipeline de extracción identifica entidades y relaciones y las vincula mediante resolución de entidades (entity resolution) para evitar nodos duplicados. Al insertar una nueva arista que invalida una previa (por ejemplo cambio de puesto o preferencia), el motor marca la relación anterior con fecha de expiración en lugar de borrar el rastro histórico. En tiempo de inferencia, el recuperador combina búsqueda híbrida sobre nodos con traversals locales para entregar un contexto relacional compacto en texto o tripletas.",
+    "practicas": [
+      "Aplicar desambiguación y resolución de entidades antes de crear nodos para evitar duplicados como 'JS' y 'JavaScript'.",
+      "Limitar la profundidad de recorrido (1-2 saltos) y serializar solo las aristas pertinentes al presupuesto de tokens.",
+      "Error típico: inyectar el grafo en JSON verboso lleno de IDs internos en lugar de tripletas legibles para el LLM.",
+      "Memoria grafada vs base relacional SQL: el grafo facilita consultas de vecindad variable sin esquemas rígidos de múltiples JOINs."
+    ],
+    "ejemplo": "Tripletas serializadas al prompt:\n- (Proyecto_Atlas) --[USA_DB]--> (PostgreSQL 16) [vigente]\n- (Ana) --[LIDERA]--> (Proyecto_Atlas) [desde: 2026-03]",
+    "entrevista": "La memoria grafada resuelve la evolución temporal de relaciones y la desambiguación de entidades, evitando que el agente mezcle hechos vigentes con histórico obsoleto."
+  },
+  "Memoria persistente del agente": {
+    "que": "Conjunto de mecanismos de almacenamiento durable fuera de la ventana de contexto que permiten a un agente conservar conocimiento sobre usuarios, tareas, entorno y aprendizajes entre distintas sesiones, reinicios de proceso o cambios de modelo.",
+    "para": "Elimina la necesidad de que el usuario repita contexto en cada nueva conversación y posibilita la mejora continua del agente con el uso prolongado. Es la base de asistentes personales, copilotos de equipo y agentes organizacionales de largo plazo.",
+    "como": "Se apoya en almacenes externos (bases vectoriales, relacionales, grafos o archivos markdown estructurados) desacoplados del ciclo de vida efímero de la petición HTTP al LLM. Una capa de memoria expone operaciones de lectura y escritura —ya sea invocadas explícitamente por el agente mediante herramientas (estilo MemGPT/Letta) o gestionadas automáticamente por el runtime— sincronizando lo recuperado hacia la ventana de contexto al iniciar o durante la conversación.",
+    "practicas": [
+      "Separar los ámbitos de persistencia por alcance: memoria de usuario, de proyecto/repositorio y global de organización.",
+      "Exponer al usuario mecanismos transparentes para inspeccionar, corregir y eliminar recuerdos almacenados.",
+      "Error típico: acoplar la memoria persistente al historial crudo de un proveedor concreto, impidiendo migrar de modelo.",
+      "Memoria gestionada por el propio agente (tool-driven) vs gestionada por el pipeline: la primera da autonomía; la segunda garantiza latencia predecible."
+    ],
+    "ejemplo": "# Herramienta expuesta al agente (patrón MemGPT)\nmemory_upsert(scope=\"user:42\", category=\"semantic\", content=\"Usa pytest y tipado estricto con mypy\")",
+    "entrevista": "La memoria persistente desacopla el conocimiento del agente de la vida efímera del prompt, permitiendo continuidad entre sesiones y portabilidad entre modelos."
+  },
+  "Memoria procedimental": {
+    "que": "Tipo de memoria a largo plazo que almacena el 'cómo hacer' las cosas: habilidades operativas, flujos de trabajo comprobados, plantillas de comandos, reglas de estilo y secuencias de uso de herramientas aprendidas o definidas para el agente.",
+    "para": "Reduce errores recurrentes de ejecución y evita que el agente redescubra desde cero procedimientos complejos en cada tarea repetitiva. Se usa para encapsular playbooks de despliegue, convenciones de testing, skills y políticas de actuación.",
+    "como": "Puede codificarse explícitamente mediante archivos de instrucciones o skills (como `SKILL.md` o playbooks versionados) o inducirse dinámicamente tras sesiones exitosas mediante reflexión sobre trazas de ejecución (refinement de prompts o actualización de reglas). Durante una tarea, el orquestador detecta la coincidencia por dominio o intención e inyecta el procedimiento paso a paso en las instrucciones activas para guiar las llamadas a herramientas del agente.",
+    "practicas": [
+      "Mantener los procedimientos modulares y cargarlos solo cuando la tarea activa coincida con su dominio (progressive disclosure).",
+      "Incluir criterios de verificación y manejo de errores conocidos dentro del propio procedimiento.",
+      "Error típico: confundir memoria procedimental con hechos sueltos, guardando pasos críticos en notas dispersas difíciles de recuperar juntas.",
+      "Memoria procedimental (skills/playbooks) vs fine-tuning: los playbooks en contexto son auditables, editables al instante y portables entre modelos."
+    ],
+    "ejemplo": "---\nname: release-checklist\ntrigger: publicar nueva versión\n---\n1. Ejecutar suite completa de tests\n2. Verificar CHANGELOG.md\n3. Crear tag semver tras confirmación humana",
+    "entrevista": "La memoria procedimental encapsula el know-how operativo del agente en playbooks o skills recuperables bajo demanda, garantizando consistencia sin reentrenar pesos."
+  },
+  "Memoria semántica": {
+    "que": "Subsistema de memoria a largo plazo encargado de almacenar conocimiento factual, conceptual y declarativo independiente de una sesión concreta: definiciones del dominio, arquitectura de un sistema, preferencias estables del usuario y relaciones entre entidades.",
+    "para": "Provee verdad de referencia estable para que el agente comprenda el entorno de trabajo y el perfil del usuario sin depender de recordar en qué charla específica se mencionó un dato. Se utiliza como base de conocimiento viva junto al RAG documental.",
+    "como": "Un proceso de extracción destila afirmaciones atómicas y descontextualizadas a partir de interacciones o documentos (por ejemplo convirtiendo 'aquí usamos Postgres' en 'El proyecto X utiliza PostgreSQL como base de datos principal'). Estas proposiciones se consolidan eliminando duplicados y resolviendo actualizaciones de estado, almacenándose en bases relacionales, vectoriales o grafos de conocimiento. En tiempo de inferencia se recuperan según relevancia temática respecto a la consulta actual.",
+    "practicas": [
+      "Escribir hechos en tercera persona, atómicos y con alcance explícito (proyecto, entorno, usuario) para evitar ambigüedad al recuperarlos fuera de su charla original.",
+      "Asignar fuente de origen y nivel de confianza para priorizar documentación oficial frente a comentarios casuales.",
+      "Error típico: dejar referencias relativas en el recuerdo ('el archivo de ayer', 'ese servidor') que pierden sentido semanas después.",
+      "Memoria semántica vs RAG estático: la memoria semántica evoluciona y se actualiza desde la interacción; el RAG suele indexar corpus documentales estáticos."
+    ],
+    "ejemplo": "{\n  \"type\": \"semantic\",\n  \"subject\": \"checkout-service\",\n  \"fact\": \"La cola de eventos usa Kafka con particionado por order_id\",\n  \"source\": \"session_981\"\n}",
+    "entrevista": "La memoria semántica almacena conocimiento declarativo descontextualizado y actualizable, a diferencia de la memoria episódica que conserva eventos ligados al tiempo."
+  },
+  "Memoria y privacidad": {
+    "que": "Conjunto de controles técnicos, arquitectónicos y de cumplimiento normativo dedicados a proteger datos personales (PII), secretos y propiedad intelectual cuando un agente extrae, indexa, comparte o retiene memoria persistente entre sesiones.",
+    "para": "Previene fugas de información entre usuarios o tenants (cross-tenant leakage), retención indebida de credenciales y vulneraciones de normativas como GDPR (derecho al olvido y minimización de datos). Es obligatorio en cualquier sistema agéntico multi-usuario o empresarial.",
+    "como": "Antes de persistir un recuerdo, un pipeline de saneamiento ejecuta detectores de PII y secretos (regex + NER, como Presidio o DLP) para enmascarar o bloquear tokens, claves y datos sensibles. Los registros aprobados se almacenan cifrados y particionados lógicamente por tenant_id y user_id, forzando filtros de autorización (ACL) en la propia consulta vectorial o de grafo antes de devolver resultados al contexto. Adicionalmente, políticas TTL y endpoints de borrado en cascada eliminan recuerdos y sus embeddings asociados cuando el usuario lo solicita.",
+    "practicas": [
+      "Aplicar aislamiento estricto por tenant y ACLs en la capa de retrieval, nunca confiando en que el LLM 'ignore' un dato si se le inyectó por error.",
+      "Ejecutar redacción de secretos y PII antes de generar embeddings, ya que los vectores también pueden filtrar información o persistir tras borrar el texto origen si no se purgan juntos.",
+      "Error típico: compartir una memoria global de organización con datos privados extraídos de chats individuales.",
+      "Retención explícita con consentimiento vs extracción silenciosa: informar y permitir borrar recuerdos específicos mejora cumplimiento y confianza."
+    ],
+    "ejemplo": "clean_text = pii_scrubber.redact(raw_turn)\nvector_store.upsert(\n    text=clean_text,\n    metadata={\"tenant_id\": ctx.tenant, \"user_id\": ctx.user, \"acl\": [\"private\"]}\n)",
+    "entrevista": "En memoria de agentes, la seguridad se aplica en la base de datos antes del prompt: aislamiento estricto por ACL, redacción previa de PII/secretos y borrado real de vectores."
+  },
+  "Olvidado controlado": {
+    "que": "Política y mecanismo algorítmico que degrada, archiva o elimina deliberadamente recuerdos obsoletos, irrelevantes, contradictorios o expirados de la memoria persistente y activa de un agente.",
+    "para": "Evita la saturación del almacén de memoria, la caída de precisión en la recuperación por acumulación de ruido histórico y la persistencia de datos inválidos tras cambios en el proyecto o en las preferencias del usuario.",
+    "como": "Combina múltiples señales de ciclo de vida: decaimiento temporal exponencial (time decay) ponderado por frecuencia de acceso (modelo inspirado en Ebbinghaus o LRU adaptativo), expiración explícita por TTL según categoría y detección de contradicciones mediante LLM durante la consolidación. Los elementos cuya puntuación de utilidad cae bajo un umbral se marcan como archivados (soft-delete) o se purgan definitivamente de índices vectoriales y grafos, manteniendo solo hechos consolidados de alto valor.",
+    "practicas": [
+      "Diferenciar el decaimiento por tipo: las preferencias temporales expiran rápido; decisiones arquitectónicas verificadas tienen vida larga.",
+      "Preferir soft-delete o archivado temporal antes de la purga física salvo en requisitos legales de borrado inmediato.",
+      "Error típico: conservar todo 'por si acaso', provocando que recuerdos antiguos y erróneos empaten en similitud con hechos actuales.",
+      "Olvidado controlado vs truncamiento de ventana: el truncamiento solo recorta el prompt actual; el olvidado controlado limpia la base persistente."
+    ],
+    "ejemplo": "score = semantic_sim * exp(-decay_rate * days_since_last_access) * log1p(access_count)\nif score < ARCHIVE_THRESHOLD:\n    memory.archive(entry_id)",
+    "entrevista": "Recordarlo todo degrada la recuperación: el olvidado controlado aplica decaimiento temporal y resolución de contradicciones para mantener alta la relación señal-ruido."
+  },
+  "Perfil de usuario": {
+    "que": "Estructura de contexto compacta y de larga duración que sintetiza atributos estables del usuario —rol técnico, nivel de experiencia, idioma, dominio laboral, stack habitual y restricciones de entorno— para calibrar automáticamente las respuestas del agente.",
+    "para": "Adapta la profundidad técnica, la terminología y los supuestos por defecto sin obligar al usuario a presentarse en cada sesión. Se utiliza tanto en asistentes conversacionales generales como en herramientas de desarrollo personalizadas.",
+    "como": "El perfil se mantiene como un objeto estructurado (JSON o YAML) separado del historial conversacional y se actualiza de forma conservadora solo ante evidencia reiterada o declaración explícita del usuario. Durante el ensamblado del contexto, se serializa de forma concisa justo después del bloque de instrucciones del sistema (o como parte del contexto de sesión) respetando un presupuesto fijo pequeño, típicamente inferior a unos pocos cientos de tokens.",
+    "practicas": [
+      "Mantener el perfil acotado por esquema fijo y pocos campos de alto impacto para no inflar cada petición.",
+      "Permitir que el usuario vea y edite su perfil para corregir inferencias erróneas del modelo.",
+      "Error típico: inferir rasgos permanentes a partir de una petición puntual ('explícamelo como a un niño' no convierte al usuario en principiante).",
+      "Perfil de usuario vs preferencias del usuario: el perfil describe quién es y su contexto base; las preferencias especifican cómo quiere recibir respuestas o ejecutar acciones."
+    ],
+    "ejemplo": "user_profile:\n  role: \"Backend Engineer\"\n  primary_stack: [\"Go\", \"PostgreSQL\", \"Kubernetes\"]\n  language: \"es\"\n  os: \"linux\"",
+    "entrevista": "Un buen perfil de usuario es un resumen estructurado, editable y acotado en tokens que calibra el nivel técnico y los supuestos del agente desde el primer turno."
+  },
+  "Pipeline de ensamblado de contexto": {
+    "que": "Flujo de procesamiento determinista y modular que, antes de cada llamada al LLM, recopila, filtra, transforma, asigna presupuesto y ordena todas las piezas de información que formarán la ventana de entrada final.",
+    "para": "Sustituye la concatenación ad-hoc de strings por una arquitectura observable, testeable y resiliente ante límites de tokens, fallos parciales de fuentes y degradación por ruido. Es el núcleo operativo de cualquier aplicación de ingeniería de contexto.",
+    "como": "El pipeline ejecuta etapas secuenciales: 1) Resolución de intención y consulta paralela a fuentes (sistema, perfil, memoria, RAG, herramientas); 2) Normalización y saneamiento contra prompt injection; 3) Ranking, deduplicación y compresión/poda bajo el context budget asignado a cada sección; 4) Ordenamiento estratégico respetando prefijos cacheables (prompt caching) y evitando el centro de atención débil; 5) Tokenización exacta y emisión de trazas/métricas por bloque para observabilidad.",
+    "practicas": [
+      "Asignar presupuestos máximos y prioridades por sección (sistema, herramientas, memoria, RAG, historial) con degradación elegante si una fuente excede su cuota.",
+      "Registrar en logs o trazas (OpenTelemetry/Langfuse) exactamente qué bloques entraron y cuántos tokens consumió cada uno.",
+      "Error típico: construir el prompt mediante templates rígidos sin medir tokens ni manejar truncamientos por sección.",
+      "Ensamblado estático vs pipeline dinámico por etapas: el pipeline permite cacheo de prefijo, pruebas unitarias del prompt resultante y auditoría por componente."
+    ],
+    "ejemplo": "stages = [FetchSources(), Sanitize(), RerankAndDedupe(), EnforceBudget(), ReorderForCacheAndAttention()]\nprompt_payload = ContextPipeline(stages).run(turn_state)",
+    "entrevista": "El pipeline de ensamblado de contexto es al LLM lo que un compilador y planificador de consultas es a una base de datos: transforma fuentes heterogéneas en un payload óptimo dentro de un presupuesto estricto."
+  },
+  "Podredumbre del contexto": {
+    "que": "Degradación progresiva de la precisión, coherencia y capacidad de seguimiento de instrucciones de un LLM a medida que la ventana de contexto acumula ruido, intentos fallidos, salidas extensas de herramientas o hechos contradictorios a lo largo de una sesión (context rot).",
+    "para": "Explica por qué los agentes largos empiezan resolviendo bien una tarea y terminan repitiendo errores, ignorando reglas iniciales o alucinando tras decenas de turnos, mucho antes de alcanzar el límite físico de tokens.",
+    "como": "Cada turno fallido, stack trace gigantesco o fragmento obsoleto permanece en el historial y actúa como distractor estadístico en la matriz de atención del Transformer. La probabilidad de que el modelo copie patrones erróneos previos (in-context learning negativo) o pierda foco sobre las restricciones originales crece con la proporción de tokens de baja señal. Por ello, los sistemas robustos mitigan la podredumbre mediante compactación limpia, reinicio de subagentes con contexto fresco o poda selectiva.",
+    "practicas": [
+      "Delegar subtareas exploratorias ruidosas a subagentes aislados que devuelvan solo un resumen limpio al agente principal.",
+      "Iniciar una sesión limpia o hacer checkpointing estructurado cuando cambia la fase de trabajo (ej. de investigación a implementación).",
+      "Error típico: insistir en corregir al agente dentro del mismo hilo contaminado tras 10 intentos fallidos.",
+      "Context rot vs límite de ventana: la podredumbre ocurre mucho antes del límite máximo de tokens si la relación señal/ruido cae."
+    ],
+    "ejemplo": "# Patrón de mitigación: checkpoint y reinicio limpio\nsummary = extract_verified_state(long_session)\nnew_session = start_fresh(system=BASE_RULES, state=summary)",
+    "entrevista": "La podredumbre del contexto demuestra que más historial no es mejor memoria: los errores acumulados en la ventana envenenan el razonamiento futuro y exigen compactación o aislamiento en subagentes."
+  },
+  "Preferencias del usuario": {
+    "que": "Conjunto de directivas explícitas o aprendidas sobre cómo desea el usuario que el agente se comporte, formatee las salidas, tome decisiones ante ambigüedades o utilice herramientas específicas.",
+    "para": "Evita fricciones repetitivas (como corregir siempre el formato, la verbosidad, el gestor de paquetes o el idioma de comentarios en código) y aumenta la satisfacción y velocidad de trabajo en sesiones recurrentes.",
+    "como": "Se capturan mediante configuración explícita (ajustes o reglas de usuario) o por detección de correcciones repetidas en la conversación ('usa siempre pnpm, no npm'). Se almacenan como reglas cortas vinculadas al identificador de usuario y se inyectan en una sección dedicada de alta prioridad o junto al mensaje de sistema/usuario, resolviendo conflictos con reglas de proyecto según precedencia definida (por ejemplo: seguridad > reglas del proyecto > preferencias personales).",
+    "practicas": [
+      "Definir una jerarquía clara de precedencia cuando una preferencia personal choca con estándares del repositorio.",
+      "Formular preferencias como directivas accionables y verificables ('usar type hints', 'respuestas concisas sin introducción').",
+      "Error típico: dejar que una preferencia informal anule restricciones de seguridad o formatos JSON exigidos por el sistema.",
+      "Preferencias del usuario vs perfil de usuario: las preferencias dictan estilo y elecciones operativas; el perfil describe atributos descriptivos del usuario."
+    ],
+    "ejemplo": "user_preferences:\n  package_manager: \"pnpm\"\n  response_style: \"conciso, directo al código\"\n  tests: \"vitest\"\n  confirm_before_git_push: true",
+    "entrevista": "Modelar preferencias explícitas con una jerarquía clara frente a las reglas del proyecto personaliza al agente sin comprometer consistencia ni seguridad."
+  },
+  "Presupuesto de tokens": {
+    "que": "Asignación cuantitativa y acotada de tokens máximos (context budget) que puede ocupar cada componente del prompt —instrucciones, herramientas, memoria, evidencia RAG, historial y reserva de salida— dentro de la ventana efectiva del modelo.",
+    "para": "Garantiza predictibilidad en costes, latencia (TTFT) y calidad de atención, impidiendo que una sola fuente desbordada (como un log largo o una búsqueda excesiva) desplace al resto de componentes críticos.",
+    "como": "El gestor de presupuesto calcula la capacidad objetivo (menor al límite bruto del modelo para evitar degradación y dejar margen de generación) y resta primero las cuotas fijas: prefijo de sistema y definiciones de herramientas. El espacio restante se distribuye por cuotas porcentuales o topes absolutos entre memoria, recuperación documental e historial reciente, aplicando políticas de recorte, resumen o fallback cuando una sección excede su límite usando el tokenizador específico del modelo.",
+    "practicas": [
+      "Contar tokens con el tokenizador real del modelo (o estimación conservadora calibrada) antes de enviar la petición, nunca en caracteres.",
+      "Reservar siempre un bloque intocable para `max_tokens` de salida y tokens de razonamiento.",
+      "Error típico: dar presupuesto ilimitado al historial o a los tool outputs y truncar silenciosamente los documentos RAG.",
+      "Presupuesto por ventana máxima vs presupuesto por ventana efectiva/coste: en producción suele optimizarse para un punto dulce de latencia y precisión (ej. 16k-32k)."
+    ],
+    "ejemplo": "BUDGET = {\n  \"total_effective\": 32000,\n  \"system_and_tools\": 4000,\n  \"memory_and_rag\": 8000,\n  \"history\": 12000,\n  \"output_reserve\": 8000\n}",
+    "entrevista": "Un presupuesto de tokens explícito por componente convierte el tamaño del prompt en una restricción de arquitectura controlada en lugar de un accidente en tiempo de ejecución."
+  },
+  "Recuperación de contexto": {
+    "que": "Proceso de localización, filtrado y selección dinámica de fragmentos de información externa (documentos, código, tickets, APIs o estado del entorno) relevantes para resolver la petición actual del usuario dentro de un límite de tokens.",
+    "para": "Supera el límite de conocimiento estático de los pesos del modelo y evita la saturación de la ventana al entregar únicamente la evidencia pertinente y actualizada para cada turno.",
+    "como": "Combina estrategias de recuperación híbrida: expansión o reescritura de consulta, búsqueda léxica (BM25/ripgrep) para coincidencias exactas de símbolos e identificadores junto con búsqueda vectorial densa para similitud semántica. Los candidatos se fusionan mediante Reciprocal Rank Fusion (RRF), pasan por un modelo cross-encoder reranker para medir relevancia fina y finalmente se ajustan con expansión de ventana padre (parent-child chunking) o filtrado de redundancia (MMR) antes de ensamblarse.",
+    "practicas": [
+      "Usar búsqueda híbrida (BM25 + embeddings) seguida de un reranker antes de inyectar fragmentos al LLM.",
+      "Preservar estructura documental (títulos, ruta del archivo, número de línea) en cada fragmento recuperado.",
+      "Error típico: usar únicamente búsqueda vectorial naive con chunks pequeños fijos que rompen tablas, funciones o contexto semántico.",
+      "Recuperación estática previa (pre-retrieval) vs agéntica (agentic RAG): en consultas complejas, permitir al agente reformular y reintentar búsquedas mejora drásticamente el recall."
+    ],
+    "ejemplo": "bm25_hits = lexical_search(query, k=30)\nvec_hits = vector_search(query, k=30)\nfused = reciprocal_rank_fusion(bm25_hits, vec_hits)\ntop_docs = cross_encoder_rerank(query, fused, top_n=6)",
+    "entrevista": "La recuperación de contexto en producción requiere búsqueda híbrida, reranking y preservación de estructura; el embedding por sí solo falla en términos exactos y código."
+  },
+  "Recuperación de memoria": {
+    "que": "Subproceso especializado dentro de la gestión de memoria del agente que consulta los almacenes persistentes (episódico, semántico, procedimental o grafado) para extraer únicamente los recuerdos pertinentes al contexto y objetivo del turno actual.",
+    "para": "Evita inyectar toda la memoria histórica del usuario en cada prompt, equilibrando personalización y continuidad con un consumo mínimo de tokens y baja tasa de falsos positivos.",
+    "como": "A partir de la consulta actual y el estado reciente de la conversación, el recuperador formula una o varias claves de búsqueda y consulta en paralelo índices vectoriales, filtros estructurados y grafos de entidades. Las candidatas se puntúan combinando una función multi-criterio: relevancia semántica, recencia temporal (time decay) e importancia o frecuencia de acceso. Los mejores recuerdos se deduplican contra lo ya presente en el contexto activo y se formatean con metadatos temporales antes de insertarse.",
+    "practicas": [
+      "Aplicar un umbral mínimo de relevancia (score cutoff) para no inyectar recuerdos débilmente relacionados en preguntas generales.",
+      "Ponderar similitud junto con recencia e importancia en lugar de ordenar únicamente por distancia vectorial.",
+      "Error típico: recuperar recuerdos que ya están literalmente en los últimos turnos del historial, desperdiciando tokens.",
+      "Recuperación automática en cada turno vs recuperación invocada como herramienta: combinar un núcleo ligero automático con búsqueda profunda bajo demanda."
+    ],
+    "ejemplo": "final_score = 0.6 * sim + 0.25 * recency_decay(age) + 0.15 * importance\nselected = [m for m in candidates if m.final_score >= 0.72][:5]",
+    "entrevista": "Recuperar memoria no es solo hacer top-k vectorial: exige combinar similitud, recencia, importancia y un umbral de corte para no contaminar consultas no relacionadas."
+  },
+  "Reglas del proyecto": {
+    "que": "Instrucciones declarativas y versionadas dentro de un repositorio (como `AGENTS.md`, `CLAUDE.md`, `.cursor/rules` o archivos en `.gemini/`) que documentan convenciones de arquitectura, comandos de build/test, restricciones de diseño y flujos propios de un proyecto concreto.",
+    "para": "Alinea al agente de código con los estándares reales del equipo desde el primer turno sin tener que explicar la estructura del repositorio, los linters o las reglas de negocio en cada tarea.",
+    "como": "El entorno o harness del agente descubre automáticamente estos archivos siguiendo una jerarquía de alcance (reglas globales del usuario, raíz del repositorio y subdirectorios cercanos al archivo editado). Los carga en el contexto —de forma fija al inicio de sesión o dinámicamente mediante globs cuando el agente toca rutas específicas— otorgándoles alta prioridad operativa junto a las instrucciones de sistema.",
+    "practicas": [
+      "Mantener las reglas del proyecto concisas, accionables y centradas en lo que no es obvio leyendo el código (comandos de test, invariantes, trampas).",
+      "Usar carga condicional por directorio o patrón glob (scoped rules) en monorepos para no saturar el contexto con reglas de otros módulos.",
+      "Error típico: convertir `AGENTS.md` en una enciclopedia de 1.500 líneas que consume miles de tokens y acaba siendo ignorada parcialmente.",
+      "Reglas del proyecto vs instrucciones de sistema: las reglas pertenecen al repositorio y evolucionan con el código vía Git; las de sistema definen al agente genérico."
+    ],
+    "ejemplo": "# AGENTS.md\n- Ejecutar siempre `pytest -q` antes de dar una tarea por cerrada.\n- No modificar migraciones ya aplicadas en `db/migrations/`.\n- Usar `httpx.AsyncClient` en lugar de `requests` en servicios async.",
+    "entrevista": "Las reglas del proyecto versionadas en el repo actúan como memoria procedimental compartida del equipo: deben ser breves, verificables y cargadas con alcance selectivo."
+  }
+}

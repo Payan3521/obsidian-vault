@@ -1,0 +1,392 @@
+{
+  "Aislamiento y bloqueos": {
+    "que": "El aislamiento define en qué medida las transacciones concurrentes observan los cambios intermedios o confirmados de otras transacciones en ejecución. Los bloqueos (locks) y el control de concurrencia multiversión (MVCC) son los mecanismos físicos que garantizan ese nivel de aislamiento evitando anomalías como lecturas sucias, no repetibles o fantasma.",
+    "para": "Resuelve las condiciones de carrera y la corrupción lógica de datos cuando múltiples usuarios o servicios leen y escriben sobre las mismas filas simultáneamente. Se ajusta de forma explícita en sistemas financieros, inventarios, reservas y cualquier flujo donde la consistencia bajo concurrencia supere la necesidad de máximo paralelismo.",
+    "como": "El estándar SQL define cuatro niveles: Read Uncommitted, Read Committed, Repeatable Read y Serializable. En motores con bloqueo pesimista tradicional (2PL, Two-Phase Locking), el gestor adquiere bloqueos compartidos (S) para leer y exclusivos (X) para escribir a nivel de fila, página o tabla, usando bloqueos de intención (IS/IX) para jerarquías. Motores modernos como PostgreSQL e InnoDB combinan MVCC con snapshots de transacciones (Transaction IDs) para que las lecturas no bloqueen escrituras ni viceversa. Para serialización estricta sin bloqueos globales, PostgreSQL usa Serializable Snapshot Isolation (SSI) detectando ciclos de dependencias lectura-escritura, mientras que InnoDB emplea gap locks y next-key locks para prevenir filas fantasma.",
+    "practicas": [
+      "Mantén las transacciones lo más cortas posible y realiza llamadas HTTP o cálculos pesados fuera de la transacción para no retener locks.",
+      "Adquiere bloqueos sobre múltiples filas siempre en el mismo orden determinista (ej. ordenando por ID) para evitar deadlocks circulares.",
+      "Bloqueo pesimista (SELECT ... FOR UPDATE) vs optimista (columna version + WHERE version = ?): usa pesimista ante alta contención y optimista cuando los conflictos son raros.",
+      "Error típico: asumir que Read Committed evita actualizaciones perdidas en patrones leer-modificar-escribir sin usar atomicidad o FOR UPDATE."
+    ],
+    "ejemplo": "BEGIN;\nSET TRANSACTION ISOLATION LEVEL REPEATABLE READ;\nSELECT saldo FROM cuentas WHERE id = 42 FOR UPDATE;\nUPDATE cuentas SET saldo = saldo - 100 WHERE id = 42 AND saldo >= 100;\nCOMMIT;",
+    "entrevista": "El aislamiento equilibra consistencia y concurrencia; usando MVCC, bloqueos explícitos solo donde hay contención y transacciones cortas evitamos anomalías sin paralizar la base de datos."
+  },
+  "Backups y recovery": {
+    "que": "Un backup es una copia consistente y recuperable de los datos y metadatos de una base de datos en un instante determinado, mientras que el recovery es el procedimiento técnico para restaurarla tras una falla física, lógica o humana. Incluye copias lógicas (sentencias SQL o dumps) y físicas (bloques binarios del almacenamiento y logs de transacciones).",
+    "para": "Protege la continuidad del negocio frente a corrupción de discos, borrados accidentales sin WHERE, ataques de ransomware o despliegues destructivos. Es obligatorio en cualquier sistema productivo para cumplir los acuerdos de RPO (pérdida máxima aceptable de datos) y RTO (tiempo máximo de recuperación).",
+    "como": "Los backups lógicos (como pg_dump o mysqldump) consultan un snapshot consistente y generan texto o archivos portables con CREATE e INSERT, ideales para tablas pequeñas o migraciones entre versiones. Los backups físicos (como pg_basebackup o Percona XtraBackup) copian directamente los datafiles del sistema de archivos mientras registran los cambios concurrentes en el Write-Ahead Log (WAL) o redo log. Para escalar en tamaño, se combinan copias completas (full) periódicas con copias incrementales o diferenciales que solo capturan bloques modificados. Durante el recovery, el motor restaura los datafiles base y reproduce (replay) los registros del log transaccional hasta alcanzar un estado consistente.",
+    "practicas": [
+      "Aplica la regla 3-2-1: al menos 3 copias, en 2 medios distintos y 1 fuera del sitio/región o con almacenamiento inmutable (WORM).",
+      "Automatiza pruebas periódicas de restauración en un entorno aislado; un backup no probado es una suposición, no una garantía.",
+      "Backup lógico vs físico: usa lógico para portabilidad y recuperación granular de tablas, y físico para bases de datos grandes con RTO estricto.",
+      "Cifra los respaldos en reposo y tránsito, y separa los permisos de creación de los de borrado para mitigar ransomware."
+    ],
+    "ejemplo": "# Backup físico comprimido con PostgreSQL incluyendo WAL necesario\npg_basebackup -h db.prod.internal -U replicator -D /backups/base_2026 -Ft -z -P --wal-method=stream\n\n# Backup lógico en formato custom para restauración paralela\npg_dump -Fc -Z 6 -f /backups/app.dump app_db",
+    "entrevista": "Una estrategia sólida de backups no se mide por qué tan rápido respalda, sino por cumplir el RPO y RTO reales mediante restauraciones automatizadas y probadas periódicamente."
+  },
+  "Cassandra": {
+    "que": "Apache Cassandra es una base de datos NoSQL distribuida de tipo wide-column store diseñada sin punto único de fallo para ofrecer alta disponibilidad y escalabilidad lineal de escritura. Combina el modelo de almacenamiento en anillo de Amazon Dynamo con el formato de tabla de columnas anchas de Google Bigtable.",
+    "para": "Resuelve cargas de trabajo con volúmenes masivos de escritura, distribución geográfica multi-región y tolerancia total a caídas de nodos o centros de datos. Se usa en telemetría IoT, registro de eventos, mensajería, series temporales a gran escala y catálogos distribuidos donde la disponibilidad prima sobre las transacciones complejas.",
+    "como": "Cada nodo del clúster forma parte de un anillo de tokens mediante consistent hashing; un coordinador recibe la petición y usa la partition key para determinar qué nodos almacenan las réplicas según el Replication Factor (RF). Las escrituras se registran de forma secuencial en un CommitLog en disco y en una Memtable en memoria, que al llenarse se vuelca de forma inmutable a disco como SSTables (LSM-Tree), compactadas periódicamente en segundo plano. La consistencia es ajustable por consulta (ONE, QUORUM, LOCAL_QUORUM, ALL), cumpliéndose consistencia fuerte cuando R + W > N. Para mantener réplicas sincronizadas ante fallos temporales utiliza hinted handoff, read repair y anti-entropy repair mediante árboles de Merkle.",
+    "practicas": [
+      "Modela las tablas a partir de las consultas exactas (query-driven modeling), no de entidades normalizadas; evita JOINs y subconsultas.",
+      "Diseña partition keys con alta cardinalidad y tamaño acotado (bucketing por fecha/hora) para evitar particiones gigantes (hotspots).",
+      "Evita el uso excesivo de DELETEs y TTLs masivos sin ajustar compactación, ya que generan tombstones que degradan las lecturas.",
+      "Cassandra vs MongoDB: elige Cassandra para escrituras masivas multi-datacenter sin maestro único; MongoDB si necesitas consultas ad-hoc e índices secundarios flexibles."
+    ],
+    "ejemplo": "CREATE TABLE eventos_sensor (\n  sensor_id uuid,\n  dia date,\n  ts timestamp,\n  valor double,\n  PRIMARY KEY ((sensor_id, dia), ts)\n) WITH CLUSTERING ORDER BY (ts DESC);",
+    "entrevista": "Cassandra logra escalabilidad lineal y cero puntos únicos de fallo usando una arquitectura maestro-menos con LSM-Trees y consistencia ajustable por consulta, exigiendo modelado orientado a consultas."
+  },
+  "Connection pooling": {
+    "que": "El connection pooling es un patrón y componente intermedio que mantiene un conjunto preestablecido de conexiones abiertas y reutilizables hacia la base de datos para atender solicitudes de múltiples clientes o hilos de aplicación. Evita el costo de crear y destruir conexiones TCP/TLS y procesos o sesiones de base de datos en cada petición.",
+    "para": "Resuelve la saturación de memoria, CPU y límites de conexiones simultáneas (max_connections) cuando miles de instancias de microservicios o funciones serverless consultan una base de datos relacional. Es indispensable en entornos de alta concurrencia, especialmente con PostgreSQL donde cada conexión consume un proceso del sistema operativo.",
+    "como": "Cuando la aplicación solicita una conexión al pool (en memoria como HikariCP o externo como PgBouncer/RDS Proxy), el pooler entrega una conexión inactiva de su caché interna o encola la petición si alcanzó el límite máximo. Al finalizar la consulta o transacción, el cliente llama a close(), pero el pooler intercepta la llamada, limpia el estado si corresponde y devuelve la conexión al grupo disponible. En modo Session pooling la conexión se asigna durante toda la sesión del cliente; en Transaction pooling (el más eficiente para escalar) se asigna solo mientras dura la transacción y se libera inmediatamente al hacer COMMIT o ROLLBACK. En Statement pooling se libera tras cada sentencia individual, impidiendo transacciones multi-sentencia.",
+    "practicas": [
+      "Dimensiona el pool de forma conservadora: un exceso de conexiones activas degrada el rendimiento por context switching y contención de locks (fórmula orientativa: núcleos * 2 + discos efectivos).",
+      "Usa Transaction pooling en PgBouncer para arquitecturas serverless o con cientos de pods, evitando comandos de sesión como SET LOCAL o prepared statements sin soporte de protocolo.",
+      "Configura timeouts estrictos: connectionTimeout (espera por slot), idleTimeout y maxLifetime (menor al wait_timeout del servidor) para reciclar conexiones obsoletas.",
+      "Error típico: calcular max_connections solo para un pod y olvidar multiplicarlo por el número máximo de réplicas de autoscaling."
+    ],
+    "ejemplo": "# PgBouncer (pgbouncer.ini) en modo transaccional\n[pgbouncer]\npool_mode = transaction\nmax_client_conn = 2000\ndefault_pool_size = 40\nreserve_pool_size = 10\nserver_idle_timeout = 300",
+    "entrevista": "El connection pooling protege la base de datos de la explosión de conexiones y reduce la latencia de handshake, convirtiendo miles de clientes concurrentes en un número acotado de sesiones activas."
+  },
+  "Desnormalización": {
+    "que": "La desnormalización es la técnica de diseño físico que introduce deliberadamente redundancia controlada en un esquema relacional normalizado, duplicando columnas, precalculando agregados o combinando tablas. Sacrifica parcialmente las formas normales para optimizar el rendimiento de lectura.",
+    "para": "Resuelve cuellos de botella en consultas analíticas o de lectura intensiva que requieren múltiples JOINs costosos o agregaciones sobre millones de filas en tiempo real. Se aplica únicamente tras medir y comprobar que los índices y el diseño normalizado no cumplen los objetivos de latencia.",
+    "como": "Consiste en materializar datos derivados directamente en la tabla consumidora: por ejemplo, copiar el nombre del cliente y el total acumulado en la tabla de pedidos, o mantener columnas de conteo (likes_count) actualizadas junto con las inserciones. Para preservar la integridad pese a la redundancia, la sincronización se implementa mediante transacciones explícitas en la aplicación, triggers en el motor, vistas materializadas refrescadas periódicamente o pipelines asíncronos basados en eventos (CDC). Esto traslada parte del costo computacional desde el momento de lectura (read time) hacia el momento de escritura (write time).",
+    "practicas": [
+      "Normaliza primero por defecto y desnormaliza solo las rutas críticas respaldadas por métricas de EXPLAIN ANALYZE y APM.",
+      "Documenta claramente cuál es la fuente única de la verdad (source of truth) para cada dato duplicado y cómo se reconcilian discrepancias.",
+      "Evalúa vistas materializadas o cachés externas (Redis) antes de ensuciar el esquema transaccional OLTP con redundancia difícil de mantener.",
+      "Desnormalización vs NoSQL: en SQL la redundancia es una optimización localizada; en bases documentales como MongoDB es el patrón principal de modelado."
+    ],
+    "ejemplo": "-- Tabla desnormalizada para evitar JOIN + COUNT en cada vista de perfil\nALTER TABLE publicaciones ADD COLUMN autor_nombre VARCHAR(120) NOT NULL;\nALTER TABLE publicaciones ADD COLUMN total_comentarios INT NOT NULL DEFAULT 0;",
+    "entrevista": "La desnormalización es una optimización deliberada que intercambia complejidad de escritura y espacio en disco por lecturas ultrarrápidas sin JOINs, y solo debe aplicarse cuando las métricas lo justifican."
+  },
+  "EXPLAIN - Query plan": {
+    "que": "EXPLAIN es el comando de diagnóstico del motor SQL que expone el plan de ejecución (query plan) generado por el optimizador de consultas para resolver una sentencia. Muestra el árbol de operadores físicos (escaneos, algoritmos de join, ordenamientos) junto con sus costos estimados y, con ANALYZE, los tiempos y filas reales.",
+    "para": "Sirve para identificar por qué una consulta es lenta, detectar escaneos completos de tabla (Sequential/Full Table Scans), estimaciones erróneas de cardinalidad o índices ignorados. Es la herramienta fundamental para optimizar SQL antes y después de llegar a producción.",
+    "como": "Al recibir una consulta, el optimizador basado en costos (CBO) consulta las estadísticas de tablas e histogramas para evaluar múltiples planes equivalentes según su costo de I/O de disco y CPU. EXPLAIN imprime el árbol elegido de abajo hacia arriba (los nodos hijos alimentan a los padres), reportando el costo de inicio, costo total, filas estimadas y ancho promedio de fila. Cuando se ejecuta EXPLAIN ANALYZE (en PostgreSQL, MySQL 8+ o similar), el motor ejecuta realmente la consulta, mide los bucles (loops), el tiempo real en milisegundos, las filas devueltas vs estimadas y, con la opción BUFFERS, los bloques leídos de caché compartida frente a disco físico.",
+    "practicas": [
+      "Ten cuidado con EXPLAIN ANALYZE en sentencias INSERT, UPDATE o DELETE porque ejecuta la modificación; envuélvelo en BEGIN; ... ROLLBACK; en pruebas.",
+      "Compara siempre estimated rows frente a actual rows: una diferencia de órdenes de magnitud indica estadísticas desactualizadas (ejecuta ANALYZE) o datos sesgados.",
+      "Busca Seq Scan sobre tablas grandes, Sort con uso de disco temporal (external merge) y Nested Loop con miles de iteraciones como señales principales de mejora.",
+      "Usa EXPLAIN (ANALYZE, BUFFERS) en PostgreSQL para distinguir si la lentitud proviene de CPU o de lecturas físicas de disco."
+    ],
+    "ejemplo": "EXPLAIN (ANALYZE, BUFFERS)\nSELECT o.id, c.email\nFROM ordenes o\nJOIN clientes c ON c.id = o.cliente_id\nWHERE o.estado = 'PENDIENTE' AND o.creado_en >= '2026-01-01';",
+    "entrevista": "EXPLAIN ANALYZE permite ver la verdad física de cómo el optimizador ejecuta una consulta, comparando estimaciones frente a filas reales, accesos a caché y algoritmos de join para diagnosticar cuellos de botella con precisión."
+  },
+  "Elasticsearch - OpenSearch": {
+    "que": "Elasticsearch y OpenSearch son motores distribuidos de búsqueda y analítica basados en Apache Lucene, orientados a documentos JSON e indexación de texto completo (full-text search). OpenSearch nació como fork abierto de Elasticsearch 7.10 mantenido bajo licencia Apache 2.0.",
+    "para": "Resuelven búsquedas textuales complejas con tolerancia a errores tipográficos (fuzzy), autocompletado, facetas, ranking por relevancia (BM25), búsqueda híbrida vectorial (k-NN) y agregación masiva de logs o métricas (observabilidad). No sustituyen a una base OLTP como fuente primaria de verdad transaccional.",
+    "como": "Cada índice lógico se divide en shards primarios y réplicas distribuidos entre los nodos del clúster, donde cada shard es una instancia completa de Apache Lucene. Al indexar un documento JSON, los campos de texto pasan por analizadores (tokenizers y filtros de normalización/stemming) para construir un índice invertido que mapea cada término a la lista de documentos y posiciones donde aparece, además de estructuras columnares (doc values) para ordenamientos y agregaciones y grafos HNSW para embeddings vectoriales. Las escrituras se registran en un translog y crean segmentos inmutables en memoria que se vuelven buscables tras un refresh periódico (por defecto cada 1 segundo, near real-time) y se fusionan luego mediante segment merging.",
+    "practicas": [
+      "Define mappings explícitos en producción en lugar de depender de dynamic mapping, evitando explosiones de campos o tipos inferidos erróneamente.",
+      "Evita paginación profunda con from + size; utiliza search_after o Point in Time (PIT) para recorrer grandes conjuntos de resultados.",
+      "Dimensiona los shards entre 10 GB y 50 GB cada uno; tener miles de shards pequeños satura el estado del clúster y la memoria heap de la JVM.",
+      "Usa Elasticsearch/OpenSearch como índice secundario sincronizado desde tu base principal (vía CDC/Kafka), no como única base de datos transaccional."
+    ],
+    "ejemplo": "GET /productos/_search\n{\n  \"query\": {\n    \"bool\": {\n      \"must\": [{ \"match\": { \"titulo\": { \"query\": \"teclado mecanico\", \"fuzziness\": \"AUTO\" } } }],\n      \"filter\": [{ \"term\": { \"disponible\": true } }, { \"range\": { \"precio\": { \"lte\": 150 } } }]\n    }\n  }\n}",
+    "entrevista": "Elasticsearch y OpenSearch combinan índices invertidos de Lucene con sharding distribuido para entregar búsquedas de texto relevantes, facetas y analítica casi en tiempo real, funcionando como motor de búsqueda complementario a la base transaccional."
+  },
+  "Esquema": {
+    "que": "En bases de datos relacionales, un esquema (schema) es tanto la definición formal y estructural de los objetos de datos (tablas, columnas, tipos, restricciones, índices, vistas y funciones) como el espacio de nombres lógico (namespace) dentro de una base de datos que los agrupa y aísla.",
+    "para": "Sirve para imponer contratos estrictos de integridad y tipado sobre los datos antes de almacenarlos (schema-on-write), así como para organizar módulos de dominio o aislar inquilinos (multi-tenancy) y permisos dentro de un mismo servidor o base de datos.",
+    "como": "El catálogo del sistema (system catalog, como pg_catalog o information_schema) almacena los metadatos de cada esquema en tablas internas del motor. Cuando se ejecuta DDL (CREATE TABLE ventas.facturas ...), el motor valida permisos sobre el namespace destino y registra las definiciones de columnas, tipos y constraints. En tiempo de consulta, el planificador resuelve nombres no calificados recorriendo el search_path (en PostgreSQL) o la base/esquema activo de la sesión, aplicando reglas de control de acceso (GRANT USAGE ON SCHEMA) de forma independiente por espacio de nombres.",
+    "practicas": [
+      "Agrupa tablas por contextos acotados (ej. auth, billing, catalog) usando esquemas dedicados en lugar de volcar cientos de tablas en public.",
+      "Restringe permisos sobre el esquema public en PostgreSQL y otorga USAGE y privilegios mínimos por rol de servicio.",
+      "Schema-on-write (SQL) vs Schema-on-read (NoSQL/Data Lakes): elige schema-on-write cuando la calidad y consistencia del dato en origen son críticas.",
+      "Gestiona todo cambio de esquema exclusivamente mediante migraciones versionadas en control de versiones, nunca con cambios manuales en producción."
+    ],
+    "ejemplo": "CREATE SCHEMA IF NOT EXISTS billing;\nCREATE TABLE billing.invoices (\n  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n  amount_cents INT NOT NULL CHECK (amount_cents > 0)\n);\nGRANT USAGE ON SCHEMA billing TO app_readonly;",
+    "entrevista": "Un esquema actúa simultáneamente como contrato estricto de integridad para los datos y como frontera lógica de organización y seguridad dentro del motor relacional."
+  },
+  "Firestore": {
+    "que": "Cloud Firestore es una base de datos NoSQL documental gestionada por Google Cloud y Firebase, diseñada para sincronización en tiempo real, soporte offline en clientes móviles/web y escalabilidad automática multi-región.",
+    "para": "Resuelve el desarrollo ágil de aplicaciones web y móviles colaborativas (chats, tableros en vivo, perfiles de usuario, estado compartido) donde los clientes necesitan escuchar cambios en vivo sin construir y escalar una capa manual de WebSockets o caché local.",
+    "como": "Organiza los datos en colecciones que contienen documentos JSON tipados (máximo 1 MB por documento) y subcolecciones anidadas, sin necesidad de esquema fijo previo. Todos los documentos y consultas requieren índices (automáticos para campos simples y compuestos definidos manualmente para filtros combinados), garantizando que el tiempo de lectura dependa del tamaño del resultado devuelto y no del total de documentos en la colección. Utiliza Spanner/Paxos bajo el capó en su infraestructura cloud para ofrecer transacciones ACID multi-documento y replicación fuerte, mientras los SDKs cliente mantienen una caché local persistente (IndexedDB/SQLite) que sincroniza mutaciones diferidas al recuperar conectividad.",
+    "practicas": [
+      "Asegura el acceso con Firestore Security Rules estrictas basadas en request.auth y validación de esquema, ya que los clientes suelen conectarse directamente.",
+      "Evita contención de escritura (>1 escritura/seg sostenida en un mismo documento, como contadores globales); usa distributed counters o Cloud Functions.",
+      "Mantén los documentos ligeros y usa subcolecciones para listas que crecen indefinidamente, respetando el límite de 1 MB por documento.",
+      "Firestore vs RTDB (Realtime Database): usa Firestore para consultas más ricas, transacciones ACID, mejor escalado y menor latencia multi-región."
+    ],
+    "ejemplo": "// Escucha en tiempo real de mensajes ordenados en una subcolección\nconst q = query(\n  collection(db, \"salas\", salaId, \"mensajes\"),\n  orderBy(\"creadoEn\", \"desc\"),\n  limit(25)\n);\nonSnapshot(q, (snap) => renderizar(snap.docs.map(d => d.data())));" ,
+    "entrevista": "Firestore combina almacenamiento documental escalable y transacciones ACID con listeners en tiempo real y persistencia offline nativa, optimizando aplicaciones interactivas siempre que se respete el modelado orientado a índices y límites de escritura por documento."
+  },
+  "InfluxDB - TimescaleDB": {
+    "que": "InfluxDB y TimescaleDB son bases de datos especializadas en series temporales (TSDB): datos indexados y ordenados por marcas de tiempo (timestamps). InfluxDB es un motor nativo construido desde cero para series temporales (v3 basado en Apache Arrow/Parquet), mientras TimescaleDB es una extensión de PostgreSQL que convierte tablas relacionales en hypertables.",
+    "para": "Resuelven la ingesta masiva de métricas de infraestructura, sensores IoT, datos financieros (ticks) y telemetría donde se insertan millones de puntos por segundo y se consultan ventanas temporales recientes con agregaciones, downsampling y políticas automáticas de retención.",
+    "como": "Ambas explotan el patrón de escritura append-only ordenado por tiempo para evitar índices B-Tree globales gigantescos. TimescaleDB particiona automáticamente una hypertable en chunks temporales en disco según el timestamp, manteniendo índices locales en memoria para los chunks recientes y comprimiendo chunks antiguos en formato columnar (gorilla/delta-delta) mientras preserva SQL completo y JOINs con tablas relacionales. InfluxDB separa los datos en measurement, tags indexados (metadatos de baja cardinalidad), fields no indexados (valores) y timestamp, almacenándolos en motores columnares orientados a compresión y agregaciones temporales rápidas (continuous queries / tareas de downsampling).",
+    "practicas": [
+      "Controla estrictamente la cardinalidad de los tags/etiquetas (ej. nunca uses request_id o UUID como tag en InfluxDB) para no agotar la memoria del índice.",
+      "Configura políticas de compresión automática y retención (drop chunks / retention policies) para descartar o resumir datos históricos sin usar DELETE masivos.",
+      "Usa continuous aggregates (TimescaleDB) para precalcular promedios por minuto u hora y acelerar dashboards.",
+      "InfluxDB vs TimescaleDB: elige TimescaleDB si ya usas PostgreSQL y necesitas SQL completo o JOINs con entidades relacionales; InfluxDB si buscas un motor dedicado puramente a métricas y observabilidad."
+    ],
+    "ejemplo": "-- TimescaleDB: crear hypertable y consulta por ventanas de 5 minutos\nSELECT create_hypertable('telemetria', 'tiempo');\nSELECT time_bucket('5 minutes', tiempo) AS cubo, avg(cpu)\nFROM telemetria\nWHERE tiempo > now() - interval '6 hours'\nGROUP BY cubo ORDER BY cubo DESC;",
+    "entrevista": "Las bases de series temporales como TimescaleDB e InfluxDB optimizan ingesta, compresión columnar y borrado por particiones de tiempo, evitando el deterioro de rendimiento que sufre una tabla relacional tradicional cuando crece por millones de eventos."
+  },
+  "Joins": {
+    "que": "Un JOIN es la operación del álgebra relacional y de SQL que combina tuplas (filas) de dos o más tablas basándose en una condición lógica de correspondencia entre sus columnas, habitualmente entre llaves foráneas y primarias.",
+    "para": "Permite reconstruir entidades completas y relaciones de negocio en tiempo de consulta a partir de un modelo normalizado sin duplicar información en disco. Se usa en prácticamente toda consulta relacional que cruza múltiples conceptos (ej. pedidos con clientes y productos).",
+    "como": "Lógicamente existen INNER JOIN (intersección), LEFT/RIGHT OUTER JOIN (preserva filas sin coincidencia de un lado con NULLs), FULL OUTER JOIN y CROSS JOIN (producto cartesiano). Físicamente, el optimizador ejecuta la operación mediante tres algoritmos principales según tamaño e índices: Nested Loop Join (recorre una tabla externa y busca coincidencias en la interna, ideal con índice y pocas filas), Hash Join (construye una tabla hash en memoria de la tabla más pequeña y sondea con la grande, ideal para grandes volúmenes sin índices) y Merge Join (fusiona dos conjuntos ya ordenados por la clave de unión).",
+    "practicas": [
+      "Asegura que las columnas usadas en la cláusula ON (especialmente llaves foráneas) tengan índices para habilitar Index Nested Loop Joins rápidos.",
+      "Evita el patrón N+1 en ORMs ejecutando un JOIN o carga por lotes (IN / JOIN) en lugar de lanzar una consulta por cada elemento iterado.",
+      "Cuidado con los LEFT JOIN que se convierten implícitamente en INNER JOIN al filtrar columnas de la tabla derecha en el WHERE en vez de en el ON.",
+      "No confundas EXISTS/SEMI JOIN con INNER JOIN cuando solo verificas pertenencia en relaciones 1:N, ya que INNER JOIN multiplica las filas resultado."
+    ],
+    "ejemplo": "SELECT p.id, c.nombre, SUM(li.cantidad * li.precio_unit) AS total\nFROM pedidos p\nINNER JOIN clientes c ON c.id = p.cliente_id\nLEFT JOIN lineas_pedido li ON li.pedido_id = p.id\nGROUP BY p.id, c.nombre;",
+    "entrevista": "Un JOIN no solo define una relación lógica entre tablas, sino que el optimizador lo traduce a Nested Loop, Hash Join o Merge Join según la cardinalidad y los índices disponibles."
+  },
+  "Llaves primarias - foráneas": {
+    "que": "Una llave primaria (Primary Key, PK) es la columna o conjunto mínimo de columnas que identifica de forma única y no nula cada fila de una tabla. Una llave foránea (Foreign Key, FK) es una restricción que vincula una columna de una tabla hija con la llave primaria o única de una tabla padre para garantizar integridad referencial.",
+    "para": "Aseguran que no existan registros duplicados ni referencias huérfanas (por ejemplo, un pago apuntando a un usuario inexistente), delegando la consistencia estructural directamente al motor de base de datos en lugar de confiar únicamente en validaciones de la aplicación.",
+    "como": "Al definir una PK, el motor crea automáticamente un índice único (en InnoDB/SQL Server además organiza físicamente los datos como clustered index) y prohíbe valores NULL o repetidos. Al definir una FK, el motor valida cada INSERT o UPDATE en la tabla hija consultando el índice de la tabla padre, y ante DELETE o UPDATE en el padre aplica la acción referencial configurada: RESTRICT/NO ACTION (bloquea), CASCADE (propaga), SET NULL o SET DEFAULT. Esta verificación implica un costo mínimo de búsqueda por índice y bloqueos compartidos breves sobre la fila padre referenciada.",
+    "practicas": [
+      "Elige entre llave natural (ej. código ISO) y llave subrogada (BIGINT autoincremental, UUIDv7): las llaves subrogadas evitan cascadas costosas si cambian atributos de negocio.",
+      "Si usas UUID como PK en índices B-Tree (especialmente InnoDB), prefiere UUIDv7 (ordenado por tiempo) frente a UUIDv4 aleatorio para evitar fragmentación de páginas.",
+      "Crea explícitamente un índice sobre las columnas FK en la tabla hija (PostgreSQL no lo crea automáticamente) para acelerar JOINs y borrados en el padre.",
+      "Usa ON DELETE CASCADE con extrema cautela en tablas críticas; en sistemas con auditoría suele preferirse RESTRICT combinado con soft-delete o archivado controlado."
+    ],
+    "ejemplo": "CREATE TABLE pedidos (\n  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n  cliente_id BIGINT NOT NULL REFERENCES clientes(id) ON DELETE RESTRICT,\n  estado VARCHAR(20) NOT NULL\n);\nCREATE INDEX idx_pedidos_cliente_id ON pedidos(cliente_id);",
+    "entrevista": "Las llaves primarias y foráneas garantizan identidad única e integridad referencial a nivel del motor, requiriendo elegir claves que no fragmenten el B-Tree e indexar siempre las llaves foráneas para evitar escaneos en cascada."
+  },
+  "Migraciones (Flyway, Liquibase, Alembic, Prisma)": {
+    "que": "Las herramientas de migración de esquemas versionan y aplican de forma incremental, determinista y repetible los cambios estructurales (DDL) y de datos semilla sobre una base de datos a lo largo del ciclo de vida del software.",
+    "para": "Eliminan las discrepancias entre entornos (desarrollo, staging, producción) y los cambios manuales ad-hoc, integrando la evolución del esquema en el control de versiones (Git) y en los pipelines CI/CD junto con el código de la aplicación.",
+    "como": "Mantienen una tabla de metadatos dentro de la propia base de datos (como flyway_schema_history, databasechangelog, alembic_version o _prisma_migrations) que registra qué scripts ya fueron ejecutados junto con su checksum criptográfico. Al desplegar, la herramienta compara las migraciones pendientes en el repositorio contra el historial registrado, adquiere un lock distribuido en la base para evitar ejecuciones simultáneas entre múltiples instancias y ejecuta en orden las nuevas versiones dentro de transacciones cuando el motor lo soporta. Flyway y Prisma Migrate trabajan principalmente con archivos SQL ordenados (generados desde schema.prisma en Prisma); Liquibase soporta SQL, XML, YAML y JSON con etiquetas de contexto/rollback; Alembic genera y ejecuta scripts en Python vinculados a modelos SQLAlchemy.",
+    "practicas": [
+      "Nunca edites una migración que ya fue aplicada en entornos compartidos o producción; crea una nueva migración correctiva.",
+      "Aplica el patrón expand-and-contract para cero downtime: primero añade la nueva columna/tabla compatible con la versión anterior de la app, migra datos, despliega código y en una fase posterior elimina la vieja.",
+      "Evita bloqueos prolongados en tablas grandes: usa CREATE INDEX CONCURRENTLY (fuera de transacción en PostgreSQL) y evita añadir columnas con reescritura completa de tabla.",
+      "Separa los cambios de esquema (DDL) de migraciones pesadas de backfill de datos por lotes para no saturar transacciones ni replicación."
+    ],
+    "ejemplo": "-- V004__add_usuario_telefono_concurrent.sql (Flyway)\nALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefono VARCHAR(20);\n-- En archivo separado sin transacción para evitar bloqueo de escrituras:\nCREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usuarios_telefono ON usuarios(telefono);",
+    "entrevista": "Las migraciones versionadas convierten la evolución de la base de datos en código reproducible y auditable, y en producción deben seguir estrategias expand-and-contract para evitar downtime y bloqueos."
+  },
+  "Modelo entidad-relación (ER)": {
+    "que": "El modelo entidad-relación (ER), propuesto por Peter Chen, es un modelo conceptual de datos que representa un dominio de negocio mediante entidades (objetos identificables), atributos (propiedades) y relaciones (asociaciones con su cardinalidad y participación).",
+    "para": "Sirve como lenguaje visual y analítico compartido entre negocio, arquitectura y desarrollo para diseñar la estructura de información antes de atarse a las restricciones físicas de un motor SQL o NoSQL concreto.",
+    "como": "Durante el modelado conceptual se identifican entidades fuertes (existencia independiente) y débiles (dependen de una entidad propietaria), sus atributos simples, compuestos o multivaluados, y las cardinalidades entre ellas (1:1, 1:N, M:N) junto con su obligatoriedad (participación total o parcial). Posteriormente, en el paso al diseño lógico relacional, cada entidad se traduce en una tabla, los atributos multivaluados en tablas auxiliares, las relaciones 1:N en llaves foráneas en el lado N y las relaciones M:N en tablas asociativas (join tables) compuestas por las llaves de ambas entidades.",
+    "practicas": [
+      "Modela conceptos del dominio real y sus reglas de negocio primero, sin pensar todavía en índices, JSONB ni particiones.",
+      "Desglosa explícitamente las relaciones muchos-a-muchos (M:N) identificando si la relación tiene atributos propios (ej. fecha_inscripcion o rol en usuario-proyecto).",
+      "Distingue entre herencia/especialización (supertipo/subtipo) evaluando tabla única, tabla por subclase o tabla por tipo concreto según la frecuencia de atributos nulos.",
+      "Mantén los diagramas ER (notación Crow's Foot o Chen) actualizados como documentación viva de los límites del dominio."
+    ],
+    "ejemplo": "[Cliente] 1 ----< realiza >---- N [Pedido]\n[Pedido]  N ----< contiene >--- M [Producto]\n  \\-> En modelo lógico se materializa en: detalles_pedido(pedido_id, producto_id, cantidad, precio)",
+    "entrevista": "El modelo ER captura la semántica y cardinalidades del negocio de forma independiente del motor, siendo el paso previo indispensable para derivar un esquema relacional coherente."
+  },
+  "Modelo relacional": {
+    "que": "El modelo relacional, formulado por Edgar F. Codd en 1970, organiza toda la información como colecciones matemáticas de relaciones (tablas) compuestas por tuplas (filas) no ordenadas y atributos (columnas) sobre dominios atómicos, manipulados mediante álgebra y cálculo relacional.",
+    "para": "Proporciona un fundamento matemático sólido y declarativo para almacenar datos con alta integridad, independencia física de los datos y capacidad para responder consultas arbitrarias que el diseñador no previó originalmente.",
+    "como": "Cada relación se define por un encabezado (nombre y dominio de cada atributo) y un cuerpo (conjunto sin duplicados de tuplas, garantizado por al menos una llave candidata). La independencia física y lógica permite cambiar almacenamiento, índices o particiones sin alterar las consultas SQL de la aplicación. Las operaciones sobre relaciones son cerradas: al aplicar selección (WHERE), proyección (SELECT), producto, unión o reunión (JOIN) sobre relaciones se obtiene siempre una nueva relación, permitiendo que el optimizador reescriba expresiones equivalentes para elegir la ejecución más rápida.",
+    "practicas": [
+      "Trata las tablas como conjuntos no ordenados: nunca asumas un orden de filas sin especificar ORDER BY explícitamente.",
+      "Aprovecha la naturaleza declarativa de SQL especificando qué datos necesitas en lugar de implementar bucles de cruce en la aplicación.",
+      "Mantén la atomicidad de los dominios en columnas clave sobre las que filtrarás o cruzarás, evitando listas separadas por comas dentro de un VARCHAR.",
+      "Modelo relacional vs documental: usa relacional cuando existan múltiples relaciones cruzadas, reglas de integridad fuertes y patrones de consulta cambiantes."
+    ],
+    "ejemplo": "-- Selección, proyección y reunión relacional declarativa\nSELECT e.nombre, d.presupuesto\nFROM empleados e\nJOIN departamentos d ON d.id = e.departamento_id\nWHERE e.activo = TRUE;",
+    "entrevista": "La fuerza del modelo relacional radica en su base matemática sobre conjuntos y su independencia de datos, lo que permite consultas declarativas flexibles e integridad garantizada sin acoplar la lógica al almacenamiento físico."
+  },
+  "MongoDB": {
+    "que": "MongoDB es una base de datos NoSQL orientada a documentos que almacena registros flexibles en formato BSON (Binary JSON) agrupados en colecciones, con soporte nativo para replicación (Replica Sets), particionamiento horizontal (Sharding) y transacciones ACID multi-documento.",
+    "para": "Resuelve escenarios con esquemas polimórficos o evolutivos, objetos jerárquicos que se leen y escriben como una unidad (catálogos de e-commerce con atributos variables, perfiles, gestión de contenido) y cargas distribuidas donde la localidad del dato en un solo documento reduce JOINs.",
+    "como": "El motor de almacenamiento por defecto es WiredTiger, que utiliza control de concurrencia a nivel de documento, checkpoints periódicos, Write-Ahead Logging (journal) y compresión Snappy/zstd. Los documentos embeben subdocumentos y arreglos relacionados para recuperar entidades completas en una sola lectura de disco, y soportan índices B-Tree simples, compuestos, multikey (para arrays), geoespaciales, de texto y TTL. La alta disponibilidad se logra mediante Replica Sets basados en consenso estilo Raft (un nodo Primary recibe escrituras y sincroniza su oplog hacia Secondaries), mientras que la escala horizontal usa mongos routers y shard keys para distribuir chunks entre clústeres.",
+    "practicas": [
+      "Aplica el principio \"datos que se consultan juntos se almacenan juntos\" embebiendo relaciones 1:pocos y referenciando relaciones 1:muchos o N:M ilimitadas.",
+      "Nunca permitas que un arreglo embebido crezca sin límite (unbounded arrays), pues el documento puede alcanzar el tope de 16 MB y causar reubicaciones costosas.",
+      "Define JSON Schema Validation en las colecciones críticas para evitar corrupción por cambios de código inconsistentes.",
+      "Usa índices compuestos siguiendo la regla ESR (Equality, Sort, Range) para maximizar la eficiencia de las consultas."
+    ],
+    "ejemplo": "db.pedidos.createIndex({ clienteId: 1, estado: 1, creadoEn: -1 });\ndb.pedidos.find(\n  { clienteId: \"u_99\", estado: \"ENVIADO\", creadoEn: { $gte: ISODate(\"2026-01-01\") } }\n).sort({ creadoEn: -1 }).limit(20);",
+    "entrevista": "MongoDB destaca cuando el modelo de acceso gira en torno a agregados documentales autocontenidos y evolución ágil de esquema, siempre que se controlen el tamaño de documentos, el patrón de índices ESR y las shard keys."
+  },
+  "MySQL - MariaDB": {
+    "que": "MySQL y MariaDB son sistemas de gestión de bases de datos relacionales (RDBMS) de código abierto ampliamente adoptados en aplicaciones web y SaaS. MariaDB nació en 2009 como un fork comunitario de MySQL liderado por su creador original tras la adquisición de Sun por Oracle, divergiendo progresivamente en motores y características.",
+    "para": "Sirven como base OLTP principal para aplicaciones transaccionales de alto volumen de lectura/escritura (e-commerce, CMS, backends web, plataformas cloud) gracias a su baja latencia en consultas puntuales, ecosistema maduro y facilidad de replicación.",
+    "como": "Su arquitectura separa la capa SQL (parser, optimizador, gestión de conexiones por hilos) de los motores de almacenamiento intercambiables (pluggable storage engines). El motor estándar por defecto en MySQL es InnoDB (en MariaDB, InnoDB/XtraDB además de Aria o ColumnStore para analítica), el cual almacena las tablas físicamente como índices agrupados (clustered index) ordenados por su Primary Key. InnoDB garantiza ACID mediante el buffer pool en memoria, redo logs para durabilidad, undo logs para MVCC/rollback y bloqueo de filas con gap locks. La replicación nativa usa el binary log (binlog) en formato ROW o STATEMENT enviado hacia réplicas asíncronas o semi-síncronas.",
+    "practicas": [
+      "Usa siempre utf8mb4 (y collations modernas como utf8mb4_0900_ai_ci) en lugar de utf8 (que en MySQL clásico solo soporta 3 bytes y falla con emojis).",
+      "Define una Primary Key corta y secuencial (BIGINT o UUIDv7) en InnoDB porque todos los índices secundarios almacenan internamente el valor de la PK como puntero.",
+      "Activa el slow_query_log y revisa innodb_buffer_pool_size (idealmente ~70-80% de la RAM en servidores dedicados) para mantener el working set en memoria.",
+      "MySQL vs PostgreSQL: MySQL/InnoDB destaca por su modelo de hilos ligero y replicación simple; PostgreSQL sobresale en SQL avanzado, tipos complejos, extensibilidad y paralelismo analítico."
+    ],
+    "ejemplo": "CREATE TABLE sesiones (\n  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,\n  usuario_id BIGINT UNSIGNED NOT NULL,\n  token_hash CHAR(64) NOT NULL,\n  expira_en DATETIME(6) NOT NULL,\n  UNIQUE KEY uk_token_hash (token_hash),\n  KEY idx_usuario_expira (usuario_id, expira_en)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
+    "entrevista": "En MySQL y MariaDB, entender que InnoDB almacena la tabla dentro del índice agrupado de la llave primaria y utiliza hilos ligeros por conexión explica tanto su velocidad en lecturas por PK como el impacto de elegir malas llaves primarias."
+  },
+  "Neo4j": {
+    "que": "Neo4j es una base de datos nativa de grafos que almacena información como nodos (entidades con etiquetas y propiedades) conectados por relaciones dirigidas y tipadas (aristas con propiedades), procesada mediante el lenguaje declarativo Cypher.",
+    "para": "Resuelve problemas donde las conexiones multi-salto son el núcleo de la consulta: detección de fraude en anillo, motores de recomendación, grafos de conocimiento (GraphRAG para IA), linaje de datos, control de acceso jerárquico y análisis de rutas en redes.",
+    "como": "A diferencia de simular grafos con tablas puente y JOINs recursivos en SQL, Neo4j implementa index-free adjacency: cada nodo almacena directamente en su estructura física los punteros hacia las direcciones de sus relaciones entrantes y salientes. Esto hace que recorrer vecinos (traversals) tenga complejidad proporcional al número de relaciones exploradas (O(1) por salto) en lugar de depender del tamaño total de la base de datos (O(log N) por índice en cada JOIN). Opera con transacciones ACID completas, almacenamiento en page cache y soporte de clúster causal basado en protocolo Raft.",
+    "practicas": [
+      "Usa Neo4j cuando las consultas atraviesen 3 o más saltos variables de profundidad; para 1 o 2 saltos fijos, una base relacional suele ser más simple.",
+      "Define constraints de unicidad e índices sobre las propiedades iniciales de búsqueda (ej. Usuario.id) donde arranca el recorrido del grafo.",
+      "Modela relaciones con tipos específicos (ej. :COMPRO, :TRANSFIRIO_A) en vez de relaciones genéricas :RELACIONADO con un atributo tipo, para acelerar el recorrido.",
+      "Evita supernodos (nodos con millones de aristas del mismo tipo) o divide sus relaciones mediante nodos intermedios temporales o categóricos."
+    ],
+    "ejemplo": "// Detectar posibles cuentas vinculadas a dos saltos de distancia en fraude\nMATCH (a:Cuenta {id: $cuentaId})-[:TRANSFIRIO*1..3]->(sospechosa:Cuenta)\nWHERE sospechosa.pais <> a.pais\nRETURN sospechosa.id, count(*) AS caminos;",
+    "entrevista": "La ventaja clave de Neo4j frente a un RDBMS en consultas multi-salto es la adyacencia libre de índices, donde cada nodo apunta físicamente a sus relaciones manteniendo el tiempo de recorrido independiente del tamaño total del grafo."
+  },
+  "Normalización": {
+    "que": "La normalización es el proceso sistemático de estructurar tablas y dependencias funcionales en un esquema relacional siguiendo formas normales progresivas (1FN, 2FN, 3FN, FNBC/BCNF) para eliminar redundancias y anomalías de inserción, actualización y borrado.",
+    "para": "Garantiza que cada hecho del dominio se almacene en un único lugar (Single Source of Truth), evitando inconsistencias cuando los datos cambian y ahorrando espacio de almacenamiento en cargas OLTP.",
+    "como": "Se aplica de forma acumulativa: 1FN exige atributos atómicos y ausencia de grupos repetitivos; 2FN (sobre relaciones ya en 1FN) elimina dependencias parciales asegurando que todo atributo no clave dependa de la llave primaria completa (relevante en PK compuestas); 3FN elimina dependencias transitivas para que los atributos no clave dependan únicamente de la llave primaria y no de otros atributos no clave (\"the key, the whole key, and nothing but the key\"). La Forma Normal de Boyce-Codd (BCNF) refuerza 3FN exigiendo que todo determinante sea una superclave. Formas superiores (4FN, 5FN) resuelven dependencias multivaluadas y de reunión menos frecuentes en práctica diaria.",
+    "practicas": [
+      "Apunta a 3FN o BCNF por defecto en el diseño de bases transaccionales OLTP.",
+      "Ten en cuenta que una dirección o historial de precios en una factura (ej. precio_pagado en la línea de pedido) NO viola 3FN si representa una instantánea histórica en lugar del precio actual del catálogo.",
+      "No sobre-normalices creando decenas de tablas de catálogos triviales que fragmentan consultas simples sin aportar beneficio real de integridad.",
+      "Normalización vs Desnormalización: normaliza para consistencia en escritura (OLTP) y desnormaliza selectivamente solo cuando las mediciones de lectura lo exijan."
+    ],
+    "ejemplo": "-- Violación 3FN: ciudad depende de codigo_postal, no del usuario\n-- Normalizado en 3FN:\nCREATE TABLE codigos_postales (cp VARCHAR(10) PRIMARY KEY, ciudad VARCHAR(80) NOT NULL);\nCREATE TABLE usuarios (id BIGINT PRIMARY KEY, nombre VARCHAR(80), cp VARCHAR(10) REFERENCES codigos_postales(cp));",
+    "entrevista": "Normalizar hasta 3FN o BCNF elimina dependencias parciales y transitivas, evitando anomalías de escritura e inconsistencias al asegurar que cada atributo dependa únicamente de la clave completa."
+  },
+  "Oracle": {
+    "que": "Oracle Database es un sistema de gestión de bases de datos relacional y multimodelo de nivel empresarial, reconocido históricamente por su robustez extrema en cargas OLTP y analíticas críticas, su lenguaje procedural PL/SQL y su arquitectura de alta disponibilidad.",
+    "para": "Se utiliza en banca central, telecomunicaciones, ERPs corporativos (SAP, Oracle E-Business), aerolíneas y administraciones públicas donde se requieren SLAs estrictos de disponibilidad activa-activa, particionamiento avanzado y seguridad granular.",
+    "como": "Su arquitectura separa la instancia en memoria (SGA: System Global Area con buffer cache y shared pool + procesos en segundo plano como DBWn, LGWR y SMON) de la base de datos física (datafiles, control files y redo logs organizados en tablespaces). Usa System Change Numbers (SCN) y segmentos de UNDO para ofrecer consistencia de lectura multiversión sin bloqueos de lectura. Sus extensiones más características incluyen RAC (Real Application Clusters, múltiples servidores compartiendo el mismo almacenamiento en modo activo-activo), Data Guard para réplicas físicas sincronizadas y arquitectura Multitenant (CDB/PDB) que aísla múltiples bases conectables dentro de una misma instancia.",
+    "practicas": [
+      "Utiliza bind variables en las consultas SQL; el uso de literales dinámicos satura el Shared Pool y obliga a realizar hard parses costosos.",
+      "Ten presente las particularidades de Oracle frente al estándar SQL: cadenas vacías '' se tratan históricamente como NULL y las tablas dual o secuencias tienen sintaxis propia.",
+      "Aprovecha el particionamiento (Range, List, Hash) y los índices bitmap solo en columnas de baja cardinalidad orientadas a Data Warehouse (no OLTP concurrente).",
+      "Evalúa cuidadosamente el costo de licenciamiento por núcleo y opciones (Partitioning, Diagnostics Pack) frente a alternativas como PostgreSQL antes de iniciar proyectos nuevos."
+    ],
+    "ejemplo": "-- Uso de MERGE y secuencia/identidad con bind variable en Oracle\nMERGE INTO inventario t\nUSING (SELECT :prod_id AS id, :delta AS cant FROM dual) s\nON (t.producto_id = s.id)\nWHEN MATCHED THEN UPDATE SET t.stock = t.stock + s.cant\nWHEN NOT MATCHED THEN INSERT (producto_id, stock) VALUES (s.id, s.cant);",
+    "entrevista": "Oracle Database combina consistencia multiversión basada en SCN con tecnologías empresariales como RAC y Data Guard para ofrecer alta disponibilidad activa-activa en sistemas de misión crítica."
+  },
+  "PITR": {
+    "que": "PITR (Point-in-Time Recovery, recuperación a un punto en el tiempo) es la capacidad de restaurar una base de datos exactamente al estado en que se encontraba en un segundo, transacción o LSN (Log Sequence Number) específico del pasado.",
+    "para": "Resuelve incidentes de corrupción lógica donde la alta disponibilidad/replicación no protege porque replica el error al instante: un DROP TABLE accidental, un UPDATE sin WHERE o una migración fallida ocurrida hace minutos u horas.",
+    "como": "Requiere dos ingredientes continuos: un backup físico base periódico (base backup) y el archivado continuo e inmutable de todos los logs de transacciones generados después (WAL en PostgreSQL o binlog en MySQL). Durante el incidente, el operador restaura el último backup base anterior al error en una instancia limpia, configura el parámetro de destino (recovery_target_time o recovery_target_lsn) y ordena al motor reproducir los archivos de log archivados en secuencia hasta detenerse justo antes de la transacción destructiva, abriendo la base en modo lectura/escritura en una nueva línea de tiempo (timeline).",
+    "practicas": [
+      "Verifica continuamente que el archivado de logs (archive_command / pgBackRest / WAL-G) no falle ni se llene el disco destino; un solo archivo WAL faltante rompe la cadena de recuperación.",
+      "Registra marcas de tiempo exactas (UTC) o crea named restore points (pg_create_restore_point) justo antes de ejecutar migraciones de alto riesgo.",
+      "PITR vs Snapshots periódicos: los snapshots diarios implican perder hasta 24h de datos (RPO alto); PITR reduce el RPO a segundos o minutos.",
+      "Al recuperar por PITR, restaura en una instancia paralela para validar el dato o extraer filas afectadas antes de promoverla como nueva base principal."
+    ],
+    "ejemplo": "# postgresql.conf / recovery config para restaurar justo antes de un error\nrestore_command = 'pgbackrest --stanza=prod archive-get %f \"%p\"'\nrecovery_target_time = '2026-11-24 14:28:55 UTC'\nrecovery_target_action = 'promote'",
+    "entrevista": "Mientras la replicación protege contra caídas de hardware, PITR combina un backup base con el replay continuo de WAL/binlogs para revertir errores humanos o lógicos hasta el segundo exacto previo al incidente."
+  },
+  "PostGIS": {
+    "que": "PostGIS es la extensión espacial estándar para PostgreSQL que añade soporte completo de tipos geográficos y geométricos (Point, LineString, Polygon), funciones de análisis espacial y sistemas de referencia de coordenadas (SRID).",
+    "para": "Resuelve cálculos de proximidad, geocercas (geofencing), búsqueda dentro de polígonos, cálculo de rutas, áreas e intersecciones directamente dentro de la base relacional sin mover gigabytes de coordenadas a la capa de aplicación.",
+    "como": "Almacena geometrías planas (geometry, cálculo cartesiano rápido) o geodésicas esféricas (geography, cálculo preciso en metros sobre el elipsoide terrestre como WGS84 / SRID 4326) en columnas tipadas. Para que las consultas espaciales no escaneen toda la tabla, PostGIS utiliza índices GiST (Generalized Search Tree) que implementan un R-Tree sobre las cajas delimitadoras (bounding boxes, MBR) de cada objeto. La consulta opera en dos fases: primero el índice GiST filtra rápidamente qué bounding boxes se superponen y luego la librería geométrica GEOS ejecuta la evaluación matemática exacta sobre los candidatos filtrados.",
+    "practicas": [
+      "Crea siempre un índice GiST sobre columnas geometry o geography y usa operadores indexables como ST_DWithin en lugar de filtrar con ST_Distance(...) < radio (que impide usar el índice).",
+      "Elige geometry con una proyección métrica local para analítica intensiva en una ciudad, y geography (SRID 4326) si trabajas a escala global con distancias en metros.",
+      "Respeta siempre el orden longitud-latitud (X, Y) en WKT y GeoJSON (ST_Point(lon, lat)), error muy frecuente al mezclar con mapas que muestran (lat, lon).",
+      "PostGIS vs GeoJSON en disco: almacenar en PostGIS permite indexación espacial R-Tree y consultas geométricas nativas; GeoJSON sirve como formato de intercambio hacia Leaflet o Mapbox."
+    ],
+    "ejemplo": "CREATE INDEX idx_tiendas_ubicacion ON tiendas USING GIST (ubicacion);\n-- Buscar tiendas a menos de 2 km (usa índice GiST con ST_DWithin)\nSELECT id, nombre\nFROM tiendas\nWHERE ST_DWithin(ubicacion, ST_SetSRID(ST_MakePoint(-99.1332, 19.4326), 4326)::geography, 2000);",
+    "entrevista": "PostGIS convierte a PostgreSQL en un motor geoespacial completo mediante índices R-Tree (GiST) sobre bounding boxes y funciones indexables como ST_DWithin, evitando cálculos trigonométricos manuales y escaneos completos."
+  },
+  "PostgreSQL": {
+    "que": "PostgreSQL es un sistema de gestión de bases de datos objeto-relacional (ORDBMS) de código abierto reconocido por su estricto cumplimiento del estándar SQL, su robusta arquitectura ACID basada en MVCC y su extrema extensibilidad.",
+    "para": "Sirve como base de datos generalista de referencia tanto para cargas transaccionales críticas (OLTP) como para cargas híbridas que combinan datos relacionales, documentos JSONB, búsqueda full-text, series temporales (TimescaleDB), datos geoespaciales (PostGIS) y vectores de IA (pgvector).",
+    "como": "Opera con una arquitectura multiproceso (un proceso backend por conexión gestionada por el postmaster) apoyada en memoria compartida (shared_buffers) y Write-Ahead Logging (WAL) para garantizar atomicidad y durabilidad. Implementa MVCC almacenando múltiples versiones de tuplas (xmin/xmax) dentro de las mismas páginas heap de 8 KB, lo que permite que lectores y escritores nunca se bloqueen entre sí, requiriendo procesos en segundo plano (autovacuum) para reclamar espacio muerto y prevenir el desbordamiento de IDs de transacción (wraparound). Ofrece múltiples tipos de índices nativos (B-Tree, Hash, GIN para JSONB/arrays, GiST, BRIN para tablas ordenadas) y replicación física por streaming o lógica basada en publicaciones.",
+    "practicas": [
+      "Despliega un connection pooler como PgBouncer frente a PostgreSQL cuando tengas muchas conexiones cortas o microservicios, dado el modelo multiproceso.",
+      "Monitorea y afina autovacuum en tablas con alta tasa de UPDATE/DELETE para evitar bloat en tablas/índices y caídas de rendimiento.",
+      "Usa JSONB (binario e indexable con GIN) en lugar de JSON textual cuando necesites consultar o indexar campos semiestructurados.",
+      "Evita almacenar blobs binarios pesados dentro de PostgreSQL (aunque soporte TOAST); guarda archivos en Object Storage (S3) y persiste solo la referencia."
+    ],
+    "ejemplo": "CREATE TABLE productos (\n  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n  atributos JSONB NOT NULL DEFAULT '{}'::jsonb\n);\nCREATE INDEX idx_productos_atributos ON productos USING GIN (atributos jsonb_path_ops);",
+    "entrevista": "PostgreSQL destaca por su MVCC sin bloqueos entre lecturas y escrituras, su riqueza de tipos e índices especializados (B-Tree, GIN, GiST, BRIN) y extensiones como PostGIS o pgvector que evitan proliferación innecesaria de motores."
+  },
+  "Redis": {
+    "que": "Redis es un almacén de estructuras de datos en memoria (in-memory data store) de altísimo rendimiento y baja latencia (sub-milisegundo), que soporta tipos avanzados como Strings, Hashes, Lists, Sets, Sorted Sets, Streams, HyperLogLog y Bitmaps.",
+    "para": "Resuelve necesidades de caché distribuida (patrón cache-aside), gestión de sesiones, rate limiting con ventanas deslizantes, colas de mensajería ligeras, Pub/Sub en tiempo real, locks distribuidos y rankings (leaderboards).",
+    "como": "Mantiene todo el conjunto de datos en RAM y procesa comandos de forma mayoritariamente single-threaded mediante un bucle de eventos I/O multiplexing (epoll/kqueue), lo que elimina contención de locks entre hilos y garantiza ejecución atómica de cada comando y script Lua. Para persistencia opcional en disco combina snapshots puntuales en segundo plano (RDB mediante fork copy-on-write) con un registro secuencial de operaciones (AOF, Append-Only File). Escala en lectura mediante replicación líder-seguidor y en capacidad/escritura con Redis Cluster, particionando el espacio de claves en 16,384 hash slots distribuidos entre múltiples nodos.",
+    "practicas": [
+      "Establece siempre un TTL explícito en claves de caché y configura una política de eviction (como allkeys-lru o allkeys-lfu) junto con maxmemory.",
+      "Evita comandos bloqueantes O(N) en producción como KEYS * o HGETALL sobre estructuras enormes; usa SCAN o límites acotados para no congelar el event loop.",
+      "Protege la base de datos contra cache stampede (thundering herd) usando jitter en los TTLs o singleflight/locks cortos al recalcular claves expiradas.",
+      "Redis vs Memcached: usa Memcached si solo necesitas caché KV simple multihilo; Redis cuando requieras estructuras de datos, TTL avanzado, persistencia o Pub/Sub."
+    ],
+    "ejemplo": "-- Rate limiting atómico o conteo en Redis CLI\nINCR rate:user:42:2026112500\nEXPIRE rate:user:42:2026112500 60 NX\n-- Ranking con Sorted Set\nZADD leaderboard 1500 \"jugador_7\" 2300 \"jugador_3\"\nZREVRANGE leaderboard 0 9 WITHSCORES",
+    "entrevista": "Redis alcanza latencias sub-milisegundo ejecutando estructuras de datos en RAM sobre un bucle de eventos single-threaded que evita bloqueos, aunque exige evitar comandos O(N) y controlar memoria con TTL y eviction."
+  },
+  "Reorganización y reconstrucción de índices (REINDEX - VACUUM - OPTIMIZE)": {
+    "que": "Son operaciones de mantenimiento físico encargadas de compactar espacio fragmentado (bloat), eliminar tuplas muertas dejadas por MVCC o borrados masivos, actualizar estadísticas del optimizador y restaurar la densidad óptima de páginas en tablas e índices B-Tree.",
+    "para": "Evitan la degradación progresiva de latencia y el desperdicio silencioso de disco y memoria caché (buffer pool) en tablas sometidas a frecuentes UPDATEs y DELETEs.",
+    "como": "En PostgreSQL, VACUUM escanea páginas para marcar como reutilizable el espacio de tuplas muertas (dead tuples) y actualiza el Visibility Map sin reducir el tamaño físico del archivo; VACUUM FULL reescribe toda la tabla compactando el archivo pero exige un bloqueo exclusivo total, por lo que en producción se prefiere autovacuum ajustado o herramientas online como pg_repack. REINDEX (preferiblemente REINDEX CONCURRENTLY) construye un índice B-Tree nuevo y balanceado desde cero reemplazando el índice fragmentado o corrupto. En MySQL InnoDB, OPTIMIZE TABLE reconstruye internamente la tabla agrupada y sus índices (equivalentemente a ALTER TABLE ... ENGINE=InnoDB) liberando espacio fragmentado en tablespaces file-per-table.",
+    "practicas": [
+      "Nunca ejecutes VACUUM FULL u OPTIMIZE TABLE sin soporte online en tablas activas de producción durante horas pico, porque bloquean lecturas y escrituras.",
+      "En PostgreSQL usa REINDEX INDEX CONCURRENTLY para desinflar índices con bloat sin detener el tráfico de la aplicación.",
+      "Acompaña las limpiezas con ANALYZE para refrescar histogramas y estadísticas de cardinalidad del planificador.",
+      "Ajusta parámetros de autovacuum por tabla (autovacuum_vacuum_scale_factor bajo en tablas gigantes de millones de filas) en lugar de depender solo del 20% global."
+    ],
+    "ejemplo": "-- PostgreSQL: actualizar estadísticas, limpiar sin bloqueo y reconstruir índice en vivo\nVACUUM (ANALYZE, VERBOSE) pedidos;\nREINDEX INDEX CONCURRENTLY idx_pedidos_estado;\n\n-- MySQL InnoDB: desfragmentar tabla y estadísticas\nOPTIMIZE LOCAL TABLE pedidos;",
+    "entrevista": "Las operaciones continuas de UPDATE y DELETE fragmentan los B-Tree y acumulan tuplas muertas; el mantenimiento mediante autovacuum, REINDEX CONCURRENTLY y reconstrucciones online preserva la densidad de páginas en caché y evita el bloat."
+  },
+  "Replicación": {
+    "que": "La replicación es la técnica de mantener copias sincronizadas de los datos de una base de datos en múltiples nodos o ubicaciones geográficas conectadas por red.",
+    "para": "Resuelve dos problemas distintos: alta disponibilidad y tolerancia a fallos (failover automático si cae el nodo principal), y escalabilidad de lecturas o menor latencia geográfica distribuyendo consultas SELECT entre múltiples réplicas.",
+    "como": "En la arquitectura líder-seguidor (primary-replica), todas las escrituras llegan al nodo líder, que registra los cambios en su log transaccional (WAL/binlog/oplog) y los transmite por red a los seguidores. En replicación asíncrona el líder confirma al cliente antes de que los seguidores apliquen el cambio (máximo rendimiento, riesgo de pérdida de últimas transacciones y lag de replicación); en semi-síncrona o síncrona espera confirmación de al menos una réplica antes de hacer commit. Alternativamente, la replicación multi-master permite escrituras en múltiples nodos requiriendo detección y resolución de conflictos (LWW, CRDTs), mientras que las topologías basadas en consenso (Raft/Paxos) eligen líder automáticamente ante particiones.",
+    "practicas": [
+      "Ten siempre en cuenta el replication lag en lecturas tras escritura (read-your-own-writes): enruta las lecturas críticas inmediatas del usuario hacia el líder.",
+      "No confundas replicación con backup: un DROP TABLE en el líder se replica en milisegundos hacia todas las réplicas.",
+      "Configura mecanismos de fencing (como STONITH o tokens de época) en failover automático para evitar split-brain (dos líderes escribiendo a la vez).",
+      "Replicación física (WAL) vs lógica (pub/sub): usa física para réplicas de failover idénticas y lógica para replicar subconjuntos de tablas o migrar entre versiones mayores sin downtime."
+    ],
+    "ejemplo": "-- PostgreSQL: configurar replicación lógica selectiva\n-- En el nodo publicador (líder):\nCREATE PUBLICATION pub_analitica FOR TABLE pedidos, clientes;\n-- En el nodo suscriptor (réplica analítica):\nCREATE SUBSCRIPTION sub_analitica CONNECTION 'host=db-primary dbname=app' PUBLICATION pub_analitica;",
+    "entrevista": "La replicación mejora disponibilidad y escalado de lectura pero introduce el trade-off entre latencia de escritura (síncrona vs asíncrona), lag de lectura y riesgo de split-brain durante failovers."
+  },
+  "Retención y auditoría": {
+    "que": "La retención define las políticas y mecanismos técnicos para conservar, archivar o purgar datos durante un ciclo de vida determinado; la auditoría registra de forma verificable e inmutable quién, cuándo, desde dónde y qué accedió o modificó en la base de datos.",
+    "para": "Cumple marcos legales y normativos (GDPR/LOPD, PCI-DSS, HIPAA, SOX), permite investigaciones forenses ante brechas de seguridad y evita que las tablas operativas crezcan indefinidamente degradando copias de seguridad e índices.",
+    "como": "Para retención eficiente, las tablas de eventos o bitácoras se diseñan particionadas por rango de fecha (ej. particiones mensuales en PostgreSQL/MySQL), permitiendo archivar una partición a almacenamiento frío (Parquet en S3) y ejecutar DROP TABLE / DETACH PARTITION en milisegundos sin generar tombstones ni bloat como haría un DELETE masivo. Para auditoría, se combinan logs de motor (como pgaudit en PostgreSQL o MySQL Enterprise Audit para registrar DDL, accesos y errores) con tablas append-only pobladas vía triggers o eventos CDC que guardan estado anterior/nuevo, usuario y correlation ID.",
+    "practicas": [
+      "Implementa la purga mediante particionamiento temporal (DROP PARTITION) en lugar de ejecutar DELETE FROM logs WHERE fecha < ..., evitando bloqueos y saturación de WAL.",
+      "Envía los registros de auditoría fuera de la propia instancia (SIEM o bucket S3 con Object Lock inmutable) para que un atacante con acceso admin a la BD no pueda borrar sus huellas.",
+      "Anonimiza o pseudonimiza datos personales (PII) al cumplir plazos legales (derecho al olvido) sin romper la integridad referencial de métricas históricas o facturas.",
+      "Audita selectivamente eventos críticos (accesos a PII, cambios de permisos, DDL) para no ahogar el I/O registrando cada SELECT rutinario."
+    ],
+    "ejemplo": "-- Purga instantánea sin bloat mediante particiones mensuales en PostgreSQL\nCREATE TABLE audit_logs (id BIGINT, creado_en DATE NOT NULL, payload JSONB) PARTITION BY RANGE (creado_en);\n-- Al vencer el plazo de retención:\nDROP TABLE audit_logs_2024_11;",
+    "entrevista": "Una estrategia madura separa retención mediante particiones dropeables instantáneamente de la auditoría inmutable enviada a un almacenamiento externo, cumpliendo regulación sin degradar el rendimiento transaccional."
+  },
+  "SQL Server": {
+    "que": "Microsoft SQL Server es un sistema de gestión de bases de datos relacional empresarial, altamente integrado con el ecosistema .NET, Windows y Azure (Azure SQL), que utiliza el dialecto T-SQL (Transact-SQL) y herramientas avanzadas de BI y analítica.",
+    "para": "Resuelve cargas empresariales OLTP y analíticas híbridas (HTAP), aplicaciones corporativas en entornos Microsoft y escenarios que requieren cifrado transparente, auditoría integrada, alta disponibilidad y optimización automática.",
+    "como": "Utiliza una arquitectura multihilo propia (SQLOS) que planifica tareas de forma cooperativa en memoria (Buffer Pool y Plan Cache). Almacena tablas por defecto como clustered indexes sobre páginas de 8 KB agrupadas en extents, gestionando concurrencia mediante bloqueo pesimista con escalamiento de locks o mediante Read Committed Snapshot Isolation (RCSI) apoyado en tempdb (row versioning). Su alta disponibilidad se articula mediante Always On Availability Groups (replicación síncrona o asíncrona a nivel de base de datos con listener automático), mientras que Query Store registra históricamente planes de ejecución para detectar y revertir regresiones.",
+    "practicas": [
+      "Activa READ_COMMITTED_SNAPSHOT (RCSI) en bases OLTP modernas para que las lecturas no bloqueen ni sean bloqueadas por escrituras, evitando deadlocks frecuentes del bloqueo pesimista por defecto.",
+      "Habilita Query Store en producción para identificar rápidamente consultas con regresión de plan (parameter sniffing) y forzar planes estables.",
+      "Dimensiona y divide tempdb en múltiples archivos de igual tamaño (hasta el número de núcleos, máx. 8 inicialmente) para eliminar contención de asignación de páginas.",
+      "Asegura una Clustered Key estrecha, única y creciente (ej. INT/BIGINT IDENTITY) porque todos los índices no agrupados la usan como puntero."
+    ],
+    "ejemplo": "-- Habilitar RCSI y Query Store para concurrencia MVCC y trazabilidad de planes\nALTER DATABASE MiAppDB SET READ_COMMITTED_SNAPSHOT ON;\nALTER DATABASE MiAppDB SET QUERY_STORE = ON (OPERATION_MODE = READ_WRITE);",
+    "entrevista": "En SQL Server es clave entender el papel de la llave del índice agrupado en toda la estructura de índices, el impacto de habilitar RCSI sobre tempdb para eliminar bloqueos lector-escritor y el uso de Query Store frente al parameter sniffing."
+  },
+  "SQLite": {
+    "que": "SQLite es una biblioteca en lenguaje C que implementa un motor de base de datos SQL transaccional completo, autocontenido, serverless y de cero configuración, que almacena toda la base de datos en un único archivo multiplataforma.",
+    "para": "Es el estándar absoluto para almacenamiento local en aplicaciones móviles (iOS/Android), navegadores, aplicaciones de escritorio, dispositivos IoT/edge, pruebas unitarias rápidas y cada vez más para servicios web de tráfico moderado o lecturas intensivas en nodos únicos (LiteFS/Turso).",
+    "como": "A diferencia de motores cliente-servidor, SQLite se enlaza directamente en el mismo proceso de la aplicación y lee/escribe sobre un archivo único mediante llamadas POSIX al sistema de archivos, eliminando latencia de red y serialización IPC. Soporta ACID completo mediante rollback journal o preferiblemente WAL (Write-Ahead Logging), donde las escrituras se añaden secuencialmente a un archivo -wal permitiendo lectores concurrentes mientras hay un único escritor activo a la vez. Emplea tipado dinámico por valor (type affinity) a menos que se declare STRICT, y ejecuta consultas compiladas a bytecode dentro de su máquina virtual interna (VDBE).",
+    "practicas": [
+      "Activa PRAGMA journal_mode = WAL; y PRAGMA synchronous = NORMAL; en aplicaciones concurrentes para permitir múltiples lecturas simultáneas durante las escrituras.",
+      "Configura PRAGMA foreign_keys = ON; en cada nueva conexión, ya que viene deshabilitado por compatibilidad histórica.",
+      "Define PRAGMA busy_timeout = 5000; para que escritores concurrentes reintenten brevemente antes de lanzar el error SQLITE_BUSY.",
+      "SQLite vs PostgreSQL: elige SQLite para sistemas embebidos, edge o monolitos de un solo nodo sin red; usa PostgreSQL cuando necesites múltiples escritores concurrentes en red o escalar horizontalmente."
+    ],
+    "ejemplo": "PRAGMA journal_mode = WAL;\nPRAGMA synchronous = NORMAL;\nPRAGMA foreign_keys = ON;\nPRAGMA busy_timeout = 5000;\nCREATE TABLE notas (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL) STRICT;",
+    "entrevista": "SQLite elimina el overhead de red operando en el mismo proceso sobre un archivo único; en modo WAL ofrece altísima velocidad en lectura concurrente con un único escritor serializado."
+  },
+  "Sharding - Particionamiento": {
+    "que": "El particionamiento divide una tabla lógica grande en múltiples segmentos físicos más pequeños (particiones) dentro de un mismo nodo; el sharding es un particionamiento horizontal distribuido donde esos segmentos (shards) residen en servidores independientes que no comparten disco ni memoria.",
+    "para": "El particionamiento local mejora la gestión, purga de históricos y tamaño de índices en tablas de cientos de millones de filas; el sharding resuelve el límite físico de escritura, CPU y almacenamiento de un único servidor cuando el escalado vertical ya no alcanza.",
+    "como": "En el particionamiento local (por Range, List o Hash), el planificador usa partition pruning para descartar automáticamente particiones que no cumplen el filtro WHERE de la consulta. En el sharding, una capa de enrutamiento (proxy como Vitess, Citus o driver de la app) aplica una función sobre la shard key (por rangos continuos, tabla de directorio o consistent hashing) para enviar cada consulta directamente al nodo propietario del shard. Las consultas que no incluyen la shard key requieren un scatter-gather hacia todos los shards, y las escrituras entre múltiples shards exigen coordinación distribuida (2PC o sagas).",
+    "practicas": [
+      "Agota primero índices, optimización SQL, connection pooling, caché y réplicas de lectura antes de introducir sharding, ya que añade enorme complejidad operativa.",
+      "Elige la shard key analizando tus consultas principales: debe distribuir carga uniformemente (evitar hot shards como fechas crecientes en rango) y mantener juntas las filas consultadas frecuentemente.",
+      "Evita transacciones ACID y JOINs distribuidos entre shards; diseña tus entidades co-localizadas por inquilino (tenant_id) o entidad raíz (user_id).",
+      "Particionamiento local vs Sharding: particiona localmente para retención y rendimiento de índices en un nodo; haz sharding solo para escalar capacidad de escritura más allá de un servidor."
+    ],
+    "ejemplo": "-- Particionamiento declarativo por Hash en PostgreSQL (preludio o equivalente local al sharding)\nCREATE TABLE eventos (\n  tenant_id UUID NOT NULL,\n  evento_id BIGINT NOT NULL,\n  datos JSONB\n) PARTITION BY HASH (tenant_id);\nCREATE TABLE eventos_p0 PARTITION OF eventos FOR VALUES WITH (MODULUS 4, REMAINDER 0);",
+    "entrevista": "El sharding escala escrituras y almacenamiento horizontalmente distribuyendo datos por shard key, pero exige renunciar a JOINs y transacciones cross-shard fáciles, por lo que debe adoptarse solo tras agotar la escala vertical y las réplicas de lectura."
+  }
+}

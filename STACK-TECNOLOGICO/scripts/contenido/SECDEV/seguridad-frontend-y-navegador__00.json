@@ -1,0 +1,366 @@
+{
+  "Auditoría de dependencias": {
+    "que": "Proceso sistemático de inventario, análisis y verificación de seguridad aplicado a las bibliotecas de terceros y dependencias transitivas de un proyecto frontend. Forma parte del análisis de composición de software (SCA) y evalúa vulnerabilidades conocidas (CVE), licencias y estado de mantenimiento.",
+    "para": "Resuelve la visibilidad ciega sobre código externo que se ejecuta con los mismos privilegios que el código propio en el navegador o en el entorno de build. Se aplica de forma continua en desarrollo local y en pipelines CI/CD antes de empaquetar y desplegar.",
+    "como": "Una herramienta SCA lee el manifiesto (`package.json`) y el lockfile (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`) para construir el árbol completo de dependencias directas y transitivas. Luego cruza nombres y versiones resueltas contra bases de datos de avisos de seguridad como GitHub Advisory Database, OSV o NVD. Finalmente genera un reporte con niveles de severidad, rutas de dependencia afectadas y sugerencias de actualización o parches.",
+    "practicas": [
+      "Ejecutar auditorías automáticas en cada pull request y bloquear merges ante vulnerabilidades críticas con parche disponible.",
+      "Combinar análisis de CVEs con revisión de mantenimiento (paquetes abandonados, cambios recientes de mantenedor o scripts `postinstall` sospechosos).",
+      "Diferenciar entre dependencias de `dependencies` (llegan al bundle o runtime) y `devDependencies` (afectan al entorno de build/CI) para priorizar la remediación.",
+      "Evitar aplicar `--force` ciegamente en actualizaciones automáticas porque introduce breaking changes sin corregir la causa raíz."
+    ],
+    "ejemplo": "# Auditoría en CI fallando solo si hay severidad alta o crítica en producción\nnpm audit --omit=dev --audit-level=high\n\n# Inspeccionar el árbol para saber quién introduce una dependencia vulnerable\nnpm explain lodash",
+    "entrevista": "Auditar dependencias no consiste solo en correr un comando por CVEs conocidos, sino en controlar todo el árbol transitivo en CI y priorizar el riesgo según si el paquete llega al bundle o se ejecuta en build."
+  },
+  "Browser security model": {
+    "que": "Arquitectura de aislamiento y control de acceso que implementan los navegadores web para ejecutar código no confiable de múltiples orígenes en una misma máquina sin comprometer el sistema operativo ni los datos entre sitios.",
+    "para": "Permite navegar por páginas arbitrarias mientras protege la confidencialidad e integridad de sesiones, cookies, almacenamiento local y recursos de red interna. Es la base sobre la que se apoyan defensas como SOP, CORS, CSP y el sandboxing de procesos.",
+    "como": "El navegador separa los documentos por origen (esquema + host + puerto) mediante la Same-Origin Policy y ejecuta cada sitio o pestaña en procesos aislados con sandboxing del sistema operativo (Site Isolation). Las comunicaciones entre contextos distintos pasan por interfaces explícitas y restringidas como CORS o `window.postMessage`. Adicionalmente, las cabeceras HTTP de respuesta (`CSP`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`) restringen capacidades de red, ejecución de scripts y APIs de hardware.",
+    "practicas": [
+      "Asumir que toda validación en el navegador es de experiencia de usuario o defensa en profundidad, nunca la única barrera de autorización.",
+      "Habilitar cabeceras de aislamiento moderno (`COOP`, `COEP`, `CORP`) cuando se requiera aislamiento estricto de procesos frente a ataques de canal lateral.",
+      "Diseñar la seguridad por origen: no alojar aplicaciones con distinto nivel de confianza en el mismo dominio o bajo el mismo esquema de cookies.",
+      "Recordar la trampa común: `http://app.ejemplo` y `https://app.ejemplo` son orígenes distintos para el navegador."
+    ],
+    "ejemplo": "# Cabeceras básicas de refuerzo del modelo de seguridad del navegador\nContent-Security-Policy: default-src 'self'; frame-ancestors 'none'\nX-Content-Type-Options: nosniff\nReferrer-Policy: strict-origin-when-cross-origin\nCross-Origin-Opener-Policy: same-origin",
+    "entrevista": "El modelo de seguridad del navegador aísla sitios por origen y proceso para contener código no confiable, y las cabeceras HTTP permiten estrechar esa superficie según la arquitectura de la aplicación."
+  },
+  "Cross-origin resource sharing (CORS)": {
+    "que": "Mecanismo estándar basado en cabeceras HTTP que permite a un servidor indicar al navegador qué orígenes externos tienen permiso para leer respuestas de sus recursos, relajando de forma controlada la Same-Origin Policy.",
+    "para": "Resuelve la necesidad de que un frontend alojado en un origen (por ejemplo `https://app.ejemplo`) consuma APIs ubicadas en otro origen (`https://api.ejemplo`) sin exponer datos privados a cualquier sitio web malicioso que visite el usuario.",
+    "como": "Cuando una petición JS cruza de origen y no es simple (por ejemplo lleva `Authorization` o `Content-Type: application/json`), el navegador envía primero una petición `OPTIONS` preflight con la cabecera `Origin`. El servidor responde con `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods` y `Access-Control-Allow-Headers` declarando lo permitido. Si la respuesta válida las condiciones y, cuando hay credenciales, incluye `Access-Control-Allow-Credentials: true` sin usar comodín `*`, el navegador entrega la respuesta real al JavaScript.",
+    "practicas": [
+      "Usar una lista blanca explícita de orígenes permitidos en el servidor; nunca reflejar ciegamente el valor de la cabecera `Origin` de la petición.",
+      "No combinar `Access-Control-Allow-Credentials: true` con orígenes permisivos o regex mal ancladas (ej. `ejemplo.com.atacante.tld`).",
+      "Recordar que CORS no sustituye autenticación ni protege contra CSRF en peticiones simples: la petición puede llegar al servidor aunque el navegador bloquee la lectura de la respuesta.",
+      "Limitar `Access-Control-Max-Age` para cachear preflights sin dejar políticas obsoletas durante días."
+    ],
+    "ejemplo": "# Respuesta de API con CORS estricto para un origen confiable y credenciales\nAccess-Control-Allow-Origin: https://app.ejemplo.com\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\nAccess-Control-Allow-Headers: Authorization, Content-Type\nAccess-Control-Allow-Credentials: true\nVary: Origin",
+    "entrevista": "CORS es una política aplicada por el navegador para controlar quién puede leer respuestas entre orígenes distintos; nunca debe usarse como control de acceso del servidor ni como reemplazo de protección anti-CSRF."
+  },
+  "DOM clobbering": {
+    "que": "Técnica de inyección basada en marcado HTML no ejecutable (como etiquetas con atributos `id` o `name`) que colisiona con propiedades globales de `window` o `document` y altera referencias esperadas por el código JavaScript.",
+    "para": "Importa en aplicaciones que permiten cierto HTML rico o sanitizado sin ejecutar `<script>`, ya que el código legítimo posterior puede leer una propiedad del DOM creyendo que es una variable de configuración, una URL confiable o un módulo cargado.",
+    "como": "Los navegadores exponen automáticamente elementos HTML con atributos `id` o `name` como propiedades sobre `window` y `document`, y permiten anidar colecciones mediante elementos como `<form>` con `<input>`. Si un script evalúa `window.config?.endpoint` sin comprobar tipo ni existencia previa, la referencia resuelve hacia el elemento HTML inyectado en lugar de `undefined`. Al coercionar ese nodo a cadena (`toString()`) o acceder a atributos como `.href` o `.src`, el flujo de la aplicación puede redirigirse hacia recursos no confiables.",
+    "practicas": [
+      "Usar siempre `const` / `let` en módulos ES en lugar de depender de propiedades implícitas en `window` o `document`.",
+      "Validar tipos de forma estricta (`typeof x === 'string'`, `!(x instanceof Element)`) antes de usar variables globales o configuraciones dinámicas.",
+      "Configurar sanitizadores como DOMPurify para eliminar o prefijar atributos `id` y `name` (`SANITIZE_NAMED_PROPS: true`).",
+      "Comparación clave: XSS ejecuta script directo; DOM clobbering corrompe estado y referencias del DOM para engañar al script legítimo existente."
+    ],
+    "ejemplo": "// Defensa en código frente a DOM clobbering\nconst rawUrl = window.APP_CONFIG?.apiUrl;\nconst apiUrl = typeof rawUrl === 'string' ? rawUrl : '/api';\n\n// En DOMPurify, evitar colisión de propiedades nombradas\nconst clean = DOMPurify.sanitize(html, { SANITIZE_NAMED_PROPS: true });",
+    "entrevista": "El DOM clobbering abusa de cómo el navegador mapea `id` y `name` en `window` y `document` para suplantar variables; se mitiga usando módulos encapsulados, validación estricta de tipos y sanitización de propiedades nombradas."
+  },
+  "Dependencias npm": {
+    "que": "Paquetes JavaScript/TypeScript instalados desde registros como npmjs o registros privados corporativos que componen el código de terceros y las herramientas de compilación de una aplicación frontend.",
+    "para": "Aceleran el desarrollo reutilizando utilidades, frameworks y bundlers, pero cada paquete añade código con acceso completo al build (scripts de ciclo de vida en Node.js) o al navegador del usuario final.",
+    "como": "Al ejecutar `npm install`, el gestor resuelve rangos semánticos (`^`, `~`) definidos en `package.json` contra el registro configurado y descarga archivos `.tgz` hacia `node_modules`. Durante la instalación, npm puede ejecutar hooks automáticos del paquete como `preinstall`, `install` y `postinstall` con los permisos del usuario o del runner de CI. Posteriormente el bundler incluye únicamente el código importado desde `dependencies` en el artefacto final servido al navegador.",
+    "practicas": [
+      "Minimizar el número de dependencias y preferir APIs nativas del navegador o Node cuando la funcionalidad sea trivial.",
+      "Deshabilitar scripts de ciclo de vida por defecto con `--ignore-scripts` en entornos sensibles y aprobar explícitamente los paquetes nativos que los necesiten.",
+      "Fijar versiones mediante lockfile y usar `npm ci` en integración continua para instalaciones reproducibles.",
+      "Revisar regularmente `dependencies` vs `devDependencies` y eliminar paquetes sin uso."
+    ],
+    "ejemplo": "# Instalación reproducible en CI sin ejecutar scripts arbitrarios de paquetes\nnpm ci --ignore-scripts\n\n# Configuración persistente en .npmrc de proyecto\nignore-scripts=true",
+    "entrevista": "El riesgo de las dependencias npm es doble: código que llega al cliente y scripts de instalación que se ejecutan en la máquina del desarrollador o en CI, por lo que hay que minimizar paquetes, usar lockfiles y restringir lifecycle scripts."
+  },
+  "Dependency confusion": {
+    "que": "Vector de ataque a la cadena de suministro en el que un gestor de paquetes resuelve una dependencia interna por su nombre desde un registro público (como npmjs) en lugar del registro privado de la organización.",
+    "para": "Comprender este mecanismo es crítico en organizaciones que publican librerías internas sin scope o con registros híbridos, para impedir la ejecución de código externo no confiable durante builds de CI/CD o instalaciones locales.",
+    "como": "Cuando un `.npmrc` combina un registro privado y el registro público, o cuando falta configuración de scope, el cliente consulta metadatos y compara versiones semánticas disponibles. Si existe en el registro público un paquete homónimo sin scope con un número de versión mayor (por ejemplo `99.0.0`), el resolvedor puede priorizar la versión pública más alta. Al descargarlo e instalarlo, cualquier script `postinstall` o módulo importado desde ese paquete externo pasa a ejecutarse en el pipeline o bundle.",
+    "practicas": [
+      "Usar siempre paquetes internos con `@scope` de la organización (`@mi-org/ui-kit`) y enrutar ese scope exclusivamente al registro privado en `.npmrc`.",
+      "Reservar o reclamar los nombres de paquetes internos en el registro público si por legado existen paquetes sin scope.",
+      "Configurar el registro privado (Artifactory, Verdaccio, GitHub Packages) para no mezclar ni hacer fallback transparente al registro público para nombres internos.",
+      "Comparación: Dependency confusion explota la resolución prioritaria entre registros; Typosquatting explota errores tipográficos humanos."
+    ],
+    "ejemplo": "# .npmrc seguro enrutando el scope privado a un único registro interno\n@mi-org:registry=https://npm.interno.mi-org.com/\n//npm.interno.mi-org.com/:_authToken=${NPM_TOKEN}\nstrict-ssl=true",
+    "entrevista": "La dependency confusion ocurre cuando el gestor prioriza un paquete homónimo público sobre uno interno; se previene usando scopes exclusivos en `.npmrc`, proxies de registro bien aislados y lockfiles verificados."
+  },
+  "HTTPS everywhere": {
+    "que": "Principio de arquitectura web que exige que todo el tráfico entre el navegador y la aplicación, incluidos recursos estáticos, APIs, WebSockets y subdominios, viaje cifrado mediante TLS sobre HTTPS sin excepciones en texto claro.",
+    "para": "Evita la interceptación pasiva de credenciales o tokens, la modificación en tránsito (Man-in-the-Middle) de scripts JavaScript y las degradaciones de protocolo (SSL stripping) en redes públicas o corporativas.",
+    "como": "El servidor redirige cualquier petición HTTP (puerto 80) con un código `301`/`308` hacia HTTPS (puerto 443) y negocia una sesión TLS 1.2/1.3 respaldada por un certificado X.509 válido. Para impedir que la primera conexión futura vuelva a intentar HTTP, el servidor emite la cabecera `Strict-Transport-Security` (HSTS) con `max-age` amplio e idealmente `includeSubDomains`. El navegador almacena esa política localmente y reescribe internamente cualquier intento HTTP a HTTPS antes de enviar paquetes a la red.",
+    "practicas": [
+      "Activar HSTS con `max-age` mínimo de un año (`31536000`), `includeSubDomains` y evaluar `preload` solo tras validar todos los subdominios.",
+      "Usar `wss://` para WebSockets y asegurar que todas las cookies sensibles lleven el atributo `Secure`.",
+      "No depender únicamente de redirecciones 301 en servidor, ya que la primera petición HTTP sin HSTS sigue siendo interceptable.",
+      "Deshabilitar versiones heredadas de TLS (1.0/1.1) y conjuntos de cifrado débiles en el proxy inverso o CDN."
+    ],
+    "ejemplo": "# Redirección y HSTS estricto en Nginx\nadd_header Strict-Transport-Security \"max-age=31536000; includeSubDomains; preload\" always;\nreturn 301 https://$host$request_uri;",
+    "entrevista": "HTTPS everywhere no es solo tener certificado TLS: requiere redirecciones permanentes, HSTS para bloquear degradaciones a HTTP en la primera conexión y atributos `Secure` en cookies."
+  },
+  "InnerHTML seguro": {
+    "que": "Conjunto de patrones y APIs que reemplazan o protegen la asignación directa a `element.innerHTML` (y equivalentes como `outerHTML` o `insertAdjacentHTML`) para impedir la interpretación inadvertida de texto no confiable como HTML ejecutable.",
+    "para": "Elimina la causa más frecuente de XSS basado en DOM en aplicaciones JavaScript y SPAs cuando se insertan datos provenientes de la URL, almacenamiento local o respuestas de API.",
+    "como": "Asignar texto a `innerHTML` invoca el parser HTML del navegador, creando nodos y evaluando manejadores de eventos en línea (`onerror`, `onload`) o etiquetas activas. En su lugar, propiedades como `textContent` o `innerText` insertan el contenido como un nodo de texto literal sin invocar al parser HTML. Cuando realmente se necesita renderizar marcado rico, el HTML debe pasar primero por un sanitizador robusto (como DOMPurify) o aplicarse mediante Trusted Types antes de tocar el sink.",
+    "practicas": [
+      "Usar `textContent` o `document.createTextNode()` siempre que el dato deba mostrarse como texto plano.",
+      "Construir estructuras dinámicas mediante `document.createElement()` y `setAttribute()` validando URLs (`http:` / `https:` solamente).",
+      "Si el diseño exige HTML rico, sanitizar justo antes de la inserción con una librería mantenida y reforzarlo con reglas ESLint (`no-unsanitized`) y Trusted Types.",
+      "Evitar las falsas sensaciones de seguridad de `innerHTML` combinado con reemplazos manuales de `<` y `>` mediante regex."
+    ],
+    "ejemplo": "// Seguro para texto plano\nuserLabel.textContent = userInput;\n\n// Seguro cuando se requiere HTML rico controlado\narticleBody.innerHTML = DOMPurify.sanitize(richHtml, {\n  USE_PROFILES: { html: true }\n});",
+    "entrevista": "La regla práctica para `innerHTML` es no usarlo para texto plano —para eso existe `textContent`— y, si se requiere HTML rico, sanitizar justo en el sink y respaldarlo con Trusted Types."
+  },
+  "Lockfile": {
+    "que": "Archivo de manifiesto generado automáticamente (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`) que registra la versión exacta, la URL de origen resuelta y el hash criptográfico de integridad de cada dependencia directa y transitiva.",
+    "para": "Garantiza builds deterministas entre máquinas de desarrollo y CI/CD, y protege contra la alteración silenciosa de paquetes o actualizaciones automáticas no deseadas dentro de un rango semántico (`^` o `~`).",
+    "como": "Durante la resolución inicial, el gestor calcula el árbol completo y escribe en el lockfile la versión concreta más el campo `integrity` (normalmente un digest `sha512-` bajo Subresource Integrity). En instalaciones posteriores mediante comandos estrictos como `npm ci` o `pnpm install --frozen-lockfile`, el cliente omite la resolución por rango, descarga los tarballs exactos y verifica su hash antes de extraerlos. Si el checksum descargado difiere del registrado en el lockfile, la instalación falla de inmediato.",
+    "practicas": [
+      "Versionar siempre el lockfile en el repositorio Git de aplicaciones y servicios (incluidos frontends).",
+      "Usar `npm ci` (o `--frozen-lockfile`) en pipelines de CI/CD en lugar de `npm install` para no mutar el archivo ni aceptar resoluciones inesperadas.",
+      "Revisar en code review cambios inesperados en el dominio `resolved` dentro del lockfile, pues pueden señalar cambios de registro.",
+      "Auditar también el lockfile y no solo `package.json`, ya que ahí residen las versiones exactas de las dependencias transitivas."
+    ],
+    "ejemplo": "# Verificar que el lockfile esté sincronizado e instalar validando hashes\nnpm ci --audit=false\n\n# En pnpm\npnpm install --frozen-lockfile",
+    "entrevista": "El lockfile convierte rangos semánticos ambiguos en un árbol determinista verificado por hash `sha512`; en CI es obligatorio usar `npm ci` o `--frozen-lockfile` para preservar esa garantía."
+  },
+  "Mixed content": {
+    "que": "Condición en la que un documento principal cargado de forma segura sobre HTTPS solicita subrecursos (scripts, hojas de estilo, imágenes, fuentes, iframes o llamadas `fetch`) a través de HTTP sin cifrar.",
+    "para": "Controlar y eliminar el mixed content protege la integridad de la página HTTPS: si un atacante en la red intercepta y modifica un único script HTTP (contenido activo), compromete por completo la sesión segura del origen.",
+    "como": "Los navegadores clasifican el mixed content en activo (scripts, CSS, iframes, XHR/fetch) y pasivo o de visualización (imágenes, audio, video). Por defecto, los navegadores modernos bloquean el mixed content activo y actualizan automáticamente o advierten sobre el pasivo, degradando el indicador de seguridad del sitio. La directiva CSP `upgrade-insecure-requests` ordena al navegador reescribir URLs HTTP a HTTPS antes de enviarlas, mientras que `block-all-mixed-content` (heredada) bloquea cualquier carga insegura.",
+    "practicas": [
+      "Usar siempre URLs relativas o `https://` explícitas en recursos externos, evitando esquemas relativos `//` que heredan HTTP en entornos locales mal configurados.",
+      "Incluir `upgrade-insecure-requests;` en la Content Security Policy durante migraciones desde legado hacia HTTPS completo.",
+      "Configurar encabezados `X-Forwarded-Proto` correctamente detrás de balanceadores de carga para que el backend no genere enlaces `http://`.",
+      "Diferenciar mixed content activo (ejecución/lectura crítica, bloqueado) de pasivo (medios, susceptible a manipulación visual o tracking)."
+    ],
+    "ejemplo": "# Cabecera CSP para actualizar automáticamente peticiones HTTP residuales a HTTPS\nContent-Security-Policy: default-src https:; upgrade-insecure-requests",
+    "entrevista": "El mixed content rompe las garantías de TLS de una página HTTPS; aunque los navegadores bloquean el contenido activo, hay que eliminar URLs `http://` desde origen y apoyarse en `upgrade-insecure-requests`."
+  },
+  "Permissions-Policy": {
+    "que": "Cabecera de respuesta HTTP (sucesora de `Feature-Policy`) que permite a un sitio web declarar qué APIs sensibles del navegador y capacidades de hardware están habilitadas o bloqueadas para el propio documento y sus iframes embebidos.",
+    "para": "Reduce la superficie de impacto en caso de compromiso de un script de terceros o iframe embebido, impidiendo que accedan a cámara, micrófono, geolocalización, pagos o sensores aunque el código intente solicitarlos.",
+    "como": "El servidor envía la cabecera `Permissions-Policy` con una lista de directivas separadas por comas, asignando a cada capacidad una lista de orígenes permitidos entre paréntesis (`()` para denegar a todos, `(self)` para solo el origen propio). El navegador aplica estas restricciones en el nivel de documento y las hereda hacia los contextos hijos; un `<iframe>` solo puede recibir un permiso si tanto la política del padre como el atributo `allow` del iframe lo autorizan.",
+    "practicas": [
+      "Aplicar principio de mínimo privilegio deshabilitando por defecto (`=()`) APIs que la aplicación no use, especialmente `camera`, `microphone`, `geolocation` y `payment`.",
+      "Restringir explícitamente en el atributo `allow` de los `<iframe>` de terceros únicamente las capacidades estrictamente necesarias.",
+      "Combinar `Permissions-Policy` con `CSP` y sandboxing de iframes (`sandbox`), ya que cubren capas complementarias.",
+      "No confundir `Permissions-Policy` con el diálogo de permiso al usuario: si la cabecera bloquea la API, ni siquiera aparece el prompt."
+    ],
+    "ejemplo": "# Deshabilitar capacidades sensibles salvo las requeridas por el propio origen\nPermissions-Policy: camera=(), microphone=(), geolocation=(self), payment=(), usb=()",
+    "entrevista": "Permissions-Policy aplica mínimo privilegio sobre las APIs del navegador y el hardware, asegurando que ni scripts propios comprometidos ni iframes de terceros puedan usar funciones que la aplicación no necesita."
+  },
+  "PostMessage security": {
+    "que": "Conjunto de prácticas para proteger la comunicación asíncrona entre ventanas, pestañas, popups e iframes de orígenes distintos mediante la API `window.postMessage`.",
+    "para": "Permite intercambiar datos entre contextos aislados por la Same-Origin Policy (por ejemplo widgets embebidos o flujos OAuth en popup) sin exponer información sensible ni permitir ejecución de acciones arbitrarias por orígenes maliciosos.",
+    "como": "El emisor llama a `targetWindow.postMessage(data, targetOrigin)` especificando el origen exacto esperado; si el destino no coincide con `targetOrigin`, el navegador aborta la entrega para evitar fugas de datos. En el receptor, el listener del evento `message` debe verificar `event.origin` contra una lista blanca estricta (y opcionalmente `event.source`) antes de leer `event.data`. Finalmente, la carga útil recibida debe tratarse como entrada no confiable, validando su esquema sin pasarla a sinks peligrosos como `innerHTML` o `eval`.",
+    "practicas": [
+      "En el emisor, nunca usar `'*'` como `targetOrigin` cuando se envían tokens, PII o mensajes de control.",
+      "En el receptor, validar `event.origin` con igualdad exacta (`===`), nunca con `includes()`, `startsWith()` o regex sin anclas.",
+      "Validar el tipo y estructura de `event.data` (por ejemplo con un esquema estricto) antes de actualizar estado o el DOM.",
+      "Mantener un `MessageChannel` privado tras el handshake inicial si se intercambian múltiples mensajes."
+    ],
+    "ejemplo": "// Emisor seguro\niframe.contentWindow.postMessage({ type: 'READY' }, 'https://widget.ejemplo.com');\n\n// Receptor seguro\nwindow.addEventListener('message', (event) => {\n  if (event.origin !== 'https://app.ejemplo.com') return;\n  if (event.data?.type === 'PING') handlePing();\n});",
+    "entrevista": "La seguridad en `postMessage` tiene dos caras obligatorias: especificar el `targetOrigin` exacto al enviar para no filtrar datos y validar `event.origin` con igualdad estricta al recibir antes de procesar `event.data`."
+  },
+  "Prototype pollution": {
+    "que": "Vulnerabilidad de JavaScript en la que la manipulación de propiedades especiales como `__proto__`, `constructor` o `prototype` durante fusiones o asignaciones recursivas modifica el prototipo compartido (`Object.prototype`) de todos los objetos en ejecución.",
+    "para": "Prevenirla es esencial en librerías npm de utilidades (`merge`, `clone`, `set` por ruta) y parsers de query strings o JSON, ya que la contaminación de `Object.prototype` puede alterar lógica de autorización, denegar el servicio o derivar en XSS en el frontend mediante gadgets.",
+    "como": "Cuando una función realiza una copia profunda o asigna claves dinámicas tipo `obj[a][b] = val` usando entradas controladas por el usuario sin filtrar claves reservadas, `obj['__proto__']` resuelve a `Object.prototype`. Al escribir una propiedad nueva ahí, cualquier objeto literal posterior que no defina esa propiedad la heredará automáticamente a través de la cadena de prototipos. En aplicaciones frontend, librerías o plantillas que leen opciones por defecto no definidas (gadgets) terminan consumiendo el valor contaminado y alterando atributos del DOM o URLs.",
+    "practicas": [
+      "Validar y rechazar explícitamente las claves `__proto__`, `constructor` y `prototype` en funciones de mezcla o asignación por ruta.",
+      "Usar `Map` o `Object.create(null)` para diccionarios indexados por claves provenientes de entrada de usuario.",
+      "Usar `Object.hasOwn(obj, key)` en iteraciones sobre propiedades y evitar accesos dinámicos sin comprobación de propiedad propia.",
+      "Congelar prototipos críticos (`Object.freeze(Object.prototype)`) solo en entornos controlados donde ninguna dependencia necesite extenderlos, y mantener actualizadas las dependencias de utilidades."
+    ],
+    "ejemplo": "const BLOCKED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);\n\nfunction safeSet(target, key, value) {\n  if (BLOCKED_KEYS.has(key) || !Object.prototype.hasOwnProperty.call(target, key) && key in Object.prototype) {\n    return;\n  }\n  target[key] = value;\n}",
+    "entrevista": "Prototype pollution sucede cuando entradas controladas modifican `Object.prototype` a través de fusiones recursivas; se mitiga bloqueando `__proto__`/`constructor`/`prototype`, usando `Map` o `Object.create(null)` y actualizando dependencias vulnerables."
+  },
+  "Referrer-Policy": {
+    "que": "Cabecera HTTP (y atributo HTML `referrerpolicy`) que controla cuánta información de la URL de origen incluye el navegador en la cabecera `Referer` al navegar hacia otra página o solicitar subrecursos.",
+    "para": "Evita la filtración accidental de rutas internas, identificadores de sesión, tokens en query strings o parámetros sensibles hacia sitios externos, redes publicitarias o analíticas de terceros.",
+    "como": "Cuando un usuario hace clic en un enlace o la página carga una imagen externa, el navegador consulta la política vigente en la cabecera `Referrer-Policy`, en `<meta name=\"referrer\">` o en el atributo del elemento. Según el valor configurado (`no-referrer`, `same-origin`, `strict-origin-when-cross-origin`), recorta la ruta y query string dejando solo el origen, o suprime completamente la cabecera `Referer`. Si la transición pasa de HTTPS a HTTP, las políticas `strict-*` omiten la cabecera para proteger la privacidad en tránsito.",
+    "practicas": [
+      "Configurar `strict-origin-when-cross-origin` como mínimo estándar (hoy predeterminado en navegadores modernos) y `no-referrer` o `same-origin` en aplicaciones muy sensibles.",
+      "No colocar nunca secretos, tokens de restablecimiento o PII en parámetros de URL, aunque exista `Referrer-Policy`.",
+      "Aplicar `referrerpolicy=\"no-referrer\"` en enlaces salientes específicos que puedan partir de rutas privadas.",
+      "Verificar que un proxy o CDN no sobrescriba una política estricta con valores más permisivos como `unsafe-url`."
+    ],
+    "ejemplo": "# Política recomendada por defecto en respuestas HTTP\nReferrer-Policy: strict-origin-when-cross-origin\n\n<!-- Enlace externo específico sin fuga de ruta -->\n<a href=\"https://externo.ejemplo\" referrerpolicy=\"no-referrer\" rel=\"noopener noreferrer\">Ir</a>",
+    "entrevista": "Referrer-Policy evita que las URLs internas y query parameters se filtren en la cabecera `Referer` hacia terceros; el estándar recomendado es `strict-origin-when-cross-origin` o `no-referrer` para rutas sensibles."
+  },
+  "Sanitización de HTML": {
+    "que": "Proceso de analizar un fragmento de HTML no confiable y eliminar o transformar cualquier etiqueta, atributo o esquema de URL capaz de ejecutar código o alterar el comportamiento seguro antes de insertarlo en el DOM.",
+    "para": "Es indispensable cuando una aplicación necesita aceptar y renderizar formato rico generado por usuarios (editores WYSIWYG, comentarios en Markdown convertido a HTML, plantillas de correo) sin exponerse a XSS almacenado o basado en DOM.",
+    "como": "Un sanitizador robusto como DOMPurify parsea la cadena con un parser HTML real (o `DOMParser` / árbol DOM nativo) en lugar de usar expresiones regulares frágiles. Luego recorre el árbol de nodos aplicando una lista blanca estricta de etiquetas permitidas (`<p>`, `<b>`, `<a>`) y atributos seguros (`href`, `title`), descartando `<script>`, `<iframe>`, estilos peligrosos y manejadores `on*`. Además valida protocolos en atributos de enlace para permitir solo esquemas seguros (`https:`, `http:`, `mailto:`) y bloquear `javascript:` o `data:`.",
+    "practicas": [
+      "Utilizar librerías especializadas y auditadas como DOMPurify; nunca construir sanitizadores propios basados en regex o listas negras.",
+      "Sanitizar en el cliente justo antes de insertar en el DOM (no confiar únicamente en una sanitización previa guardada en base de datos, por posibles mutaciones de parser / mXSS).",
+      "Preferir representación estructurada (por ejemplo AST o componentes React/Vue con nodos seguros) en lugar de HTML crudo siempre que sea posible.",
+      "Diferencia clave: la codificación de salida convierte `<` en `&lt;` para mostrar texto literal; la sanitización conserva formato HTML seguro eliminando vectores activos."
+    ],
+    "ejemplo": "import DOMPurify from 'dompurify';\n\nconst safeHtml = DOMPurify.sanitize(userHtml, {\n  ALLOWED_TAGS: ['p', 'b', 'i', 'em', 'strong', 'a', 'ul', 'li'],\n  ALLOWED_ATTR: ['href', 'target', 'rel']\n});",
+    "entrevista": "Sanitizar HTML consiste en parsear el marcado y aplicar una lista blanca estricta de etiquetas, atributos y protocolos en el cliente justo antes del sink, usando herramientas probadas como DOMPurify en lugar de regex."
+  },
+  "Secretos en bundle": {
+    "que": "Exposición de credenciales privadas —como API keys con privilegios, tokens de servicio, secretos de firma JWT o contraseñas— dentro de archivos JavaScript, JSON o configuraciones empaquetadas y servidas públicamente al navegador.",
+    "para": "Identificar y evitar este fallo impide que cualquier usuario inspeccione el código cliente (DevTools o `curl`) y abuse de servicios de pago, bases de datos o APIs administrativas usando la identidad de la aplicación.",
+    "como": "En frameworks modernos (Vite, Webpack, Next.js), las variables de entorno con ciertos prefijos (`VITE_`, `NEXT_PUBLIC_`, `REACT_APP_`) se sustituyen textualmente durante el build dentro del código JS estático. Si un desarrollador etiqueta por error una clave privada con ese prefijo o la importa en un módulo compartido entre servidor y cliente, el bundler la incrusta en el artefacto final. Una vez publicado el bundle en CDN o servidor web, el secreto es público y cualquier rotación tardía deja rastros en caché o repositorios.",
+    "practicas": [
+      "Asumir que todo código y variable enviada al navegador es público; solo incluir identificadores públicos diseñados para cliente (como claves publicables de analítica o client IDs OAuth).",
+      "Mover cualquier llamada que requiera credenciales privadas a un Backend-for-Frontend (BFF), serverless function o proxy autenticado.",
+      "Integrar herramientas de secret scanning (gitleaks, truffleHog) tanto en commits como sobre la carpeta `dist/` generada en CI.",
+      "Auditar archivos importados en código cliente para evitar filtrar objetos `process.env` completos."
+    ],
+    "ejemplo": "# Mal: prefijo público expone el secreto en el bundle de Vite\n# VITE_STRIPE_SECRET_KEY=sk_live_...\n\n# Bien: el frontend solo conoce su endpoint BFF; el secreto vive solo en backend\nVITE_API_BASE_URL=https://api.ejemplo.com",
+    "entrevista": "Ningún secreto privado debe residir en el frontend porque el bundle es completamente público; las credenciales sensibles deben quedarse en un backend o BFF que medie las llamadas."
+  },
+  "Sensitive data in frontend": {
+    "que": "Almacenamiento, manejo en memoria o exposición innecesaria en la interfaz cliente de datos personales (PII), financieros, tokens de larga duración o campos internos de negocio que el usuario o la vista no necesitan realmente.",
+    "para": "Minimizar la información sensible en el navegador reduce el impacto ante ataques XSS, extensiones maliciosas, equipos compartidos, cachés HTTP o capturas de sesión en herramientas de observabilidad.",
+    "como": "El problema ocurre cuando las APIs devuelven objetos de base de datos completos (over-fetching) y el frontend los guarda en estado global, Redux, `localStorage` o atributos del DOM ocultos por CSS, aunque solo muestre dos campos. También sucede cuando herramientas de analítica o replay de sesiones registran inputs sin enmascarar o cuando el navegador cachea respuestas privadas por falta de cabeceras `Cache-Control`. Cada copia persistente o expuesta amplía la ventana de exfiltración para scripts ejecutándose en el mismo origen.",
+    "practicas": [
+      "Aplicar minimización desde el backend mediante DTOs explícitos que devuelvan solo los campos estrictamente necesarios para la vista.",
+      "Configurar `Cache-Control: no-store` en respuestas de API y vistas con datos sensibles para evitar su persistencia en disco del navegador o proxies.",
+      "Enmascarar inputs sensibles y configurar selectores de privacidad en herramientas de session replay o telemetría.",
+      "Evitar guardar PII o tokens en almacenamiento persistente del navegador (`localStorage`, `IndexedDB`) y limpiar estado sensible al cerrar sesión."
+    ],
+    "ejemplo": "# Cabeceras HTTP para evitar caché persistente de respuestas sensibles\nCache-Control: no-store, max-age=0\nPragma: no-cache",
+    "entrevista": "La mejor forma de proteger datos sensibles en el frontend es no enviarlos innecesariamente desde la API, evitar persistirlos en el navegador y desactivar la caché HTTP con `Cache-Control: no-store`."
+  },
+  "Source maps expuestos": {
+    "que": "Archivos `.map` publicados en servidores o CDNs de producción que mapean el código JavaScript/CSS minificado y empaquetado de vuelta a su código fuente original legible, estructura de carpetas y comentarios.",
+    "para": "Aunque no constituyen por sí mismos una vulnerabilidad de ejecución, facilitan enormemente la ingeniería inversa, el descubrimiento de rutas ocultas, lógica de negocio y fallos de seguridad, además de exponer comentarios internos.",
+    "como": "Durante el build, bundlers como Vite, Webpack o esbuild generan archivos `.js.map` y añaden al final del bundle la directiva `//# sourceMappingURL=app.js.map`. Si el pipeline despliega todo el directorio de salida sin filtrar estos archivos ni restringir su acceso, cualquier navegador o cliente HTTP descarga el código fuente original casi íntegro. En producción segura, los source maps se suben de forma privada a plataformas de observabilidad (Sentry, Datadog) mediante tokens de build y se excluyen o bloquean en el servidor web público.",
+    "practicas": [
+      "Configurar el bundler en modo `hidden` (genera `.map` sin añadir `sourceMappingURL` al bundle) y subir los mapas únicamente a la herramienta de error tracking.",
+      "Eliminar archivos `*.map` del artefacto desplegado al CDN público o bloquear su acceso en el servidor web/WAF.",
+      "Verificar en CI/CD o con pruebas post-despliegue que `GET /assets/*.js.map` devuelva `404` o `403` en producción.",
+      "Recordar que ocultar source maps es endurecimiento y privacidad del código, no una defensa frente a secretos hardcodeados."
+    ],
+    "ejemplo": "// vite.config.ts: generar source maps ocultos para subir a observabilidad y borrarlos del deploy público\nexport default {\n  build: {\n    sourcemap: 'hidden'\n  }\n};",
+    "entrevista": "En producción los source maps deben generarse en modo `hidden` para subirlos de forma privada a la herramienta de observabilidad, pero nunca quedar accesibles públicamente en el CDN."
+  },
+  "Subresource Integrity (SRI)": {
+    "que": "Mecanismo de seguridad del navegador que permite verificar mediante un hash criptográfico que un recurso externo (`<script>` o `<link rel=\"stylesheet\">`) cargado desde un CDN o tercero no ha sido manipulado.",
+    "para": "Protege aplicaciones web contra el compromiso de CDNs públicos o ataques Man-in-the-Middle en proveedores externos que pudieran inyectar código malicioso en librerías estáticas cacheadas.",
+    "como": "El desarrollador añade el atributo `integrity` (por ejemplo `sha384-...`) y `crossorigin=\"anonymous\"` en la etiqueta `<script>` o `<link>` del HTML. Cuando el navegador descarga el recurso desde el CDN, calcula el digest SHA-256, SHA-384 o SHA-512 de los bytes recibidos antes de ejecutarlos o aplicarlos. Si el hash calculado no coincide exactamente con el declarado en `integrity`, el navegador rechaza el recurso y bloquea su ejecución.",
+    "practicas": [
+      "Usar SRI con algoritmos `sha384` o `sha512` en todo script o hoja de estilos cargada desde CDNs de terceros.",
+      "Incluir siempre `crossorigin=\"anonymous\"` para que la verificación CORS permita inspeccionar la integridad del recurso externo.",
+      "No usar SRI sobre URLs dinámicas cuyo contenido cambie sin versión fija (por ejemplo scripts de analítica que actualizan `latest`), ya que romperá la carga.",
+      "Complementar SRI con CSP (`require-sri-for` está obsoleta en muchos navegadores, pero restringir dominios en `script-src` sigue siendo obligatorio)."
+    ],
+    "ejemplo": "<script\n  src=\"https://cdn.ejemplo.com/lib/1.4.2/app.min.js\"\n  integrity=\"sha384-oqVuAfXRKap7fdgcCY5uykM6+R9GqQ8K/uxy9rx7HNQlGYl1kPzQho1wx4JwY8w\"\n  crossorigin=\"anonymous\"></script>",
+    "entrevista": "SRI garantiza que un script o CSS servido desde un CDN externo coincide exactamente con el hash esperado antes de ejecutarse, mitigando compromisos del CDN."
+  },
+  "Supply chain frontend": {
+    "que": "Conjunto de riesgos y controles de seguridad sobre todo el ciclo de vida de obtención, construcción, empaquetado y carga de código externo en aplicaciones frontend: paquetes npm, herramientas de build, acciones de CI y scripts de terceros.",
+    "para": "Aborda uno de los vectores de compromiso más rentables en AppSec moderno, donde un atacante compromete un eslabón externo confiable para ejecutar código en pipelines de build o directamente en el navegador de miles de usuarios.",
+    "como": "La cadena abarca dos planos: en tiempo de construcción (gestor de paquetes, lockfile, registros, plugins de bundler y runners CI) y en tiempo de ejecución (CDNs y tags de marketing/analítica). Un fallo en cualquier eslabón —como un paquete secuestrado, dependency confusion o un script externo sin SRI— introduce código arbitrario bajo la confianza del propio origen. La defensa requiere verificación criptográfica de artefactos (`lockfile`, SRI), aislamiento de builds (`--ignore-scripts`, permisos mínimos en CI) y control estricto de ejecución en el navegador (CSP).",
+    "practicas": [
+      "Asegurar el plano de build con lockfiles versionados, `npm ci`, `--ignore-scripts` y tokens de CI con permisos mínimos y expiración corta.",
+      "Asegurar el plano de ejecución con SRI para recursos estáticos externos, CSP estricta y aislamiento mediante iframes sandboxed cuando proceda.",
+      "Generar SBOM (Software Bill of Materials) en cada release para responder con rapidez ante nuevas vulnerabilidades críticas.",
+      "Evaluar nuevos paquetes antes de adoptarlos: mantenedores activos, descargas legítimas, ausencia de scripts de instalación opacos."
+    ],
+    "ejemplo": "# Flujo mínimo de endurecimiento de build en CI\nnpm ci --ignore-scripts\nnpm audit --omit=dev --audit-level=high\nnpx @cyclonedx/cyclonedx-npm --output-file sbom.json",
+    "entrevista": "La seguridad de la supply chain frontend se divide en proteger el entorno de build —con lockfiles, `npm ci` e `--ignore-scripts`— y proteger el runtime del navegador mediante SRI y una CSP estricta."
+  },
+  "Tabnabbing": {
+    "que": "Ataque de phishing por manipulación de contexto en el que una página abierta en una nueva pestaña (`target=\"_blank\"`) utiliza la referencia `window.opener` para redirigir silenciosamente la pestaña original hacia un sitio falso.",
+    "para": "Proteger los enlaces salientes evita que, mientras el usuario está distraído leyendo la pestaña recién abierta, la pestaña de la aplicación legítima sea reemplazada por una copia fraudulenta de login para robar credenciales.",
+    "como": "Históricamente, al abrir un enlace con `target=\"_blank\"` o `window.open()`, la nueva ventana heredaba una referencia parcial a `window.opener`, permitiendo modificar `window.opener.location` incluso entre orígenes distintos. Aunque los navegadores modernos aplican implícitamente comportamiento `noopener` en etiquetas `<a>` con `target=\"_blank\"`, la apertura programática mediante `window.open()` o navegadores antiguos puede seguir exponiendo el objeto `opener`. Añadir `rel=\"noopener noreferrer\"` (o el parámetro `'noopener'` en `window.open`) rompe ese vínculo dejando `window.opener` en `null`.",
+    "practicas": [
+      "Incluir `rel=\"noopener noreferrer\"` en todo enlace `<a>` con `target=\"_blank\"` para compatibilidad completa y supresión de `Referer`.",
+      "Pasar `'noopener,noreferrer'` como tercer argumento cuando se use `window.open(url, '_blank', 'noopener,noreferrer')`.",
+      "Reforzar globalmente con la cabecera `Cross-Origin-Opener-Policy: same-origin` para aislar grupos de navegación entre orígenes.",
+      "Aplicar reglas de linter (como `react/jsx-no-target-blank`) para detectar olvidos en revisión de código."
+    ],
+    "ejemplo": "<!-- Enlace seguro en HTML -->\n<a href=\"https://externo.ejemplo.com\" target=\"_blank\" rel=\"noopener noreferrer\">Abrir recurso</a>\n\n<script>\n  // Apertura programática segura\n  window.open('https://externo.ejemplo.com', '_blank', 'noopener,noreferrer');\n</script>",
+    "entrevista": "El tabnabbing explota `window.opener` para secuestrar la pestaña de origen desde enlaces externos; se mitiga con `rel=\"noopener noreferrer\"`, el flag `noopener` en `window.open` y cabeceras COOP."
+  },
+  "Third-party scripts": {
+    "que": "Archivos JavaScript alojados y mantenidos por proveedores externos (analítica, mapas, chatbots, pagos, publicidad o tag managers) que se cargan directamente en el contexto de ejecución de la aplicación.",
+    "para": "Gestionarlos de forma segura es crítico porque cualquier script cargado en el documento principal comparte exactamente el mismo acceso al DOM, cookies no-`HttpOnly`, `localStorage` y llamadas de red que el código propio.",
+    "como": "Al incluir un `<script src=\"https://tercero.ejemplo/sdk.js\">`, el navegador descarga y ejecuta ese código dentro del origen de la aplicación anfitriona (salvo que se aísle en un `<iframe>` de otro origen). Si el proveedor sufre una brecha o su tag manager permite inyecciones, el script externo puede leer formularios de pago o manipular la sesión del usuario. Las defensas combinan reducir scripts directos, exigir SRI cuando la versión es fija, aislar widgets en iframes `sandbox` y restringir orígenes y capacidades con CSP y `Permissions-Policy`.",
+    "practicas": [
+      "Aislar widgets no confiables o de menor confianza dentro de un `<iframe>` de dominio separado con atributo `sandbox` mínimo.",
+      "Aplicar CSP estricta manteniendo una lista blanca controlada de hosts externos y evitar proveedores que exijan `'unsafe-inline'` o `'unsafe-eval'`.",
+      "Mantener inventario formal de scripts de terceros con dueño de negocio, revisión periódica y plan de desconexión rápida.",
+      "Usar SRI cuando los scripts sean versiones estáticas inmutables y considerar Proxies/Gateways o Web Workers (ej. Partytown) para reducir privilegios."
+    ],
+    "ejemplo": "<!-- Aislamiento de un widget externo mediante iframe con sandbox mínimo -->\n<iframe\n  src=\"https://widget.tercero.ejemplo/embed\"\n  sandbox=\"allow-scripts allow-same-origin\"\n  referrerpolicy=\"no-referrer\">\n</iframe>",
+    "entrevista": "Un script de terceros cargado en tu página tiene los mismos privilegios que tu propio JavaScript; por eso hay que inventariarlos, limitarlos con CSP/SRI o aislarlos en iframes con `sandbox`."
+  },
+  "Trusted Types": {
+    "que": "API de seguridad del navegador y directiva de CSP (`require-trusted-types-for 'script'`) que bloquea la asignación de cadenas de texto planas a sinks peligrosos del DOM (como `innerHTML`, `eval` o `script.src`), exigiendo objetos tipados creados por políticas auditadas.",
+    "para": "Elimina clases enteras de XSS basado en DOM de forma estructural en aplicaciones grandes, trasladando la revisión de seguridad desde cientos de call sites dispersos hacia unas pocas políticas centralizadas.",
+    "como": "Al activar `Content-Security-Policy: require-trusted-types-for 'script'`, el navegador rechaza con un `TypeError` cualquier cadena (`string`) pasada directamente a sinks de inyección DOM. Para escribir en esos sinks, la aplicación debe invocar una política creada mediante `trustedTypes.createPolicy('nombre', { createHTML, createScriptURL })` que sanitice o valide la entrada y devuelva un objeto `TrustedHTML`, `TrustedScript` o `TrustedScriptURL`. La directiva `trusted-types` en CSP permite restringir incluso qué nombres de políticas pueden instanciarse.",
+    "practicas": [
+      "Desplegar primero con `Content-Security-Policy-Report-Only` para descubrir todos los sinks existentes sin romper la aplicación en producción.",
+      "Limitar el número de políticas permitidas usando la directiva `trusted-types mi-politica-dompurify;` para impedir políticas permisivas ad hoc.",
+      "Integrar la política única directamente con DOMPurify y con los mecanismos nativos del framework (Angular o React con soporte compatible).",
+      "Comparación: DOMPurify limpia contenido puntual; Trusted Types obliga a nivel de navegador a que nada llegue al sink sin haber pasado por la política."
+    ],
+    "ejemplo": "# Cabecera CSP exigiendo Trusted Types\nContent-Security-Policy: require-trusted-types-for 'script'; trusted-types app-sanitizer;\n\n// Política centralizada en JS\nconst policy = trustedTypes.createPolicy('app-sanitizer', {\n  createHTML: (dirty) => DOMPurify.sanitize(dirty, { RETURN_TRUSTED_TYPE: true })\n});",
+    "entrevista": "Trusted Types convierte la prevención de DOM XSS en una invariante aplicada por el navegador: los sinks peligrosos dejan de aceptar strings crudos y solo aceptan objetos producidos por políticas sanitizadoras auditadas."
+  },
+  "Typosquatting": {
+    "que": "Técnica de ataque a la cadena de suministro en la que se publican paquetes maliciosos en registros públicos (como npm) con nombres muy parecidos a librerías populares, aprovechando errores tipográficos o confusiones en el nombre.",
+    "para": "Entenderlo ayuda a proteger estaciones de trabajo y pipelines CI frente a instalaciones accidentales que ejecutan código no autorizado al momento de instalar o importar la librería equivocada.",
+    "como": "Un atacante registra variaciones comunes como permutación de letras (`expresss`), omisión de guiones (`crossenv` frente a `cross-env`) o intercambio de scopes. Cuando un desarrollador teclea manualmente `npm install` sin verificar o copia instrucciones no contrastadas, el gestor descarga el paquete homógrafo y ejecuta sus scripts de instalación (`postinstall`). A partir de ahí, el paquete puede leer variables de entorno locales (tokens npm, claves cloud) o insertar código en el build.",
+    "practicas": [
+      "Verificar siempre en el registro oficial descargas semanales, repositorio fuente enlazado, mantenedores y fecha de publicación antes de instalar un paquete nuevo.",
+      "Usar `npm ci` en pipelines y revisiones obligatorias de cambios en `package.json` y lockfiles durante pull requests.",
+      "Emplear gestores o proxies privados con reglas de cuarentena, lista blanca de paquetes aprobados o alertas por paquetes recién creados.",
+      "Usar `--ignore-scripts` por defecto y evitar copiar comandos de instalación sin inspeccionar el nombre exacto."
+    ],
+    "ejemplo": "# Verificar metadatos de un paquete antes de instalarlo\nnpm view express repository.url maintainers time.created\n\n# Instalar sin ejecutar lifecycle scripts\nnpm install --ignore-scripts express",
+    "entrevista": "El typosquatting explota errores humanos al escribir nombres de paquetes para introducir malware en build o runtime; se previene revisando metadatos antes de añadir dependencias, bloqueando lifecycle scripts y auditando los diffs de `package.json`."
+  },
+  "X-Frame-Options": {
+    "que": "Cabecera de respuesta HTTP clásica que indica al navegador si un documento tiene permiso para renderizarse dentro de un `<frame>`, `<iframe>`, `<embed>` o `<object>`.",
+    "para": "Previene ataques de clickjacking, en los que una página atacante superpone un iframe invisible de la aplicación víctima para engañar al usuario y hacerle pulsar botones sensibles sin saberlo.",
+    "como": "Cuando el servidor incluye `X-Frame-Options: DENY`, el navegador bloquea el renderizado de la página en cualquier marco, incluso del mismo origen. Con `X-Frame-Options: SAMEORIGIN`, solo permite embeberla si el documento padre comparte exactamente el mismo origen. Su directiva heredada `ALLOW-FROM` carece de soporte consistente y ha sido reemplazada por la directiva `frame-ancestors` de Content Security Policy.",
+    "practicas": [
+      "Usar `X-Frame-Options: DENY` (o `SAMEORIGIN` si la aplicación necesita iframes internos) como respaldo para navegadores heredados.",
+      "Combinarla siempre con `Content-Security-Policy: frame-ancestors ...`, que es el estándar actual y soporta múltiples orígenes.",
+      "No depender de scripts tipo frame-busting en JavaScript, ya que pueden eludirse con el atributo `sandbox` en el iframe.",
+      "Comparación: `X-Frame-Options` solo soporta `DENY` y `SAMEORIGIN` de forma fiable; `frame-ancestors` permite granularidad por lista de orígenes."
+    ],
+    "ejemplo": "# Cabecera recomendada en respuestas HTML (respaldo junto a CSP)\nX-Frame-Options: DENY\nContent-Security-Policy: frame-ancestors 'none'",
+    "entrevista": "X-Frame-Options protege contra clickjacking bloqueando el embebido en iframes mediante `DENY` o `SAMEORIGIN`; hoy se mantiene como respaldo junto a `CSP frame-ancestors`."
+  },
+  "frame-ancestors": {
+    "que": "Directiva de Content Security Policy (CSP Nivel 2+) que especifica qué orígenes padre tienen autorización para embeber el documento actual dentro de un `<iframe>`, `<frame>`, `<object>` o `<embed>`.",
+    "para": "Es la defensa principal y moderna contra clickjacking e interfaz superpuesta (UI redressing), superando las limitaciones de `X-Frame-Options` cuando una aplicación debe ser embebida solo por socios específicos.",
+    "como": "El servidor envía la directiva dentro de la cabecera `Content-Security-Policy` (por ejemplo `frame-ancestors 'self' https://portal.ejemplo.com`). Al intentar cargar la URL en un marco, el navegador verifica toda la cadena de ancestros —no solo el padre inmediato— contra la lista permitida. Si algún documento ancestro en la jerarquía incumple la regla, el navegador bloquea la carga del contenido en el frame y emite un reporte de violación CSP si está configurado.",
+    "practicas": [
+      "Usar `frame-ancestors 'none'` en toda página o flujo sensible (login, pagos, ajustes de cuenta) que nunca deba abrirse embebido.",
+      "Recordar que `frame-ancestors` no hereda de `default-src` y debe enviarse por cabecera HTTP (se ignora dentro de etiquetas `<meta http-equiv>`).",
+      "Mantener `X-Frame-Options: DENY` o `SAMEORIGIN` en paralelo cuando se requiera compatibilidad con clientes muy antiguos.",
+      "Asegurar que el endpoint de redirecciones o páginas de error también incluyan la cabecera para no dejar rutas embebibles."
+    ],
+    "ejemplo": "# Bloquear todo embebido\nContent-Security-Policy: default-src 'self'; frame-ancestors 'none'\n\n# Permitir embebido únicamente desde el origen propio y un socio concreto\nContent-Security-Policy: frame-ancestors 'self' https://partner.ejemplo.com",
+    "entrevista": "`frame-ancestors` en CSP es la defensa estándar contra clickjacking porque valida toda la jerarquía de ventanas padre y permite listas blancas flexibles de orígenes, a diferencia de `X-Frame-Options`."
+  },
+  "localStorage security": {
+    "que": "Modelo de riesgo y buenas prácticas asociadas al uso de la API `window.localStorage` (y `sessionStorage`) para guardar estado en el navegador del usuario.",
+    "para": "Define qué información puede almacenarse en Web Storage y qué nunca debe guardarse allí, evitando el robo masivo de sesiones o secretos ante cualquier fallo XSS o script de terceros.",
+    "como": "`localStorage` ofrece un almacenamiento clave-valor persistente por origen (compartido entre pestañas) sin fecha de caducidad automática y accesible de forma síncrona por cualquier JavaScript que se ejecute en el mismo origen. A diferencia de las cookies con flag `HttpOnly`, `localStorage` no tiene aislamiento frente a código JS: si un XSS o dependencia comprometida se ejecuta en la página, puede leer todas las claves y exfiltrarlas en una sola petición. Por el contrario, al no enviarse automáticamente en cada petición HTTP, no sufre CSRF por sí mismo.",
+    "practicas": [
+      "No almacenar tokens de sesión, refresh tokens, JWTs de autorización ni PII sensible en `localStorage`; preferir cookies `HttpOnly`, `Secure` y `SameSite` gestionadas por backend o BFF.",
+      "Reservar `localStorage` exclusivamente para preferencias no sensibles de UI (tema oscuro, idioma, filtros locales).",
+      "Si una arquitectura SPA heredada usa tokens en memoria/storage, priorizar memoria volátil en JS o patrón BFF y aplicar CSP estricta.",
+      "Comparación clave: Cookie `HttpOnly` protege frente a lectura por XSS (requiere protección CSRF); `localStorage` evita CSRF automático pero queda totalmente expuesto ante XSS."
+    ],
+    "ejemplo": "// Permitido: preferencias no sensibles\nlocalStorage.setItem('ui.theme', 'dark');\n\n// Evitar: guardar credenciales o tokens de acceso en Web Storage\n// localStorage.setItem('access_token', jwt);",
+    "entrevista": "Nunca se deben guardar tokens de sesión ni datos sensibles en `localStorage` porque cualquier script en el origen —incluido un XSS o librería de terceros— puede leerlos; las sesiones deben ir en cookies `HttpOnly`, `Secure` y `SameSite`."
+  },
+  "npm audit": {
+    "que": "Comando nativo del cliente npm que analiza el árbol de dependencias declarado en `package.json` y `package-lock.json` en busca de vulnerabilidades conocidas reportadas en el registro de avisos de seguridad.",
+    "para": "Proporciona una primera capa rápida y sin dependencias externas de Software Composition Analysis (SCA) para detectar paquetes vulnerables en proyectos Node.js y frontend tanto en local como en CI.",
+    "como": "Al ejecutarse, `npm audit` envía un grafo resumido con los nombres y versiones resueltas del lockfile al endpoint de auditoría del registro npm configurado. El registro responde con los avisos aplicables (severidad, rango vulnerable, ruta de dependencia afectada y si existe versión parcheada). El comando devuelve un código de salida distinto de cero cuando encuentra hallazgos por encima del umbral configurado (`--audit-level`), permitiendo detener un pipeline.",
+    "practicas": [
+      "Usar `npm audit --omit=dev --audit-level=high` en CI para centrar el bloqueo en dependencias que realmente llegan a runtime y reducir ruido de tooling.",
+      "Complementar `npm audit` con herramientas SCA más completas (Snyk, Trivy, OSV-Scanner, Dependabot) que cubren mejor alcance de explotación, PRs automáticos y múltiples ecosistemas.",
+      "No ejecutar `npm audit fix --force` sin pruebas, ya que puede saltar versiones mayores y romper la aplicación.",
+      "Usar `npm explain <paquete>` o `npm ls <paquete>` para entender qué dependencia directa arrastra la versión vulnerable."
+    ],
+    "ejemplo": "# Auditar solo dependencias de producción y fallar desde severidad alta\nnpm audit --omit=dev --audit-level=high\n\n# Exportar reporte JSON para procesamiento en CI\nnpm audit --json > audit-report.json",
+    "entrevista": "`npm audit` es una verificación SCA rápida útil como puerta básica en CI usando `--omit=dev` y `--audit-level`, aunque en producción conviene complementarla con análisis de alcanzabilidad y scanners como OSV, Trivy o Snyk."
+  }
+}

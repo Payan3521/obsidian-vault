@@ -1,0 +1,392 @@
+{
+  "Agregación de logs": {
+    "que": "Centralización automatizada de registros heterogéneos procedentes de servidores, contenedores, aplicaciones, firewalls y servicios cloud hacia un repositorio analítico unificado. Normaliza formatos, marcas de tiempo y esquemas (como ECS u OCSF) para habilitar búsquedas y correlaciones transversales.",
+    "para": "Evita que las evidencias se pierdan cuando mueren instancias efímeras o pods autoscalables e impide que un atacante elimine sus rastros locales tras comprometer un host. Se utiliza como base operativa en monitoreo continuo, respuesta a incidentes y threat hunting para reconstruir la línea temporal completa desde un único punto.",
+    "como": "Un agente recolector ligero (Fluent Bit, Vector, Filebeat o rsyslog) lee ficheros locales, journald o stdout y mantiene un buffer en disco para tolerar caídas temporales de red. Los eventos se transmiten cifrados mediante TLS (syslog sobre TLS según RFC 5425, Beats, HTTP/2 o gRPC) hacia nodos recolectores o un bus distribuido como Apache Kafka que absorbe picos de ingesta. El pipeline de procesamiento parsea los mensajes (JSON o Grok), enriquece con metadatos de contexto (región, cuenta, pod), convierte timestamps a UTC en formato ISO 8601 y los indexa en el almacenamiento analítico o SIEM.",
+    "practicas": [
+      "Estandariza todas las marcas de tiempo a UTC en ISO 8601 y sincroniza relojes con NTP o Chrony antes de correlacionar eventos.",
+      "Desacopla la ingesta del almacenamiento analítico mediante una cola intermedia (Kafka o Kinesis) para evitar pérdida de telemetría durante reinicios del SIEM.",
+      "Agregación centralizada vs. logs locales: los logs locales desaparecen al destruir contenedores y quedan expuestos a borrado si el atacante obtiene acceso root.",
+      "Error típico: enviar stack traces multilínea de Java o Python sin regla de agrupación, fragmentando un único error en decenas de registros inconexos."
+    ],
+    "ejemplo": "[sources.app_logs]\ntype = \"file\"\ninclude = [\"/var/log/app/*.log\"]\nmultiline.mode = \"halt_before\"\nmultiline.condition_pattern = \"^\\\\{\"\n[sinks.siem_tls]\ntype = \"http\"\ninputs = [\"app_logs\"]\nuri = \"https://ingest.secops.internal:8443/logs\"\ntls.verify_certificate = true",
+    "entrevista": "La agregación centralizada con transporte cifrado, buffers en disco y normalización a UTC convierte eventos efímeros en una línea temporal inmutable y consultable a escala."
+  },
+  "Alert fatigue": {
+    "que": "Desgaste cognitivo y operativo que sufren los analistas del SOC ante un volumen excesivo de notificaciones repetitivas, ambiguas o con alta tasa de falsos positivos. Provoca insensibilización frente a incidentes reales y degrada drásticamente el tiempo medio de detección (MTTD) y respuesta (MTTR).",
+    "para": "Diagnostica fallos en la estrategia de detección cuando las colas del SOC crecen sin control y los analistas cierran alertas en bloque sin investigarlas a fondo. Es crítico en entornos con múltiples sensores (SIEM, EDR, WAF, CSPM) conectados sin curación, contexto ni consolidación previa.",
+    "como": "Aparece cuando reglas basadas en umbrales rígidos o indicadores aislados disparan una notificación independiente por cada evento sin agrupar ni enriquecer. El analista se ve obligado a pivotar manualmente entre inventarios, CMDB y logs crudos para descartar actividad benigna como escaneos autorizados o tareas de CI/CD. Al superar la capacidad del turno, las alertas verdaderas (true positives) quedan enterradas bajo el ruido. Se mitiga midiendo la tasa de falsos positivos por regla, deduplicando por entidad y ventana temporal, migrando a Risk-Based Alerting (RBA) y retirando reglas sin playbook accionable.",
+    "practicas": [
+      "Exige que toda alerta enviada a un analista sea accionable; si no tiene un procedimiento claro de triaje y respuesta, conviértela en métrica de dashboard.",
+      "Implementa Risk-Based Alerting (RBA) acumulando puntuaciones de múltiples señales de baja confianza por entidad antes de abrir un incidente.",
+      "Audita semanalmente la ratio True Positive / False Positive por regla y desactiva o refina automáticamente las que superen el umbral de ruido.",
+      "Error típico: habilitar en bloque cientos de reglas predeterminadas de un SIEM o EDR recién desplegado sin una fase previa de calibración en producción."
+    ],
+    "ejemplo": "index=risk\n| stats sum(risk_score) as total_risk values(rule_name) as rules dc(rule_name) as distinct_rules by risk_object\n| where total_risk >= 80 AND distinct_rules >= 3\n| sort - total_risk",
+    "entrevista": "La fatiga de alertas no se soluciona sumando más analistas al turno, sino elevando la relación señal-ruido mediante deduplicación, contexto de activo y alertas basadas en riesgo."
+  },
+  "Alerting de seguridad": {
+    "que": "Mecanismo automatizado en plataformas de monitoreo y SIEM que evalúa de manera continua telemetría e indicadores de amenaza para notificar o escalar incidentes potenciales en tiempo casi real. Convierte consultas de detección en eventos priorizados con severidad, contexto y responsables definidos.",
+    "para": "Minimiza la ventana entre el compromiso inicial y la contención avisando al equipo adecuado (SOC, AppSec on-call o propietario del servicio) cuando surge una actividad maliciosa o anómala. Se emplea ante accesos privilegiados sospechosos, exfiltración, ejecución de cargas maliciosas o cambios críticos en IAM.",
+    "como": "Un motor de detección ejecuta reglas programadas (scheduled queries cada N minutos) o evaluación en streaming sobre flujos de eventos normalizados. Al cumplirse la condición (coincidencia de patrón, anomalía estadística o secuencia temporal), el motor aplica throttling (ventana de supresión) y agrupación por clave como source.ip o user.id para evitar tormentas de avisos. Posteriormente enriquece la alerta con criticidad del activo, enlaces al runbook y técnica MITRE ATT&CK, y la despacha vía webhooks, API REST, PagerDuty, Slack o hacia una plataforma SOAR.",
+    "practicas": [
+      "Configura agrupación por entidad y ventanas de supresión (throttling) para consolidar ráfagas del mismo incidente en una sola alerta.",
+      "Incluye siempre en el payload enlaces directos a la query de investigación, el runbook de triaje y el propietario técnico del activo.",
+      "Alerting de seguridad vs. logging informativo: alerta únicamente sobre condiciones que requieran intervención humana o automatizada inmediata.",
+      "Error típico: volcar todas las alertas a un canal general de chat sin enrutamiento por severidad ni seguimiento de confirmación (ACK)."
+    ],
+    "ejemplo": "rule:\n  name: \"IAM Root Account Console Login\"\n  interval: \"1m\"\n  throttle: \"15m\"\n  group_by: [\"aws.cloudtrail.user_identity.arn\"]\n  severity: \"critical\"\n  actions:\n    - webhook: \"https://soar.internal/api/v1/ingest\"\n    - pagerduty: \"secops-primary\"",
+    "entrevista": "Un alerting de seguridad maduro entrega la señal correcta, agrupada para evitar ruido y enriquecida con contexto del activo y runbook, al equipo responsable en el menor tiempo posible."
+  },
+  "Audit logging": {
+    "que": "Registro sistemático, atribuible e inmutable de acciones administrativas, cambios de configuración, accesos a datos sensibles y decisiones de autorización en sistemas y aplicaciones. Documenta con precisión quién ejecutó qué operación, cuándo, desde dónde, sobre qué recurso y con qué resultado.",
+    "para": "Garantiza la trazabilidad forense, la rendición de cuentas (accountability) y el cumplimiento de marcos normativos como PCI-DSS, SOC 2, HIPAA, ISO 27001 o GDPR. Se utiliza para auditar cambios de privilegios, accesos a secretos, modificaciones en infraestructura y reconstruir acciones administrativas tras un incidente.",
+    "como": "Los puntos de control críticos (proveedores IAM, API gateways, motores de bases de datos, sistemas de archivos y paneles administrativos) interceptan cada operación tras autenticar al principal y emiten un registro antes o inmediatamente después de aplicarla. El evento captura identidad efectiva (y actor original si hubo suplantación o AssumeRole), verbo de acción, recurso objetivo, estado previo y posterior (diff), IP cliente y resultado (ALLOW/DENY). Estos registros se envían por un canal independiente hacia almacenamiento WORM (Write-Once-Read-Many) aislado de los administradores operativos.",
+    "practicas": [
+      "Registra tanto al actor original como a la identidad asumida en flujos de sudo, impersonation o STS AssumeRole para mantener la cadena de atribución.",
+      "Aísla los audit logs de los logs operativos y de debug en permisos IAM, índices dedicados y políticas de retención más prolongadas.",
+      "Audit logging vs. application logging: el audit log responde a trazabilidad legal y de cumplimiento ('quién cambió qué') y nunca debe descartarse por muestreo.",
+      "Error típico: registrar únicamente operaciones exitosas e ignorar intentos fallidos de acceso o cambios de permisos denegados."
+    ],
+    "ejemplo": "{\n  \"timestamp\": \"2026-11-25T05:12:04Z\",\n  \"event_type\": \"iam.policy.updated\",\n  \"actor\": {\"id\": \"u-492\", \"assumed_by\": \"admin-ci\"},\n  \"target\": \"arn:aws:iam::123456789012:role/prod-db\",\n  \"source_ip\": \"198.51.100.42\",\n  \"diff\": {\"removed\": [\"s3:GetObject\"], \"added\": [\"s3:*\"]},\n  \"outcome\": \"ALLOW\",\n  \"request_id\": \"req-9f81c2b4\"\n}",
+    "entrevista": "El audit logging convierte cada cambio privilegiado y acceso a datos sensibles en evidencia atribuible e inmutable imprescindible para forense y auditoría regulatoria."
+  },
+  "Behavioral analytics": {
+    "que": "Enfoque de detección que modela mediante estadística y aprendizaje automático el comportamiento habitual de entidades (usuarios, hosts, cuentas de servicio, APIs) para identificar desviaciones anómalas. A diferencia de las firmas estáticas, detecta abuso de credenciales válidas, amenazas internas y técnicas adaptativas.",
+    "para": "Descubrir intrusiones donde no intervienen binarios maliciosos conocidos ni exploits públicos, como compromiso de cuentas legítimas (ATO), insiders maliciosos o ataques Living off the Land (LotL). Se usa para cerrar puntos ciegos cuando las reglas deterministas basadas en IoCs resultan insuficientes.",
+    "como": "El motor recopila telemetría histórica (horarios de inicio de sesión, procesos ejecutados, volúmenes de transferencia, ASNs de origen, llamadas API) durante un periodo de entrenamiento de 14 a 30 días. Construye perfiles dinámicos por entidad y por grupo de pares (peer group) aplicando series temporales, modelos de densidad, Isolation Forest o cadenas de Markov para estimar la probabilidad de eventos nuevos. Cuando una acción se desvía significativamente de la línea base —como un microservicio de facturación transfiriendo 20 veces su volumen habitual hacia un ASN externo— incrementa la puntuación de riesgo de la entidad hasta superar el umbral de alerta.",
+    "practicas": [
+      "Combina la línea base individual con análisis de grupo de pares (comparar contra usuarios del mismo rol o servicios equivalentes) para reducir falsos positivos.",
+      "Alimenta el modelo con contexto organizacional (despliegues, cambios de departamento, viajes) para distinguir cambios legítimos de anomalías hostiles.",
+      "Behavioral analytics vs. reglas por firma: las firmas ofrecen alta precisión en amenazas conocidas; el análisis conductual cubre ataques sin firma pero exige fase de calibración.",
+      "Error típico: tratar una única anomalía estadística como incidente crítico aislado en vez de ponderarla junto a otras señales de riesgo."
+    ],
+    "ejemplo": "SigninLogs\n| where TimeGenerated > ago(30d)\n| summarize baseline_ips = makeset(IPAddress), p95_hour = percentile(hourofday(TimeGenerated), 95) by UserPrincipalName\n| join kind=inner (SigninLogs | where TimeGenerated > ago(1h)) on UserPrincipalName\n| where not(baseline_ips has IPAddress) and hourofday(TimeGenerated) > p95_hour",
+    "entrevista": "El análisis conductual detecta al atacante que opera con credenciales válidas contrastando su actividad actual frente a la línea base histórica de la entidad y su grupo de pares."
+  },
+  "Canary token": {
+    "que": "Señuelo digital ligero y rastreable —como una clave API falsa, URL oculta, documento, registro DNS o fila ficticia en base de datos— que dispara una alerta instantánea de alta fidelidad en cuanto es accedido o utilizado. Aplica principios de deception engineering con una tasa de falsos positivos cercana a cero.",
+    "para": "Detectar de manera temprana accesos no autorizados a repositorios, robo de credenciales en máquinas de desarrollo, fuga de documentos internos o lectura ilícita de bases de datos. Se siembra en archivos .env, configuraciones AWS ficticias, buckets señuelo o registros de clientes inexistentes.",
+    "como": "Se genera un artefacto único ligado a un identificador criptográfico y se ubica en un lugar donde ningún usuario ni flujo automatizado legítimo debe invocarlo. Cuando un atacante descubre y prueba el recurso —por ejemplo, resolviendo un subdominio DNS único, abriendo un enlace en un PDF o llamando a sts:GetCallerIdentity con una Access Key señuelo— la infraestructura receptora (servidor canary o CloudTrail) intercepta la petición. Ese evento registra IP origen, User-Agent, marca de tiempo e ID del token sembrado, disparando una notificación inmediata que revela exactamente qué repositorio o host fue vulnerado.",
+    "practicas": [
+      "Mantén un inventario seguro mapeando cada canary token con su ubicación exacta para identificar de inmediato el punto de compromiso al dispararse.",
+      "Asigna nombres realistas (como prod-legacy-readonly) pero con privilegios nulos o estrictamente monitorizados para no introducir riesgo real.",
+      "Canary token vs. honeypot: el canary token es pasivo, ligero y vive dentro de activos reales; el honeypot emula un sistema completo independiente.",
+      "Error típico: colocar URLs o credenciales canary en rutas escaneadas regularmente por herramientas internas de DLP, secret scanning o crawlers."
+    ],
+    "ejemplo": "# ~/.aws/credentials (seeded canary profile)\n[prod-backup-readonly]\naws_access_key_id = <ACCESS_KEY_ID_CANARIO>\naws_secret_access_key = <SECRET_ACCESS_KEY_CANARIO>\n# CloudTrail alert triggers on any sts:GetCallerIdentity using this KeyId",
+    "entrevista": "Un canary token ofrece detección de altísima fidelidad y coste casi nulo porque cualquier interacción con un recurso que nadie legítimo debe tocar confirma actividad sospechosa."
+  },
+  "Correlation ID - Request ID": {
+    "que": "Identificador único (habitualmente UUID v4, ULID o el Trace ID del estándar W3C Trace Context) asignado a una petición en el borde de entrada y propagado de forma transversal por todos los servicios, colas y consultas que participan en su ejecución. Permite reconstruir el rastro completo de una transacción distribuida.",
+    "para": "Rastrear de extremo a extremo una solicitud sospechosa, abuso de API o fallo de autorización en arquitecturas de microservicios y colas asíncronas donde miles de hilos concurren en paralelo. Resulta indispensable en análisis forense de aplicaciones para conectar el evento del WAF con la consulta SQL final.",
+    "como": "El API Gateway, reverse proxy o ingress controller inspecciona la cabecera entrante (por ejemplo X-Request-Id o traceparent); si falta o proviene de un cliente externo no confiable, genera un nuevo identificador criptográficamente aleatorio. Cada microservicio lee ese ID y lo guarda en el contexto de ejecución (MDC en Java, context.Context en Go, AsyncLocalStorage en Node.js), inyectándolo automáticamente en cada línea de log estructurado y en las cabeceras HTTP o atributos de mensajes salientes (Kafka, SQS). Buscando ese valor único en el SIEM se obtiene la secuencia cronológica íntegra de la petición.",
+    "practicas": [
+      "Regenera o valida estrictamente el Request ID en el perímetro externo para impedir que un atacante inyecte valores falsos o realice log forging.",
+      "Devuelve el Correlation ID en una cabecera de respuesta HTTP hacia el cliente para agilizar la investigación de incidentes reportados.",
+      "Adopta el estándar W3C Trace Context (traceparent) para unificar la trazabilidad de observabilidad OpenTelemetry con los logs de seguridad.",
+      "Error típico: perder la propagación del identificador al publicar eventos en colas asíncronas, tareas programadas o goroutines sin copiar el contexto."
+    ],
+    "ejemplo": "GET /api/v1/orders/42 HTTP/1.1\nX-Request-Id: 01JE2K8M9P4V7X9B2D3F5H6J7K\ntraceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01\n# Log downstream:\n{\"ts\":\"2026-11-25T05:10:00Z\",\"svc\":\"billing\",\"req_id\":\"01JE2K8M9P4V7X9B2D3F5H6J7K\",\"event\":\"authz.denied\"}",
+    "entrevista": "Generar un Correlation ID en el borde y propagarlo de forma obligatoria en cabeceras, colas y logs permite reconstruir en segundos cualquier cadena de explotación distribuida."
+  },
+  "Detection engineering": {
+    "que": "Disciplina de ingeniería aplicada al diseño, desarrollo, prueba, versionado y mantenimiento de analíticas y reglas de detección bajo el enfoque Detection-as-Code. Traslada prácticas del desarrollo de software (Git, CI/CD, revisión por pares, pruebas automatizadas) al ciclo de vida defensivo.",
+    "para": "Superar la creación artesanal de reglas ad-hoc directamente en la consola del SIEM, garantizando detecciones reproducibles, auditables, portables y alineadas con el modelo de amenazas real. Se utiliza en equipos Blue Team y Purple Team maduros para mantener cobertura medible frente a técnicas adversarias.",
+    "como": "El ciclo comienza con una hipótesis derivada de threat intelligence, incidentes previos o técnicas de MITRE ATT&CK, verificando primero la disponibilidad y calidad de la telemetría fuente (EDR, CloudTrail, DNS). El ingeniero escribe la detección en un formato declarativo portable (como Sigma) o código, añadiendo metadatos de severidad, falsos positivos conocidos y playbooks asociados. Un pipeline de CI/CD valida sintaxis, transpila la regla al lenguaje del SIEM destino (KQL, SPL, ES|QL), ejecuta pruebas unitarias con eventos sintéticos positivos/negativos y emulaciones (Atomic Red Team) antes de desplegarla vía GitOps y monitorizar su tasa de disparo.",
+    "practicas": [
+      "Gestiona todas las reglas en Git con Pull Requests obligatorias, revisión técnica y pruebas automatizadas que incluyan eventos benignos y maliciosos.",
+      "Valida primero que los campos y eventos requeridos lleguen completos desde producción; una regla perfecta sobre telemetría truncada nunca alertará.",
+      "Mapea cada detección a tácticas y técnicas de MITRE ATT&CK documentando explícitamente sus supuestos y formas conocidas de evasión.",
+      "Error típico: crear detecciones ancladas a valores literales efímeros (un hash o IP puntual) en lugar de detectar la mecánica invariante de la técnica."
+    ],
+    "ejemplo": "name: Detection-as-Code CI\non: [pull_request]\njobs:\n  validate:\n    runs-on: ubuntu-latest\n    steps:\n      - run: sigma check rules/**/*.yml\n      - run: sigma convert -t splunk -p sysmon rules/ -o dist/\n      - run: pytest tests/replay_attacks.py",
+    "entrevista": "Detection engineering aplica el rigor del desarrollo de software —control de versiones, CI/CD y pruebas contra ataques emulados— para construir detecciones precisas, portables y mantenibles."
+  },
+  "EDR": {
+    "que": "Endpoint Detection and Response es una tecnología basada en agente instalada en estaciones de trabajo y servidores que monitoriza continuamente la actividad del sistema operativo para detectar, investigar y contener amenazas avanzadas. Registra telemetría profunda de procesos, memoria, registro y conexiones de red.",
+    "para": "Detectar ataques sin archivos (fileless), ransomware, inyección de procesos, persistencia y movimiento lateral que evaden los antivirus basados en firmas estáticas. Además permite al SOC aislar hosts comprometidos de la red, detener procesos y extraer artefactos forenses de manera remota e inmediata.",
+    "como": "Un agente protegido ejecuta sensores a nivel de kernel (mediante callbacks de kernel, ETW y AMSI en Windows, eBPF/auditd en Linux o el framework EndpointSecurity en macOS) capturando árboles de procesos padre-hijo, asignaciones de memoria RWX, carga de librerías y sockets abiertos. Motores locales aplican reglas de comportamiento y modelos de aprendizaje automático para bloquear amenazas en milisegundos, mientras transmiten telemetría en streaming hacia una consola central en la nube. Desde allí el analista lanza búsquedas históricas de hunting o ejecuta comandos de respuesta en vivo (network containment, cuarentena y volcado forense).",
+    "practicas": [
+      "Activa la protección anti-tampering del agente protegida por tokens criptográficos para impedir que un administrador local comprometido lo desinstale.",
+      "Enruta las alertas críticas y telemetría de alto valor del EDR al SIEM, filtrando eventos locales extremadamente ruidosos para controlar costos de ingesta.",
+      "EDR vs. antivirus tradicional: el AV inspecciona archivos conocidos antes de ejecutarse; el EDR monitoriza comportamiento continuo en memoria y procesos y habilita contención remota.",
+      "Error típico: dejar el EDR indefinidamente en modo 'solo detección' en entornos productivos sin activar políticas de prevención ni protocolos de aislamiento."
+    ],
+    "ejemplo": "DeviceProcessEvents\n| where InitiatingProcessFileName in~ (\"winword.exe\", \"excel.exe\")\n| where FileName in~ (\"powershell.exe\", \"cmd.exe\", \"wscript.exe\")\n| where ProcessCommandLine has_any (\"-enc\", \"IEX\", \"DownloadString\")\n| project Timestamp, DeviceName, AccountName, ProcessCommandLine",
+    "entrevista": "El EDR proporciona visibilidad a nivel de kernel sobre procesos, memoria y red en el endpoint, permitiendo detectar ataques sin firma y aislar equipos comprometidos de forma remota en segundos."
+  },
+  "Elastic Security": {
+    "que": "Plataforma unificada de SIEM y protección de endpoints y nube construida sobre el Elastic Stack (Elasticsearch, Kibana y Elastic Agent). Integra motor de búsqueda distribuida en tiempo real, detección secuencial en EQL, gestión de casos y capacidades nativas de EDR bajo el esquema Elastic Common Schema (ECS).",
+    "para": "Centralizar logs masivos de infraestructura y aplicaciones, ejecutar threat hunting interactivo de baja latencia y unificar alertas de red, nube y endpoints en una única consola. Es ampliamente elegida por equipos que buscan esquemas abiertos, arquitectura escalable horizontalmente y flexibilidad de despliegue.",
+    "como": "Elastic Agent (orquestado centralmente mediante Fleet) recolecta logs de nube, red y telemetría de kernel (Elastic Defend) y los envía cifrados por HTTPS/TLS o vía Logstash hacia los nodos de Elasticsearch. Los pipelines de ingestión normalizan los campos al estándar ECS y los distribuyen en shards aplicando Index Lifecycle Management (ILM) para migrar datos antiguos desde nodos Hot a capas Warm, Cold y Frozen. En Kibana, el motor de detección ejecuta reglas programadas en KQL, EQL (Event Query Language) o ES|QL, aplica anomalías de Machine Learning y abre alertas y casos asignables al flujo del SOC.",
+    "practicas": [
+      "Alinea todas las integraciones personalizadas con Elastic Common Schema (ECS) para aprovechar directamente las reglas de detección preconstruidas.",
+      "Configura políticas ILM y snapshots en almacenamiento de objetos desde el inicio para equilibrar retención forense prolongada y costos de nodos rápidos.",
+      "Elastic Security vs. Splunk: Elastic destaca por búsqueda indexada ECS, sintaxis EQL para secuencias y costo por infraestructura; Splunk sobresale por SPL schema-on-read y madurez enterprise.",
+      "Error típico: habilitar mapeo dinámico ilimitado en índices heterogéneos provocando una explosión de campos (mapping explosion) que degrada el clúster."
+    ],
+    "ejemplo": "sequence by host.id with maxspan=2m\n  [process where event.type == \"start\" and\n    process.name == \"powershell.exe\" and\n    process.args : \"*Invoke-WebRequest*\"]\n  [network where event.type == \"start\" and\n    destination.port in (4444, 8443)]",
+    "entrevista": "Elastic Security combina la velocidad de indexación distribuida de Elasticsearch y el estándar ECS con detección secuencial en EQL y protección de endpoints gestionada por Fleet."
+  },
+  "Enmascaramiento de PII en logs": {
+    "que": "Técnica de sanitización que redacta, enmascara parcialmente o aplica hashing con clave sobre Información Personal Identificable (PII) y secretos (tarjetas, DNI, correos, contraseñas, tokens Bearer) antes de persistir o indexar los registros. Preserva la utilidad operativa y forense del log sin exponer datos regulados.",
+    "para": "Evitar que la plataforma de logs y el SIEM se conviertan en una brecha secundaria de datos sensibles o credenciales activas, reduciendo el alcance de auditorías PCI-DSS, GDPR o HIPAA. Se implementa tanto en las bibliotecas de logging de las aplicaciones como en los recolectores intermedios.",
+    "como": "Opera en dos líneas de defensa: primero en la aplicación, mediante procesadores o serializadores (en structlog, Pino, Logback o Zap) que redactan campos por nombre (password, authorization, ssn) antes de serializar el evento; segundo en el colector (Vector, Fluent Bit u OpenTelemetry Collector), aplicando expresiones regulares y reglas DLP sobre el flujo entrante. Según el requerimiento analítico, el valor sensible se reemplaza por una cadena fija ([REDACTED]), se trunca dejando los últimos dígitos (****-1234) o se sustituye por un HMAC-SHA256 con clave secreta para permitir correlacionar un mismo identificador sin almacenarlo en claro.",
+    "practicas": [
+      "Aplica el redactado en el origen dentro del logger de la aplicación para que el secreto nunca viaje por red ni toque buffers temporales en disco.",
+      "Utiliza HMAC-SHA256 con sal secreta rotada periódicamente cuando necesites correlacionar sesiones o usuarios anonimizados entre múltiples eventos.",
+      "Enmascaramiento vs. cifrado: el cifrado es reversible y sigue exigiendo gestionar claves en consultas; el redactado o HMAC protege la privacidad incluso si comprometen el SIEM.",
+      "Error típico: sanitizar el cuerpo JSON pero registrar sin filtro cabeceras HTTP (Authorization, Cookie) o query strings con tokens (?access_token=...)."
+    ],
+    "ejemplo": "import hmac, hashlib\ndef mask_pii(logger, method_name, event_dict):\n    for key in (\"password\", \"authorization\", \"cvv\"):\n        if key in event_dict:\n            event_dict[key] = \"[REDACTED]\"\n    if \"email\" in event_dict:\n        event_dict[\"email_hmac\"] = hmac.new(KEY, event_dict.pop(\"email\").encode(), hashlib.sha256).hexdigest()[:16]\n    return event_dict",
+    "entrevista": "Enmascarar PII y credenciales en el origen —aplicando redactado o HMAC cuando se requiere correlación— impide que la plataforma de logs se convierta en un repositorio tóxico de secretos y datos regulados."
+  },
+  "False positive tuning": {
+    "que": "Proceso iterativo de refinamiento de reglas de detección, firmas y modelos analíticos para suprimir alertas causadas por actividad legítima sin crear puntos ciegos frente a amenazas reales. Busca el equilibrio óptimo entre precisión (bajo ruido) y sensibilidad o recall (alta detección).",
+    "para": "Mantener la eficacia operativa del SOC, combatir la alert fatigue y garantizar confianza en las alertas tras incorporar nuevos servicios, scripts de automatización o cambios de infraestructura. Se aplica de forma continua durante el ciclo de vida de cada regla de detección.",
+    "como": "El ingeniero de detección revisa los casos cerrados como falsos positivos para aislar el comportamiento benigno exacto (por ejemplo, un agente de respaldo autorizado, un escáner interno o un proceso firmado). En vez de desactivar la regla o excluir todo un usuario o IP, añade filtros granulares compuestos por múltiples atributos (combinando ruta firmada del binario, proceso padre, cuenta de servicio y patrón estricto de argumentos). Finalmente ejecuta pruebas de regresión con datasets maliciosos emulados para comprobar que la técnica de ataque original sigue disparando la detección.",
+    "practicas": [
+      "Construye exclusiones combinando múltiples condiciones específicas (ruta de binario + firma + cuenta + argumento) en lugar de filtros amplios por IP o hostname.",
+      "Documenta cada excepción con su justificación de negocio, responsable y fecha de caducidad para revisarla periódicamente.",
+      "False positive tuning vs. silenciamiento: afinar mejora la precisión lógica de la regla; silenciar a ciegas oculta visibilidad crítica.",
+      "Error típico: excluir globalmente binarios dual-use como powershell.exe o curl en lugar de limitar la excepción a la automatización legítima verificada."
+    ],
+    "ejemplo": "detection:\n  selection:\n    Image|endswith: '\\powershell.exe'\n    CommandLine|contains: '-EncodedCommand'\n  filter_legit_backup:\n    ParentImage: 'C:\\Program Files\\BackupAgent\\agent.exe'\n    User: 'NT AUTHORITY\\SYSTEM'\n  condition: selection and not filter_legit_backup",
+    "entrevista": "Un false positive tuning riguroso combina exclusiones multiatributo acotadas con pruebas de regresión contra ataques simulados para reducir el ruido sin introducir puntos ciegos."
+  },
+  "Honeypot": {
+    "que": "Sistema, servicio o activo deliberadamente expuesto y diseñado para emular infraestructura legítima con el fin de atraer, detectar y estudiar la actividad de atacantes. Al no existir motivos válidos para que usuarios o procesos productivos interactúen con él, toda conexión representa una señal de alta confianza.",
+    "para": "Detectar tempranamente reconocimiento interno y movimiento lateral dentro de la red corporativa (honeypots internos), además de recolectar indicadores de compromiso, herramientas y TTPs reales en perímetros expuestos. Se emplea tanto para defensa por engaño en segmentos críticos como en investigación de amenazas.",
+    "como": "Se despliega un entorno altamente aislado (desde demonios ligeros de baja interacción como OpenCanary o Cowrie que simulan banners SSH, SMB o HTTP, hasta máquinas reales instrumentadas de alta interacción) en una subred controlada. Un firewall estricto bloquea el tráfico saliente (egress) para evitar que el honeypot sea utilizado como punto de pivote contra terceros. Todo intento de conexión, comando ingresado o archivo descargado se captura y transmite en tiempo real al SIEM, donde cualquier interacción contra un honeypot interno genera inmediatamente una alerta de severidad crítica.",
+    "practicas": [
+      "Impón reglas estrictas de bloqueo saliente (egress filtering) y aislamiento de red para que un atacante no pueda pivotar desde el honeypot hacia infraestructura real.",
+      "Honeypot de baja vs. alta interacción: los de baja interacción son seguros y sencillos para alerta temprana; los de alta interacción revelan TTPs avanzados pero exigen contención compleja.",
+      "Ubica honeypots internos en VLANs sensibles con nombres atractivos (como db-staging o vault-backup) para cazar escaneos internos en segundos.",
+      "Error típico: desplegar un honeypot expuesto sin monitorear su integridad ni revisar los logs generados, convirtiéndolo en un activo olvidado."
+    ],
+    "ejemplo": "{\n  \"device.node_id\": \"canary-vlan-prod-01\",\n  \"ssh.enabled\": true,\n  \"ssh.port\": 22,\n  \"smb.enabled\": true,\n  \"logger\": {\n    \"class\": \"PyLogger\",\n    \"kwargs\": {\"handlers\": {\"Webhook\": {\"url\": \"https://siem.internal/canary\"}}}\n  }\n}",
+    "entrevista": "Un honeypot interno transforma cualquier intento de conexión o escaneo no autorizado en una alerta de altísima confianza sin falsos positivos, revelando movimientos laterales al instante."
+  },
+  "IDS": {
+    "que": "Intrusion Detection System (Sistema de Detección de Intrusiones) es un sensor pasivo que inspecciona copias del tráfico de red (NIDS) o eventos locales del host (HIDS) para detectar firmas de ataques conocidos, anomalías de protocolo o violaciones de políticas. Opera fuera de banda, alertando sin bloquear tráfico.",
+    "para": "Aportar visibilidad profunda sobre intentos de explotación, escaneos, tráfico de Command & Control (C2) y abuso de protocolos sin introducir latencia ni riesgo de caída en la disponibilidad de la red productiva. Es común en segmentos críticos, DMZs y redes industriales (OT/ICS) donde un bloqueo erróneo sería inaceptable.",
+    "como": "En un NIDS como Suricata o Snort en modo pasivo, un Network TAP óptico o un puerto SPAN/mirroring de un switch replica los paquetes hacia la interfaz en modo promiscuo del sensor. El motor decodifica capas de red y transporte, reensambla flujos TCP y analiza protocolos de aplicación (HTTP, DNS, SMB, TLS) evaluando sus payloads frente a reglas basadas en firmas (Emerging Threats) y decodificadores de anomalías. Al detectar una coincidencia, emite un evento estructurado (como eve.json con SID, direcciones, puertos y metadatos) hacia el SIEM.",
+    "practicas": [
+      "Alimenta el sensor mediante Network TAP o puertos SPAN dedicados para garantizar que no afecte al plano de datos productivo.",
+      "Ubica sensores detrás de balanceadores con terminación TLS (o usa inspección autorizada) para evitar que el cifrado vuelva ciega la inspección de payload.",
+      "IDS vs. IPS: el IDS analiza tráfico duplicado fuera de banda y solo alerta; el IPS opera en línea y descarta paquetes, asumiendo riesgo de impacto ante falsos positivos.",
+      "Error típico: cargar decenas de miles de firmas irrelevantes para el entorno, saturando la CPU del sensor y provocando pérdida silenciosa de paquetes (packet drops)."
+    ],
+    "ejemplo": "alert http $HOME_NET any -> $EXTERNAL_NET any (\n  msg:\"ET POLICY Suspicious Outbound Curl to Raw IP\";\n  flow:established,to_server;\n  http.user_agent; content:\"curl/\"; startswith;\n  http.host; pcre:\"/^\\d{1,3}(\\.\\d{1,3}){3}$/\";\n  sid:2099001; rev:1;\n)",
+    "entrevista": "Un IDS inspecciona tráfico duplicado fuera de banda para detectar firmas y anomalías de protocolo en la red sin arriesgar la disponibilidad ni añadir latencia al tráfico productivo."
+  },
+  "IPS": {
+    "que": "Intrusion Prevention System (Sistema de Prevención de Intrusiones) es un control activo posicionado en línea (inline) en la ruta del tráfico de red o en el host que inspecciona paquetes en tiempo real y bloquea amenazas automáticamente. Combina inspección profunda de paquetes (DPI) con acciones de descarte o corte de sesión.",
+    "para": "Detener al vuelo intentos de explotación de vulnerabilidades conocidas, escaneos agresivos, tráfico malicioso saliente y ataques a protocolos antes de que impacten al destino. Resulta esencial como medida de parcheo virtual (virtual patching) cuando no es posible actualizar inmediatamente aplicaciones o sistemas legacy.",
+    "como": "Todo el tráfico atraviesa físicamente el IPS (como puente transparente, módulo dentro de un Next-Generation Firewall o en Linux mediante Suricata integrado con iptables NFQUEUE). El motor reensambla flujos TCP en memoria con latencia submilisegundo y evalúa cabeceras y payloads contra firmas de exploits y anomalías de protocolo. Cuando una regla configurada con acción drop o reject coincide, el IPS descarta el paquete malicioso, puede enviar un TCP RST para cerrar la conexión, aplica bloqueos temporales por IP origen y notifica el evento bloqueado al SIEM.",
+    "practicas": [
+      "Despliega cualquier regla nueva primero en modo IDS (solo alerta) durante un periodo de observación antes de habilitarla en modo drop.",
+      "Diseña alta disponibilidad y define claramente el comportamiento ante fallo del dispositivo (fail-open donde prima continuidad, fail-closed en perímetros críticos).",
+      "IPS vs. WAF: el IPS protege múltiples protocolos de red y transporte (SMB, DNS, TCP, HTTP general); el WAF comprende en profundidad sesiones, JSON y lógica HTTP de aplicación.",
+      "Error típico: activar en modo bloqueo firmas heurísticas o informativas y provocar interrupciones de negocio durante actualizaciones legítimas."
+    ],
+    "ejemplo": "drop tcp $EXTERNAL_NET any -> $HTTP_SERVERS $HTTP_PORTS (\n  msg:\"Virtual Patch - Log4j JNDI LDAP Exploit Attempt\";\n  flow:established,to_server;\n  content:\"${jndi:ldap://\"; nocase;\n  classtype:attempted-admin;\n  sid:2100450; rev:2;\n)",
+    "entrevista": "El IPS opera en línea para descartar tráfico malicioso y servir de parcheo virtual en tiempo real, requiriendo validación previa en modo pasivo para evitar falsos positivos destructivos."
+  },
+  "Indicator of compromise (IoC)": {
+    "que": "Evidencia técnica observable en sistemas o tráfico de red que señala con alta probabilidad una intrusión pasada o activa. Comprende artefactos concretos como hashes criptográficos de archivos, direcciones IP, dominios maliciosos, URLs, claves de registro o User-Agents específicos.",
+    "para": "Acelerar la identificación de equipos afectados durante una respuesta a incidentes, enriquecer alertas del SIEM y aplicar bloqueos rápidos en controles perimetrales. También permite realizar búsquedas retrospectivas (retro-hunting) para verificar si una campaña reciente impactó la organización semanas atrás.",
+    "como": "Equipos de threat intelligence o plataformas TIP como MISP y OpenCTI extraen artefactos de incidentes analizados, les asignan confianza, contexto y fecha de expiración (TTL), y los distribuyen mediante estándares como STIX y TAXII. Los controles defensivos (SIEM, EDR, firewall, resolver DNS) cargan estos feeds en listas de búsqueda rápida en memoria o tablas de referencia. Cada evento entrante (resolución DNS, conexión saliente, hash SHA-256 de proceso) se contrasta contra la lista vigente; si coincide dentro de su ventana de validez, dispara una alerta vinculada al actor o campaña.",
+    "practicas": [
+      "Asigna tiempos de vida (TTL) cortos a IoCs volátiles como direcciones IP y dominios, ya que la infraestructura atacante cambia en cuestión de horas o días.",
+      "Prioriza indicadores situados arriba en la Pirámide del Dolor (TTPs, herramientas y artefactos de comportamiento) sobre IoCs efímeros como hashes MD5/SHA-256.",
+      "IoC vs. IoA (Indicator of Attack): el IoC es un rastro estático de algo ya ocurrido; el IoA detecta la intención y secuencia activa de un ataque en curso.",
+      "Error típico: cargar feeds públicos sin curación ni listas de exclusión (allowlists), alertando sobre IPs compartidas de CDNs o proveedores cloud legítimos."
+    ],
+    "ejemplo": "{\n  \"type\": \"indicator\",\n  \"spec_version\": \"2.1\",\n  \"id\": \"indicator--8e2e2d2b-17d4-4cbf-938f-98ee46b3cd3f\",\n  \"pattern\": \"[domain-name:value = 'update-cdn-telemetry.invalid']\",\n  \"pattern_type\": \"stix\",\n  \"valid_from\": \"2026-11-20T00:00:00Z\",\n  \"valid_until\": \"2026-12-20T00:00:00Z\"\n}",
+    "entrevista": "Los IoCs aceleran el triaje y el retro-hunting de amenazas conocidas, pero caducan rápido y deben complementarse con detección de comportamientos y TTPs más arriba en la Pirámide del Dolor."
+  },
+  "Integridad de logs": {
+    "que": "Propiedad que asegura que los registros de seguridad y auditoría no han sufrido alteraciones, borrados, truncamientos ni inserciones no autorizadas desde su emisión hasta su archivo definitivo. Preserva la fiabilidad técnica y el valor probatorio de la telemetría.",
+    "para": "Impedir que un atacante que obtenga privilegios administrativos en un host manipule el historial de eventos para ocultar su presencia, además de sostener la cadena de custodia en investigaciones forenses, auditorías regulatorias y procesos legales.",
+    "como": "Se garantiza combinando aislamiento de arquitectura y verificación criptográfica. Primero, los registros se transmiten inmediatamente fuera del sistema origen hacia un repositorio central en una cuenta de seguridad separada con almacenamiento WORM (Write-Once-Read-Many), como AWS S3 Object Lock en Compliance Mode, donde ningún rol operativo puede borrar objetos antes de su expiración. Segundo, se calculan resúmenes criptográficos encadenados (hash chaining: cada bloque incluye el hash SHA-256 del anterior) o archivos digest firmados con RSA (como CloudTrail Log File Integrity Validation) para detectar matemáticamente cualquier alteración.",
+    "practicas": [
+      "Configura buckets WORM (S3 Object Lock en modo Compliance) en una cuenta de seguridad dedicada a la que los administradores de carga de trabajo no tengan acceso de escritura ni borrado.",
+      "Automatiza la verificación periódica de las firmas y digests criptográficos; generar firmas sin validarlas no detecta manipulaciones.",
+      "Integridad de logs vs. disponibilidad de logs: las réplicas protegen frente a fallos de disco; el almacenamiento WORM y las firmas protegen frente a sabotaje deliberado.",
+      "Error típico: conceder al rol que ingesta logs en el almacenamiento central permisos excesivos como s3:DeleteObject o s3:PutBucketPolicy."
+    ],
+    "ejemplo": "aws cloudtrail validate-logs \\\n  --trail-arn arn:aws:cloudtrail:us-east-1:123456789012:trail/org-audit \\\n  --start-time 2026-11-24T00:00:00Z \\\n  --verbose",
+    "entrevista": "La integridad de logs se garantiza enviando los eventos fuera del host en tiempo real hacia almacenamiento WORM en cuentas aisladas y verificando periódicamente sus firmas o hash chains."
+  },
+  "Log tampering": {
+    "que": "Técnica adversaria (MITRE ATT&CK T1070, Indicator Removal) mediante la cual un atacante borra, trunca, detiene la recolección o falsifica entradas en los registros del sistema para ocultar su intrusión y obstaculizar el análisis forense. Abarca tanto manipulación en el sistema operativo como inyección de logs en aplicaciones.",
+    "para": "Identificar las tácticas de evasión que emplean los atacantes tras lograr acceso privilegiado y diseñar controles defensivos que conviertan el intento de ocultar huellas en una alerta crítica de alta fidelidad.",
+    "como": "Tras escalar privilegios, el atacante ejecuta comandos como wevtutil cl Security en Windows, trunca /var/log/auth.log en Linux, suspende los hilos del servicio EventLog, deshabilita reglas de auditd (auditctl -D) o mata al agente recolector. A nivel de aplicación, el log injection o log forging explota entradas sin sanitizar con secuencias CRLF (\\r\\n) para fabricar líneas falsas en registros en texto plano. Defensivamente se detecta alertando sobre Event IDs de limpieza (1102 y 104 en Windows), usando logs JSON estructurados inmunes a saltos de línea, y vigilando ausencias de telemetría (missing heartbeat) de hosts críticos.",
+    "practicas": [
+      "Crea reglas de alerta máxima para eventos de limpieza o alteración de auditoría (Windows Event ID 1102/104, auditctl -D, detención de Fluent Bit o rsyslog).",
+      "Implementa alertas de 'dead man's switch' que avisen cuando un servidor crítico deje de enviar eventos durante unos minutos.",
+      "Utiliza exclusivamente logs estructurados en JSON para neutralizar ataques de log injection basados en saltos de línea.",
+      "Error típico: confiar únicamente en permisos locales de root para proteger archivos en /var/log; si el atacante logra root en el host, podrá editarlos."
+    ],
+    "ejemplo": "DeviceProcessEvents\n| where FileName in~ (\"wevtutil.exe\", \"auditctl\", \"truncate\")\n| where ProcessCommandLine has_any (\" cl \", \"-D\", \"-s 0\", \"Security\")\n| union (SecurityEvent | where EventID in (1102, 104))\n| project Timestamp, DeviceName, AccountName, ProcessCommandLine, EventID",
+    "entrevista": "Como un atacante con acceso root intentará borrar sus rastros, la defensa efectiva contra el log tampering combina streaming inmediato fuera del host y alertas sobre limpieza de logs o pérdida de heartbeat."
+  },
+  "Logs estructurados": {
+    "que": "Registros de eventos emitidos en un formato serializado y tipado (habitualmente JSON en una línea o NDJSON) con pares clave-valor consistentes, en lugar de cadenas de texto libre. Permiten lectura directa por máquinas sin depender de expresiones regulares frágiles.",
+    "para": "Eliminar fallos silenciosos de parseo en pipelines de ingesta, acelerar la indexación y búsqueda en el SIEM y habilitar reglas de detección portables e independientes de cambios en la redacción de mensajes. Es la práctica estándar en aplicaciones modernas, APIs y microservicios.",
+    "como": "La aplicación utiliza bibliotecas especializadas (structlog en Python, zap en Go, pino en Node.js o Serilog en .NET) que adjuntan contexto estructurado a cada evento emitido. Cada línea serializa campos estandarizados y tipados (timestamp ISO 8601 en UTC, level, service, event.action, user.id, source.ip, trace_id) hacia stdout en formato NDJSON. Los colectores ingieren directamente esas propiedades sin ejecutar regex costosas (Grok), indexándolas en el SIEM como campos exactos aptos para filtros precisos, agregaciones y joins.",
+    "practicas": [
+      "Adopta un esquema estándar compartido como ECS (Elastic Common Schema) o OCSF para unificar nombres de campos entre todos los equipos.",
+      "Mantén estricta consistencia de tipos en cada clave (no emitas un campo a veces como texto y otras como objeto) para evitar rechazos de indexación.",
+      "Logs estructurados vs. texto plano con Grok: los estructurados ahorran CPU en ingesta y no se rompen cuando un desarrollador modifica un mensaje.",
+      "Error típico: imprimir stack traces multilínea sueltos en stdout en vez de encapsularlos dentro de una propiedad error.stack en el objeto JSON."
+    ],
+    "ejemplo": "{\"timestamp\":\"2026-11-25T05:18:10.123Z\",\"level\":\"WARN\",\"service\":\"auth-api\",\"event\":{\"action\":\"login\",\"outcome\":\"failure\"},\"user\":{\"id\":\"usr_8841\"},\"source\":{\"ip\":\"203.0.113.19\"},\"trace_id\":\"4bf92f3577b34da6a3ce929d0e0e4736\"}",
+    "entrevista": "Los logs estructurados bajo un esquema común eliminan el parseo frágil por expresiones regulares y permiten correlaciones rápidas y exactas desde el instante de la ingesta."
+  },
+  "MITRE ATT&CK Navigator": {
+    "que": "Herramienta web interactiva y de código abierto mantenida por MITRE para visualizar, anotar, puntuar y comparar matrices de tácticas y técnicas del marco MITRE ATT&CK. Permite trabajar con capas (layers) en JSON que representan cobertura defensiva, campañas adversarias o resultados de evaluaciones.",
+    "para": "Ejecutar análisis de brechas (gap analysis) en la visibilidad y capacidad de detección de un SOC, priorizar el backlog de Detection Engineering y comunicar cobertura frente a amenazas relevantes para la organización. Es clave en ejercicios Purple Team y revisiones de madurez defensiva.",
+    "como": "La aplicación carga matrices ATT&CK (Enterprise, Mobile o ICS) desde servidores TAXII o bundles STIX y renderiza columnas por táctica y celdas por técnica y subtécnica (como T1059.001). Los analistas crean o importan archivos JSON de capas asignando puntuaciones numéricas (por ejemplo de 0 a 3 según nivel de cobertura), colores y comentarios por técnica. Navigator permite operar entre capas mediante expresiones matemáticas (combinando técnicas de un grupo APT con la cobertura actual de reglas probadas) para resaltar visualmente puntos ciegos prioritarios.",
+    "practicas": [
+      "Versiona las capas JSON en el mismo repositorio Git de Detection Engineering para auditar la evolución trimestral de la cobertura.",
+      "Separa en capas distintas 'telemetría disponible' y 'regla de detección validada', evitando confundir recolectar un log con detectar el ataque.",
+      "Cruza tus capas contra grupos adversarios relevantes para tu sector en vez de buscar un falso 100% uniforme en toda la matriz.",
+      "Error típico: marcar técnicas en verde únicamente por tener una regla teórica que jamás fue probada con emulación de adversarios."
+    ],
+    "ejemplo": "{\n  \"name\": \"SecDev Detection Coverage\",\n  \"domain\": \"enterprise-attack\",\n  \"versions\": {\"attack\": \"15\", \"navigator\": \"5.0\", \"layer\": \"4.5\"},\n  \"techniques\": [\n    {\"techniqueID\": \"T1059.001\", \"score\": 3, \"color\": \"#66b1ff\", \"comment\": \"Sysmon + EDR rule tested\"}\n  ]\n}",
+    "entrevista": "MITRE ATT&CK Navigator cruza nuestras detecciones validadas con los TTPs de adversarios reales mediante capas JSON comparables, haciendo explícitas las brechas de visibilidad que debemos priorizar."
+  },
+  "NDR": {
+    "que": "Network Detection and Response es una categoría de seguridad que analiza continuamente el tráfico de red norte-sur y este-oeste mediante inspección profunda de protocolos, metadatos y aprendizaje automático para detectar y responder a amenazas en movimiento. Complementa la visión de endpoint y logs cuando no hay agentes presentes.",
+    "para": "Detectar movimiento lateral, reconocimiento interno, beaconing hacia Command & Control (C2), exfiltración encubierta y actividad maliciosa en dispositivos IoT, OT o servidores donde no puede instalarse un EDR. Completa la tríada clásica de visibilidad SOC junto con SIEM y EDR.",
+    "como": "Sensores pasivos reciben copias del tráfico vía Network TAP, puertos SPAN o espejado cloud (como AWS VPC Traffic Mirroring) y extraen metadatos ricos de protocolos (al estilo Zeek) junto a registros de flujo (NetFlow/IPFIX). El motor construye grafos de comunicación entre activos y calcula métricas como periodicidad de conexiones (beaconing), entropía en consultas DNS, huellas TLS (JA3/JA4) y secuencias anómalas en SMB, Kerberos o RDP, incluso sin descifrar el payload completo. Ante desviaciones —como un host de usuario enumerando puertos SMB internos— genera alertas contextualizadas y puede invocar APIs de firewalls o NAC/SOAR para aislar el segmento.",
+    "practicas": [
+      "Asegura visibilidad en el tráfico este-oeste dentro de centros de datos y VPCs, no únicamente en la salida hacia Internet.",
+      "Correlaciona señales de NDR con EDR: la red es imposible de manipular desde un endpoint comprometido y revela ataques contra sistemas sin agente.",
+      "NDR vs. IDS tradicional: el IDS depende sobre todo de firmas estáticas de payload; el NDR analiza relaciones entre activos, beaconing y huellas TLS aunque el tráfico vaya cifrado.",
+      "Error típico: colocar sensores NDR solo en el perímetro externo y quedar ciego ante el pivoteo lateral interno tras un phishing."
+    ],
+    "ejemplo": "# Zeek/NDR analytical logic: flag periodic outbound TLS beaconing\nif (conn_count >= 50 && interval_stddev < 1.5s && !is_known_cdn(ja4_hash)) {\n  raise_ndr_alert(\"Possible C2 Beaconing\", src_ip, dst_ip, ja4_hash);\n}",
+    "entrevista": "El NDR aporta visibilidad inalterable sobre el tráfico este-oeste y activos sin agente, detectando beaconing, movimiento lateral y exfiltración mediante grafos de red y huellas de protocolo incluso con cifrado TLS."
+  },
+  "QRadar": {
+    "que": "IBM Security QRadar es una plataforma SIEM empresarial orientada a la recolección, normalización y correlación en tiempo real de grandes volúmenes de logs y flujos de red, agrupando eventos relacionados en incidentes llamados Offenses. Integra análisis de flujos (QFlow), descubrimiento de activos y extensiones SOAR y UEBA.",
+    "para": "Operar centros de seguridad en entornos corporativos grandes o fuertemente regulados que necesitan correlación simultánea de logs y flujos de red en tiempo real, gestión estructurada de incidentes y reportes de cumplimiento.",
+    "como": "Event Collectors y Flow Collectors reciben syslog, conectores API y flujos NetFlow/IPFIX/QFlow, enviándolos a los Event y Flow Processors. Los DSMs (Device Support Modules) normalizan cada fuente asignando QIDs (QRadar Identifiers) y mapeando categorías, mientras el Custom Rules Engine (CRE) evalúa eventos y flujos en streaming contra reglas, Building Blocks y listas de referencia en memoria (Reference Sets). Cuando múltiples reglas coinciden sobre una entidad o patrón temporal, QRadar consolida las alertas en una única Offense priorizada por magnitud (severidad, credibilidad y relevancia del activo), almacenando los registros en la base Ariel para consultas AQL.",
+    "practicas": [
+      "Mantén actualizada la Network Hierarchy y el inventario de activos para que la dirección del tráfico (L2L, L2R, R2L) y la relevancia calculada sean precisas.",
+      "Optimiza reglas del CRE filtrando primero por Low-Level Category o Log Source antes de aplicar expresiones regex o pruebas de carga costosas.",
+      "Usa Reference Sets actualizados vía API para correlacionar en memoria listas de IoCs, VIPs o cuentas de servicio sin degradar el pipeline.",
+      "Error típico: dejar sin calibrar los Building Blocks de red por defecto, produciendo cientos de Offenses ruidosas con magnitud distorsionada."
+    ],
+    "ejemplo": "SELECT sourceip, destinationip, QIDNAME(qid) AS event_name, COUNT(*) AS hits\nFROM events\nWHERE category = 3001 AND magnitude >= 6\nGROUP BY sourceip, destinationip, event_name\nORDER BY hits DESC\nLAST 24 HOURS",
+    "entrevista": "QRadar integra correlación en streaming sobre logs y flujos de red mediante DSMs y el motor CRE, consolidando múltiples alertas relacionadas en una sola Offense priorizada por magnitud."
+  },
+  "Retención de logs": {
+    "que": "Política técnica y regulatoria que establece cuánto tiempo deben conservarse las distintas categorías de registros en capas de almacenamiento caliente, frío o archivo histórico, así como su eliminación segura al vencer el plazo. Equilibra la capacidad de investigación forense con los costos de infraestructura y las leyes de privacidad.",
+    "para": "Permitir investigaciones retrospectivas cuando una intrusión se descubre meses después del compromiso inicial (dwell time prolongado) y cumplir exigencias normativas como PCI-DSS (al menos un año con tres meses disponibles de inmediato), HIPAA o regulaciones financieras, evitando a la vez retener datos personales en exceso frente a GDPR.",
+    "como": "Se implementa mediante políticas automatizadas de ciclo de vida (ILM en Elasticsearch, Data Lifecycle en Splunk o Lifecycle Rules en S3/Azure Storage) diferenciadas por tipo de log. Los registros recientes se mantienen indexados en almacenamiento SSD rápido (capa Hot/Warm de 30 a 90 días) para alertas en tiempo real y búsquedas veloces. Pasada esa ventana, los datos se comprimen en formatos columnares como Parquet o gzip y se trasladan a almacenamiento de objetos económico o archivo frío (Cold/Frozen/Glacier) de 1 a 7 años, consultables bajo demanda mediante motores federados (Athena, Presto o búsqueda rehidratada) antes de su purga final.",
+    "practicas": [
+      "Diferencia plazos según el valor forense y regulatorio: audit logs e IAM requieren 1 a 7 años; logs verbose de red o debug pueden rotar en pocos días.",
+      "Verifica periódicamente que los logs en almacenamiento frío pueden restaurarse y consultarse en formato eficiente (p. ej. Parquet particionado por fecha).",
+      "Retención vs. GDPR: almacenar PII indefinidamente sin justificación incumple el principio de limitación del plazo de conservación.",
+      "Error típico: mantener el 100% de la telemetría en la capa caliente del SIEM por defecto, disparando costos hasta obligar a recortes bruscos de visibilidad."
+    ],
+    "ejemplo": "Rule:\n  ID: \"audit-logs-lifecycle\"\n  Status: Enabled\n  Filter: { Prefix: \"audit/\" }\n  Transitions:\n    - Days: 90\n      StorageClass: GLACIER_IR\n  Expiration:\n    Days: 1825",
+    "entrevista": "Una retención escalonada por criticidad (Hot/Warm/Cold en formatos columnares) alinea los costos del SIEM con el dwell time forense y los requisitos legales de conservación y privacidad."
+  },
+  "SIEM": {
+    "que": "Security Information and Event Management es la plataforma central que ingiere, normaliza, indexa, correlaciona y almacena registros de seguridad de toda la organización (endpoints, red, identidad, aplicaciones y nube). Actúa como núcleo analítico del SOC para detección, investigación forense y auditoría.",
+    "para": "Unificar la visibilidad dispersa de múltiples controles aislados y detectar ataques multietapa que solo se evidencian al cruzar señales distintas, como un fallo de MFA seguido de una regla sospechosa en correo y un volcado de secretos en la nube. Es la herramienta central de monitoreo e investigación.",
+    "como": "El SIEM recopila telemetría mediante agentes, syslog y conectores API (CloudTrail, Entra ID, Okta, EDR, firewalls), parsea el contenido y lo normaliza a un esquema común como ECS, CIM, ASIM u OCSF. Almacena la información en un índice distribuido o data lake con lenguajes analíticos propios (SPL, KQL, AQL) capaces de ejecutar agregaciones y joins sobre miles de millones de eventos. Paralelamente, su motor de correlación evalúa reglas en streaming o programadas combinando fuentes en ventanas temporales, enriqueciéndolas con threat intelligence e inventarios para disparar alertas hacia analistas o un SOAR.",
+    "practicas": [
+      "Define primero los casos de uso y escenarios de amenaza prioritarios antes de conectar fuentes masivas sin reglas asociadas.",
+      "Normaliza todos los eventos en la ingesta a un esquema unificado para que tus reglas funcionen con independencia del fabricante del firewall o nube.",
+      "SIEM vs. Security Data Lake: el SIEM optimiza correlación en tiempo real y flujo de alertas SOC; el Data Lake optimiza retención masiva económica y analítica abierta.",
+      "Error típico: convertir el SIEM en un vertedero de logs ('ingest everything') sin monitorear parsers rotos ni validar la salud de las fuentes."
+    ],
+    "ejemplo": "SigninLogs\n| where TimeGenerated > ago(15m) and ResultType == \"0\"\n| join kind=inner (\n    OfficeActivity\n    | where Operation == \"New-InboxRule\"\n  ) on $left.UserPrincipalName == $right.UserId\n| project TimeGenerated, UserPrincipalName, IPAddress, Operation, Parameters",
+    "entrevista": "El SIEM provee la normalización y correlación transversal indispensables para conectar señales aisladas de identidad, red y endpoint y descubrir ataques multietapa en curso."
+  },
+  "SOAR": {
+    "que": "Security Orchestration, Automation, and Response es una plataforma que conecta por API las herramientas de seguridad y TI para automatizar tareas repetitivas de enriquecimiento, triaje y contención mediante flujos programados llamados playbooks. Funciona como brazo ejecutor y sistema de gestión de casos del SOC.",
+    "para": "Reducir el tiempo medio de respuesta (MTTR) y liberar tiempo de analistas automatizando operaciones mecánicas y propensas a error manual, como consultar reputación de IoCs, abrir incidencias en Jira, recopilar evidencias de usuario o aislar un endpoint comprometido. Se usa habitualmente en triaje de phishing, enriquecimiento de alertas y contención inicial.",
+    "como": "Al recibir una alerta desde el SIEM, EDR o buzón de reportes vía webhook o polling, el SOAR instancia un caso y dispara el playbook correspondiente (definido en Python o flujos visuales low-code). El playbook invoca conectores API en secuencia: extrae observables (IPs, URLs, hashes), consulta reputación en plataformas de threat intelligence, obtiene contexto del usuario y criticidad del host desde IAM/CMDB, y adjunta todo al expediente. Antes de ejecutar acciones disruptivas (revocar sesiones, bloquear usuarios o aislar hosts en producción), puede pausar solicitando aprobación humana ('human-in-the-loop') vía Slack o consola.",
+    "practicas": [
+      "Automatiza primero tareas de solo lectura (enriquecimiento, recolección de contexto y creación de casos) antes de automatizar acciones destructivas de contención.",
+      "Implementa listas de protección (VIPs, controladores de dominio, sistemas críticos) y aprobaciones 'human-in-the-loop' para evitar bloqueos accidentales.",
+      "SOAR vs. SIEM: el SIEM detecta y correlaciona eventos; el SOAR orquesta herramientas externas y ejecuta el flujo de respuesta paso a paso.",
+      "Error típico: intentar automatizar un procedimiento mal definido manualmente, lo que solo acelera la generación de errores operativos."
+    ],
+    "ejemplo": "playbook: isolate_compromised_host\ntrigger: siem_high_severity_malware\nsteps:\n  - enrich_hash: virustotal.lookup(alert.sha256)\n  - fetch_asset: cmdb.get_host(alert.hostname)\n  - if: asset.tier != \"critical\" and enrich.malicious > 5\n    then: edr.contain_host(alert.hostname)\n    else: slack.request_approval(\"#soc-oncall\", alert.id)",
+    "entrevista": "El SOAR acelera el MTTR automatizando el enriquecimiento repetitivo y la contención coordinada mediante playbooks por API, dejando las decisiones de alto impacto bajo control humano."
+  },
+  "Security dashboard": {
+    "que": "Interfaz visual interactiva que consolida métricas clave de seguridad, tendencias de alertas, estado de sensores y postura de vulnerabilidades en tiempo real para audiencias técnicas o ejecutivas. Convierte grandes volúmenes de telemetría en indicadores visuales accionables.",
+    "para": "Ofrecer conciencia situacional rápida sobre anomalías operativas (como picos de errores 401/403 o caída de ingesta), supervisar la salud de los controles y reportar indicadores de desempeño del SOC (MTTD, MTTR, cumplimiento de SLAs). Se utiliza en salas de monitoreo, triaje diario y comités de riesgo.",
+    "como": "La herramienta de visualización (Kibana, Splunk Dashboards, Grafana o Azure Workbooks) ejecuta consultas agregadas periódicas o interactivas sobre índices de logs, series temporales e inventarios de activos. Aplica filtros globales (entorno, rango horario, unidad de negocio), calcula percentiles, ratios y comparativas históricas, y renderiza series temporales, mapas de calor y tablas con capacidad de drill-down para saltar de una anomalía agregada al listado exacto de eventos crudos que la originaron.",
+    "practicas": [
+      "Separa los dashboards por audiencia: vistas operativas con anomalías y drill-down a logs para el SOC; métricas de riesgo, SLA y cobertura para dirección.",
+      "Incluye siempre un dashboard de salud de telemetría (tasa de ingesta por fuente, agentes offline, errores de parseo) para detectar ceguera operativa.",
+      "Security dashboard vs. alerting: un dashboard sirve para analizar tendencias e investigar; nunca confíes en la revisión visual humana para detectar incidentes críticos.",
+      "Error típico: llenar pantallas con gráficos circulares decorativos o contadores absolutos sin línea base ni acción asociada."
+    ],
+    "ejemplo": "http_logs\n| where status in (401, 403)\n| summarize failures = count() by bin(timestamp, 5m), service\n| join kind=leftouter (\n    http_logs | where timestamp > ago(7d) and status in (401, 403)\n    | summarize avg_5m = count() / 2016.0 by service\n  ) on service\n| extend anomaly_ratio = failures / max_of(avg_5m, 1.0)",
+    "entrevista": "Un security dashboard efectivo no se queda en gráficos de vanidad: monitoriza la salud de la telemetría, adapta las métricas a cada audiencia y permite drill-down inmediato al evento crudo."
+  },
+  "Security logging": {
+    "que": "Práctica de ingeniería de software e infraestructura dedicada a instrumentar aplicaciones y servicios para registrar específicamente eventos relevantes para la seguridad, como autenticaciones, decisiones de acceso, cambios críticos y fallos de validación. Constituye la fuente primaria de visibilidad a nivel de aplicación.",
+    "para": "Detectar ataques dirigidos a la lógica de negocio y APIs (fuerza bruta, credential stuffing, IDOR, abuso de tokens, escalado de privilegios) que pasan desapercibidos para firewalls o sensores de red cifrados. Responde directamente a los requisitos de OWASP ASVS y previene la falla A09 de OWASP Top 10.",
+    "como": "Durante el desarrollo, se instrumentan middlewares de autenticación, guardias de autorización, validadores de entrada y manejadores de errores para emitir eventos tipados ante condiciones definidas en guías como el OWASP Logging Cheat Sheet. Cada registro incluye timestamp UTC, categoría de evento (como authz.denied), identidad del sujeto, IP/User-Agent, recurso solicitado y resultado, sanitizando caracteres de control y omitiendo o enmascarando secretos. Los logs fluyen de manera asíncrona y no bloqueante hacia el agregador central y el SIEM.",
+    "practicas": [
+      "Registra explícitamente tanto éxitos como fallos en inicios de sesión, uso de MFA, cambios de contraseña, emisión de tokens y denegaciones de autorización.",
+      "Nunca registres contraseñas, tokens JWT/API, claves privadas ni datos personales sin enmascarar dentro de los logs de seguridad.",
+      "Security logging vs. debug logging: los logs de depuración se desactivan en producción por volumen; el security logging debe permanecer activo de forma continua.",
+      "Error típico: capturar un fallo de autorización emitiendo únicamente un mensaje genérico '403 Forbidden' sin sujeto, recurso ni motivo de la política."
+    ],
+    "ejemplo": "{\n  \"ts\": \"2026-11-25T05:25:01Z\",\n  \"event\": \"authz.denied\",\n  \"subject\": \"user:4192\",\n  \"action\": \"invoices:export\",\n  \"resource\": \"tenant:acme-corp\",\n  \"client_ip\": \"198.51.100.77\",\n  \"req_id\": \"01JE2MB099X\",\n  \"reason\": \"missing_role_finance_admin\"\n}",
+    "entrevista": "El security logging instrumenta eventos clave de identidad, autorización y validación con contexto consistente y libre de secretos para eliminar la ceguera defensiva en capa de aplicación (OWASP A09)."
+  },
+  "Sigma rules": {
+    "que": "Estándar abierto y formato declarativo en YAML para describir firmas de detección sobre eventos de logs de forma agnóstica del SIEM o motor de búsqueda utilizado. Cumple en los logs el mismo rol estandarizado que YARA cumple para archivos o Snort/Suricata para tráfico de red.",
+    "para": "Escribir, versionar y compartir reglas de detección portables entre distintas plataformas (Splunk, Elastic, Microsoft Sentinel, QRadar, Loki) evitando el vendor lock-in y acelerando la adopción de inteligencia frente a nuevas amenazas.",
+    "como": "Una regla Sigma especifica metadatos (title, level, status, tags de MITRE ATT&CK), un bloque logsource que define categoría y producto (por ejemplo windows/process_creation o aws/cloudtrail), y una sección detection con selectores de campos, modificadores (|contains, |endswith, |base64) y lógica booleana en condition incluyendo excepciones (and not filter). Herramientas como sigma-cli (pySigma) aplican pipelines de transformación que mapean los nombres de campos genéricos al esquema destino (como ECS o Sysmon) y compilan el YAML en la query nativa lista para desplegar.",
+    "practicas": [
+      "Emplea pipelines de transformación de pySigma adaptados al esquema real de tu SIEM en vez de editar a mano las consultas compiladas.",
+      "Documenta siempre posibles falsos positivos en el campo falsepositives y acompaña la regla con filtros claros (filter_*).",
+      "Sigma vs. YARA vs. Snort/Suricata: Sigma evalúa logs estructurados; YARA analiza bytes en archivos o memoria; Snort/Suricata inspeccionan paquetes de red.",
+      "Error típico: importar reglas Sigma comunitarias en masa sin verificar si recolectas el logsource, Event ID o campos requeridos en tu entorno."
+    ],
+    "ejemplo": "title: Certutil Download Execution\nlogsource:\n  category: process_creation\n  product: windows\ndetection:\n  selection:\n    Image|endswith: '\\certutil.exe'\n    CommandLine|contains|all: ['-urlcache', '-f']\n  condition: selection\nlevel: high",
+    "entrevista": "Sigma permite codificar detecciones sobre logs en YAML agnóstico del proveedor, traduciéndolas automáticamente a cualquier SIEM mediante pipelines de mapeo de esquemas en CI/CD."
+  },
+  "Splunk": {
+    "que": "Plataforma empresarial de indexación y análisis de datos masivos y SIEM (Splunk Enterprise / Cloud junto con Splunk Enterprise Security) diseñada para buscar, correlacionar y visualizar grandes volúmenes de datos de máquina en tiempo real. Destaca por su lenguaje de tuberías SPL (Search Processing Language) y el esquema Common Information Model (CIM).",
+    "para": "Ejecutar threat hunting rápido sobre terabytes diarios de telemetría diversa, correlacionar alertas complejas basadas en riesgo (RBA) y gestionar operaciones SOC de gran escala en entornos híbridos y multi-cloud.",
+    "como": "Los Universal Forwarders recolectan registros en los endpoints o servidores y los transmiten cifrados vía TCP hacia los Indexers (opcionalmente pasando por Heavy Forwarders para enrutamiento o enmascaramiento). Splunk adopta un modelo 'schema-on-read': indexa tokens de texto crudo con metadatos básicos (index, sourcetype, host, source) durante la ingesta y extrae campos al consultar mediante Knowledge Objects y CIM. Los Search Heads ejecutan tuberías SPL (stats, eval, tstats sobre Data Models acelerados) para generar Notable Events y Risk Notables en Enterprise Security.",
+    "practicas": [
+      "Utiliza el comando tstats sobre Data Models acelerados compatibles con CIM en reglas de correlación en lugar de búsquedas sobre eventos crudos para maximizar rendimiento.",
+      "Filtra siempre al inicio de la tubería por index, sourcetype y términos indexados exactos antes de invocar comandos costosos como rex o join.",
+      "Aprovecha Risk-Based Alerting (RBA) en Splunk ES acumulando puntos en el índice risk antes de escalar un Notable Event al equipo.",
+      "Error típico: abusar de comandos como transaction o subsearches grandes en ventanas amplias, saturando la memoria y concurrencia del Search Head."
+    ],
+    "ejemplo": "| tstats summariesonly=t count from datamodel=Authentication\n  where Authentication.action=\"failure\" by Authentication.user Authentication.src _time span=5m\n| where count > 20\n| rename Authentication.* as *",
+    "entrevista": "Splunk combina la potencia exploratoria de SPL con schema-on-read para hunting ágil, escalando la correlación en tiempo real gracias a Data Models acelerados con CIM y consultas `tstats`."
+  },
+  "Threat intelligence": {
+    "que": "Conocimiento procesado y basado en evidencia —incluyendo contexto, mecanismos, indicadores, impacto y cursos de acción— sobre amenazas cibernéticas actuales o emergentes dirigidas contra los activos de la organización. Se estructura en niveles estratégico, operacional, táctico y técnico.",
+    "para": "Priorizar el parcheo de vulnerabilidades explotadas activamente, contextualizar alertas del SOC con el perfil y objetivos del adversario, alimentar controles preventivos y guiar hipótesis de threat hunting proactivo. Convierte datos crudos externos en decisiones defensivas concretas.",
+    "como": "Sigue un ciclo continuo de seis etapas: dirección (definir Priority Intelligence Requirements o PIRs alineados con los activos críticos y sector de negocio), recolección (telemetría propia de incidentes, feeds OSINT, grupos ISAC y proveedores comerciales), procesamiento (normalización a STIX/TAXII y deduplicación en plataformas TIP como MISP u OpenCTI), análisis (validar confianza, correlacionar TTPs en ATT&CK), diseminación (reglas al SIEM/EDR/WAF o informes ejecutivos) y retroalimentación continua sobre su eficacia.",
+    "practicas": [
+      "Define Priority Intelligence Requirements (PIRs) basados en tu arquitectura y sector antes de suscribirte a múltiples feeds genéricos.",
+      "Prioriza inteligencia táctica (TTPs y flujos de explotación mapeados a MITRE ATT&CK) frente a listas efímeras de IPs y hashes.",
+      "Threat intelligence vs. threat feeds: una lista de miles de IPs maliciosas sin contexto ni caducidad son solo datos; es inteligencia cuando responde a una decisión de defensa.",
+      "Error típico: medir la madurez del programa por el volumen de millones de IoCs ingeridos en el SIEM en lugar de cuántas detecciones útiles produjo."
+    ],
+    "ejemplo": "# PIR -> TTP -> Detection mapping\npir: \"Detect initial access targeting public VPN/API edge\"\nthreat_actor: \"APT-Example\"\nttp: \"MITRE ATT&CK T1190 (Exploit Public-Facing Application)\"\naction: \"Deploy WAF virtual patch + SIEM rule on child shell from web process\"",
+    "entrevista": "La threat intelligence aporta valor real cuando parte de PIRs alineados al negocio y prioriza TTPs duraderos sobre listas crudas de IoCs para mejorar detecciones y decisiones de riesgo."
+  }
+}

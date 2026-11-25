@@ -1,0 +1,313 @@
+{
+  "Load Balancer (ALB-NLB)": {
+    "que": "Elastic Load Balancing (ELB) ofrece balanceadores administrados en AWS, siendo Application Load Balancer (ALB) y Network Load Balancer (NLB) los principales para tráfico moderno. ALB opera en la capa 7 (HTTP/HTTPS/gRPC/WebSocket), mientras que NLB opera en la capa 4 (TCP/UDP/TLS).",
+    "para": "Distribuyen tráfico entrante entre múltiples objetivos saludables (instancias EC2, contenedores ECS/EKS, IPs o funciones Lambda) en una o varias zonas de disponibilidad. Se usan para lograr alta disponibilidad, tolerancia a fallos, escalado horizontal y terminación TLS centralizada; ALB destaca en enrutamiento de aplicaciones web y NLB en ultra baja latencia y millones de conexiones por segundo.",
+    "como": "El cliente resuelve el nombre DNS del balanceador y envía la petición hacia sus nodos en las subnets públicas o privadas. En ALB, el listener termina la conexión TCP/TLS, evalúa reglas de enrutamiento por ruta, host, cabeceras o métodos HTTP y reenvía la petición a un Target Group usando health checks HTTP/HTTPS periódicos. En NLB, el flujo de paquetes pasa casi sin inspección de aplicación mediante hipervisor Nitro, preservando la IP origen del cliente y manteniendo latencias de microsegundos con IPs estáticas o Elastic IPs por zona de disponibilidad.",
+    "practicas": [
+      "Habilita Cross-Zone Load Balancing con cuidado: en ALB está activo por defecto sin costo extra entre AZ, mientras que en NLB está desactivado por defecto y puede generar cargos de transferencia inter-AZ.",
+      "ALB vs NLB: elige ALB para enrutamiento por path/host, autenticación OIDC/Cognito o integración con AWS WAF; elige NLB para TCP/UDP puro, mTLS passthrough, WebSockets masivos o cuando necesitas IPs estáticas y PrivateLink.",
+      "Configura health checks realistas (endpoint `/health` ligero) y ajusta `deregistration_delay` para drenar conexiones activas sin cortar respuestas en despliegues.",
+      "Error típico: olvidar el Security Group del target permitiendo tráfico únicamente desde el Security Group del ALB (o desde el CIDR del cliente/NLB cuando NLB preserva IP origen)."
+    ],
+    "ejemplo": "aws elbv2 create-load-balancer \\\n  --name api-alb \\\n  --type application \\\n  --subnets subnet-0a1b2c3d subnet-0e4f5a6b \\\n  --security-groups sg-0123456789abcdef0",
+    "entrevista": "Uso ALB cuando necesito inteligencia HTTP/HTTPS en capa 7 (enrutamiento por ruta/host y WAF) y NLB cuando priorizo rendimiento bruto en capa 4, IPs estáticas o latencia mínima con preservación de IP origen."
+  },
+  "MSK (Kafka)": {
+    "que": "Amazon Managed Streaming for Apache Kafka (MSK) es un servicio completamente administrado para ejecutar clústeres de Apache Kafka y Kafka Connect en AWS sin gestionar manualmente servidores ni ZooKeeper/KRaft. Existe en modalidad Provisioned (brokers dimensionados por instancia) y MSK Serverless (escalado automático por demanda).",
+    "para": "Sirve como columna vertebral de streaming de eventos de alto rendimiento, ingesta de logs/telemetría en tiempo real y comunicación asíncrona desacoplada entre microservicios con retención duradera y reproducción (replay) de mensajes. Se elige frente a SQS/SNS cuando el equipo ya depende del ecosistema Kafka (particiones ordenadas, consumer groups, Kafka Streams o conectores Debezium).",
+    "como": "Los productores publican registros en tópicos divididos en particiones distribuidas entre brokers alojados en múltiples Availability Zones dentro de una VPC. Cada partición mantiene un log inmutable ordenado por offset y se replica sincrónicamente entre líder y seguidores (`acks=all`, `min.insync.replicas`) usando EBS como almacenamiento y replicación de metadatos vía KRaft o ZooKeeper según la versión. Los consumidores se agrupan en Consumer Groups donde cada partición es leída por un único consumidor del grupo, guardando su offset en `__consumer_offsets`.",
+    "practicas": [
+      "Configura al menos 3 brokers en 3 AZ distintas con factor de replicación 3 y `min.insync.replicas=2` para tolerar caídas de zona sin pérdida de datos.",
+      "MSK vs Kinesis Data Streams: MSK ofrece compatibilidad estándar con Apache Kafka, portabilidad multi-cloud y retención flexible; Kinesis simplifica la operación pura en AWS sin gestionar brokers ni particiones complejas en modo On-Demand.",
+      "Evita el subdimensionamiento o desequilibrio de particiones (hot partitions) eligiendo una clave de partición con alta cardinalidad.",
+      "Usa IAM Access Control o mTLS con AWS Private CA para autenticar clientes en lugar de dejar puertos PLAINTEXT abiertos en la VPC."
+    ],
+    "ejemplo": "aws kafka create-cluster-v2 \\\n  --cluster-name eventos-prod \\\n  --provisioned '{\"BrokerNodeGroupInfo\":{\"InstanceType\":\"kafka.m5.large\",\"ClientSubnets\":[\"subnet-1\",\"subnet-2\",\"subnet-3\"]},\"KafkaVersion\":\"3.6.0\",\"NumberOfBrokerNodes\":3}'",
+    "entrevista": "MSK nos da la semántica de log distribuido, replay y ecosistema estándar de Apache Kafka sin el costo operativo de parchar brokers, mantener quórum ni gestionar almacenamiento manualmente."
+  },
+  "MinIO": {
+    "que": "MinIO es un servidor de almacenamiento de objetos de alto rendimiento y código abierto totalmente compatible con la API de Amazon S3. Puede desplegarse on-premises, en Kubernetes o en nubes privadas como alternativa local equivalente a S3.",
+    "para": "Resuelve la necesidad de almacenar archivos no estructurados (imágenes, backups, artefactos, data lakes en Parquet/Iceberg) con interfaz S3 en entornos locales, edge, air-gapped o entornos de desarrollo/CI donde no se desea depender de AWS S3. Permite escribir código portátil contra el SDK estándar de S3 cambiando solo el endpoint.",
+    "como": "Almacena los objetos en conjuntos de discos (erasure sets) aplicando codificación de borrado Reed-Solomon (Erasure Coding) en bloques de datos y paridad, protegiendo cada objeto contra fallos simultáneos de múltiples discos o nodos sin requerir RAID por hardware. Expone una API REST HTTP/HTTPS idéntica a S3 (buckets, objetos, multipart upload, presigned URLs, versionado y políticas IAM compatibles) junto con un motor de notificaciones de eventos hacia Kafka, NATS o webhooks.",
+    "practicas": [
+      "Usa siempre al menos 4 unidades o nodos en modo distribuido para aprovechar Erasure Coding; un despliegue de un solo disco solo sirve para pruebas locales.",
+      "MinIO vs S3: MinIO ofrece soberanía de datos, cero costos de egress y latencia local en red interna, mientras que S3 delega durabilidad de 11 nueves y escalado infinito sin mantenimiento de hardware.",
+      "Configura la aplicación con el SDK estándar de AWS S3 inyectando `endpoint_url` y `force_path_style` por variables de entorno para alternar sin cambios de código entre MinIO local y S3 en producción.",
+      "Revisa la licencia (AGPLv3 / modelo comercial reciente de MinIO) y habilita TLS más rotación de claves antes de exponerlo en producción."
+    ],
+    "ejemplo": "mc alias set local http://127.0.0.1:9000 minioadmin minioadmin\nmc mb local/backups-app\naws --endpoint-url http://127.0.0.1:9000 s3 cp dump.sql s3://backups-app/",
+    "entrevista": "MinIO nos permite desarrollar, probar o ejecutar on-premises con la misma API y SDK de Amazon S3, evitando lock-in y manteniendo el mismo código entre local y cloud."
+  },
+  "Neptune": {
+    "que": "Amazon Neptune es un servicio de base de datos de grafos completamente administrado, optimizado para almacenar y consultar miles de millones de relaciones entre entidades con baja latencia. Soporta dos modelos de grafo: Property Graph (Apache TinkerPop Gremlin y openCypher) y RDF (SPARQL).",
+    "para": "Se utiliza cuando las consultas requieren recorrer múltiples saltos de relaciones complejas (friends-of-friends, detección de fraude en tiempo real, grafos de conocimiento, linaje de datos o motores de recomendación) donde los `JOIN` recursivos en bases relacionales degradan drásticamente el rendimiento.",
+    "como": "Neptune utiliza una arquitectura desacoplada de cómputo y almacenamiento compartida en múltiples AZ similar a Aurora: una instancia primaria acepta escrituras y hasta 15 réplicas de lectura comparten el mismo volumen distribuido en 6 copias a través de 3 AZ. Sus índices están diseñados específicamente para grafos (como SPOG, POGS en RDF o índices de aristas/vértices en Property Graph), permitiendo traversals rápidos sin escaneos completos de tabla.",
+    "practicas": [
+      "Neptune vs RDS/PostgreSQL: si tus relaciones rara vez superan 2-3 saltos, una base relacional con buenos índices suele ser más simple y económica; usa Neptune cuando predominan traversals profundos o patrones en red.",
+      "Elige entre Property Graph (Gremlin/openCypher) para aplicaciones operacionales y RDF/SPARQL cuando necesites ontologías semánticas y estándares W3C.",
+      "Evita mezclar modelos (Gremlin y SPARQL) sobre los mismos datos en un clúster, ya que los motores de almacenamiento interno son independientes.",
+      "Usa Neptune Serverless para cargas con picos intermitentes y habilita IAM Database Authentication dentro de subnets privadas."
+    ],
+    "ejemplo": "MATCH (u:Usuario {id: 'u-42'})-[:TRANSFIRIO*1..3]->(sospechoso:Cuenta)\nWHERE sospechoso.riesgo = 'ALTO'\nRETURN DISTINCT sospechoso.id",
+    "entrevista": "Cuando el valor del dato está en las conexiones multi-salto —como detección de anillos de fraude o grafos de identidad— Neptune reemplaza JOINs costosos por recorridos nativos en milisegundos."
+  },
+  "Organizations - Control Tower": {
+    "que": "AWS Organizations es el servicio de gobernanza centralizada para agrupar múltiples cuentas de AWS bajo una jerarquía de Organizational Units (OUs) y facturación consolidada, mientras que AWS Control Tower automatiza la creación de una Landing Zone multi-cuenta segura aplicando guardrails sobre Organizations.",
+    "para": "Resuelven el aislamiento por entornos y cargas de trabajo (separando cuentas de `prod`, `staging`, `dev`, `security` y `log-archive`), centralizando facturación, cumplimiento normativo y provisión estandarizada de cuentas nuevas mediante Account Factory.",
+    "como": "Organizations estructura las cuentas en un árbol (Root -> OUs -> Cuentas) y aplica Service Control Policies (SCPs), que actúan como límites máximos de permisos evaluados antes que IAM en cada cuenta miembro. Control Tower orquesta Organizations junto con AWS IAM Identity Center, AWS Config, CloudTrail y KMS para desplegar automáticamente cuentas núcleo (Log Archive, Audit) y controles preventivos (implementados con SCPs) o detectivos (implementados con reglas de AWS Config y Security Hub).",
+    "practicas": [
+      "Adopta una estrategia multi-cuenta desde el inicio en lugar de aislar todo por VPC o prefijos IAM dentro de una sola cuenta; limita el radio de impacto ante incidentes y cuotas de servicio.",
+      "Recuerda que las SCPs de Organizations no otorgan permisos por sí solas: solo restringen el máximo posible, y nunca afectan a usuarios/roles de la cuenta Management.",
+      "No ejecutes cargas de trabajo de aplicación en la cuenta raíz (Management Account); resérvala exclusivamente para facturación y gobernanza.",
+      "Usa controles preventivos de Control Tower para bloquear acciones críticas (p. ej., desactivar CloudTrail o crear recursos fuera de regiones permitidas)."
+    ],
+    "ejemplo": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [{\n    \"Effect\": \"Deny\",\n    \"Action\": \"cloudtrail:DeleteTrail\",\n    \"Resource\": \"*\"\n  }]\n}",
+    "entrevista": "Organizations nos da el aislamiento y las SCPs para limitar el radio de impacto entre cuentas, y Control Tower estandariza esa Landing Zone con guardrails preventivos y detectivos desde el día uno."
+  },
+  "RDS": {
+    "que": "Amazon Relational Database Service (RDS) es un servicio administrado para desplegar, operar y escalar bases de datos relacionales estándar como PostgreSQL, MySQL, MariaDB, Oracle, SQL Server y Db2 en AWS.",
+    "para": "Elimina tareas operativas pesadas como aprovisionamiento de hardware, parches del motor, backups automáticos, restauración point-in-time (PITR) y conmutación por error (failover) en cargas OLTP que requieren integridad transaccional ACID y SQL estándar.",
+    "como": "RDS ejecuta el motor elegido sobre instancias dedicadas conectadas a volúmenes EBS gestionados por AWS dentro de tus subnets privadas. En modo Multi-AZ, mantiene una réplica en espera sincrónica en otra Availability Zone (o dos en Multi-AZ DB Cluster con lecturas), realizando failover automático mediante actualización del registro DNS del endpoint cuando detecta fallo de nodo o almacenamiento. Adicionalmente permite crear Read Replicas asíncronas para escalar consultas de lectura y automatiza snapshots diarios más envío continuo de transaction logs a S3.",
+    "practicas": [
+      "Despliega RDS siempre en subnets privadas sin IP pública, restringiendo su Security Group únicamente al Security Group de las aplicaciones o de RDS Proxy.",
+      "RDS vs Aurora: usa RDS estándar cuando necesites motores específicos (SQL Server, Oracle) o compatibilidad/costo base en PostgreSQL/MySQL; elige Aurora si necesitas almacenamiento autoescalable hasta 128 TiB, failover más rápido y hasta 15 réplicas compartiendo disco.",
+      "Usa RDS Proxy frente a aplicaciones serverless (Lambda) para multiplexar conexiones y evitar agotar `max_connections`.",
+      "Activa cifrado en reposo con KMS desde la creación (no se puede cifrar una instancia existente in-place sin snapshot) y habilita Deletion Protection en producción."
+    ],
+    "ejemplo": "aws rds create-db-instance \\\n  --db-instance-identifier orders-pg-prod \\\n  --db-instance-class db.m6g.large \\\n  --engine postgres \\\n  --multi-az \\\n  --storage-encrypted",
+    "entrevista": "RDS delega en AWS los backups con PITR, parches y failover Multi-AZ para cargas OLTP relacionales, dejándonos enfocarnos en el modelado, índices y tuning de consultas."
+  },
+  "Redshift": {
+    "que": "Amazon Redshift es un data warehouse columnar en la nube a escala de petabytes, diseñado para analítica masiva (OLAP) y consultas SQL complejas sobre grandes volúmenes de datos históricos.",
+    "para": "Sirve para alimentar tableros de BI, agregaciones analíticas sobre millones o miles de millones de filas y cruce de datos operacionales con data lakes en S3, donde una base OLTP como RDS colapsaría por escaneos completos de tabla.",
+    "como": "Utiliza una arquitectura MPP (Massively Parallel Processing) compuesta por un Leader Node —que recibe SQL, planifica la ejecución y compila código C++— y múltiples Compute Nodes divididos en slices (o Redshift Serverless con RPUs elásticos). Almacena los datos por columnas comprimidas con codificación adaptativa y usa Zone Maps (mínimos y máximos por bloque de 1 MB) junto con Sort Keys y Distribution Keys para minimizar I/O y redistribución de red entre nodos; además, Redshift Spectrum permite consultar directamente archivos Parquet/ORC en S3.",
+    "practicas": [
+      "Elige `DISTKEY` y `SORTKEY` según los `JOIN` y filtros `WHERE` más frecuentes para evitar movimientos masivos de datos entre nodos (broadcast/redistribute).",
+      "Redshift vs RDS/Aurora: Redshift es OLAP columnar optimizado para agregaciones masivas por lote o streaming; nunca lo uses para transacciones puntuales de alta concurrencia (INSERT/UPDATE fila a fila).",
+      "Usa el comando `COPY` desde archivos comprimidos en S3 (idealmente Parquet) en lugar de `INSERT` individuales.",
+      "Evalúa Redshift Serverless cuando la carga analítica es intermitente o impredecible para evitar pagar nodos ociosos 24/7."
+    ],
+    "ejemplo": "COPY ventas_hechos\nFROM 's3://datalake-curated/ventas/2026/'\nIAM_ROLE 'arn:aws:iam::123456789012:role/RedshiftLoadRole'\nFORMAT AS PARQUET;",
+    "entrevista": "Redshift acelera la analítica OLAP combinando almacenamiento columnar, compresión y ejecución paralela MPP, separando completamente las consultas pesadas de BI de nuestra base transaccional."
+  },
+  "Route 53": {
+    "que": "Amazon Route 53 es el servicio DNS autoritativo, registrador de dominios y enrutador de tráfico de alta disponibilidad en AWS, operando sobre una red global Anycast.",
+    "para": "Traduce nombres de dominio a direcciones IP o recursos AWS con SLA del 100%, permite gestionar DNS privado dentro de VPCs (split-horizon) y ofrece enrutamiento avanzado basado en latencia, geolocalización, pesos o health checks.",
+    "como": "En zonas públicas, Route 53 responde consultas DNS desde servidores Anycast distribuidos globalmente y soporta registros estándar (`A`, `AAAA`, `CNAME`, `MX`, `TXT`, `NS`, `SOA`, `PTR`) más registros `Alias` propietarios de AWS que apuntan al ápice de zona (`example.com`) hacia ALB, CloudFront o S3 sin costo por consulta hacia esos recursos. En zonas privadas asociadas a una o varias VPCs, el Route 53 Resolver (`VPC_CIDR + 2`) resuelve nombres internos y puede integrarse con Inbound/Outbound Endpoints hacia redes on-premises.",
+    "practicas": [
+      "Usa registros `Alias` en lugar de `CNAME` cuando apuntes a recursos AWS (ALB, CloudFront, API Gateway): funcionan en el dominio raíz (apex), se actualizan automáticamente si cambian las IPs y no cobran consultas hacia AWS.",
+      "Aprovecha Split-Horizon DNS creando una Public Hosted Zone y una Private Hosted Zone con el mismo dominio para que tráfico interno resuelva IPs privadas sin salir a internet.",
+      "Combina políticas Weighted o Failover con Health Checks activos para hacer blue/green deployments a nivel DNS o failover multi-región.",
+      "Trampa típica: olvidar que los clientes y resolvedores respetan el TTL en caché; baja el TTL a 60s con anticipación antes de una migración planificada."
+    ],
+    "ejemplo": "aws route53 change-resource-record-sets \\\n  --hosted-zone-id Z1234567890ABC \\\n  --change-batch '{\"Changes\":[{\"Action\":\"UPSERT\",\"ResourceRecordSet\":{\"Name\":\"api.ejemplo.com\",\"Type\":\"A\",\"AliasTarget\":{\"HostedZoneId\":\"Z35SXDOTRQ7X7K\",\"DNSName\":\"dualstack.api-alb-123.us-east-1.elb.amazonaws.com\",\"EvaluateTargetHealth\":true}}}]}'",
+    "entrevista": "Route 53 nos da resolución DNS Anycast con registros Alias para el apex del dominio, split-horizon dentro de la VPC y failover automático respaldado por health checks."
+  },
+  "S3 (bucket)": {
+    "que": "Amazon Simple Storage Service (S3) es un servicio de almacenamiento de objetos que organiza datos como pares clave-valor (objeto + metadatos) dentro de contenedores lógicos llamados buckets, con una durabilidad diseñada del 99.999999999% (11 nueves).",
+    "para": "Sirve para almacenar y servir cualquier volumen de datos no estructurados: activos web, backups, artefactos, logs de auditoría y data lakes analíticos, además de alojar sitios estáticos o servir como origen de CloudFront.",
+    "como": "A diferencia del almacenamiento en bloques (EBS) o archivos POSIX (EFS), S3 expone una API HTTP/HTTPS plana donde cada objeto se replica sincrónicamente en múltiples dispositivos y al menos 3 Availability Zones dentro de una región (salvo One Zone-IA). Soporta clases de almacenamiento con distinto costo/acceso (Standard, Intelligent-Tiering, Standard-IA, Glacier), Lifecycle Policies automáticas, cifrado SSE-S3/SSE-KMS, versionado, Object Lock (WORM) y consistencia fuerte tras lectura-después-de-escritura desde 2020.",
+    "practicas": [
+      "Mantén activado Block Public Access a nivel de cuenta y bucket por defecto; expón contenido privado mediante CloudFront con OAC (Origin Access Control) o Presigned URLs temporales.",
+      "S3 vs EBS vs EFS: S3 es almacenamiento de objetos vía HTTP (sin sistema de archivos montable); EBS es bloque de baja latencia ligado a una EC2/AZ; EFS es sistema de archivos NFS compartido entre múltiples instancias.",
+      "Habilita Versioning + Lifecycle Rules para mover versiones antiguas a Glacier y expirar multipart uploads incompletos que consumen costo oculto.",
+      "Usa SSE-KMS con Bucket Keys activadas para reducir costos de llamadas a KMS en buckets con alto tráfico."
+    ],
+    "ejemplo": "aws s3api put-public-access-block \\\n  --bucket mi-bucket-seguro-2026 \\\n  --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true",
+    "entrevista": "S3 es el almacenamiento de objetos por defecto en AWS por su durabilidad de 11 nueves en múltiples AZ, clases de ciclo de vida y desacople total del cómputo vía HTTP o Presigned URLs."
+  },
+  "SAM - CDK": {
+    "que": "AWS SAM (Serverless Application Model) es un framework y extensión declarativa de CloudFormation optimizada para recursos serverless (Lambda, API Gateway, DynamoDB), mientras que AWS CDK (Cloud Development Kit) es un framework de Infraestructura como Código que permite definir infraestructura AWS usando lenguajes de programación reales (TypeScript, Python, Go, Java, C#).",
+    "para": "Permiten versionar, revisar, probar y desplegar infraestructura serverless y cloud de forma reproducible; SAM brilla en microservicios serverless sencillos con pruebas locales en Docker, y CDK destaca en arquitecturas complejas donde necesitas abstracciones reutilizables, tipado fuerte y lógica condicional.",
+    "como": "SAM utiliza plantillas YAML compactas con transformación `AWS::Serverless-2016-10-31` que expande recursos cortos (como `AWS::Serverless::Function`) a CloudFormation estándar, y ofrece `sam local` para invocar funciones en contenedores Docker locales y `sam sync` para iterar rápido en la nube. CDK modela recursos como un árbol de Constructs (L1 directos de CloudFormation, L2 con defaults seguros y permisos `.grantReadWriteData()`, L3 patrones completos) y los compila (`cdk synth`) a plantillas CloudFormation antes de desplegarlas.",
+    "practicas": [
+      "SAM vs CDK: usa SAM si tu equipo prefiere YAML declarativo puro centrado en Lambda/API Gateway y emulación local rápida; usa CDK si quieres compartir librerías de infraestructura entre proyectos con validación de tipos y tests unitarios.",
+      "En CDK, aprovecha los métodos `.grant*()` de los Constructs L2 para generar políticas IAM de menor privilegio automáticamente en lugar de escribir políticas amplias a mano.",
+      "Fija versiones de dependencias y usa `cdk diff` o `sam deploy --no-execute-changeset` en CI/CD para auditar cambios destructivos (como reemplazo de tablas o bases de datos) antes de aplicarlos."
+    ],
+    "ejemplo": "const table = new dynamodb.Table(this, 'Orders', {\n  partitionKey: { name: 'orderId', type: dynamodb.AttributeType.STRING }\n});\nconst fn = new lambda.Function(this, 'Handler', { /* ... */ });\ntable.grantReadWriteData(fn);",
+    "entrevista": "Ambos compilan a CloudFormation garantizando despliegues atómicos con rollback: elijo SAM para servicios serverless ligeros con YAML y testing local, y CDK cuando la complejidad pide abstracciones tipadas y reutilizables."
+  },
+  "SNS": {
+    "que": "Amazon Simple Notification Service (SNS) es un servicio de mensajería Publish/Subscribe (Pub-Sub) completamente administrado para distribuir notificaciones y eventos en tiempo real desde un publicador hacia múltiples suscriptores en paralelo.",
+    "para": "Resuelve el desacoplamiento 1-a-N (fan-out) cuando un mismo evento (por ejemplo, `PedidoCreado`) debe disparar simultáneamente varios consumidores independientes como facturación, inventario, correo o Lambda, además de soportar alertas operacionales vía SMS, email o push móvil.",
+    "como": "Un productor publica un mensaje en un Topic de SNS (Standard de alto rendimiento con entrega al menos una vez, o FIFO con orden estricto y deduplicación junto a colas SQS FIFO). SNS evalúa Subscription Filter Policies opcionales en atributos o payload JSON para evitar envíos innecesarios y entrega el mensaje vía push paralelo hacia los suscriptores registrados (SQS, Lambda, HTTP/S, Kinesis Data Firehose, email o SMS), aplicando políticas de reintento y enviando fallos persistentes a una Dead Letter Queue (DLQ) por suscripción.",
+    "practicas": [
+      "Aplica el patrón SNS + SQS Fan-Out en producción: en lugar de suscribir servicios críticos directo por HTTP, suscribe colas SQS al tópico SNS para ganar buffering, reintentos independientes y control de backpressure.",
+      "SNS vs SQS: SNS empuja (push) a muchos suscriptores sin retención duradera si no hay nadie escuchando; SQS almacena mensajes y los consumidores hacen pull a su ritmo.",
+      "Usa Subscription Filter Policies en SNS para filtrar eventos en el broker y ahorrar invocaciones Lambda o mensajes SQS irrelevantes.",
+      "Configura siempre una DLQ en cada suscripción crítica para no perder eventos si un endpoint cae por tiempo prolongado."
+    ],
+    "ejemplo": "aws sns publish \\\n  --topic-arn arn:aws:sns:us-east-1:123456789012:pedidos-eventos \\\n  --message '{\"orderId\":\"ord-99\",\"total\":120}' \\\n  --message-attributes '{\"tipo\":{\"DataType\":\"String\",\"StringValue\":\"COMPRA\"}}'",
+    "entrevista": "SNS implementa el patrón Pub-Sub con push fan-out 1-a-N; en arquitecturas resilientes lo combinamos con colas SQS por consumidor para aislar fallos y controlar la velocidad de procesamiento."
+  },
+  "SQS": {
+    "que": "Amazon Simple Queue Service (SQS) es un servicio administrado de colas de mensajes (message queue) altamente disponible para desacoplar microservicios, trabajadores en segundo plano y sistemas distribuidos.",
+    "para": "Sirve para absorber picos de carga (load leveling), desacoplar productores de consumidores y garantizar que ninguna tarea asíncrona se pierda aunque el consumidor esté caído o saturado.",
+    "como": "Los productores envían mensajes a una cola Standard (rendimiento prácticamente ilimitado, entrega at-least-once y mejor esfuerzo en orden) o FIFO (orden estricto por `MessageGroupId` y procesamiento exactly-once en una ventana de 5 minutos mediante `MessageDeduplicationId`). Los consumidores consultan la cola mediante Long Polling (`WaitTimeSeconds` hasta 20 s); al recibir un mensaje, este queda oculto durante el `VisibilityTimeout` mientras se procesa y solo se elimina tras un `DeleteMessage` explícito; si excede `maxReceiveCount` fallos, SQS lo mueve automáticamente a una Dead Letter Queue (DLQ).",
+    "practicas": [
+      "Haz tus consumidores idempotentes: en colas Standard (y ante expiración de `VisibilityTimeout`) un mensaje puede procesarse más de una vez.",
+      "Activa siempre Long Polling (`ReceiveMessageWaitTimeSeconds=20`) para reducir latencia y eliminar el costo de respuestas vacías del Short Polling.",
+      "Configura el `VisibilityTimeout` al menos 6 veces mayor que el tiempo máximo esperado del consumidor (y en Lambda, mayor al timeout de la función) para evitar reprocesamientos duplicados.",
+      "Asocia una Dead Letter Queue (DLQ) con `maxReceiveCount` entre 3 y 5 para aislar poison pills sin bloquear la cola principal."
+    ],
+    "ejemplo": "aws sqs create-queue \\\n  --queue-name pagos-procesar \\\n  --attributes ReceiveMessageWaitTimeSeconds=20,VisibilityTimeout=60,RedrivePolicy='{\"deadLetterTargetArn\":\"arn:aws:sqs:us-east-1:123456789012:pagos-dlq\",\"maxReceiveCount\":\"3\"}'",
+    "entrevista": "SQS desacopla productores y consumidores mediante pull con Visibility Timeout y Long Polling, absorbiendo picos de tráfico y aislando fallos repetidos en una DLQ sobre consumidores idempotentes."
+  },
+  "Savings Plans - RI": {
+    "que": "Savings Plans y Reserved Instances (RI) son modelos de descuento por compromiso en AWS que reducen el costo frente a tarifas On-Demand a cambio de comprometer un uso continuo durante 1 o 3 años.",
+    "para": "Se utilizan para optimizar entre un 20% y un 72% la factura de cargas predecibles y estables (EC2, Fargate, Lambda, RDS, ElastiCache, Redshift) una vez validado el dimensionamiento base.",
+    "como": "Las Reserved Instances (RI) aplican descuentos comprometiendo capacidad o uso en familias de instancias específicas (y siguen siendo la opción principal para RDS, ElastiCache, OpenSearch y Redshift). Los Savings Plans aplican un compromiso de gasto horario en dólares (`$/hora`): Compute Savings Plans cubre automáticamente EC2, Fargate y Lambda sin importar región, familia o sistema operativo, mientras que EC2 Instance Savings Plans ofrece mayor descuento restringido a una familia y región específicas; ambos se descuentan automáticamente durante la facturación consolidada de Organizations.",
+    "practicas": [
+      "Dimensiona primero (rightsizing) y elimina recursos ociosos antes de comprar compromisos: comprometer instancias sobredimensionadas fija el desperdicio por 1 o 3 años.",
+      "Compute Savings Plans vs EC2 Instance Savings Plans / RI: prefiere Compute Savings Plans para agilidad (cambiar familias Graviton o migrar de EC2 a Fargate/Lambda sin perder el descuento), y usa RI cuando necesites cubrir RDS/ElastiCache o reservar capacidad zonal explícita.",
+      "Cubre solo la línea base estable (por ejemplo 60-70% del consumo mínimo sostenido) y deja los picos variables en On-Demand o Spot.",
+      "Revisa Cost Explorer Recommendations y monitorea la utilización y cobertura mensualmente para evitar compromisos subutilizados."
+    ],
+    "ejemplo": "Costo On-Demand: 10 x m6i.large ≈ $700/mes\nCompute Savings Plan (1 año, No Upfront): ≈ $504/mes (-28%)\nEC2 Instance Savings Plan / RI (3 años, All Upfront): ≈ $265/mes (-62%)",
+    "entrevista": "Uso Compute Savings Plans para cubrir nuestra línea base de cómputo con flexibilidad para evolucionar hacia Graviton o Fargate, y Reserved Instances para bases de datos administradas como RDS y ElastiCache."
+  },
+  "Security Groups": {
+    "que": "Un Security Group (SG) es un firewall virtual con estado (stateful) que opera a nivel de interfaz de red (ENI) de recursos AWS como EC2, RDS, ALB o Lambdas en VPC para controlar tráfico entrante (inbound) y saliente (outbound).",
+    "para": "Implementa microsegmentación y principio de menor privilegio dentro de la VPC, definiendo exactamente qué origen (CIDR o incluso otro Security Group) puede comunicarse por qué puerto y protocolo hacia un recurso.",
+    "como": "Los Security Groups solo permiten reglas `Allow` (no existen reglas `Deny` explícitas); todo tráfico no permitido queda bloqueado implícitamente. Al ser stateful, si una regla inbound permite una petición entrante desde un cliente, la respuesta saliente queda automáticamente permitida sin necesidad de regla outbound equivalente (y viceversa). Además permiten referenciar otro Security Group como origen o destino, resolviendo dinámicamente las IPs de las interfaces asociadas aunque escalen con Auto Scaling.",
+    "practicas": [
+      "Security Groups vs NACL: los Security Groups son stateful, operan a nivel de instancia/ENI y solo tienen reglas Allow; las NACLs son stateless, operan a nivel de subnet, soportan reglas Deny explícitas y evalúan reglas en orden numérico.",
+      "Referencia Security Groups en lugar de rangos IP (`0.0.0.0/0` o CIDR de subnet) en comunicación interna: por ejemplo, el SG de RDS solo acepta puerto 5432 desde el SG del backend.",
+      "Restringe también reglas outbound en entornos sensibles para mitigar exfiltración o movimiento lateral.",
+      "Error típico: dejar SSH (22) o RDP (3389) abierto a `0.0.0.0/0`; sustitúyelo por AWS Systems Manager Session Manager sin puertos entrantes abiertos."
+    ],
+    "ejemplo": "aws ec2 authorize-security-group-ingress \\\n  --group-id sg-db-prod \\\n  --protocol tcp --port 5432 \\\n  --source-group sg-api-prod",
+    "entrevista": "Los Security Groups son firewalls stateful por interfaz de red que permiten microsegmentación dinámica referenciando otros Security Groups en lugar de mantener listas frágiles de IPs."
+  },
+  "Security Hub": {
+    "que": "AWS Security Hub es un servicio de gestión de postura de seguridad en la nube (CSPM) que agrega, normaliza y prioriza hallazgos de seguridad de múltiples servicios AWS y herramientas de terceros en un único panel centralizado.",
+    "para": "Resuelve la fragmentación de alertas entre cuentas y servicios, evaluando automáticamente el cumplimiento continuo frente a estándares como AWS Foundational Security Best Practices (FSBP), CIS AWS Foundations Benchmark o PCI DSS.",
+    "como": "Security Hub ingiere hallazgos en formato estándar ASFF (AWS Security Finding Format) desde servicios como GuardDuty, Inspector, Macie, IAM Access Analyzer, Firewall Manager y socios externos. En una arquitectura multi-cuenta integrada con Organizations, designa una cuenta administradora delegada (típicamente la cuenta Security/Audit) que consolida hallazgos de todas las cuentas y regiones en una región de agregación, ejecutando controles automatizados vía AWS Config y emitiendo eventos a Amazon EventBridge para remediación automática.",
+    "practicas": [
+      "Designa una cuenta delegada de seguridad y habilita la agregación cross-region para tener visibilidad única de toda la organización.",
+      "Security Hub vs GuardDuty: GuardDuty detecta amenazas activas analizando logs y telemetría (ML e inteligencia de amenazas); Security Hub evalúa configuración/postura y consolida los hallazgos de GuardDuty junto con otros detectores.",
+      "Prioriza los hallazgos CRITICAL/HIGH de estándares habilitados y conecta EventBridge + Lambda/SSM para auto-remediar fallos obvios (como buckets S3 públicos o grupos de seguridad abiertos).",
+      "Desactiva controles que no apliquen conscientemente (Documented Suppressions) para evitar fatiga de alertas en el equipo."
+    ],
+    "ejemplo": "aws securityhub enable-security-hub --enable-default-standards\naws securityhub get-findings --filters '{\"SeverityLabel\":[{\"Value\":\"CRITICAL\",\"Comparison\":\"EQUALS\"}]}'",
+    "entrevista": "Security Hub centraliza en formato ASFF tanto la detección de amenazas (GuardDuty) como el cumplimiento continuo de postura (FSBP/CIS) en todas nuestras cuentas, permitiéndonos automatizar remediaciones vía EventBridge."
+  },
+  "Serverless Framework": {
+    "que": "Serverless Framework es una herramienta open-source de Infraestructura como Código y automatización orientada principalmente a desarrollar, empaquetar y desplegar aplicaciones basadas en FaaS y servicios gestionados mediante un archivo declarativo `serverless.yml`.",
+    "para": "Acelera la creación de APIs y workers orientados a eventos (Lambda, API Gateway, SQS, EventBridge, DynamoDB) abstrayendo el boilerplate de permisos, empaquetado de dependencias y disparadores, con soporte multi-proveedor aunque su ecosistema más maduro está en AWS.",
+    "como": "Al ejecutar `serverless deploy`, el CLI lee `serverless.yml`, empaqueta el código de las funciones (o usa plugins como esbuild/webpack), traduce las definiciones de funciones, eventos (`httpApi`, `sqs`, `schedule`) y recursos adicionales en una plantilla de AWS CloudFormation, sube los artefactos a un bucket S3 temporal y despliega el stack de CloudFormation de forma atómica con soporte para múltiples stages (`dev`, `staging`, `prod`).",
+    "practicas": [
+      "Serverless Framework vs SAM / CDK: Serverless Framework ofrece una experiencia rápida y ecosistema amplio de plugins, aunque desde la v4 requiere licencia comercial para empresas con ciertos ingresos; SAM y CDK son nativos de AWS sin costo adicional de plataforma.",
+      "Define permisos IAM específicos por función (o usa plugins de menor privilegio) en lugar de una sola `iam.role.statements` global compartida por todas las Lambdas.",
+      "Usa `httpApi` (API Gateway v2) en lugar de `http` (REST API v1) cuando no necesites características avanzadas de v1, reduciendo latencia y costos hasta en un 70%.",
+      "Evita depender de demasiados plugins no mantenidos; compila TypeScript/Python con esbuild o capas reproducibles."
+    ],
+    "ejemplo": "service: pagos-api\nprovider:\n  name: aws\n  runtime: nodejs20.x\nfunctions:\n  crearPago:\n    handler: src/handler.crear\n    events:\n      - httpApi: POST /pagos",
+    "entrevista": "Serverless Framework abstrae el cableado entre funciones, eventos y CloudFormation en un único manifiesto legible, aunque hoy evaluamos su licencia v4 frente a alternativas nativas como SAM o CDK."
+  },
+  "Shield": {
+    "que": "AWS Shield es un servicio administrado de protección contra ataques de Denegación de Servicio Distribuido (DDoS) que protege aplicaciones ejecutándose en AWS en capas 3, 4 y 7.",
+    "para": "Mantiene la disponibilidad de tus servicios ante ataques volumétricos (UDP reflection, ICMP floods), de agotamiento de estado (SYN floods) o de capa de aplicación cuando se combina con WAF, CloudFront y Route 53.",
+    "como": "Shield tiene dos niveles: Shield Standard viene activado automáticamente sin costo adicional para todos los clientes y mitiga ataques comunes de capa 3 y 4 en el borde de AWS mediante inspección de paquetes en línea y técnicas de mitigación automática; Shield Advanced es un servicio pago (con suscripción mensual fija) que añade detección mejorada basada en la línea base de tráfico de tu recurso, acceso 24/7 al AWS Shield Response Team (SRT), integración incluida con AWS WAF sin costo adicional por reglas en recursos protegidos y protección económica (DDoS Cost Protection) ante picos de escalado causados por un ataque.",
+    "practicas": [
+      "Coloca siempre CloudFront y Route 53 delante de tus orígenes (ALB, API Gateway, S3) para absorber tráfico DDoS en el borde global donde Shield Standard es mucho más efectivo.",
+      "Shield vs WAF: Shield protege contra inundación de red/transporte (L3/L4) y ataques volumétricos; WAF filtra peticiones HTTP maliciosas e inyecciones en capa 7 (aunque Shield Advanced también mitiga floods L7).",
+      "Si usas Shield Advanced, configura Health Checks de Route 53 asociados a los recursos protegidos para mejorar la precisión y velocidad de detección del SRT.",
+      "Combina Shield con Auto Scaling y límites de concurrencia en orígenes para que un pico residual no derribe la base de datos."
+    ],
+    "ejemplo": "aws shield create-protection \\\n  --name cloudfront-prod-protection \\\n  --resource-arn arn:aws:cloudfront::123456789012:distribution/E1234567890ABC",
+    "entrevista": "Shield Standard viene activo por defecto y rinde al máximo cuando exponemos todo detrás de CloudFront y Route 53; Shield Advanced aporta mitigación adaptativa L7, acceso al equipo SRT y protección financiera frente a picos por DDoS."
+  },
+  "Step Functions": {
+    "que": "AWS Step Functions es un orquestador serverless de flujos de trabajo (máquinas de estado) que coordina servicios distribuidos, microservicios y funciones Lambda de manera visual y resiliente.",
+    "para": "Resuelve flujos de negocio con múltiples pasos, ramificaciones, ejecuciones paralelas, esperas humanas o largas (hasta 1 año) y transacciones distribuidas con patrón Saga y acciones compensatorias sin escribir código de pegamento ni gestionar estados manualmente.",
+    "como": "Define el flujo en Amazon States Language (ASL, un JSON declarativo) usando estados como `Task`, `Choice`, `Parallel`, `Map` (para procesar millones de objetos en paralelo con Distributed Map), `Wait` y `Fail/Succeed`. El motor persiste cada transición de estado y soporta dos tipos de flujo: Standard Workflows (duración hasta 1 año, historial auditable, ejecución exactly-once por paso, cobro por transición de estado) y Express Workflows (hasta 5 minutos, altísima concurrencia, at-least-once, cobro por número y duración); además integra SDK Integrations directas con más de 220 servicios AWS sin pasar por Lambda.",
+    "practicas": [
+      "Usa integraciones directas del SDK (por ejemplo Step Functions -> DynamoDB o SQS) en lugar de crear Lambdas puente solo para llamar a otra API de AWS.",
+      "Step Functions Standard vs Express: usa Standard para procesos críticos de negocio, aprobaciones o Sagas donde no puedes duplicar un cobro; usa Express para procesamiento masivo de eventos idempotentes con alto throughput y menor costo.",
+      "Configura bloques `Retry` con backoff exponencial y `Catch` para ejecutar pasos de compensación (patrón Saga) ante fallos de negocio.",
+      "Mantén los payloads entre estados pequeños (límite de 256 KB); pasa referencias a objetos en S3 cuando manejes documentos grandes."
+    ],
+    "ejemplo": "{\n  \"StartAt\": \"ReservarStock\",\n  \"States\": {\n    \"ReservarStock\": {\n      \"Type\": \"Task\",\n      \"Resource\": \"arn:aws:states:::dynamodb:updateItem\",\n      \"Catch\": [{ \"ErrorEquals\": [\"States.ALL\"], \"Next\": \"CompensarPedido\" }],\n      \"Next\": \"CobrarTarjeta\"\n    }\n  }}",
+    "entrevista": "Step Functions saca la lógica de orquestación, reintentos, esperas y compensaciones Saga fuera del código de las Lambdas hacia una máquina de estados auditable y resiliente."
+  },
+  "Subnets": {
+    "que": "Una Subnet (subred) en AWS es una subdivisión lógica de direcciones IP (bloque CIDR) dentro de una VPC, estrictamente ligada a una única Availability Zone (AZ).",
+    "para": "Permiten aislar recursos por nivel de exposición de red (subnets públicas para balanceadores/NAT y subnets privadas o aisladas para aplicaciones y bases de datos) y distribuir cargas entre múltiples AZ para alta disponibilidad.",
+    "como": "Cada subnet recibe un rango CIDR contenido dentro del CIDR de la VPC (por ejemplo `10.0.1.0/24`) y se asocia a una única Route Table y a una Network ACL. AWS reserva las primeras 4 IPs y la última IP de cada subnet (5 IPs en total: red, VPC router, DNS Resolver, uso futuro y broadcast), lo que reduce las IPs utilizables en `2^(32-prefijo) - 5`. Una subnet es 'pública' únicamente si su Route Table tiene una ruta por defecto (`0.0.0.0/0`) apuntando a un Internet Gateway; es 'privada' si enruta salida a internet vía NAT Gateway (o no tiene ruta a internet en absoluto para bases de datos).",
+    "practicas": [
+      "Diseña una arquitectura de al menos 3 capas en 2 o 3 AZ: subnets públicas (ALB, NAT Gateway), subnets privadas de aplicación (EC2, ECS, Lambda) y subnets privadas aisladas sin ruta a internet (RDS, ElastiCache).",
+      "No dimensiones subnets demasiado pequeñas (como `/28` con solo 11 IPs útiles): servicios como ALB, EKS o VPC Endpoints consumen varias IPs rápidamente; `/24` (251 IPs) o `/22` suelen ser puntos de partida cómodos.",
+      "Subnet pública vs Subnet privada: la diferencia no está en el nombre ni en el Security Group, sino en que su Route Table apunte al Internet Gateway y los recursos tengan IP pública.",
+      "Recuerda las 5 IPs reservadas por AWS en cada subnet al calcular capacidad para clústeres de Kubernetes (EKS) donde cada Pod puede requerir una IP de VPC."
+    ],
+    "ejemplo": "aws ec2 create-subnet \\\n  --vpc-id vpc-0a1b2c3d4e5f67890 \\\n  --cidr-block 10.0.10.0/24 \\\n  --availability-zone us-east-1a",
+    "entrevista": "En AWS cada subnet vive en una única AZ y su carácter público o privado depende exclusivamente de su Route Table; separar capas públicas, de cómputo privado y de datos aislados en múltiples AZ es la base de una VPC segura y resiliente."
+  },
+  "Timestream": {
+    "que": "Amazon Timestream es un servicio administrado de base de datos de series temporales (time-series) diseñado para ingerir, almacenar y consultar trillones de eventos ordenados por marca de tiempo.",
+    "para": "Se emplea en telemetría IoT, métricas DevOps, monitoreo industrial o análisis de eventos secuenciales en tiempo real donde los datos llegan continuamente ordenados por tiempo y se consultan por ventanas temporales.",
+    "como": "Timestream (LiveAnalytics) separa automáticamente los datos por antigüedad en dos niveles: Memory Store (en memoria para escrituras de baja latencia y consultas recientes en milisegundos, soportando datos fuera de orden) y Magnetic Store (almacenamiento en disco optimizado por columnas y tiempo para retención histórica económica). Permite consultas SQL con funciones nativas de series temporales (interpolación, suavizado, ventanas `BIN`) y Scheduled Queries para materializar agregaciones.",
+    "practicas": [
+      "Timestream vs DynamoDB/RDS: usa Timestream si necesitas retención escalonada automática (memoria -> magnético) y funciones analíticas temporales sin gestionar particiones; para métricas de Prometheus de alta cardinalidad considera Amazon Managed Service for Prometheus.",
+      "Define correctamente el periodo de retención en Memory Store (horas o días): cuanto más corto y ajustado al flujo de ingestión tardía, menor el costo.",
+      "Modela dimensiones (metadatos estáticos como `device_id` o `region`) separadas de las medidas (`cpu`, `temperatura`) y usa multi-measure records para reducir costos de escritura y almacenamiento.",
+      "Nota de ecosistema: revisa la disponibilidad de nuevas cuentas y considera Timestream for InfluxDB si necesitas compatibilidad nativa con el ecosistema InfluxDB."
+    ],
+    "ejemplo": "SELECT bin(time, 5m) AS ventana, AVG(measure_value::double) AS cpu_media\nFROM \"telemetria\".\"servidores\"\nWHERE time > ago(2h) AND region = 'us-east-1'\nGROUP BY bin(time, 5m) ORDER BY ventana DESC",
+    "entrevista": "Timestream simplifica el ciclo de vida de datos temporales moviendo automáticamente los registros desde almacenamiento en memoria de baja latencia hacia almacenamiento magnético barato sin particionado manual."
+  },
+  "Trusted Advisor": {
+    "que": "AWS Trusted Advisor es una herramienta de inspección automática que audita tu cuenta u organización de AWS y emite recomendaciones accionables en cinco pilares: optimización de costos, rendimiento, seguridad, tolerancia a fallos y límites de servicio.",
+    "para": "Ayuda a detectar rápidamente desvíos operativos comunes —como volúmenes EBS desconectados, Security Groups abiertos al mundo, ausencia de MFA en root, copias de seguridad faltantes o cuotas cerca del límite— sin construir scripts personalizados.",
+    "como": "Ejecuta verificaciones periódicas sobre la configuración y métricas de CloudWatch de tus recursos en todas las regiones, clasificándolas en estado verde (sin problemas), amarillo (investigación recomendada) o rojo (acción recomendada). En planes Basic/Developer incluye un subconjunto básico de seguridad y límites de servicio; a partir de Business/Enterprise Support desbloquea todas las comprobaciones (incluyendo optimización de costos, tolerancia a fallos, alertas vía EventBridge e integración organizacional para exportar reportes de toda la empresa).",
+    "practicas": [
+      "Conecta los eventos de cambio de estado de Trusted Advisor a Amazon EventBridge para notificar en Slack/Teams cuando aparezca una alerta roja de seguridad o una cuota al 80%.",
+      "Trusted Advisor vs Compute Optimizer / Cost Explorer: Trusted Advisor detecta recursos ociosos y buenas prácticas transversales de forma rápida; Compute Optimizer analiza métricas históricas detalladas con ML para recomendar tipos exactos de instancia.",
+      "Revisa periódicamente la sección de Service Quotas en Trusted Advisor antes de eventos de tráfico alto o despliegues grandes.",
+      "Recuerda que el acceso completo a las comprobaciones de costos y rendimiento requiere plan Business o Enterprise Support."
+    ],
+    "ejemplo": "aws support describe-trusted-advisor-checks --language es\naws support describe-trusted-advisor-check-result --check-id Qch7DwouX1",
+    "entrevista": "Trusted Advisor actúa como un auditor continuo que detecta recursos ociosos, fallos de seguridad básicos y cercanía a cuotas de servicio antes de que impacten en la factura o en producción."
+  },
+  "VPC": {
+    "que": "Amazon Virtual Private Cloud (VPC) es una red virtual lógicamente aislada dentro de una región de AWS donde aprovisionas y controlas por completo tu topología IP, subredes, tablas de enrutamiento y gateways.",
+    "para": "Proporciona el perímetro y la segmentación de red privada para instancias EC2, contenedores, bases de datos y funciones Lambda internas, controlando exactamente cómo entran y salen paquetes hacia internet, otras VPCs o centros de datos on-premises.",
+    "como": "Una VPC abarca una única región (todas sus Availability Zones) y define uno o más bloques CIDR privados RFC 1918 (como `10.0.0.0/16`) e IPv6 opcionales. Su router implícito permite comunicación local dentro del CIDR y evalúa Route Tables asociadas a cada subnet para dirigir tráfico hacia un Internet Gateway (acceso público), NAT Gateway (salida a internet desde subnets privadas), VPC Endpoints / PrivateLink (acceso privado a servicios AWS como S3 o DynamoDB sin salir a internet), VPC Peering o Transit Gateway (interconexión multi-VPC); todo el tráfico puede auditarse mediante VPC Flow Logs.",
+    "practicas": [
+      "Planifica bloques CIDR sin solapamiento entre cuentas, entornos y redes on-premises desde el inicio; si dos VPCs tienen el mismo CIDR (`10.0.0.0/16`), no podrás conectarlas fácilmente por Peering o Transit Gateway.",
+      "Usa VPC Endpoints (Gateway Endpoints gratuitos para S3/DynamoDB e Interface Endpoints vía PrivateLink para otros servicios) para evitar que tráfico interno a S3 pague cargos de procesamiento por NAT Gateway.",
+      "VPC Peering vs Transit Gateway: Peering es barato y punto a punto (no transitivo), ideal para 2 o 3 VPCs; Transit Gateway funciona como un hub central en estrella cuando conectas decenas de VPCs y VPN/Direct Connect.",
+      "Activa VPC Flow Logs hacia S3 o CloudWatch Logs para auditar tráfico rechazado y diagnosticar conectividad."
+    ],
+    "ejemplo": "aws ec2 create-vpc --cidr-block 10.10.0.0/16\naws ec2 create-vpc-endpoint --vpc-id vpc-123456 --service-name com.amazonaws.us-east-1.s3 --route-table-ids rtb-123456",
+    "entrevista": "La VPC define nuestro espacio de red aislado por región: planificar CIDRs sin solapamiento, enrutar por subnets y usar VPC Endpoints para S3/DynamoDB evita tanto brechas de exposición como costos innecesarios en NAT Gateways."
+  },
+  "VPN - Direct Connect": {
+    "que": "AWS Site-to-Site VPN es una conexión cifrada IPsec a través de internet pública entre tu red on-premises y una VPC/Transit Gateway, mientras que AWS Direct Connect (DX) es un enlace físico dedicado de red privada (fibra óptica) entre tu datacenter/colocation y un punto de presencia de AWS.",
+    "para": "Permiten construir arquitecturas híbridas conectando servidores locales, Active Directory o mainframes con recursos privados en AWS; VPN se usa para puesta en marcha rápida, bajo volumen o respaldo, y Direct Connect para alto ancho de banda (1-100 Gbps), latencia consistente y menor costo de egresión de datos.",
+    "como": "Site-to-Site VPN crea dos túneles IPsec redundantes (con soporte BGP dinámico o rutas estáticas) desde un Customer Gateway local hasta un Virtual Private Gateway o Transit Gateway en AWS. Direct Connect establece una conexión física 802.1Q VLAN en una Direct Connect Location hacia un router de AWS creando Virtual Interfaces (VIF privadas hacia VPC/Transit Gateway o VIF públicas hacia servicios públicos de AWS); como Direct Connect no cifra en capa física por defecto (salvo MACsec en puertos compatibles), suele combinarse con IPsec VPN sobre DX para cifrado extremo a extremo.",
+    "practicas": [
+      "VPN vs Direct Connect: VPN tarda minutos en aprovisionarse y es económica, pero depende de internet pública (jitter y máximo ~1.25 Gbps por túnel); Direct Connect ofrece latencia predecible y ancho de banda dedicado, pero toma semanas en instalarse.",
+      "Configura siempre redundancia: nunca dependas de un único enlace Direct Connect sin un segundo circuito en otra ubicación DX o una VPN Site-to-Site como respaldo automático vía BGP.",
+      "Ten presente que Direct Connect no cifra el tráfico por sí solo en todas sus capas; si hay requisitos regulatorios estrictos, usa MACsec o ejecuta IPsec VPN sobre una Public VIF / Transit VIF.",
+      "Si conectas múltiples VPCs a tu red on-premises, termina el Direct Connect Gateway o la VPN en un AWS Transit Gateway en lugar de crear conexiones por cada VPC."
+    ],
+    "ejemplo": "aws ec2 create-vpn-connection \\\n  --type ipsec.1 \\\n  --customer-gateway-id cgw-01234567 \\\n  --transit-gateway-id tgw-09876543",
+    "entrevista": "Usamos Site-to-Site VPN cuando necesitamos conectividad híbrida cifrada en minutos o como respaldo redundante, y Direct Connect cuando el ancho de banda, la baja latencia estable o el volumen de egress justifican un enlace dedicado."
+  },
+  "WAF": {
+    "que": "AWS WAF (Web Application Firewall) es un firewall de capa 7 que inspecciona y filtra peticiones HTTP/HTTPS entrantes hacia aplicaciones web y APIs antes de que alcancen tu código.",
+    "para": "Protege aplicaciones contra exploits comunes de OWASP Top 10 (inyección SQL, XSS, SSRF), abuso de bots, scraping y picos abusivos por IP mediante rate limiting, sin modificar el código de la aplicación.",
+    "como": "Se despliega asociando un Web ACL a Amazon CloudFront, Application Load Balancer (ALB), API Gateway, AppSync o Cognito. Cada petición entrante se evalúa secuencialmente contra reglas priorizadas (AWS Managed Rules, reglas personalizadas por IP/cabeceras/body/URI, listas de reputación o reglas rate-based que bloquean IPs al superar un umbral en 5 minutos); cada regla tiene un costo en Web ACL Capacity Units (WCUs) y aplica acciones de `Allow`, `Block`, `Count` (solo auditoría) o `Challenge/CAPTCHA`.",
+    "practicas": [
+      "Despliega nuevas reglas primero en modo `Count` durante unos días y revisa los logs en S3/Kinesis/CloudWatch antes de pasarlas a `Block` para no tumbar tráfico legítimo por falsos positivos.",
+      "WAF vs Security Groups: Security Groups filtran puertos e IPs en L3/L4; WAF inspecciona cabeceras, query strings y cuerpos JSON/HTTP en L7.",
+      "Asocia WAF preferiblemente en CloudFront cuando uses CDN para bloquear ataques en el borde antes de que lleguen a tu región y origen.",
+      "Recuerda que WAF es una capa de defensa en profundidad, nunca un sustituto de consultas parametrizadas, validación de entrada ni escape de salida en el código."
+    ],
+    "ejemplo": "aws wafv2 create-web-acl \\\n  --name api-prod-waf \\\n  --scope REGIONAL \\\n  --default-action Allow={} \\\n  --visibility-config SampledRequestsEnabled=true,CloudWatchMetricsEnabled=true,MetricName=apiProdWaf",
+    "entrevista": "AWS WAF detiene ataques de capa 7 como SQLi, XSS y abuso de bots en CloudFront o ALB usando reglas administradas y rate limiting, siempre validando primero en modo Count para evitar falsos positivos."
+  }
+}

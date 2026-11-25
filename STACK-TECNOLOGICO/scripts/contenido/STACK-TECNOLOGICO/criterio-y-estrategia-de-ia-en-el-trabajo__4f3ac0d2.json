@@ -1,0 +1,301 @@
+{
+  "Human-in-command": {
+    "que": "Modelo de gobernanza y supervisión en el que el ser humano conserva la autoridad estratégica y el poder de veto sobre cuándo, dónde y bajo qué límites opera un sistema de IA. A diferencia de la supervisión operativa paso a paso, define las reglas de enfrentamiento, los umbrales de delegación y la capacidad de anular o detener el sistema en cualquier momento.",
+    "para": "Resuelve la pérdida de control institucional y de responsabilidad legal cuando se delegan flujos de trabajo complejos o autónomos a sistemas de IA. Se utiliza en entornos regulados (finanzas, sanidad, infraestructura crítica) y en arquitecturas agénticas donde una decisión automatizada tiene impacto irreversible o de alto riesgo.",
+    "como": "El humano establece políticas declarativas (guardrails, límites de gasto, listas blancas de herramientas) en el plano de control antes de la ejecución. Durante el funcionamiento, un motor de políticas (por ejemplo, Open Policy Agent o un gateway de agentes) evalúa cada intención de acción contra dichas reglas. Si una acción excede el mandato autorizado o dispara un umbral de anomalía, el sistema activa un interruptor de parada (kill switch) o escala la decisión al operador responsable. El humano audita la telemetría agregada y puede revocar permisos o modificar objetivos en caliente.",
+    "practicas": [
+      "Human-in-command vs Human-in-the-loop: en Human-in-command el humano fija el marco, los objetivos y conserva el veto global sin aprobar cada microdecisión; en HITL aprueba cada paso crítico.",
+      "Implementa un kill switch técnico real (revocación de tokens OAuth/API y circuit breakers) y no solo un botón cosmético en la interfaz.",
+      "Error típico: asignar responsabilidad formal a un directivo sin darle visibilidad ni mecanismos operativos para detener un agente en producción.",
+      "Documenta explícitamente qué acciones están prohibidas de forma absoluta (hard constraints) frente a las que requieren confirmación."
+    ],
+    "ejemplo": "agent_mandate:\n  owner: \"head-of-payments\"\n  max_autonomous_refund_eur: 50\n  require_escalation_above_eur: 50\n  forbidden_actions: [\"delete_ledger\", \"wire_external_iban\"]\n  kill_switch_endpoint: \"/admin/v1/agents/suspend\"",
+    "entrevista": "Human-in-command garantiza que, aunque un sistema de IA opere con alta autonomía táctica, el control estratégico, los límites de mandato y la capacidad de detención inmediata permanezcan siempre en manos humanas."
+  },
+  "Human-on-the-loop": {
+    "que": "Patrón de interacción humano-IA en el que el sistema ejecuta tareas de forma autónoma mientras un operador humano monitoriza el flujo en tiempo real y puede intervenir por excepción. El humano no aprueba cada transacción individual, sino que supervisa indicadores, alertas y muestras para corregir desviaciones.",
+    "para": "Resuelve el cuello de botella de latencia y coste que supone aprobar manualmente cada salida cuando el volumen de decisiones es alto y el riesgo unitario es moderado. Se aplica en moderación de contenido, triage de tickets, detección de fraude en streaming o pipelines de agentes de soporte.",
+    "como": "El pipeline procesa solicitudes automáticamente mediante un modelo o agente y emite eventos de telemetría (confianza, latencia, tasa de rechazo, anomalías) a una consola de observabilidad. Un motor de reglas evalúa los resultados en paralelo y genera alertas o colas de excepción cuando detecta baja confianza, deriva de datos o patrones atípicos. El operador revisa únicamente los casos marcados o un muestreo aleatorio (spot-checking) y dispone de una ventana de compensación (rollback/override) para revertir acciones erróneas.",
+    "practicas": [
+      "Human-on-the-loop vs Human-in-the-loop: HOTL escala a alto rendimiento supervisando excepciones; HITL bloquea la ejecución hasta obtener aprobación humana explícita.",
+      "Combina alertas basadas en confianza con muestreo aleatorio continuo (2-5%) para detectar fallos silenciosos que el modelo no reporta.",
+      "Error típico: saturar al operador con cientos de alertas falsas por minuto, provocando fatiga de automatización y aprobaciones ciegas.",
+      "Diseña acciones reversibles o con ventana de espera (undo window) para que la intervención humana llegue antes de que el efecto sea definitivo."
+    ],
+    "ejemplo": "decision = agent.classify(ticket)\nmetrics.emit(\"confidence\", decision.score)\nif decision.score >= 0.90:\n    execute_async(decision)\n    if random.random() < 0.03:\n        audit_queue.push(decision)  # Muestreo continuo\nelse:\n    exception_queue.push(decision)  # Intervención por excepción",
+    "entrevista": "El patrón Human-on-the-loop equilibra velocidad de automatización y seguridad operativa permitiendo que la IA ejecute por defecto mientras el humano supervisa telemetría y actúa sobre excepciones."
+  },
+  "Incertidumbre del modelo": {
+    "que": "Medida de la falta de certeza de un modelo respecto a su predicción o generación, dividida normalmente en incertidumbre aleatoria (ruido inherente a los datos) e incertidumbre epistémica (desconocimiento por falta de datos de entrenamiento o casos fuera de distribución). En modelos generativos (LLM), indica cuán probable es que la respuesta sea incorrecta o inventada aunque el texto suene fluido.",
+    "para": "Sirve para decidir cuándo confiar en una salida automatizada, cuándo solicitar más contexto (como RAG) y cuándo derivar la tarea a un humano o a un sistema determinista. Es fundamental en sistemas críticos, enrutamiento dinámico de modelos y prevención de alucinaciones en producción.",
+    "como": "En clasificadores se estima mediante la entropía de la distribución softmax, Monte Carlo Dropout o varianza entre ensembles profundos. En LLMs se aproxima analizando probabilidades logarítmicas por token (logprobs), consistencia semántica entre múltiples muestreos (self-consistency / semantic entropy) o mediante un modelo verificador secundario. Cuando la incertidumbre supera un umbral configurado, el orquestador aplica una política de respaldo: abstenerse, pedir aclaración al usuario o escalar a revisión humana.",
+    "practicas": [
+      "Distingue incertidumbre aleatoria (ambigüedad real en la entrada, irreductible con más datos) de epistémica (hueco de conocimiento, reducible con mejor dataset o RAG).",
+      "No confundas probabilidad softmax o fluidez lingüística con certeza real: las redes neuronales sin calibrar suelen ser sobreconfiadas fuera de distribución (OOD).",
+      "Usa consistencia entre N generaciones (p. ej. N=5 con temperatura > 0) para detectar respuestas inestables en tareas de razonamiento.",
+      "Diseña la UX para permitir que el sistema se abstenga; forzar una respuesta siempre dispara la tasa de alucinaciones."
+    ],
+    "ejemplo": "resp = client.chat.completions.create(\n    model=\"gpt-4o-mini\", messages=msgs, logprobs=True, temperature=0.2\n)\ntoken_probs = [math.exp(t.logprob) for t in resp.choices[0].logprobs.content]\nif min(token_probs) < 0.35:\n    return escalate_to_human(resp, reason=\"high_uncertainty\")",
+    "entrevista": "Medir la incertidumbre —distinguiendo ruido inherente de casos fuera de distribución— permite que el sistema sepa cuándo abstenerse o escalar en lugar de alucinar con total seguridad."
+  },
+  "Inteligencia aumentada": {
+    "que": "Paradigma de diseño de sistemas de IA orientado a amplificar las capacidades cognitivas, analíticas y creativas del profesional humano en lugar de reemplazarlo por completo. La IA actúa como copiloto que sintetiza información, propone alternativas y detecta patrones, manteniendo al humano en el centro del juicio y la decisión final.",
+    "para": "Resuelve el dilema entre la rigidez de la automatización total y las limitaciones de tiempo o memoria de trabajo humanas en tareas complejas, ambiguas o de alta responsabilidad. Se utiliza en ingeniería de software (copilotos de código), diagnóstico médico asistido, análisis jurídico y diseño arquitectónico.",
+    "como": "El flujo se integra directamente en el entorno de trabajo del usuario (IDE, historia clínica, editor) mediante una interfaz bidireccional de baja fricción. El sistema captura el contexto local (archivo abierto, historial, documentación recuperada vía RAG), ejecuta inferencia y presenta sugerencias accionables con citas o explicaciones breves. El humano inspecciona, edita, acepta o rechaza la propuesta, generando señales de retroalimentación implícita que refinan el contexto o futuras recomendaciones.",
+    "practicas": [
+      "Automatización vs Augmentación: automatiza subtareas repetitivas y verificables (formateo, extracción); aumenta el juicio humano en decisiones con contexto tácito o impacto legal.",
+      "Presenta siempre las fuentes o el razonamiento resumido junto a la sugerencia para reducir el coste de verificación humana.",
+      "Error típico: ocultar pasos intermedios o imponer autocompletado agresivo que interrumpe el flujo cognitivo del experto.",
+      "Mide el éxito por calidad final y tiempo neto ahorrado (incluyendo revisión), no solo por volumen de contenido generado."
+    ],
+    "ejemplo": "Flujo de revisión asistida (PR / Diagnóstico):\n1. Contexto: diff del PR + guías de arquitectura (RAG)\n2. IA genera: resumen de riesgos + 2 sugerencias con línea exacta\n3. Humano: acepta sugerencia 1, descarta 2 y añade criterio de negocio\n4. Resultado: revisión 40% más rápida con responsabilidad 100% humana",
+    "entrevista": "La inteligencia aumentada no busca sacar al humano de la ecuación, sino multiplicar su criterio mediante copilotos que reducen carga cognitiva sin diluir la autoría de la decisión."
+  },
+  "Inventario de casos de uso de IA": {
+    "que": "Registro centralizado, estructurado y vivo de todas las iniciativas, sistemas, modelos y flujos con IA existentes o propuestos dentro de una organización. Incluye metadatos técnicos, de negocio, de datos, de riesgo regulatorio y de propiedad operativa.",
+    "para": "Evita la proliferación descontrolada de herramientas ('shadow AI'), esfuerzos duplicados entre departamentos y puntos ciegos ante auditorías o normativas (como el EU AI Act o ISO/IEC 42001). Se usa como base para priorizar inversiones, gestionar riesgos y asignar presupuesto de forma coherente.",
+    "como": "Se implementa como un catálogo versionado (en un portal de arquitectura, CMDB o repositorio GitOps) alimentado mediante un formulario estándar de alta y revisión periódica. Cada entrada registra identificador, objetivo de negocio, tipo de tecnología (LLM, ML clásico, agente), clasificación de datos (PII), propietario responsable, estado del ciclo de vida (idea, PoC, piloto, producción, retirado) y nivel de riesgo. Un comité o plataforma cruza automáticamente este inventario con logs de API gateways y compras SaaS para detectar usos no declarados.",
+    "practicas": [
+      "Exige un propietario nominal (negocio y técnico) por cada caso de uso; un sistema sin dueño se convierte en deuda huérfana.",
+      "Incluye explícitamente los estados 'retirado' y 'descartado' para conservar memoria organizacional y no repetir PoCs fallidas.",
+      "Error típico: crear una hoja de cálculo estática que nadie actualiza tras la auditoría inicial; intégralo en el flujo de alta de entornos y claves API.",
+      "Clasifica cada caso según su nivel de riesgo y sensibilidad de datos desde el inicio, antes de pasar a desarrollo."
+    ],
+    "ejemplo": "use_case_id: \"UC-2026-014\"\nname: \"Asistente RAG de soporte nivel 1\"\nowner: \"support-platform-team\"\nstage: \"pilot\"\nai_type: \"LLM + RAG\"\ndata_classification: \"internal_no_pii\"\nrisk_tier: \"limited\"\nestimated_monthly_cost_usd: 450",
+    "entrevista": "Un inventario de casos de uso es el cimiento del gobierno de IA: sin visibilidad de qué modelos existen, qué datos tocan y quién responde por ellos, no es posible priorizar ni cumplir regulación."
+  },
+  "Límites de los LLM": {
+    "que": "Restricciones estructurales, matemáticas y operativas inherentes a los Grandes Modelos de Lenguaje basados en predicción autorregresiva de tokens sobre arquitecturas Transformer. Incluyen la propensión a alucinar hechos, conocimiento estático hasta su fecha de corte, ventana de contexto finita y dificultades con el razonamiento lógico exacto o aritmético sin herramientas externas.",
+    "para": "Comprender estos límites permite diseñar arquitecturas híbridas seguras y decidir qué problemas no deben resolverse solo con un prompt. Es esencial para evitar fallos en producción al aplicar LLMs a cálculos financieros, consultas en tiempo real o reglas de negocio deterministas.",
+    "como": "Al generar cada token de forma probabilística según la distribución aprendida en el entrenamiento, el modelo optimiza plausibilidad lingüística antes que veracidad factual. Además, la atención sobre secuencias largas sufre degradación en zonas intermedias ('lost in the middle') y coste creciente en memoria KV-cache. Para mitigar estos límites en producción, se combinan LLMs con recuperación externa (RAG), ejecución de código/calculadoras (tool calling), esquemas estructurados (JSON Schema) y validadores deterministas posteriores.",
+    "practicas": [
+      "Nunca uses un LLM puro como base de datos factual, motor de cálculo exacto o evaluador determinista de reglas de negocio.",
+      "Separa lenguaje y síntesis (LLM) de cálculo y verificación (código Python, SQL, motores de reglas).",
+      "Error típico: asumir que ampliar la ventana de contexto a 1M de tokens elimina la necesidad de curar o indexar información relevante.",
+      "Ten en cuenta el no determinismo: incluso con temperature=0, cambios en hardware, batching o versiones de API pueden alterar salidas."
+    ],
+    "ejemplo": "# Antipatón: pedir aritmética exacta o datos vivos al LLM puro\n# Patrón correcto: Tool Calling hacia sistemas deterministas\ntools = [{\"name\": \"query_ledger_sql\"}, {\"name\": \"calculate_tax_decimal\"}]\nresponse = llm.generate(prompt, tools=tools, temperature=0)",
+    "entrevista": "Los LLM predicen el siguiente token más plausible, no la verdad objetiva; por eso en ingeniería acotamos sus límites conectándolos a herramientas deterministas, RAG y validadores."
+  },
+  "Modelo de riesgo de IA": {
+    "que": "Marco estructurado que identifica, clasifica y cuantifica las amenazas específicas asociadas a un sistema de IA —como sesgos, alucinaciones, fuga de datos, inyección de prompts o daños operativos— junto con sus controles de mitigación. Traduce características técnicas del modelo y del caso de uso en un nivel de riesgo gobernable.",
+    "para": "Sirve para dimensionar proporcionalmente las exigencias de validación, supervisión humana, ciberseguridad y cumplimiento legal (p. ej. NIST AI RMF o EU AI Act) antes de desplegar a producción. Evita tanto la parálisis burocrática en casos inocuos como la negligencia en casos críticos.",
+    "como": "El proceso evalúa dimensiones clave: autonomía de acción, reversibilidad del impacto, sensibilidad de los datos (PII, secretos), exposición a entradas no confiables y criticidad del dominio. Cada dimensión recibe una puntuación que ubica al sistema en una categoría (bajo, medio, alto o inaceptable). Según la categoría asignada, un catálogo de controles obliga a aplicar medidas concretas: red teaming, evaluación adversarial, guardrails de entrada/salida, trazabilidad reforzada o aprobación Human-in-the-loop.",
+    "practicas": [
+      "Evalúa el riesgo del sistema sociotécnico completo (modelo + herramientas + datos + usuario), nunca del modelo aislado.",
+      "Aplica controles proporcionales al impacto: un buscador interno de documentación no requiere el mismo rigor que un sistema de concesión de crédito.",
+      "Error típico: tratar el modelo de riesgo como un cuestionario único previo al lanzamiento y no reevaluarlo tras cambiar de modelo, prompt o permisos.",
+      "Mapea cada riesgo identificado a un control técnico verificable y a un umbral de riesgo residual aceptable."
+    ],
+    "ejemplo": "Matriz de controles (Impacto x Autonomía):\n- Bajo impacto + Solo lectura      -> Riesgo Bajo  (logging básico)\n- Alto impacto + Borrador asistido -> Riesgo Medio (HITL obligatorio)\n- Alto impacto + Ejecución directa -> Riesgo Alto  (sandbox, límites, auditoría, aprobación dual)",
+    "entrevista": "Un modelo de riesgo de IA alinea el rigor técnico —evaluaciones, guardrails y supervisión humana— con el impacto real y la reversibilidad de los errores del sistema."
+  },
+  "Métricas de adopción de IA": {
+    "que": "Conjunto de indicadores cuantitativos y cualitativos que miden el grado real de uso, integración en flujos de trabajo, calidad percibida y eficiencia económica de las soluciones de IA en una organización. Van más allá de los registros iniciales para capturar retención, profundidad de uso e impacto operativo.",
+    "para": "Sirve para distinguir el entusiasmo inicial ('turismo de IA') del valor sostenido, detectar fricciones de adopción, justificar la continuidad de licencias o infraestructuras y orientar programas de formación interna.",
+    "como": "Se instrumentan eventos de telemetría en los puntos de integración (IDE, plataforma interna de agentes, SaaS corporativo) respetando la privacidad individual. Se combinan métricas de alcance (DAU/WAU sobre población objetivo), adherencia (tasa de aceptación de sugerencias, retención a 30/90 días), eficacia (tiempo de ciclo, tasa de resolución sin escalado, tasa de retrabajo) y economía unitaria (coste por tarea completada). Los datos se cruzan con encuestas periódicas para explicar caídas o usos superficiales.",
+    "practicas": [
+      "Evita métricas vanidosas como 'cuentas creadas' o 'líneas de código generadas por IA'; prioriza retención y tasa de código que sobrevive en producción.",
+      "Mide siempre métricas de contrapeso (guardrail metrics) como tasa de bugs, incidentes o tiempo de revisión para detectar falsa productividad.",
+      "Segmenta por rol y madurez del equipo para identificar dónde hace falta capacitación o mejor integración en el flujo.",
+      "Error típico: usar métricas de adopción de IA para evaluar o penalizar el desempeño individual, lo que incentiva el uso artificial."
+    ],
+    "ejemplo": "{\n  \"wau_ratio\": 0.68,\n  \"retention_day_30\": 0.54,\n  \"suggestion_acceptance_rate\": 0.31,\n  \"pr_revert_rate_delta\": \"+0.0%\",\n  \"cost_per_resolved_ticket_usd\": 0.14\n}",
+    "entrevista": "Mido la adopción de IA combinando retención sostenida e integración en el flujo real con métricas de contrapeso como retrabajo y defectos, evitando métricas vanidosas."
+  },
+  "Niveles de autonomía de IA": {
+    "que": "Escala gradual que clasifica cuánta iniciativa, capacidad de planificación y poder de ejecución tiene un sistema de IA respecto a la intervención humana, análoga a los niveles de conducción autónoma. Abarca desde asistentes pasivos hasta agentes capaces de planificar, invocar herramientas y completar objetivos de extremo a extremo.",
+    "para": "Sirve para comunicar con precisión qué se está construyendo, evitar prometer 'autonomía total' cuando solo existe un copiloto y diseñar progresivamente permisos, arquitectura de seguridad y flujos de supervisión acordes a cada etapa de madurez.",
+    "como": "La taxonomía se define por tres ejes: quién inicia la acción, quién selecciona los pasos/herramientas y quién aprueba el efecto externo. En niveles bajos (asistente/copiloto), el humano dispara el prompt y aplica el resultado manualmente; en nivel intermedio (automatización supervisada), el sistema encadena pasos y propone un plan o diff esperando confirmación; en niveles altos (agente autónomo acotado), un bucle tipo ReAct o máquina de estados invoca APIs, verifica resultados y se autocorrige dentro de un entorno aislado, escalando ante excepciones.",
+    "practicas": [
+      "Sube de nivel de autonomía gradualmente según la precisión demostrada en evaluación offline y en modo sombra (shadow mode).",
+      "Desacopla la autonomía de lectura/análisis (alta) de la autonomía de escritura/mutación en producción (baja o acotada).",
+      "Error típico: saltar directamente a agentes autónomos con permisos amplios sin contar aún con evaluación fiable de prompts básicos.",
+      "Documenta el nivel de autonomía objetivo en el diseño técnico para alinear expectativas de producto, seguridad y negocio."
+    ],
+    "ejemplo": "N1 Copiloto: redacta respuesta -> humano copia y envía\nN2 Sugerencia accionable: propone comando/PR -> humano aprueba ejecución\nN3 Autonomía supervisada (HOTL): ejecuta en límites seguros -> alerta si falla\nN4 Autonomía acotada: resuelve flujo completo sin revisión (p. ej. reembolso < 20€)",
+    "entrevista": "Los niveles de autonomía permiten graduar la delegación hacia la IA según el riesgo y la madurez de nuestras evaluaciones, separando autonomía de análisis de autonomía de ejecución."
+  },
+  "Piloto de IA": {
+    "que": "Despliegue controlado de una solución de IA ya funcional en un entorno real o semi-real con un subconjunto acotado de usuarios finales y datos reales, bajo monitorización intensiva. Su objetivo ya no es probar viabilidad técnica en laboratorio, sino validar usabilidad, métricas de negocio, latencia, costes y operación real.",
+    "para": "Resuelve el salto arriesgado entre una prueba técnica aislada (PoC) y un lanzamiento generalizado en toda la empresa. Se utiliza antes de escalar a producción global para comprobar si los usuarios adoptan la herramienta y si el valor prometido se materializa sin degradar calidad ni seguridad.",
+    "como": "Se selecciona un grupo piloto representativo (10-20% de un equipo o región), se despliega el servicio integrado en el flujo real tras feature flags y guardrails, y se registran métricas base previas (baseline). Durante una ventana fija (4 a 8 semanas), se recogen logs de latencia, consumo de tokens, tasas de error, correcciones humanas y feedback cualitativo. Al finalizar, un comité evalúa los criterios cuantitativos predefinidos (Go/No-Go) para decidir si escalar, iterar o cancelar.",
+    "practicas": [
+      "PoC vs Piloto: una PoC responde '¿es técnicamente viable?'; un piloto responde '¿genera valor neto en el flujo real de usuarios?'.",
+      "Define por escrito los criterios cuantitativos de Go/No-Go (calidad, coste, latencia, adopción) antes de iniciar el piloto.",
+      "Error típico: elegir únicamente usuarios entusiastas ('early adopters') y luego sorprenderse cuando la adopción cae en el resto de la organización.",
+      "Incluye desde el piloto los costes reales de observabilidad, evaluación continua y soporte operativo."
+    ],
+    "ejemplo": "pilot_charter:\n  scope: \"20 agentes de soporte turno mañana (4 semanas)\"\n  baseline_handle_time_min: 11.5\n  go_criteria:\n    handle_time_reduction_pct: \">= 15%\"\n    hallucination_rate: \"< 1.5%\"\n    monthly_cost_per_seat_usd: \"<= 25\"",
+    "entrevista": "Mientras la PoC valida viabilidad técnica en entorno controlado, el piloto valida adopción, economía unitaria y comportamiento con usuarios y datos reales antes de escalar."
+  },
+  "PoC de IA": {
+    "que": "Prueba de concepto (Proof of Concept) acotada en tiempo y alcance cuyo fin exclusivo es demostrar la viabilidad técnica de resolver un problema específico con IA usando una muestra representativa de datos. No está diseñada para soportar tráfico de producción, alta disponibilidad ni integración corporativa completa.",
+    "para": "Sirve para reducir incertidumbre técnica rápidamente y con bajo presupuesto antes de comprometer recursos de ingeniería de plataforma, seguridad o producto. Se usa cuando hay dudas sobre si un modelo alcanza la precisión mínima, si los datos tienen señal suficiente o si la latencia es asumible.",
+    "como": "Se formula una hipótesis técnica falsable y un conjunto de evaluación dorado (golden dataset) de 50 a 200 casos reales incluyendo casos borde. En un plazo corto (1 a 3 semanas), se construye un prototipo mínimo probando arquitecturas candidatas (prompting, RAG básico, fine-tuning o ML clásico) y comparándolas contra una línea base simple (heurística o regex). Los resultados se miden objetivamente mediante métricas de calidad (F1, exact match, LLM-as-a-judge validado) y coste estimado por petición.",
+    "practicas": [
+      "Incluye siempre una baseline no-IA (reglas, búsqueda BM25, regresión simple) para demostrar que la IA aporta una mejora real.",
+      "Usa datos reales anonimizados y casos difíciles desde la PoC; los ejemplos sintéticos 'happy path' siempre hacen parecer que la IA funciona.",
+      "Error típico: promover el código improvisado de una PoC directamente a producción ('PoC creep'), acumulando fallos de seguridad y escalabilidad.",
+      "Acota la PoC a una fecha límite fija; si no supera el umbral técnico mínimo, pivota o descarta rápido."
+    ],
+    "ejemplo": "# Evaluación de PoC sobre golden dataset (N=100)\nscores = [exact_match(run_poc(r.input), r.expected) for r in golden_set]\nbaseline = [exact_match(regex_baseline(r.input), r.expected) for r in golden_set]\nprint(f\"PoC={mean(scores):.2%} vs Baseline={mean(baseline):.2%}\")",
+    "entrevista": "Una PoC de IA debe ser un experimento corto y falsable contra datos reales y una baseline simple; su propósito es validar viabilidad técnica, nunca convertirse en código de producción."
+  },
+  "Política de uso de IA en la empresa": {
+    "que": "Documento normativo y operativo interno que establece qué herramientas de IA están autorizadas, qué datos pueden introducirse en ellas, qué responsabilidades asumen los empleados y qué usos están prohibidos. Alinea la productividad individual con el cumplimiento legal, la privacidad y la protección de propiedad intelectual.",
+    "para": "Resuelve el vacío normativo que lleva a empleados a pegar código propietario, datos de clientes o secretos en servicios públicos gratuitos ('shadow AI'). Se aplica transversalmente a ingeniería, producto, legal, RR. HH. y operaciones, y es requisito habitual en auditorías ISO, SOC 2 y clientes enterprise.",
+    "como": "Se elabora conjuntamente entre Ingeniería, Seguridad (InfoSec), Legal y RR. HH., estructurándola por clasificación de datos (públicos, internos, confidenciales, PII) y entornos permitidos (instancias enterprise con retención cero de datos o modelos en VPC propia frente a cuentas personales). Se hace cumplir técnicamente mediante SSO corporativo, controles DLP (Data Loss Prevention), acuerdos DPA con proveedores y formación práctica con ejemplos claros.",
+    "practicas": [
+      "Si prohíbes toda IA sin ofrecer una alternativa corporativa aprobada y cómoda, fomentarás el uso clandestino (shadow AI).",
+      "Diferencia claramente entre tenants enterprise con zero data retention y cuentas públicas gratuitas que entrenan con prompts.",
+      "Exige revisión humana obligatoria antes de integrar salidas de IA en decisiones contractuales, de contratación o código crítico.",
+      "Error típico: redactar un texto legal ambiguo de 30 páginas que nadie lee en lugar de una guía práctica de una página con ejemplos."
+    ],
+    "ejemplo": "Regla semáforo corporativa:\n[VERDE] Datos públicos + código open-source -> Modelos aprobados\n[ÁMBAR] Código interno y docs -> Solo tenant enterprise (ZDR + SSO)\n[ROJO]  PII clientes, credenciales, M&A -> Prohibido en APIs externas; solo modelos en VPC",
+    "entrevista": "Una política de uso de IA efectiva combina reglas claras basadas en clasificación de datos con alternativas corporativas seguras y rápidas, reduciendo así el riesgo de shadow AI."
+  },
+  "Presupuesto de IA": {
+    "que": "Planificación y control financiero de todos los recursos económicos necesarios para construir, operar, evaluar y gobernar sistemas de IA durante su ciclo de vida. Incluye tanto costes variables de consumo (tokens, GPU, almacenamiento vectorial) como costes fijos (ingeniería, datos, cumplimiento, observabilidad).",
+    "para": "Evita desviaciones presupuestarias severas típicas de proyectos generativos donde el gasto escala rápidamente con el volumen de usuarios, la longitud del contexto o bucles de agentes sin límite. Sirve para asignar cuotas por equipo, fijar límites de gasto y comparar opciones de arquitectura (API comercial vs modelo propio).",
+    "como": "Se modela separando inversión inicial (preparación de datos, integración, evaluación) de OPEX recurrente (inferencia por millón de tokens de entrada/salida, embeddings, bases vectoriales, re-evaluaciones, licencias SaaS). En tiempo de ejecución, un AI Gateway aplica cuotas por tenant/usuario, presupuesto máximo por sesión agéntica (max steps/max tokens), caché de prompts y enrutamiento de modelos (model routing) para derivar tareas simples a modelos ligeros. Las alertas de facturación se integran en FinOps diario.",
+    "practicas": [
+      "Modela siempre el peor escenario de coste en agentes (bucles de reintentos y ventanas crecientes) y pon topes duros de tokens por ejecución.",
+      "API gestionada vs hosting propio (GPUs): en volúmenes bajos o variables suele ganar el pago por token; el self-hosting exige utilización alta y constante.",
+      "Optimiza primero el tamaño del prompt, el prompt caching y el routing hacia modelos ligeros antes de renegociar tarifas.",
+      "Error típico: presupuestar solo la factura del proveedor de LLM olvidando ingeniería de datos, evaluación humana y mantenimiento."
+    ],
+    "ejemplo": "Estimación mensual (100k consultas, 3k tokens in / 500 out):\n- Modelo grande ($2.50/1M in, $10/1M out): 300M*$2.5 + 50M*$10 = $1,250/mes\n- Routing 70% a modelo mini ($0.15/$0.60) + 30% grande: ~$417/mes (-66%)",
+    "entrevista": "Presupuestar IA exige FinOps en tiempo de ejecución: proyectar tokens en el peor caso, fijar topes duros en agentes y aplicar model routing y caching para controlar el OPEX."
+  },
+  "Priorización de casos de uso de IA": {
+    "que": "Proceso sistemático de evaluación y ordenamiento de iniciativas candidatas de IA para decidir cuáles ejecutar primero según su impacto de negocio, factibilidad técnica, disponibilidad de datos y nivel de riesgo. Evita dispersar al equipo en demos vistosas pero de escaso retorno.",
+    "para": "Resuelve la saturación de propuestas ('todo el mundo quiere un chatbot') cuando los recursos de ingeniería, datos y presupuesto son limitados. Permite construir un portafolio equilibrado entre victorias rápidas (quick wins) y apuestas estratégicas a medio plazo.",
+    "como": "Cada candidato del inventario se puntúa en una matriz multicriterio ponderada: valor esperado (ahorro neto, ingresos, reducción de errores), preparación de datos (calidad, acceso, permisos), complejidad técnica/riesgo regulatorio y existencia de una métrica clara de éxito. Además, se valida si el problema requiere realmente IA o se resuelve más barato con automatización determinista. Los casos se ubican en cuadrantes para decidir ejecución inmediata, desbloqueo previo de datos o descarte.",
+    "practicas": [
+      "Prioriza problemas donde la IA tolera errores ocasionales o cuenta con verificación humana barata frente a problemas que exigen precisión del 99.99%.",
+      "Antes de puntuar un caso para IA, pregunta: '¿Se resuelve mejor con SQL, reglas o una mejor interfaz?'.",
+      "Error típico: priorizar el caso del stakeholder más ruidoso o el tecnológicamente más complejo en lugar del que tiene datos limpios y cuello de botella medible.",
+      "Empieza por procesos internos de bajo riesgo externo para madurar plataforma y evaluación antes de exponer IA a clientes finales."
+    ],
+    "ejemplo": "# Score ponderado de priorización (escala 1-5)\nscore = (\n    0.40 * business_value\n    + 0.30 * data_readiness\n    + 0.20 * (6 - tech_complexity)\n    + 0.10 * (6 - regulatory_risk)\n)",
+    "entrevista": "Priorizo casos de uso cruzando impacto de negocio, disponibilidad real de datos y tolerancia al error, descartando todo aquello que pueda resolverse de forma más fiable con software determinista."
+  },
+  "ROI de IA": {
+    "que": "Indicador financiero que mide la rentabilidad neta obtenida por un sistema o iniciativa de IA en relación con su coste total de propiedad (TCO). Se calcula comparando el beneficio económico atribuible menos el coste total frente al coste total invertido: (Beneficio Neto - Coste Total) / Coste Total.",
+    "para": "Sirve para justificar inversiones frente a dirección financiera, comparar proyectos de IA frente a otras iniciativas de ingeniería y decidir con rigor si mantener, escalar o retirar un sistema en producción.",
+    "como": "En el denominador se contabilizan todos los costes reales del ciclo de vida: desarrollo inicial, preparación/etiquetado de datos, inferencia/tokens, infraestructura, evaluación continua, tiempo de supervisión humana y mantenimiento. En el numerador se incluyen únicamente beneficios medidos respecto a una línea base previa: ahorro verificado convertido en capacidad productiva real, reducción de costes operativos o ingresos incrementales validados con grupos de control o tests A/B. Se evalúa en ventanas de 6 a 18 meses para incluir la amortización.",
+    "practicas": [
+      "No conviertas automáticamente '10 minutos ahorrados al día' en dinero salvo que se traduzca en mayor capacidad de entrega o menor coste operativo.",
+      "Incluye el coste del tiempo humano de revisión y corrección de errores; si verificar la salida cuesta casi lo mismo que hacerla, el ROI es negativo.",
+      "Error típico: calcular el ROI comparando solo la factura de tokens contra salarios, omitiendo ingeniería, plataforma y gestión del cambio.",
+      "Usa grupos de control o métricas antes/después rigurosas para aislar el efecto real de la IA."
+    ],
+    "ejemplo": "Inversión año 1: $60k ingeniería/datos + $18k inferencia/ops = $78k\nBeneficio medido: 3,200h soporte ahorradas netas * $40/h = $128k\nROI año 1 = (128k - 78k) / 78k = +64.1% (Payback ~ 7.3 meses)",
+    "entrevista": "Para calcular un ROI honesto en IA incluyo el TCO completo —datos, ingeniería, inferencia y tiempo de verificación humana— y mido beneficios reales frente a una línea base con control."
+  },
+  "Responsabilidad humana": {
+    "que": "Principio ético, organizativo y jurídico según el cual las personas y organizaciones —nunca los algoritmos ni los modelos de IA— son los sujetos imputables por las decisiones, daños o incumplimientos derivados de un sistema automatizado. Distingue entre quién opera el sistema y quién responde organizativa y legalmente por su despliegue (accountability).",
+    "para": "Evita el 'vacío de responsabilidad' o la excusa de 'fue decisión del algoritmo' cuando un sistema falla en producción (discriminación, error clínico, fuga de datos o pérdida financiera). Es un pilar de marcos regulatorios como el EU AI Act, GDPR (Art. 22) y estándares de gobernanza corporativa.",
+    "como": "Se operacionaliza asignando un propietario nominal (System Owner) por cada modelo o agente en el inventario y definiendo matrices RACI claras entre ingeniería, producto, cumplimiento y operación. Técnicamente se respalda mediante logs inmutables que vinculan cada acción del sistema con la versión del modelo/prompt, el usuario que la inició o aprobó y el contexto de entrada, asegurando canales efectivos de impugnación, explicación y corrección humana.",
+    "practicas": [
+      "Garantiza supervisión humana significativa: el revisor debe tener tiempo, competencia y autoridad real para rechazar la recomendación, no actuar como mero 'escudo humano'.",
+      "Documenta la cadena de aprobación: quién desplegó qué versión, con qué evaluaciones aceptadas y bajo qué límites de riesgo.",
+      "Error típico: diluir la responsabilidad entre el proveedor del modelo, el equipo de datos y el área de negocio tras un incidente.",
+      "Establece canales claros para que los usuarios afectados puedan solicitar revisión humana de decisiones automatizadas relevantes."
+    ],
+    "ejemplo": "accountability_raci:\n  business_owner: \"VP Credit Risk (Accountable)\"\n  tech_owner: \"ML Platform Lead (Responsible)\"\n  human_reviewer: \"Senior Underwriter (Approve overrides)\"\n  incident_sla_hours: 4",
+    "entrevista": "Un modelo no puede ser sujeto legal ni asumir culpa; por eso la ingeniería responsable exige asignar un propietario humano claro con visibilidad, trazabilidad y capacidad real de veto."
+  },
+  "Retorno de inversión en IA": {
+    "que": "Evaluación integral del valor estratégico y operativo generado por la adopción de IA frente al esfuerzo total invertido, abarcando tanto rentabilidad financiera directa como mejoras en calidad, velocidad, experiencia de cliente y reducción de riesgos. Complementa al cálculo contable estricto al capturar efectos de segundo orden y costes ocultos de transformación.",
+    "para": "Sirve para tomar decisiones estratégicas de cartera (invertir más, pivotar o descontinuar) en proyectos donde el ahorro directo convive con beneficios difíciles de monetizar a corto plazo, como mayor retención de clientes o reducción de deuda técnica.",
+    "como": "Se estructura mediante un cuadro de mando que cruza tres dimensiones: eficiencia operativa (coste unitario y tiempo de ciclo), crecimiento/calidad (conversión, NPS, tasa de defectos) y capacidad organizacional (velocidad de entrega). Para evitar sesgos optimistas, descuenta los costes de transición —curva de aprendizaje, mantenimiento continuo ante cambios de modelos, curación de bases de conocimiento— y analiza el periodo de recuperación (payback) frente al coste de oportunidad de alternativas no-IA.",
+    "practicas": [
+      "Distingue entre ahorro 'duro' (reduce costes directos o absorbe más demanda sin contratar) y ahorro 'blando' (minutos sueltos difíciles de monetizar).",
+      "Considera la obsolescencia rápida: un sistema de IA puede requerir ajustes profundos cada 6-12 meses al cambiar modelos base o precios, por lo que conviene un payback corto.",
+      "Error típico: evaluar el retorno en las dos primeras semanas sin esperar a superar la curva de aprendizaje ni medir el coste de mantenimiento.",
+      "Combina métricas financieras con indicadores de calidad para asegurar que el retorno no se obtiene degradando el servicio."
+    ],
+    "ejemplo": "Evaluación multidimensional de retorno (Q3):\n- Eficiencia directa: -22% coste por resolución en soporte (-$14k/mes)\n- Calidad: CSAT estable (4.60 -> 4.65), tasa de reapertura -3%\n- Coste oculto detectado: +6h/semana en curación de base documental",
+    "entrevista": "Evaluar el retorno de inversión en IA va más allá de ahorrar horas: implica verificar si el ahorro es monetizable, si la calidad se mantiene y si el payback amortiza el rápido ciclo de cambio tecnológico."
+  },
+  "Roadmap de IA": {
+    "que": "Plan estratégico y técnico secuenciado en fases temporales que alinea la adopción de capacidades de IA con los objetivos de negocio, la madurez de los datos y la plataforma tecnológica de la organización. Define hitos, dependencias, habilitadores y criterios de evolución.",
+    "para": "Evita el desarrollo desordenado de proyectos aislados que nunca llegan a producción por falta de cimientos (datos, seguridad, evaluación o LLMOps). Permite coordinar a ingeniería, datos, legal y negocio bajo una secuencia realista de inversión y aprendizaje.",
+    "como": "Se construye partiendo de una evaluación de madurez (AI readiness) y del inventario priorizado de casos de uso. Suele organizarse en horizontes: Horizonte 1 (0-3 meses: políticas de uso, herramientas base seguras, 1-2 quick wins internos y suite mínima de evaluación), Horizonte 2 (3-9 meses: AI Gateway compartido, RAG corporativo, observabilidad y casos supervisados hacia clientes) y Horizonte 3 (9-18 meses: flujos agénticos acotados, optimización de costes/modelos y mejora continua). Cada fase exige puertas de revisión ligadas a métricas.",
+    "practicas": [
+      "Construye los habilitadores mínimos (política de datos, gateway, evaluación) guiado por un caso de uso real, no una 'mega-plataforma' abstracta durante meses sin entregar valor.",
+      "Diseña el roadmap con revisiones trimestrales: los modelos, precios y capacidades cambian demasiado rápido para planes rígidos a 3 años.",
+      "Error típico: planificar agentes autónomos en el trimestre 1 cuando la documentación interna está desactualizada y sin control de acceso.",
+      "Acopla cada hito técnico a una métrica de negocio y a un requisito de gobernanza."
+    ],
+    "ejemplo": "Q1 (Fundación + Quick Win): Política de uso, AI Gateway SSO, Piloto buscador interno RAG\nQ2 (Escala controlada):     Evals en CI/CD, Asistente soporte HITL, FinOps tokens\nQ3 (Madurez y autonomía):   Routing multi-modelo, Flujos agénticos acotados con auditoría",
+    "entrevista": "Un buen roadmap de IA equilibra entrega temprana de valor con construcción progresiva de cimientos —datos, evaluación, gateway y gobernanza— mediante revisiones trimestrales."
+  },
+  "Sesgo de automatización": {
+    "que": "Sesgo cognitivo por el cual las personas tienden a aceptar acríticamente las recomendaciones o salidas de un sistema automatizado o de IA, ignorando señales contradictorias o dejando de ejercer su juicio crítico. Se agrava cuando el sistema presenta sus respuestas con lenguaje fluido, estructurado y seguro.",
+    "para": "Comprender este sesgo es crucial para diseñar interfaces y flujos Human-in-the-loop que funcionen en la realidad. Sin mitigación, la 'supervisión humana' se convierte en un trámite de aprobación automática que deja pasar errores graves en código, medicina, finanzas o seguridad.",
+    "como": "Surge por economía del esfuerzo cognitivo y percepción de infalibilidad tras observar varios aciertos consecutivos del sistema. En diseño de software se contrarresta introduciendo fricción saludable en la interfaz: mostrar fuentes verificables junto a cada afirmación, resaltar zonas de baja confianza, ocultar la sugerencia hasta que el revisor forme un criterio inicial (forced independent assessment), insertar casos de control y exigir justificación breve al aprobar alertas.",
+    "practicas": [
+      "Muestra evidencia y citas subrayadas junto a la respuesta en lugar de una conclusión opaca; facilita verificar en pocos segundos.",
+      "Evita interfaces donde el botón 'Aprobar todo' sea mucho más rápido y visible que inspeccionar o rechazar.",
+      "Error típico: creer que añadir un botón de confirmación humana elimina el riesgo; bajo presión temporal, los humanos aprueban casi todo por sesgo de automatización.",
+      "Monitoriza la tasa de corrección humana (override rate): si cae cerca de 0% en tareas ambiguas, el revisor ha dejado de revisar."
+    ],
+    "ejemplo": "Controles anti-sesgo en consola de revisión:\n- Ocultar veredicto sugerido hasta revisar las secciones marcadas\n- Resaltar en ámbar fragmentos con baja probabilidad o sin fuente RAG\n- Exigir motivo explícito al aprobar casos con alertas de política",
+    "entrevista": "El sesgo de automatización invalida la supervisión humana si el revisor solo hace clic en aprobar; se combate diseñando interfaces que muestren incertidumbre, exijan fricción deliberada y midan la tasa real de corrección."
+  },
+  "Sobreconfianza en IA": {
+    "que": "Desajuste entre la certeza que transmite un sistema de IA (o la confianza que depositan en él usuarios y desarrolladores) y su precisión real, especialmente ante entradas ambiguas o fuera de distribución. Se manifiesta tanto en modelos mal calibrados que asignan probabilidades cercanas al 100% a errores como en equipos que omiten validaciones creyendo que 'el modelo es inteligente'.",
+    "para": "Permite identificar y frenar fallos silenciosos antes de que impacten en producción, ya sea en generación de código con vulnerabilidades, respuestas erróneas a clientes o decisiones automatizadas sin respaldo verificable.",
+    "como": "En clasificadores ocurre cuando el entrenamiento con cross-entropy produce logits extremos ante entradas nunca vistas (overconfident OOD predictions); en LLMs ocurre porque el alineamiento (RLHF) premia respuestas completas y serviciales por encima de admitir desconocimiento. Técnicamente se mitiga mediante calibración post-hoc (temperature scaling, Platt scaling), detección de anomalías OOD, instrucciones que premien la abstención ante falta de evidencia y validadores independientes tras la inferencia.",
+    "practicas": [
+      "Calibra las puntuaciones de confianza en un conjunto de validación independiente (midiendo ECE) antes de fijar umbrales de automatización.",
+      "Premia explícitamente en tus evaluaciones que el modelo diga 'No tengo información suficiente' en lugar de inventar respuestas plausibles.",
+      "Error típico: confiar en demos internas o benchmarks públicos para asumir que el modelo rendirá igual sobre datos reales sucios.",
+      "Mantén verificadores deterministas independientes (tests unitarios, linters, reglas de negocio) tras la salida del modelo."
+    ],
+    "ejemplo": "# Temperature scaling para calibrar logits antes de aplicar umbral\ncalibrated_probs = softmax(logits / T_optimal)  # T_optimal > 1 suaviza sobreconfianza\nif calibrated_probs.max() < 0.80:\n    route_to_manual_review()",
+    "entrevista": "La sobreconfianza en IA tiene dos caras: modelos mal calibrados que alucinan con tono seguro y equipos que omiten controles; se resuelve calibrando probabilidades, permitiendo la abstención y exigiendo verificación independiente."
+  },
+  "Task-AI fit": {
+    "que": "Evaluación sistemática del grado de adecuación entre las características intrínsecas de una tarea y las fortalezas y debilidades de una tecnología de IA concreta (LLM, ML tabular, visión, búsqueda o software clásico). Determina no solo si la IA puede realizar la tarea, sino si es la herramienta óptima frente a alternativas más simples.",
+    "para": "Evita usar modelos complejos y costosos donde basta una consulta SQL o un árbol de decisión, así como forzar IA probabilística en tareas que exigen determinismo absoluto. Se aplica en fase de diseño técnico y descubrimiento de producto antes de escribir código.",
+    "como": "Se analiza la tarea según seis ejes: tipo de entrada/salida (estructurada vs lenguaje natural no estructurado), tolerancia al error probabilístico, asimetría entre el coste de generar y el coste de verificar, necesidad de determinismo o explicabilidad exacta, requisitos de latencia/volumen y disponibilidad de datos de contexto. Por ejemplo, resumir documentos o clasificar tickets tiene alto Task-AI fit para LLMs; calcular impuestos o validar permisos RBAC tiene nulo Task-AI fit y debe implementarse en código determinista.",
+    "practicas": [
+      "El encaje ideal para IA generativa ocurre cuando generar la solución lleva mucho tiempo al humano, pero verificar si es correcta toma segundos (p. ej. redactar una query SQL o un borrador).",
+      "Descompón flujos completos en subtareas: combina pasos de código clásico determinista con pasos específicos de IA donde aporte valor.",
+      "Error típico: aplicar un LLM a problemas tabulares numéricos donde XGBoost o regresión logística son órdenes de magnitud más rápidos, baratos y precisos.",
+      "Evalúa el coste de un falso positivo o falso negativo frente al beneficio unitario antes de elegir el enfoque."
+    ],
+    "ejemplo": "Descomposición Task-AI fit (procesamiento de facturas):\n1. Extraer campos de PDF heterogéneo -> Alto fit (VLM / LLM estructurado)\n2. Validar NIF, totales e IVA         -> Cero fit IA (código determinista)\n3. Detectar anomalía de fraude tabular -> Alto fit ML clásico (Gradient Boosting)",
+    "entrevista": "Un buen Task-AI fit busca tareas no estructuradas con alta asimetría generación-verificación y tolerancia al error acotada, dejando la lógica exacta y crítica al software determinista."
+  },
+  "Trazabilidad de decisiones de IA": {
+    "que": "Capacidad de reconstruir de principio a fin qué datos, versiones de modelo, prompts, herramientas y reglas intervinieron para producir una salida o acción específica de un sistema de IA. Constituye la base técnica de la observabilidad, la depuración y la auditoría regulatoria.",
+    "para": "Resuelve la opacidad de los sistemas probabilísticos cuando ocurre un incidente en producción, una reclamación de cliente o una auditoría legal. Es indispensable para reproducir fallos, detectar regresiones tras actualizar un prompt o modelo y demostrar cumplimiento normativo.",
+    "como": "En cada petición se genera un identificador de traza distribuida (trace_id) propagado mediante OpenTelemetry o plataformas de observabilidad de IA. Cada span registra de forma inmutable: entrada sanitizada, identificador exacto del modelo, hash/versión del prompt, documentos recuperados por RAG (IDs y scores), llamadas a herramientas con parámetros y respuestas, latencia, tokens, veredicto de guardrails y cualquier intervención humana posterior. Los datos personales (PII) y secretos se enmascaran antes de persistir el log.",
+    "practicas": [
+      "Versiona prompts, configuración del retriever y esquemas de herramientas junto al código para que un trace_id reconstruya el contexto exacto.",
+      "Aplica redacción/tokenización de PII y secretos antes de almacenar trazas en sistemas de observabilidad.",
+      "Error típico: guardar solo la respuesta final del LLM sin los chunks recuperados por RAG ni las llamadas intermedias a herramientas, impidiendo diagnosticar la causa raíz.",
+      "Define políticas de retención de trazas alineadas con la regulación aplicable y el riesgo del caso de uso."
+    ],
+    "ejemplo": "{\n  \"trace_id\": \"tr_98a7f1\",\n  \"model_version\": \"gpt-4o-2024-11-20\",\n  \"prompt_hash\": \"sha256:4c91e...\",\n  \"rag_doc_ids\": [\"doc_102#p4\", \"doc_88#p1\"],\n  \"tool_calls\": [{\"name\": \"get_order_status\", \"status\": \"ok\"}],\n  \"human_override\": false\n}",
+    "entrevista": "La trazabilidad en IA requiere registrar en cada trace_id no solo input y output, sino versión exacta de modelo, hash de prompt, chunks de RAG y llamadas a herramientas tras enmascarar datos sensibles."
+  },
+  "Zonas de confianza de IA": {
+    "que": "Delimitación arquitectónica y de seguridad que clasifica las fronteras entre componentes confiables (deterministas, autenticados, internos) y componentes no confiables o probabilísticos (entradas de usuario, contenido externo recuperado y salidas sin validar de un modelo de IA). Ningún dato que cruce hacia una zona de mayor confianza puede ejecutarse sin validación estricta.",
+    "para": "Protege los sistemas corporativos frente a inyección de prompts indirecta, escalada de privilegios en agentes, ejecución de código malicioso generado y exfiltración de datos. Se aplica al diseñar arquitecturas RAG, copilotos con herramientas y sistemas multiagente.",
+    "como": "Se aplica el principio de mínimo privilegio y fronteras de confianza (trust boundaries) del Threat Modeling clásico. Tanto la entrada del usuario como los documentos externos recuperados en RAG se tratan como datos no confiables, nunca como instrucciones privilegiadas; la salida del LLM se considera texto no confiable hasta superar validación de esquema (JSON Schema/Pydantic), verificación de permisos del usuario solicitante (RBAC/ACL en backend) y listas blancas de acciones. Las herramientas de alto riesgo operan en sandboxes aislados sin secretos ni acceso lateral.",
+    "practicas": [
+      "Trata siempre la salida de un LLM como entrada de usuario no confiable: valida tipos, rangos y permisos antes de ejecutar SQL, código o llamadas API.",
+      "No confíes en el system prompt como frontera de seguridad: los permisos de acceso a datos (ACL) deben aplicarse en el retriever y en el backend, nunca en el prompt.",
+      "Aísla en sandboxes efímeros cualquier ejecución de código o navegación controlada por agentes, sin acceso a la red interna ni credenciales globales.",
+      "Error típico: otorgar al agente un token de servicio con privilegios de administrador en lugar de propagar la identidad y permisos reales del usuario final."
+    ],
+    "ejemplo": "[Zona No Confiable] Usuario / Web / Docs externos\n         |  (Sanitización + Retrieval filtrado por ACL del usuario)\n         v\n[Zona Probabilística] LLM / Agente (sin secretos en contexto)\n         |  (Validación Schema + Policy Check + Confirmación si muta)\n         v\n[Zona Confiable] Backend APIs / DB (con permisos del usuario, no admin)",
+    "entrevista": "En ingeniería de IA, el modelo está fuera de la zona de confianza determinista: tratamos tanto sus entradas externas como sus salidas como no confiables, imponiendo validación de esquemas y RBAC en backend."
+  }
+}

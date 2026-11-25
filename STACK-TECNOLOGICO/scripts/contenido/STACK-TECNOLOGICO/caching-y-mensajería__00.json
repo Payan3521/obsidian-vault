@@ -1,0 +1,236 @@
+{
+  "At-least-once - exactly-once": {
+    "que": "Semánticas de entrega de mensajes en sistemas distribuidos que definen cuántas veces puede procesarse un mensaje ante fallos de red o reinicios. At-least-once garantiza que ningún mensaje se pierda, aceptando posibles duplicados; exactly-once busca que el efecto observable del procesamiento ocurra una sola vez, evitando tanto pérdidas como duplicaciones.",
+    "para": "Resuelve la incertidumbre inherente a redes no fiables en colas, buses de eventos y pipelines de streaming. At-least-once es el estándar práctico para notificaciones o cargas idempotentes, mientras que exactly-once (entendido como effectively-once) es crítico en transacciones financieras, facturación y agregaciones de estado donde un duplicado corrompe los datos.",
+    "como": "En at-least-once, el productor reintenta hasta recibir un ACK del bróker y el consumidor solo confirma (commit de offset o ack) tras completar el procesamiento; si falla antes del ACK, el bróker reentrega el mensaje. Dado que el exactly-once físico sobre la red es imposible sin coordinación global, en la práctica se implementa como effectively-once: entrega at-least-once combinada con consumidores idempotentes o transacciones atómicas en el bróker. Por ejemplo, Kafka logra EOS (Exactly-Once Semantics) mediante productores con enable.idempotence=true (usando ProducerId y número de secuencia por partición) junto con transacciones coordinadas por un Transaction Coordinator (read_committed) al leer de un tópico y escribir en otro.",
+    "practicas": [
+      "Distingue entre at-most-once (dispara y olvida, riesgo de pérdida), at-least-once (reintentos con posibles duplicados) y effectively-once (at-least-once + idempotencia).",
+      "No confundas la deduplicación de transporte del bróker con exactly-once de extremo a extremo: si el consumidor escribe en una base de datos externa sin clave idempotente o transacción compartida, aún habrá duplicados.",
+      "En Kafka Streams o Apache Flink, las garantías exactly-once aplican dentro del ecosistema del stream o con sumideros (sinks) transaccionales compatibles.",
+      "Diseña siempre tus consumidores para tolerar duplicados mediante claves únicas antes de activar transacciones distribuidas pesadas que reducen el throughput."
+    ],
+    "ejemplo": "# Productor Kafka con idempotencia y transacciones (EOS)\nacks=all\nenable.idempotence=true\ntransactional.id=billing-processor-01\n# Consumidor que solo lee mensajes confirmados\nisolation.level=read_committed",
+    "entrevista": "En sistemas distribuidos no existe el exactly-once físico en la red: en la práctica se implementa como entrega at-least-once combinada con idempotencia en el consumidor o transacciones atómicas en el bróker."
+  },
+  "CDN caching": {
+    "que": "Almacenamiento en caché de contenido estático y dinámico cacheable en servidores perimetrales (edge nodes o PoPs) distribuidos geográficamente cerca del usuario final. Reduce la distancia física y los saltos de red entre el cliente y el servidor de origen (origin).",
+    "para": "Sirve para minimizar la latencia de respuesta (TTFB), absorber picos masivos de tráfico protegiendo al servidor de origen y reducir el ancho de banda y cómputo consumidos en infraestructura central. Se utiliza para assets estáticos (JS, CSS, imágenes, vídeo), respuestas de APIs públicas y páginas HTML generadas o cacheadas en el borde.",
+    "como": "Cuando un cliente solicita un recurso vía DNS (habitualmente resuelto por Anycast hacia el PoP más cercano), el nodo edge consulta su caché local usando la clave de caché (URL más las cabeceras definidas en Vary). Si hay un cache hit, responde directamente sin contactar al origen; si hay un cache miss, actúa como proxy inverso hacia el origen (o hacia una capa intermedia llamada origin shield), almacena la respuesta si las cabeceras (Cache-Control, s-maxage) lo permiten y la sirve al cliente. Para evitar filtrar datos privados entre usuarios, el CDN respeta directivas como private o no-store y excluye cookies o cabeceras de autorización de la caché salvo configuración explícita.",
+    "practicas": [
+      "Usa s-maxage para fijar un TTL distinto (habitualmente mayor) en el CDN respecto al navegador (max-age), combinándolo con purgas por API o etiquetas (Surrogate-Key / cache tags) al desplegar cambios.",
+      "Activa un Origin Shield (capa intermedia regional) para consolidar cache misses de múltiples PoPs y evitar saturar el servidor de origen.",
+      "Evita incluir cabeceras con alta cardinalidad en Vary (como User-Agent completo o Cookie), ya que fragmentan la caché y desploman el hit ratio.",
+      "Aplica versionado de URLs (app.a1b2c3.js con max-age=31536000, immutable) para assets estáticos y stale-while-revalidate para contenido semi-dinámico."
+    ],
+    "ejemplo": "HTTP/1.1 200 OK\nCache-Control: public, max-age=60, s-maxage=3600, stale-while-revalidate=300\nSurrogate-Key: product-123 category-books\nVary: Accept-Encoding\nX-Cache: HIT",
+    "entrevista": "El CDN caching acerca el contenido al usuario en el edge y protege el origen, apoyándose en s-maxage, claves de caché controladas y origin shield para maximizar el hit ratio."
+  },
+  "Cache aside - write-through - write-behind": {
+    "que": "Tres patrones arquitectónicos fundamentales que definen cómo interactúan la aplicación, la caché y la base de datos primaria al leer y escribir datos. Determinan quién es responsable de sincronizar ambos almacenes, el grado de consistencia y la latencia en lecturas y escrituras.",
+    "para": "Permiten equilibrar rendimiento, consistencia y complejidad operativa según la carga de trabajo (predominio de lecturas, escrituras críticas o ráfagas intensas de escritura). Se eligen al diseñar capas de acceso a datos respaldadas por Redis, Memcached o cachés locales.",
+    "como": "En Cache-Aside (lazy loading), la aplicación consulta primero la caché; ante un miss, lee de la base de datos, guarda el valor en caché con un TTL y lo devuelve (al escribir, actualiza la BD e invalida la clave en caché). En Write-Through, la aplicación escribe siempre en la caché y esta (o su capa gestora) persiste síncronamente en la base de datos antes de confirmar, manteniendo ambos sistemas sincronizados. En Write-Behind (write-back), la aplicación escribe únicamente en la caché, que confirma al instante y agrupa (batching/coalescing) las escrituras hacia la base de datos de forma asíncrona en segundo plano.",
+    "practicas": [
+      "Cache-Aside es el patrón más utilizado con Redis porque tolera caídas de la caché y solo almacena datos realmente leídos, aunque sufre cold starts y posibles lecturas obsoletas hasta vencer el TTL.",
+      "Write-Through simplifica la consistencia y evita misses en datos recién escritos, pero añade latencia a cada escritura y puede llenar la caché con datos que nunca se leerán.",
+      "Write-Behind ofrece la menor latencia de escritura y amortigua picos mediante agrupación, pero introduce riesgo de pérdida de datos si el nodo de caché cae antes de vaciar su buffer.",
+      "En Cache-Aside, al actualizar la BD es preferible eliminar (DEL) la clave en caché en lugar de sobreescribirla para reducir condiciones de carrera entre escrituras concurrentes."
+    ],
+    "ejemplo": "def get_user(uid):\n    if (cached := redis.get(f\"user:{uid}\")) is not None:\n        return json.loads(cached)\n    user = db.query(\"SELECT * FROM users WHERE id = %s\", uid)\n    redis.setex(f\"user:{uid}\", 300, json.dumps(user))\n    return user\n\ndef update_user(uid, data):\n    db.execute(\"UPDATE users SET ... WHERE id = %s\", uid)\n    redis.delete(f\"user:{uid}\")",
+    "entrevista": "Elijo Cache-Aside por su simplicidad y resiliencia en lecturas intensivas, Write-Through cuando necesito consistencia inmediata tras escribir y Write-Behind solo si el throughput de escritura exige agrupar operaciones tolerando cierto riesgo."
+  },
+  "Dead Letter Queue (DLQ)": {
+    "que": "Cola secundaria especializada donde un bróker de mensajería redirige automáticamente mensajes que no pudieron procesarse o entregarse tras agotar el número máximo de reintentos o expirar su TTL. Actúa como mecanismo de cuarentena para mensajes problemáticos o corruptos (poison pills).",
+    "para": "Evita que un mensaje defectuoso bloquee indefinidamente el procesamiento de una cola (head-of-line blocking) y desperdicie CPU en bucles infinitos de fallo. Permite aislar incidentes, activar alertas operativas, diagnosticar la causa raíz y reinyectar (redrive) los mensajes tras corregir el error.",
+    "como": "El bróker o el consumidor mantiene un contador de intentos de entrega por mensaje (como ApproximateReceiveCount en SQS o la cabecera x-death en RabbitMQ). Cada vez que el consumidor rechaza el mensaje (NACK sin requeue o fallo antes del ACK tras expirar el visibility timeout), el contador se incrementa. Al superar el umbral configurado (maxReceiveCount o política x-dead-letter-exchange), el bróker mueve el mensaje junto con metadatos de fallo hacia la DLQ asociada; en plataformas como Kafka, donde no existe DLQ nativa por partición, el propio consumidor produce el registro fallido a un tópico dedicado (<topic>.dlq) y avanza su offset.",
+    "practicas": [
+      "Monitoriza siempre el tamaño de la DLQ con alarmas: una DLQ sin alertas ni procedimiento de redrive es simplemente pérdida silenciosa de datos.",
+      "Distingue entre errores transitorios (timeouts de red, que deben reintentarse con exponential backoff y jitter) y errores permanentes (JSON inválido o violación de esquema, que deben ir directo a la DLQ).",
+      "En sistemas con orden estricto por partición (Kafka, SQS FIFO), enviar un mensaje a la DLQ rompe el orden relativo respecto a mensajes posteriores de la misma clave; evalúa si pausar la partición o aislar por entidad.",
+      "Adjunta en las cabeceras del mensaje enviado a la DLQ la excepción, el nombre del servicio consumidor y la marca de tiempo para facilitar el diagnóstico y reprocesamiento."
+    ],
+    "ejemplo": "{\n  \"RedrivePolicy\": {\n    \"deadLetterTargetArn\": \"arn:aws:sqs:us-east-1:123456789012:orders-dlq\",\n    \"maxReceiveCount\": 5\n  },\n  \"MessageRetentionPeriod\": 1209600\n}",
+    "entrevista": "Una DLQ evita que los poison pills bloqueen el consumo normal, pero solo aporta valor real si incluye observabilidad, registro del motivo de error y un mecanismo idempotente de redrive."
+  },
+  "ETag - Cache-Control": {
+    "que": "Cabeceras HTTP estándar (RFC 9111 / RFC 9110) que gobiernan la frescura, almacenamiento y revalidación condicional de respuestas entre cliente, proxies y CDNs. Cache-Control define cuánto tiempo y quién puede cachear una respuesta; ETag (Entity Tag) es un identificador opaco de versión del recurso.",
+    "para": "Permiten ahorrar ancho de banda y carga en el servidor evitando reenviar cuerpos completos cuando el recurso no ha cambiado, manteniendo control preciso sobre cuándo un cliente puede usar una copia local sin validar en origen. Son la base del caching HTTP en navegadores, APIs REST y CDNs.",
+    "como": "En la primera respuesta, el servidor envía Cache-Control: max-age=60 junto con un ETag: \"v42\" (fuerte o débil W/\"...\", calculado a partir de un hash del contenido o versión en BD). Mientras no expiren los 60 segundos, el cliente usa su copia local sin hacer peticiones de red. Una vez expirado (o si se usó no-cache, que exige revalidación previa antes de reutilizar), el cliente envía If-None-Match: \"v42\"; si el recurso sigue igual, el servidor responde 304 Not Modified sin cuerpo y renueva el TTL; además, ETag habilita control de concurrencia optimista mediante If-Match en peticiones PUT/PATCH (respondiendo 412 Precondition Failed ante conflictos).",
+    "practicas": [
+      "No confundas no-cache (permite almacenar la respuesta, pero exige revalidar con ETag o Last-Modified antes de usarla) con no-store (prohíbe almacenar la respuesta en memoria o disco por seguridad).",
+      "Usa private en datos específicos de usuario (perfiles, carritos) para impedir que proxies compartidos o CDNs los almacenen para otros clientes.",
+      "Prefiere ETag frente a Last-Modified cuando los cambios ocurren en intervalos menores a un segundo o entre múltiples servidores cuyos relojes pueden diferir.",
+      "Combina max-age=0, must-revalidate (o no-cache) con ETag en endpoints dinámicos donde la consistencia prima sobre ahorrar el round-trip."
+    ],
+    "ejemplo": "GET /api/catalog HTTP/1.1\nIf-None-Match: \"8f3a2c91\"\n\nHTTP/1.1 304 Not Modified\nCache-Control: public, max-age=60, must-revalidate\nETag: \"8f3a2c91\"",
+    "entrevista": "Cache-Control determina si y durante cuánto tiempo una respuesta es fresca, mientras que ETag habilita la revalidación condicional 304 Not Modified y el control de concurrencia optimista con If-Match."
+  },
+  "Idempotencia": {
+    "que": "Propiedad por la cual ejecutar una misma operación una o múltiples veces produce exactamente el mismo estado final en el sistema que ejecutarla una sola vez. Es el pilar que hace seguros los reintentos ante fallos de red y las entregas duplicadas en sistemas distribuidos.",
+    "para": "Resuelve el problema de mensajes duplicados en colas con garantía at-least-once, reintentos de clientes HTTP tras timeouts y reconexiones entre microservicios. Resulta indispensable en pagos, creación de pedidos, débitos de saldo y procesamiento de webhooks.",
+    "como": "Se logra mediante idempotencia natural (p. ej. SET status = 'PAID' o DELETE /items/5) o idempotencia explícita usando una Idempotency Key (generalmente un UUID generado por el cliente antes del primer envío). Al recibir la petición o mensaje, el servidor inicia una transacción atómica en base de datos o caché distribuida: intenta insertar la clave en una tabla con restricción UNIQUE (o usa SET key val NX EX en Redis); si la clave ya existe, omite la lógica de negocio y devuelve el resultado guardado originalmente; si no, ejecuta la operación, persiste la respuesta junto con la clave y confirma la transacción.",
+    "practicas": [
+      "La clave de idempotencia debe generarla el cliente (o productor original) antes del primer intento y reutilizarse en todos los reintentos; si la genera el servidor, no protege frente a timeouts de red.",
+      "Valida que el payload asociado a una Idempotency-Key repetida coincida (mediante hash) y responde 422 o 409 si el cliente reutilizó la misma clave con parámetros distintos.",
+      "Persiste la clave de idempotencia dentro de la misma transacción ACID que modifica los datos de negocio para evitar que la acción ocurra sin quedar registrada.",
+      "Define un TTL o política de purga para las claves almacenadas (p. ej. 24-72 horas en APIs de pago) para evitar el crecimiento ilimitado de la tabla de deduplicación."
+    ],
+    "ejemplo": "BEGIN;\nINSERT INTO processed_events (event_id, processed_at)\nVALUES ('evt_98a1b2', NOW())\nON CONFLICT (event_id) DO NOTHING;\n-- Solo si se insertó 1 fila, ejecutar la operación de negocio:\nUPDATE accounts SET balance = balance - 50 WHERE id = 42;\nCOMMIT;",
+    "entrevista": "En redes donde un timeout es indistinguible de un fallo real antes o después de ejecutarse la acción, la idempotencia mediante claves únicas persistidas atómicamente hace seguros los reintentos."
+  },
+  "Invalidación de caché": {
+    "que": "Proceso de eliminar o marcar como obsoleta una entrada en caché cuando el dato subyacente en la fuente de verdad ha sido modificado o ha expirado. Es uno de los retos más delicados en ingeniería por el equilibrio entre frescura de datos, concurrencia y rendimiento.",
+    "para": "Evita servir datos desactualizados (stale data) tras escrituras en base de datos, despliegues o cambios críticos de estado (precios, stock, permisos). Se aplica de forma coordinada en cachés en memoria (Redis), cachés locales de proceso y CDNs.",
+    "como": "Se combina la expiración temporal (TTL acotado que limita la ventana máxima de inconsistencia), la invalidación explícita dirigida por eventos (al cambiar la BD, el servicio ejecuta DEL o un pipeline CDC como Debezium lee el WAL/binlog para invalidar claves afectadas) y el versionado de claves (cache busting, incluyendo un número de versión o hash en la clave para forzar un miss limpio). Ante concurrencia entre lectura lenta y escritura rápida, se utilizan patrones como versionado, leases o delayed double delete para impedir que una lectura antigua vuelva a poblar la caché con datos viejos.",
+    "practicas": [
+      "Al invalidar tras una escritura, borra la clave (DEL) en lugar de sobreescribirla (SET) para reducir condiciones de carrera entre actualizaciones concurrentes que lleguen desordenadas.",
+      "Combina siempre la invalidación basada en eventos con un TTL de respaldo: si un evento de borrado se pierde, la entrada caducará de forma natural.",
+      "Mantén índices secundarios o cache tags si una entidad impacta múltiples vistas agregadas, evitando siempre el comando KEYS * en Redis (que bloquea el hilo único).",
+      "Si un dato requiere consistencia estricta linealizable (como validación de saldo antes de un cobro), consulta directamente la fuente de verdad en lugar de depender de invalidación asíncrona."
+    ],
+    "ejemplo": "# Race condition clásica en Cache-Aside:\n# 1. Hilo A (lectura): miss en caché -> lee valor viejo V1 de BD\n# 2. Hilo B (escritura): actualiza BD a V2 -> ejecuta DEL(key)\n# 3. Hilo A (lento): escribe V1 en caché -> caché queda con dato obsoleto\n# Mitigación: TTL corto de respaldo, versionado de clave o Redis leases.",
+    "entrevista": "La invalidación segura combina borrado de claves dirigido por eventos (idealmente vía CDC o tras commit) con un TTL de seguridad y versionado de claves para acotar race conditions concurrentes."
+  },
+  "Kafka": {
+    "que": "Plataforma distribuida de event streaming basada en un registro de escritura secuencial (append-only commit log) persistido en disco, particionado y replicado. A diferencia de una cola tradicional que elimina el mensaje tras su entrega, Kafka retiene los eventos de forma duradera según políticas de tiempo o tamaño.",
+    "para": "Sirve como columna vertebral para pipelines de datos en tiempo real, arquitecturas orientadas a eventos (EDA), Change Data Capture (CDC), agregación de logs y desacoplamiento de microservicios de alto throughput. Destaca cuando múltiples consumidores independientes necesitan leer el mismo flujo a su propio ritmo o reprocesar eventos históricos (replay).",
+    "como": "Los productores envían registros a topics divididos en partitions (asignadas por hash de clave para mantener orden por entidad o de forma balanceada); cada partición tiene un bróker líder y réplicas seguidoras sincronizadas en el conjunto ISR (In-Sync Replicas). Los datos se escriben secuencialmente aprovechando la page cache del sistema operativo y transferencia zero-copy (sendfile). Los consumidores se organizan en Consumer Groups: cada partición es asignada a un único consumidor dentro del grupo para escalar horizontalmente, mientras cada grupo mantiene su propio offset en el tópico interno __consumer_offsets (con coordinación mediante el protocolo KRaft).",
+    "practicas": [
+      "Elige cuidadosamente la partition key (p. ej. order_id): garantiza orden estricto por entidad, pero una clave muy desbalanceada genera hot partitions que limitan el escalado.",
+      "En entornos productivos críticos configura acks=all en el productor y min.insync.replicas=2 con factor de replicación 3 en el bróker para evitar pérdida de datos confirmados.",
+      "El paralelismo máximo de un Consumer Group equivale al número de particiones del tópico: añadir más instancias consumidoras que particiones las deja inactivas.",
+      "Evita bloqueos largos síncronos dentro del bucle poll() sin ajustar max.poll.interval.ms, o el coordinador expulsará al consumidor disparando rebalances frecuentes."
+    ],
+    "ejemplo": "kafka-topics.sh --create --topic orders.events \\\n  --partitions 6 --replication-factor 3 \\\n  --config min.insync.replicas=2 \\\n  --bootstrap-server localhost:9092",
+    "entrevista": "Kafka no es una cola tradicional sino un commit log distribuido y particionado: su modelo pull basado en offsets por Consumer Group habilita altísimo throughput, escalado independiente y replay de eventos."
+  },
+  "Manejo de caché": {
+    "que": "Conjunto de prácticas de diseño, arquitectura y operación destinadas a gobernar el ciclo de vida de los datos cacheados: qué almacenar, en qué capas (L1 en proceso, L2 distribuida, CDN), cómo serializar, cómo dimensionar memoria y cómo responder ante fallos de la propia caché.",
+    "para": "Maximiza la velocidad de lectura y protege bases de datos o APIs costosas sin introducir errores de consistencia, fugas de memoria o caídas en cascada cuando la caché está fría o inaccesible. Es una capacidad transversal crítica en sistemas distribuidos de tráfico medio y alto.",
+    "como": "Se parte de analizar el patrón de acceso (ratio lectura/escritura, cardinalidad y tolerancia a datos ligeramente obsoletos) para diseñar una topología multicapa: caché local L1 (en memoria del proceso, nanosegundos, p. ej. Caffeine) combinada con caché distribuida L2 (compartida entre réplicas, ~1 ms, p. ej. Redis). Se estandarizan claves versionadas (servicio:entidad:id:v1), serialización eficiente (Protobuf, MessagePack o JSON), circuit breakers para degradar limpiamente si L2 falla, y observabilidad continua sobre hit ratio, latencia p99, uso de memoria y tasa de evictions.",
+    "practicas": [
+      "Diseña el sistema asumiendo que la caché puede vaciarse o caer en cualquier momento: prepara planes de cache warming o degradación controlada para no tumbar la base de datos.",
+      "Mitiga las hot keys (una sola clave con tráfico extremo que satura un shard de Redis) replicándolas en caché local L1 con TTL muy corto o aplicando key salting.",
+      "Protege el origen contra cache penetration (consultas repetidas a IDs inexistentes que siempre generan miss) cacheando valores nulos con TTL breve o interponiendo un Bloom Filter.",
+      "Monitoriza el hit ratio junto con las evictions: un hit ratio bajo (<70% en cargas estables) suele delatar TTLs demasiado cortos, poca RAM o claves mal normalizadas."
+    ],
+    "ejemplo": "Flujo multicapa L1 -> L2 -> Origen:\n1. L1 (in-process, TTL 5s)   -> ~100 ns, absorbe hot keys\n2. L2 (Redis clúster, TTL 5m) -> ~1 ms, estado compartido\n3. Origen (PostgreSQL)        -> ~15 ms, fuente de verdad\nSi L2 supera timeout (50 ms): circuit breaker abierto -> fallback seguro.",
+    "entrevista": "Un buen manejo de caché define convenciones de claves versionadas, protege contra hot keys y cache penetration, y garantiza degradación segura si la caché está fría o no responde."
+  },
+  "Memcached": {
+    "que": "Sistema de almacenamiento en caché en memoria distribuido, de código abierto, diseñado exclusivamente como almacén clave-valor plano y ultrarrápido con arquitectura multihilo. Almacena pares clave-valor en RAM sin persistencia en disco ni estructuras de datos complejas.",
+    "para": "Sirve para acelerar aplicaciones web mediante caching efímero de fragmentos HTML, sesiones o resultados de consultas cuando se busca máxima simplicidad, baja latencia y escalado vertical aprovechando servidores con múltiples núcleos. Suele compararse con Redis cuando no se necesitan estructuras avanzadas, replicación nativa ni persistencia.",
+    "como": "Memcached funciona bajo un modelo cliente-servidor sobre TCP o UDP usando un protocolo ligero de texto o binario; el escalado horizontal recae en el cliente mediante consistent hashing sobre nodos independientes que no comparten estado (shared-nothing). Internamente evita la fragmentación de memoria mediante un slab allocator: reserva páginas de 1 MB divididas en bloques de tamaño fijo (chunks) agrupados por clases de tamaño y aplica expulsión LRU segmentada por slab cuando una clase se llena. Su diseño multihilo le permite aprovechar varios núcleos de CPU en paralelo para operaciones simples de lectura y escritura.",
+    "practicas": [
+      "Elige Memcached cuando solo necesites caché clave-valor efímera y multihilo para objetos planos; elige Redis si requieres estructuras de datos (sets, sorted sets, hashes), scripting Lua, replicación o persistencia.",
+      "Vigila la calcificación de slabs (cuando cambia el tamaño típico de los objetos y un slab queda saturado mientras otros tienen espacio libre) activando slab_automove.",
+      "Respeta los límites propios del motor: por defecto las claves admiten hasta 250 bytes y los valores 1 MB (almacenar blobs mayores penaliza el aprovechamiento de memoria).",
+      "Recuerda que Memcached no tiene replicación ni failover automático entre nodos: si un nodo cae, sus claves se pierden y el cliente debe redistribuir la carga con consistent hashing."
+    ],
+    "ejemplo": "set session:u42 0 3600 29\n{\"user\":\"ana\",\"role\":\"admin\"}\nSTORED\nget session:u42\nVALUE session:u42 0 29\n{\"user\":\"ana\",\"role\":\"admin\"}\nEND",
+    "entrevista": "Memcached destaca como caché efímera pura gracias a su motor multihilo y su slab allocator, mientras que Redis es preferible cuando se necesitan replicación, persistencia o estructuras de datos avanzadas."
+  },
+  "NATS": {
+    "que": "Sistema de mensajería distribuida ligero y de altísimo rendimiento escrito en Go, concebido originalmente para comunicación pub/sub en tiempo real con latencias de microsegundos. Con su motor integrado NATS JetStream, incorpora persistencia, streaming, almacenamiento clave-valor y entrega at-least-once o exactly-once.",
+    "para": "Se utiliza como tejido de comunicación en arquitecturas cloud-native, microservicios, IoT y edge computing que requieren request-reply ultrarrápido o fan-out masivo con mínima huella operativa frente a Kafka o RabbitMQ. Cubre desde mensajería efímera en memoria (Core NATS) hasta flujos persistentes replicados (JetStream).",
+    "como": "En Core NATS, los clientes se conectan mediante un protocolo TCP textual muy ligero y publican mensajes sobre jerarquías de subjects que admiten comodines (* para un nivel y > para múltiples niveles, ej. orders.eu.>). El servidor enruta mensajes en memoria en modo at-most-once y soporta Queue Groups (balanceo automático entre suscriptores) y Request-Reply nativo usando inbox subjects temporales sin configurar colas dedicadas. Al habilitar JetStream, los mensajes se persisten en Streams replicados mediante consenso Raft, permitiendo consumidores con ACKs explícitos, políticas de retención y replay.",
+    "practicas": [
+      "Diferencia claramente entre Core NATS (telemetría o RPC en tiempo real donde perder un mensaje sin suscriptores activos es tolerable) y NATS JetStream (eventos críticos que exigen durabilidad y reintentos).",
+      "Aprovecha los Queue Groups para escalar consumidores horizontalmente sin tener que administrar exchanges ni bindings manuales.",
+      "Diseña una taxonomía jerárquica limpia de subjects desde el principio (<dominio>.<región>.<entidad>.<acción>) para sacar partido del filtrado por comodines.",
+      "Despliega un número impar de servidores (3 o 5) en clústeres JetStream productivos para preservar quórum Raft ante caídas de nodos."
+    ],
+    "ejemplo": "# Suscripción con Queue Group y comodín usando NATS CLI\nnats sub \"orders.*.created\" --queue=billing-workers &\nnats pub orders.es.created '{\"orderId\": 1042, \"total\": 89.50}'\n# Request-Reply nativo\nnats request inventory.check '{\"sku\": \"ABC-1\"}'",
+    "entrevista": "NATS ofrece latencia de microsegundos con enrutamiento jerárquico de subjects y request-reply nativo en Core NATS, añadiendo persistencia y consenso Raft mediante JetStream cuando el negocio exige garantías duraderas."
+  },
+  "Outbox pattern": {
+    "que": "Patrón de diseño transaccional (Transactional Outbox) que garantiza la publicación fiable de eventos de dominio tras modificar una base de datos local, eliminando el problema de escritura dual (dual-write) entre la base de datos y el bróker de mensajería.",
+    "para": "Resuelve el fallo clásico donde una transacción en base de datos confirma con éxito pero la publicación al bróker (Kafka, RabbitMQ, SQS) falla —o viceversa—, dejando al sistema distribuido en estado inconsistente. Se emplea en microservicios orientados a eventos, sagas y diseño guiado por el dominio (DDD).",
+    "como": "En lugar de invocar al bróker directamente durante la petición, el servicio abre una única transacción ACID en su base de datos y ejecuta dos escrituras atómicas: actualiza las tablas de negocio (ej. orders) e inserta el evento en una tabla outbox en la misma base de datos. Tras el COMMIT, un proceso separado (Message Relay) lee los registros pendientes de outbox y los envía al bróker; este relay opera bien por Polling Publisher (consultas periódicas con SELECT ... FOR UPDATE SKIP LOCKED) o mediante Transaction Log Tailing / CDC (ej. Debezium leyendo el WAL de PostgreSQL o binlog de MySQL). Como el relay puede fallar tras publicar pero antes de marcar el registro, garantiza entrega at-least-once y exige consumidores idempotentes.",
+    "practicas": [
+      "Nunca ejecutes db.commit() seguido de broker.publish() esperando consistencia atómica: sin Outbox (o 2PC), cualquier caída intermedia rompe la integridad de eventos.",
+      "Prefiere CDC (como Debezium) frente a polling continuo en tablas outbox de alto volumen para reducir contención de locks y carga de lectura en la base de datos.",
+      "Si implementas un poller propio, utiliza SKIP LOCKED para permitir múltiples instancias del relay en paralelo sin procesar dos veces la misma fila.",
+      "Configura archivado, TTL o particionado de la tabla outbox tras publicar para evitar que su crecimiento degrade los índices y el vacuuming."
+    ],
+    "ejemplo": "BEGIN;\nINSERT INTO orders (id, status, total) VALUES ('ord_91', 'CREATED', 120.00);\nINSERT INTO outbox (id, aggregate_id, event_type, payload)\nVALUES ('evt_55', 'ord_91', 'OrderCreated', '{\"orderId\":\"ord_91\",\"total\":120}');\nCOMMIT;",
+    "entrevista": "El Outbox pattern resuelve la escritura dual guardando estado y evento dentro de la misma transacción ACID, delegando la publicación asíncrona al bróker mediante polling o CDC con garantía at-least-once."
+  },
+  "Pub-Sub": {
+    "que": "Modelo de mensajería asíncrona (Publish-Subscribe) donde los emisores (publishers) envían eventos a canales o tópicos sin conocer quién los consume, y múltiples receptores (subscribers) reciben copias independientes de los mensajes según su suscripción.",
+    "para": "Desacopla productores de consumidores en tiempo, espacio y concurrencia, permitiendo que nuevos servicios reaccionen a eventos existentes sin modificar al emisor (fan-out). Se usa en notificaciones multicanal, propagación de eventos entre dominios, invalidación distribuida y comunicación en tiempo real.",
+    "como": "El publicador emite un mensaje hacia un intermediario (un topic en SNS/Kafka/NATS, un fanout o topic exchange en RabbitMQ, o un canal PUBLISH en Redis) etiquetado con un nombre de tópico o atributos. El bróker evalúa las suscripciones registradas (por nombre, comodines o políticas de filtrado sobre atributos) y replica el mensaje hacia cada suscriptor interesado. A diferencia de una cola punto a punto (competing consumers) donde un solo trabajador procesa cada mensaje, en Pub-Sub cada suscriptor independiente recibe su propia copia; por ello suele combinarse con colas por consumidor (patrón SNS -> SQS) para lograr fan-out entre servicios y balanceo interno dentro de cada uno.",
+    "practicas": [
+      "Combina Pub-Sub + Cola dedicada por dominio (ej. SNS conectado a múltiples SQS o Exchange hacia colas durables) para tener fan-out global y escalado de workers por servicio.",
+      "Verifica la durabilidad del bróker: Redis Pub/Sub es efímero (si un suscriptor está desconectado, pierde el mensaje), mientras que Kafka o SNS+SQS ofrecen retención duradera.",
+      "Versiona explícitamente los esquemas de eventos (Avro, Protobuf o JSON Schema compatible hacia atrás) porque publicadores y suscriptores se despliegan de forma independiente.",
+      "Aplica filtros de suscripción en el propio bróker para que cada consumidor reciba solo los eventos relevantes sin desperdiciar red ni CPU."
+    ],
+    "ejemplo": "OrderService (Publisher)\n   └─► Topic: \"order.paid\" (Fan-out)\n          ├──► Queue: billing-queue   ──► BillingWorker (x3)\n          ├──► Queue: shipping-queue  ──► ShippingWorker (x2)\n          └──► Queue: analytics-queue ──► AnalyticsWorker (x1)",
+    "entrevista": "Pub-Sub desacopla emisores y múltiples receptores mediante fan-out por tópico, y en producción suele combinarse con colas dedicadas por consumidor para garantizar durabilidad y balanceo de carga."
+  },
+  "RabbitMQ": {
+    "que": "Bróker de mensajería tradicional de código abierto que implementa principalmente el protocolo AMQP 0-9-1 (junto con soporte para MQTT, STOMP, AMQP 1.0 y Streams). Sigue un modelo de bróker inteligente y consumidor ligero, gestionando internamente el enrutamiento complejo y el estado de entrega de cada mensaje.",
+    "para": "Resulta ideal para colas de tareas (task queues), enrutamiento flexible basado en reglas, flujos RPC asíncronos, colas con prioridad y mensajería transaccional donde el mensaje se elimina tras confirmarse. Destaca frente a Kafka cuando prima el enrutamiento dinámico y el procesamiento por tarea individual sobre la retención y replay histórico masivo.",
+    "como": "El productor publica mensajes hacia un Exchange (no directamente a una cola); este evalúa los bindings configurados mediante routing_key o cabeceras según su tipo (direct, fanout, topic con * y #, o headers) y enruta el mensaje hacia una o más Queues. El bróker empuja (push) mensajes hacia los consumidores respetando el límite basic.qos (prefetch count). Cuando el consumidor completa la tarea, envía basic.ack y RabbitMQ borra el mensaje; si falla o envía basic.nack con requeue=false, puede derivarlo a un Dead Letter Exchange (DLX). Para alta disponibilidad moderna se emplean Quorum Queues basadas en consenso Raft.",
+    "practicas": [
+      "Ajusta siempre prefetch_count (basic.qos) acorde a la concurrencia real del consumidor; un prefetch ilimitado puede saturar la memoria de un único worker lento.",
+      "Usa Quorum Queues (basadas en Raft) para colas críticas en clúster, evitando las antiguas classic mirrored queues que están obsoletas.",
+      "Activa Publisher Confirms junto con colas durables y mensajes persistentes (delivery_mode=2) cuando no puedas tolerar pérdida de mensajes ante reinicios.",
+      "Evita acumular millones de mensajes sin consumir en colas clásicas de RabbitMQ (impacta la memoria del bróker); para retención prolongada usa Kafka o RabbitMQ Streams."
+    ],
+    "ejemplo": "channel.exchange_declare(exchange=\"events\", exchange_type=\"topic\", durable=True)\nchannel.basic_publish(\n    exchange=\"events\",\n    routing_key=\"order.es.created\",\n    body=b'{\"id\": 101}',\n    properties=pika.BasicProperties(delivery_mode=2)\n)",
+    "entrevista": "RabbitMQ implementa el paradigma de bróker inteligente con AMQP: los productores envían a Exchanges que enrutan hacia colas con entrega push y ACKs individuales, brillando en colas de trabajo y enrutamiento flexible."
+  },
+  "Rate limiting": {
+    "que": "Mecanismo de control de tráfico y seguridad que limita la cantidad de peticiones u operaciones que un cliente, IP, usuario o API key puede realizar dentro de un intervalo de tiempo. Funciona simultáneamente como protección de disponibilidad/rendimiento y como defensa de seguridad frente a abuso automatizado (OWASP API4).",
+    "para": "Protege APIs, cachés y bases de datos contra ataques de fuerza bruta (login, códigos OTP), scraping masivo, denegación de servicio a nivel de aplicación (L7 DoS) y consumo descontrolado por errores en clientes. Se despliega en API Gateways, proxies inversos (NGINX, Envoy), WAFs y middleware apoyado en Redis.",
+    "como": "Cada solicitud se evalúa frente a un contador asociado a una clave de identidad (IP, user_id, tenant o endpoint) antes de ejecutar lógica costosa. Entre los algoritmos principales destacan Fixed Window (contador simple por bloque temporal, propenso a picos dobles en los bordes), Sliding Window Log/Counter (suaviza transiciones ponderando ventanas), Token Bucket (recarga tokens a tasa fija permitiendo ráfagas acotadas) y Leaky Bucket (suaviza la salida a tasa constante). En arquitecturas distribuidas, el contador compartido se actualiza atómicamente en Redis mediante scripts Lua y al superarse el umbral se responde HTTP 429 Too Many Requests con cabeceras Retry-After y X-RateLimit-Remaining.",
+    "practicas": [
+      "Prefiere Token Bucket o Sliding Window Counter en APIs públicas para tolerar ráfagas legítimas cortas sin sufrir los picos de borde del Fixed Window.",
+      "Ejecuta la lectura, verificación e incremento del límite en Redis dentro de un script Lua atómico para evitar condiciones de carrera entre instancias.",
+      "Aplica límites por múltiples dimensiones: por IP en endpoints públicos sensibles (login/recuperación) y por user_id o tenant_id en rutas autenticadas para no bloquear usuarios tras un mismo NAT.",
+      "Considera una política fail-open o límite local de respaldo si el almacén de cuotas en Redis falla, evitando que una incidencia en la caché interrumpa todo el tráfico legítimo."
+    ],
+    "ejemplo": "-- Script Lua atómico en Redis para ventana fija\nlocal current = redis.call(\"INCR\", KEYS[1])\nif current == 1 then\n  redis.call(\"EXPIRE\", KEYS[1], ARGV[1])\nend\nif current > tonumber(ARGV[2]) then\n  return 0\nend\nreturn 1",
+    "entrevista": "El rate limiting protege tanto la disponibilidad como la seguridad frente a fuerza bruta y DoS L7; en entornos distribuidos lo implemento con Token Bucket o Sliding Window atómicos en Redis vía Lua devolviendo HTTP 429 y Retry-After."
+  },
+  "Saga - Compensación": {
+    "que": "Patrón arquitectónico para coordinar transacciones distribuidas de larga duración entre múltiples microservicios sin usar bloqueos distribuidos ni Two-Phase Commit (2PC). Divide la operación global en una secuencia de transacciones locales ACID donde cada fallo dispara transacciones inversas de compensación para deshacer semánticamente los pasos previos confirmados.",
+    "para": "Resuelve la consistencia de procesos de negocio entre servicios con bases de datos independientes (p. ej. Crear Pedido -> Reservar Stock -> Cobrar Pago -> Enviar) donde 2PC es inviable por acoplamiento temporal y pérdida de disponibilidad. Garantiza consistencia eventual preservando la autonomía de cada microservicio.",
+    "como": "Se coordina de dos formas: Coreografía (Choreography), donde cada servicio publica eventos de dominio y los demás reaccionan de forma descentralizada sin controlador único; u Orquestación (Orchestration), donde un coordinador central (como un servicio de máquina de estados o motores tipo Temporal) envía comandos paso a paso y gestiona el estado global. Si falla un paso intermedio (ej. PaymentFailed), se ejecuta la recuperación hacia atrás invocando las acciones de compensación en orden inverso (ReleaseStock, CancelOrder); estas compensaciones deben ser idempotentes y persistirse con reintentos garantizados porque no existe rollback automático.",
+    "practicas": [
+      "Elige Coreografía para flujos simples de pocos pasos (2-4 servicios) y Orquestación cuando existan múltiples ramificaciones, timeouts complejos o necesidad de trazabilidad centralizada.",
+      "Toda transacción de compensación debe ser idempotente y tolerar ejecuciones repetidas o desordenadas sin corromper el estado del negocio.",
+      "Considera la ausencia de aislamiento (I de ACID): una Saga expone estados intermedios (dirty reads); mitígalo mediante bloqueos semánticos como estados PENDING_PAYMENT antes de confirmar.",
+      "Clasifica los pasos en compensables (reversibles como reservar stock), pivote (punto de no retorno como confirmar cobro) y reintentables (pasos posteriores al pivote que deben completarse eventualmente)."
+    ],
+    "ejemplo": "Flujo normal:  [Crear Pedido] -> [Reservar Stock] -> [Cobrar Pago] -> [Confirmar]\nFallo en pago:                                        (Falla)\nCompensación:  [Cancelar Pedido] <- [Liberar Stock] <────┘",
+    "entrevista": "El patrón Saga reemplaza las transacciones distribuidas 2PC por transacciones locales ACID encadenadas y acciones compensatorias idempotentes, eligiendo coreografía para flujos simples u orquestación para procesos complejos."
+  },
+  "TTL y eviction (LRU-LFU)": {
+    "que": "Mecanismos complementarios para controlar la caducidad y capacidad máxima de una caché: TTL (Time To Live) fija la vida temporal máxima de una clave por frescura, mientras que las políticas de eviction (desalojo) deciden qué claves descartar cuando la caché alcanza su límite físico de memoria (maxmemory).",
+    "para": "Evitan el agotamiento de memoria RAM (OOM) y acotan el tiempo máximo durante el cual un dato obsoleto puede seguir sirviéndose desde caché. Elegir la política de eviction adecuada maximiza el hit ratio bajo un presupuesto fijo de memoria.",
+    "como": "Al insertar una clave con TTL (p. ej. SETEX en Redis), se registra su instante de expiración y se elimina mediante expiración pasiva (al intentar leerla vencida) y expiración activa periódica (muestreo aleatorio en segundo plano). Si la RAM se llena antes de que caduquen las claves, actúa el desalojador: LRU (Least Recently Used) expulsa la clave que lleva más tiempo sin ser accedida (aproximado en Redis por muestreo para ahorrar memoria), mientras que LFU (Least Frequently Used) expulsa la menos accedida usando un contador probabilístico (Morris counter en Redis) con decaimiento temporal para olvidar popularidad pasada. Modos allkeys-* evalúan cualquier clave y volatile-* solo las que tienen TTL.",
+    "practicas": [
+      "Suma un jitter aleatorio al TTL (ej. 300s + random(0, 60s)) al cargar lotes de claves para impedir expiraciones masivas sincronizadas y efectos thundering herd.",
+      "Usa allkeys-lru como valor seguro general y allkeys-lfu en cargas muy sesgadas (pocas claves extremadamente populares) para protegerlas frente a ráfagas de lecturas únicas.",
+      "Evita almacenar claves sin TTL bajo políticas volatile-lru: si esas claves llenan toda la memoria, la caché no podrá expulsarlas y rechazará nuevas escrituras.",
+      "Separa instancias de caché pura respecto a instancias de estado crítico (sesiones o colas) para que la eviction nunca destruya datos que no existen en otra fuente."
+    ],
+    "ejemplo": "# Configuración de Redis como caché pura con LFU aproximado\nmaxmemory 4gb\nmaxmemory-policy allkeys-lfu\nlfu-log-factor 10\nlfu-decay-time 1",
+    "entrevista": "El TTL controla la caducidad temporal por frescura (añadiendo jitter para evitar expiraciones en bloque), mientras que LRU y LFU protegen la memoria desalojando claves por menor recencia o menor frecuencia de acceso."
+  },
+  "Thundering herd": {
+    "que": "Fenómeno de saturación severa (también conocido como cache stampede) que ocurre cuando una clave muy consultada expira o es invalidada y cientos o miles de peticiones concurrentes sufren un cache miss simultáneo, lanzando todas a la vez la misma consulta pesada contra la base de datos o servicio de origen.",
+    "para": "Prevenir este efecto es crucial para evitar caídas en cascada bajo tráfico intenso cuando vence un TTL popular o tras un vaciado de caché. Protege el backend de origen (SQL, APIs de terceros, cálculos costosos) frente a picos abruptos de concurrencia duplicada.",
+    "como": "Cuando la clave K expira en el instante t, N peticiones simultáneas reciben null de Redis antes de que la primera logre recalcular el valor; las N peticiones consultan la BD en paralelo, agotando conexiones y CPU y retrasando aún más el relleno de la caché. Se mitiga mediante cuatro mecanismos: Singleflight / Mutex distribuido (solo un hilo o réplica adquiere permiso para reconstruir la clave mientras el resto espera el resultado compartido), Stale-While-Revalidate (se sirve brevemente la versión expirada mientras un único worker refresca en segundo plano), Probabilistic Early Expiration o XFetch (recalcula ligeramente antes del vencimiento según una probabilidad creciente) y TTL Jitter (desfasa caducidades iniciales).",
+    "practicas": [
+      "Usa singleflight dentro de cada proceso (p. ej. golang.org/x/sync/singleflight) para colapsar misses concurrentes locales y combínalo con locks distribuidos o stale-while-revalidate entre réplicas.",
+      "Aplica siempre jitter en los TTLs cuando precalientes o cargues claves en lote para evitar expiraciones sincronizadas.",
+      "Si utilizas locks distribuidos en Redis (SET lock:K 1 NX PX 5000) para reconstruir una clave, fija siempre un timeout corto al bloqueo para evitar deadlocks si el worker falla.",
+      "Para datos extremadamente calientes y predecibles, considera refresco proactivo en segundo plano antes de que el TTL expire."
+    ],
+    "ejemplo": "// Colapsar peticiones concurrentes locales con singleflight en Go\nval, err, _ := g.Do(\"product:\"+id, func() (any, error) {\n    if cached, ok := getFromRedis(id); ok {\n        return cached, nil\n    }\n    data := queryExpensiveDB(id)\n    setInRedis(id, data, 5*time.Minute)\n    return data, nil\n})",
+    "entrevista": "El thundering herd o cache stampede ocurre cuando la expiración de una clave caliente dispara múltiples reconstrucciones paralelas contra el origen; se mitiga con singleflight o locks distribuidos, stale-while-revalidate, expiración probabilística temprana y TTL jitter."
+  }
+}

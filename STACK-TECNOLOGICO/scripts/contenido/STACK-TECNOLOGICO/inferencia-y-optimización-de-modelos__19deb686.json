@@ -1,0 +1,392 @@
+{
+  "AWQ": {
+    "que": "AWQ (Activation-Aware Weight Quantization) es un algoritmo de cuantización post-entrenamiento (PTQ) que reduce los pesos de un LLM a baja precisión (típicamente 4 bits enteros, INT4) guiándose por las activaciones observadas durante la calibración. Parte de la premisa de que no todos los pesos tienen el mismo impacto: apenas un 0.1 %–1 % de los canales de peso concentran la mayor degradación si se cuantizan sin protección.",
+    "para": "Sirve para comprimir modelos de lenguaje grandes hasta ~3.5x–4x en memoria VRAM y acelerar la decodificación autorregresiva (limitada por ancho de banda de memoria) casi sin pérdida de perplejidad ni capacidad de generalización. Se utiliza cuando se despliegan LLMs en GPUs con VRAM ajustada o se busca mayor throughput por GPU en motores como vLLM, TensorRT-LLM o LMDeploy.",
+    "como": "Durante la calibración con un pequeño conjunto de texto representativo, AWQ mide la magnitud promedio de las activaciones de entrada por canal para identificar los canales salientes (aquellos multiplicados por activaciones grandes). En lugar de mantener esos pesos en FP16 (lo que rompería la uniformidad del formato INT4 en GPU), aplica un factor de escala equivalente por canal: multiplica los pesos salientes por s > 1 antes de cuantizarlos y divide las activaciones correspondientes por s (suele absorberse en la capa de normalización previa o proyección anterior). Así reduce el error relativo de cuantización de los canales críticos manteniendo todos los pesos en enteros empaquetados (por grupos, p. ej., group_size=128) compatibles con kernels rápidos GEMM/GEMV como Marlin.",
+    "practicas": [
+      "Usa `group_size=128` y 4 bits (`w4a16`) como punto de partida estándar: equilibra compresión, velocidad de kernel y retención de calidad frente a grupos de 64 o 32.",
+      "AWQ vs GPTQ: AWQ suele generalizar mejor fuera del dominio del dataset de calibración porque no sobreajusta los pesos con inversa del Hessiano; además calibra más rápido y exige menos memoria.",
+      "Trampa común: evaluar AWQ en batch size grande esperando aceleración lineal; como la cuantización weight-only (`W4A16`) acelera lecturas de memoria (memory-bound) pero sigue ejecutando cómputo en FP16, con batches muy altos el cuello pasa a cómputo (compute-bound) y conviene FP8 (`W8A8`).",
+      "Usa kernels fusionados (como `awq_marlin` en vLLM) en lugar de implementaciones naive de des-cuantización en PyTorch, que añaden latencia innecesaria."
+    ],
+    "ejemplo": "from awq import AutoAWQForCausalLM\nfrom transformers import AutoTokenizer\n\nmodel = AutoAWQForCausalLM.from_pretrained(\"meta-llama/Llama-3.1-8B-Instruct\")\ntokenizer = AutoTokenizer.from_pretrained(\"meta-llama/Llama-3.1-8B-Instruct\")\nquant_config = {\"zero_point\": True, \"q_group_size\": 128, \"w_bit\": 4, \"version\": \"GEMM\"}\nmodel.quantize(tokenizer, quant_config=quant_config)\nmodel.save_quantized(\"./llama-3.1-8b-awq\")",
+    "entrevista": "AWQ protege el ~1 % de pesos conectados a activaciones salientes mediante escalado por canal antes de cuantizar a INT4, logrando compresión 4x en VRAM con mejor generalización y calibración más rápida que GPTQ."
+  },
+  "Batching continuo": {
+    "que": "El batching continuo (continuous batching o iteration-level scheduling) es una estrategia de planificación en servidores de inferencia para LLMs que permite insertar nuevas peticiones y liberar peticiones completadas en cada paso de decodificación (token a token), sin esperar a que termine la secuencia más larga del lote.",
+    "para": "Resuelve el problema de subutilización masiva de GPU causado por el batching estático tradicional, donde todas las peticiones de un lote quedan bloqueadas hasta que la última genera su token de fin de secuencia (`EOS`) o alcanza `max_tokens`. Es indispensable en servicios de chat, APIs de generación y agentes donde la longitud de las respuestas varía enormemente entre usuarios.",
+    "como": "El planificador del motor de inferencia (por ejemplo, en Orca o vLLM) opera a nivel de iteración de forward pass en lugar de a nivel de petición completa. Al finalizar una iteración que genera un token por cada secuencia activa, las secuencias que emiten `EOS` o superan su límite abandonan el lote inmediatamente y devuelven sus bloques de caché KV al gestor de memoria. En la siguiente iteración, peticiones en espera de la cola se incorporan (tras su fase de prefill o mediante chunked prefill) al mismo lote activo, manteniendo la ocupación de los Tensor Cores y el ancho de banda de HBM altos de forma sostenida.",
+    "practicas": [
+      "Combina siempre batching continuo con PagedAttention o gestión paginada de caché KV; sin ella, la fragmentación de memoria impide aprovechar el espacio liberado por secuencias que terminan pronto.",
+      "Habilita `chunked prefill` cuando convivan prompts muy largos con peticiones de chat cortas: evita que un prefill largo bloquee durante cientos de milisegundos la decodificación del resto del lote (picos de ITL).",
+      "Batching continuo vs Dynamic batching: el batching dinámico agrupa peticiones en una ventana temporal antes de lanzar el lote completo (útil en visión o embeddings), mientras que el continuo reconfigura el lote tras cada token generado.",
+      "Monitoriza `num_requests_running` y `num_requests_waiting` junto con TTFT e ITL para ajustar `max_num_seqs` y evitar degradar la latencia interactiva por saturación."
+    ],
+    "ejemplo": "vllm serve meta-llama/Llama-3.1-8B-Instruct \\\n  --max-num-seqs 256 \\\n  --max-num-batched-tokens 8192 \\\n  --enable-chunked-prefill",
+    "entrevista": "El batching continuo planifica la GPU a nivel de iteración de token en vez de por petición completa, eliminando el tiempo ocioso por secuencias desiguales y multiplicando el throughput de tokens por segundo."
+  },
+  "Benchmarking de modelos": {
+    "que": "El benchmarking de modelos es el proceso sistemático y reproducible de medir tanto las métricas de calidad funcional (precisión, razonamiento, seguimiento de instrucciones, alucinación) como las de rendimiento de sistema (latencia, throughput, consumo de VRAM y coste) bajo cargas realistas.",
+    "para": "Sirve para tomar decisiones objetivas al comparar modelos base, variantes cuantizadas, prompts, motores de serving o tipos de GPU antes de pasar a producción. Evita optimizar a ciegas por una única métrica (como tokens/s en vacío o un benchmark público contaminado) que no refleja la experiencia real del usuario.",
+    "como": "Un benchmark completo separa evaluación offline de calidad (datasets estandarizados como MMLU-Pro, GSM8K, HumanEval o evaluadores LLM-as-a-judge con trazas propias) y pruebas de carga de inferencia. En la parte de sistema, un cliente generador de carga (como `vllm bench serve` o `genai-perf`) envía tráfico con distribuciones realistas de longitud de entrada/salida y concurrencia (Poisson o tasa fija), registrando TTFT (Time To First Token), ITL/TPOT (Inter-Token Latency), latencia E2E en percentiles P50/P95/P99 y goodput (peticiones que cumplen SLO).",
+    "practicas": [
+      "Mide siempre bajo distribuciones de longitud de entrada y salida equivalentes a tu tráfico real; probar solo con prompts de 100 tokens oculta el cuello del prefill y del tamaño de caché KV.",
+      "Incluye un periodo de calentamiento (warm-up) antes de capturar métricas para descartar compilaciones JIT (`torch.compile`, CUDA graphs) o carga inicial de pesos en caché.",
+      "Benchmarking sintético vs Goodput: no basta con medir el máximo de tokens/s si el P99 de TTFT supera el SLO de usuario; reporta el throughput máximo que respeta tus umbrales de latencia.",
+      "Trampa común: comparar modelos cuantizados solo por perplejidad en WikiText2; tareas de código, extracción JSON estricta o uso de herramientas (tool calling) son mucho más sensibles a la pérdida de precisión."
+    ],
+    "ejemplo": "vllm bench serve \\\n  --backend openai \\\n  --model meta-llama/Llama-3.1-8B-Instruct \\\n  --dataset-name sharegpt \\\n  --request-rate 8 \\\n  --num-prompts 500",
+    "entrevista": "Un buen benchmarking evalúa simultáneamente calidad en tareas representativas y rendimiento bajo tráfico realista mediante percentiles P95/P99 de TTFT, ITL y goodput dentro de SLO."
+  },
+  "BentoML": {
+    "que": "BentoML es un framework open-source en Python para empaquetar, componer y desplegar modelos de machine learning e inferencia en producción mediante unidades autocontenidas y versionadas llamadas Bentos.",
+    "para": "Sirve para cerrar la brecha entre código experimental (notebooks o scripts de PyTorch/vLLM/ONNX) y microservicios reproducibles listos para Kubernetes o BentoCloud. Resulta especialmente útil en pipelines compuestos (preprocesado, múltiples modelos en paralelo o secuenciales, lógica de negocio y postprocesado) donde un servidor puro de tensores no basta.",
+    "como": "El desarrollador define servicios mediante el decorador `@bentoml.service`, especificando recursos por servicio (`cpu`, `gpu`, `workers`, `traffic`), rutas HTTP tipadas con Pydantic o streaming SSE, y referencias a modelos o runtimes (como vLLM o ONNX Runtime). Al ejecutar `bentoml build`, la herramienta genera un Bento inmutable con el código, dependencias fijadas, artefactos y configuración; posteriormente `bentoml containerize` produce una imagen OCI lista para orquestadores. En tiempo de ejecución, separa procesos de E/S HTTP del proceso worker de inferencia y soporta adaptive batching y escalado independiente por componente.",
+    "practicas": [
+      "Separa las etapas intensivas en CPU (tokenización, extracción de características, validación) de los servicios en GPU usando composición de servicios con `bentoml.depends()` para no bloquear el ciclo de la GPU.",
+      "Fija versiones exactas de CUDA, PyTorch y dependencias del sistema en `bentofile.yaml` para garantizar compilaciones reproducibles entre entorno local y clúster.",
+      "BentoML vs Triton Inference Server: usa BentoML cuando necesites lógica Python compleja, APIs personalizadas y orquestación multi-modelo ágil; usa Triton cuando el foco sea máximo rendimiento en C++/CUDA, TensorRT o multi-framework de muy baja latencia.",
+      "Usa `streaming` (`AsyncGenerator`) para endpoints generativos de LLM y configura timeouts y límites de concurrencia (`traffic.concurrency`) acorde a la VRAM disponible."
+    ],
+    "ejemplo": "import bentoml\n\n@bentoml.service(resources={\"gpu\": 1, \"gpu_type\": \"nvidia-l4\"})\nclass TextEmbedder:\n    def __init__(self):\n        from sentence_transformers import SentenceTransformer\n        self.model = SentenceTransformer(\"BAAI/bge-m3\", device=\"cuda\")\n    @bentoml.api(batchable=True, max_batch_size=32)\n    def encode(self, texts: list[str]) -> list[list[float]]:\n        return self.model.encode(texts).tolist()",
+    "entrevista": "BentoML estandariza el empaquetado reproducible de servicios de IA en Bentos y contenedores OCI, facilitando pipelines multi-modelo en Python con separación de recursos CPU/GPU y batching adaptativo."
+  },
+  "CUDA": {
+    "que": "CUDA (Compute Unified Device Architecture) es la plataforma de computación paralela y modelo de programación de NVIDIA que permite ejecutar código C/C++ y kernels altamente paralelos directamente sobre los miles de núcleos de sus GPUs.",
+    "para": "Sirve para acelerar operaciones de álgebra lineal densa, convoluciones, atención y operaciones elemento a elemento que constituyen el núcleo del entrenamiento y la inferencia de redes neuronales. Sin CUDA (y sus bibliotecas asociadas como cuBLAS, cuDNN o NCCL), los frameworks como PyTorch o vLLM no podrían saturar el hardware gráfico ni gestionar su jerarquía de memoria.",
+    "como": "El código anfitrión (host, en CPU) asigna memoria en VRAM (`cudaMalloc`), copia tensores por PCIe/NVLink y lanza funciones llamadas kernels sobre el device (GPU). Cada kernel se organiza en una malla (grid) de bloques (blocks) compuestos por hilos (threads) ejecutados en grupos de 32 llamados warps bajo el modelo SIMT (Single Instruction, Multiple Threads). El programador optimiza el acceso coalescente a memoria global (HBM), el uso de memoria compartida ultrarrápida (SRAM por Streaming Multiprocessor) para tiling, la ocupación de registros y el solapamiento de cómputo y copias mediante CUDA Streams y CUDA Graphs.",
+    "practicas": [
+      "Usa CUDA Graphs en decodificación de LLMs (batch pequeño) para capturar toda la secuencia de lanzamientos de kernels y reducir la sobrecarga de despacho desde la CPU.",
+      "Fusiona operaciones memoria-intensivas (como LayerNorm + SiLU + cuantización o FlashAttention) en un solo kernel (con Triton o CUDA C++) para evitar viajes redundantes a la HBM.",
+      "Evita sincronizaciones innecesarias host-device (como llamar `.item()` o `.cpu()` dentro de bucles de inferencia), ya que vacían la cola asíncrona de streams y frenan la GPU.",
+      "CUDA vs Triton (OpenAI): escribe en Triton cuando busques productividad en Python generando código PTX cercano al rendimiento nativo; baja a CUDA C++/CUTLASS para exprimir Tensor Cores con instrucciones específicas de arquitectura (Hopper/Blackwell)."
+    ],
+    "ejemplo": "__global__ void vec_add(const float* a, const float* b, float* c, int n) {\n    int idx = blockIdx.x * blockDim.x + threadIdx.x;\n    if (idx < n) {\n        c[idx] = a[idx] + b[idx];\n    }\n}\n// Lanzamiento: vec_add<<<(n + 255) / 256, 256>>>(d_a, d_b, d_c, n);",
+    "entrevista": "CUDA expone la jerarquía SIMT de warps, bloques y memoria compartida de las GPUs NVIDIA, permitiendo que técnicas como kernel fusion, FlashAttention y CUDA Graphs eliminen cuellos de memoria y despacho."
+  },
+  "Caché KV": {
+    "que": "La caché KV (Key-Value cache) es una estructura en memoria (principalmente VRAM) que almacena los tensores de claves (Keys) y valores (Values) ya calculados en todas las capas de atención para los tokens previos durante la generación autorregresiva de un Transformer.",
+    "para": "Resuelve el recálculo redundante en cada paso de decodificación: sin caché KV, generar el token N obligaría a recomputar las proyecciones K y V de los N-1 tokens anteriores, elevando la complejidad de la generación a O(N²) en cómputo por secuencia. Con caché KV, cada nuevo token solo calcula su propia proyección Q, K y V y atiende contra los K/V guardados, haciendo cada paso O(N) en lecturas de memoria.",
+    "como": "Durante la fase de prefill, el modelo procesa todos los tokens del prompt en paralelo y escribe los tensores K y V de cada capa y cabeza de atención en buffers preasignados (o bloques paginados en PagedAttention). En cada paso de decode posterior, únicamente el último token generado pasa por las capas lineales de proyección; su vector K y V se concatena a la caché existente, y el producto escalar de atención Q·Kᵀ usa toda la secuencia acumulada. El tamaño total en bytes crece linealmente con el lote y el contexto: `2 * num_layers * num_kv_heads * head_dim * seq_len * batch_size * bytes_por_elemento`.",
+    "practicas": [
+      "Prefiere modelos con GQA (Grouped-Query Attention) o MLA (Multi-Head Latent Attention) en producción, ya que reducen drásticamente el número de cabezas KV o la dimensión latente almacenada en caché.",
+      "Activa Prefix Caching (Automatic Prefix Caching) cuando muchas peticiones compartan un prompt de sistema largo o ejemplos few-shot: reutiliza los bloques KV ya computados y recorta el TTFT.",
+      "Cuantiza la caché KV a FP8 (`--kv-cache-dtype fp8`) en GPUs compatibles cuando el cuello sea la capacidad de VRAM para concurrencia o contextos de 32k–128k tokens, validando que no degrade tareas de recuperación larga.",
+      "Trampa común: dimensionar una GPU solo por el tamaño de los pesos del modelo (`70B * 2 bytes = 140 GB`) olvidando que en contextos largos la caché KV de múltiples usuarios simultáneos puede consumir tanta o más VRAM que los propios pesos."
+    ],
+    "ejemplo": "# Cálculo aproximado de caché KV para Llama-3.1-8B (32 capas, 8 cabezas KV, dim 128, FP16):\n# 2 (K y V) * 32 * 8 * 128 * 2 bytes = 131,072 bytes (~128 KiB) por token.\n# Con 8,192 tokens de contexto y batch=16:\n# 128 KiB * 8192 * 16 = 16 GiB solo de caché KV.",
+    "entrevista": "La caché KV evita recomputar claves y valores históricos en decodificación autorregresiva, cambiando un cuello cuadrático de cómputo por un consumo lineal de VRAM que domina la concurrencia en producción."
+  },
+  "Colas de inferencia": {
+    "que": "Las colas de inferencia son buffers o sistemas de mensajería intermedios (en memoria dentro del servidor o distribuidos mediante brokers como Redis, RabbitMQ, Kafka o SQS) que desacoplan la recepción de peticiones de su ejecución en los workers de modelo.",
+    "para": "Sirven para absorber picos repentinos de tráfico sin tirar la GPU por falta de memoria (OOM), aplicar prioridades o cuotas por cliente, habilitar procesamiento asíncrono para trabajos largos (batch offline, audio, vídeo) y alimentar eficientemente al planificador de batching continuo o dinámico.",
+    "como": "Cuando una petición llega al gateway de inferencia, se valida y se encola con metadatos (timestamp, prioridad, deadline/TTL, tamaño estimado de entrada). El planificador del motor (cola interna en vLLM/Triton) o un consumidor worker extrae elementos según capacidad disponible en VRAM/bloques KV y políticas como FIFO, Shortest-Job-First o colas con prioridad. Si la profundidad de cola supera el límite configurado o excede el presupuesto de latencia (load shedding), el sistema devuelve `429 Too Many Requests` o `503` de forma temprana en vez de acumular trabajo que expirará antes de completarse.",
+    "practicas": [
+      "Implementa timeouts en cola y backpressure explícito (`429`/`503`): procesar una petición que el cliente ya canceló desperdicia ciclos valiosos de GPU.",
+      "Separa colas interactivas (bajo TTFT, prioridad alta, streaming) de colas batch/offline (alta latencia tolerada, relleno de capacidad ociosa) para proteger los SLO de usuario.",
+      "Usa la profundidad de cola y el tiempo de espera en cola (`queue_wait_time`) como señales principales para el autoescalado, en lugar de escalar solo por porcentaje de uso de GPU (que suele permanecer al 100 % incluso bajo saturación).",
+      "Cola interna vs Broker distribuido: usa colas en memoria del engine/router para inferencia online síncrona de milisegundos-segundos, y brokers persistentes (Kafka/SQS/Temporal) para trabajos asíncronos durables o reintentos."
+    ],
+    "ejemplo": "upstream_queue:\n  max_queue_size: 512\n  max_wait_ms: 2000\n  shedding_policy: reject_newest  # evita cascadas de timeouts\n  priority_tiers:\n    - name: interactive_chat\n      weight: 10\n    - name: async_eval\n      weight: 1",
+    "entrevista": "Las colas de inferencia amortiguan picos de tráfico y alimentan al batching, pero requieren timeouts estrictos y load shedding para no desperdiciar GPU en peticiones ya caducadas."
+  },
+  "Comparación de modelos": {
+    "que": "La comparación de modelos es la evaluación estructurada lado a lado de dos o más modelos candidatos (distintas familias, tamaños, fine-tunings o niveles de cuantización) bajo condiciones idénticas de prompts, parámetros de muestreo, rúbricas y métricas operativas.",
+    "para": "Sirve para seleccionar el mejor equilibrio entre calidad de salida, latencia, throughput, coste por millón de tokens y restricciones de despliegue (licencia, tamaño en VRAM o residencia de datos), sustituyendo impresiones subjetivas por evidencia cuantitativa.",
+    "como": "Se fija un conjunto de evaluación dorado (golden dataset) estratificado por casos reales de uso y casos límite, junto con hiperparámetros deterministas (`temperature=0`, misma semilla o múltiples repeticiones para tareas estocásticas). Todas las variantes se ejecutan a través de una misma interfaz de evaluación que registra las salidas, verifica restricciones estructurales (JSON Schema, compilación de código, llamada exacta a funciones), evalúa calidad semántica (métricas automáticas, evaluación por pares a ciegas tipo Arena/Elo con jueces calibrados o revisión humana) y cruza los resultados con latencia P95 y coste por petición.",
+    "practicas": [
+      "Realiza comparaciones a ciegas (blind A/B evaluation) cuando uses evaluadores humanos o LLM-as-a-judge para evitar sesgos de posición o preferencia por respuestas más largas y verbosas.",
+      "Incluye siempre un modelo base barato/pequeño y el modelo actual de producción como líneas base (baselines) antes de adoptar un modelo más grande o caro.",
+      "No compares modelos con prompts optimizados solo para uno de ellos: adapta brevemente el formato de sistema/etiquetas cuando las familias difieran mucho (por ejemplo, modelos de razonamiento frente a instruct clásicos).",
+      "Presenta resultados en una frontera de Pareto (calidad vs coste/latencia) para identificar qué candidatos quedan estrictamente dominados."
+    ],
+    "ejemplo": "| Modelo | JSON válido | Exactitud tarea | TTFT P95 | Coste / 1M req |\n|---|---:|---:|---:|---:|\n| Llama-3.1-8B FP8 | 99.1% | 84.2% | 140 ms | $18 |\n| Llama-3.1-70B AWQ | 99.6% | 91.5% | 410 ms | $95 |\n| Qwen-2.5-32B FP8 | 99.5% | 90.8% | 240 ms | $52 |",
+    "entrevista": "Comparar modelos exige un golden dataset fijo, evaluación a ciegas y una curva de Pareto que cruce calidad real en la tarea frente a latencia P95 y coste operativo."
+  },
+  "Compresión de modelos": {
+    "que": "La compresión de modelos engloba el conjunto de técnicas matemáticas y algorítmicas destinadas a reducir la huella de memoria, el número de parámetros efectivos o la carga computacional (FLOPs) de una red neuronal manteniendo al máximo su capacidad predictiva.",
+    "para": "Sirve para viabilizar el despliegue de modelos grandes en hardware con limitaciones estrictas de VRAM, consumo energético o latencia (desde servidores H100 buscando mayor densidad por GPU hasta smartphones o dispositivos edge), reduciendo además el coste de inferencia.",
+    "como": "Agrupa cuatro familias principales que suelen combinarse en cascada: (1) cuantización (reducir el ancho de bit de pesos y/o activaciones de FP16/BF16 a FP8, INT8 o INT4), (2) poda o pruning (eliminar pesos individuales en sparsidad 2:4 o estructuras completas como cabezas de atención y capas), (3) destilación de conocimiento (entrenar un modelo alumno compacto imitando las distribuciones de salida o estados ocultos de un maestro mayor), y (4) factorización de bajo rango (descomponer matrices densas de pesos en productos de matrices más pequeñas mediante SVD o adaptadores).",
+    "practicas": [
+      "Sigue una jerarquía práctica de menor a mayor esfuerzo: empieza con cuantización post-entrenamiento (FP8/AWQ), pasa a destilación si necesitas un cambio de orden de magnitud en tamaño, y reserva QAT o poda estructurada para presupuestos críticos.",
+      "Distingue reducción de almacenamiento frente a aceleración real: la poda no estructurada (poner ceros aleatorios) apenas acelera en GPU salvo que uses formatos soportados por hardware como sparsity estructurada 2:4 en Tensor Cores.",
+      "Mide siempre la degradación en casos críticos de cola larga (razonamiento multi-paso, multilingüismo, seguridad), porque las técnicas agresivas de compresión suelen fallar ahí antes que en métricas agregadas.",
+      "Verifica la compatibilidad del motor de inferencia destino antes de comprimir: un formato teórico compacto sin kernels optimizados puede terminar siendo más lento que FP16."
+    ],
+    "ejemplo": "# Cadena típica de compresión:\n# 1. Destilación: Teacher 70B -> Student 8B\n# 2. Poda de profundidad / width (opcional) -> 6B\n# 3. Cuantización PTQ (AWQ INT4 o FP8) -> ~3.5 GB - 6 GB en VRAM",
+    "entrevista": "La compresión de modelos combina cuantización, destilación, poda y factorización de bajo rango para reducir memoria y FLOPs, priorizando técnicas con soporte real de kernels en el hardware destino."
+  },
+  "Continuous batching": {
+    "que": "Continuous batching es la técnica de programación de inferencia (popularizada por Orca y motores modernos como vLLM, TGI y TensorRT-LLM) en la que el tamaño y la composición del lote activo se actualizan en cada paso de decodificación en lugar de mantenerse fijos por petición.",
+    "para": "Sirve para eliminar el relleno inútil (padding) y los tiempos muertos de espera entre peticiones cortas y largas en modelos autorregresivos, incrementando drásticamente la utilización de la GPU y reduciendo el coste por token generado bajo tráfico concurrente.",
+    "como": "Un coordinador mantiene dos colas lógicas: peticiones en espera y secuencias en ejecución. En cada iteración, las secuencias que alcanzaron un criterio de parada se retiran y liberan sus bloques de caché KV; acto seguido, nuevas peticiones entran para fase de prefill (o por fragmentos en chunked prefill) y se empaquetan mediante operadores ragged/varlen (sin padding físico entre secuencias de distinta longitud) junto a las secuencias en decode para ejecutar una única pasada del Transformer.",
+    "practicas": [
+      "Ajusta el presupuesto máximo de tokens por paso (`max_num_batched_tokens`) para equilibrar la eficiencia de prefill y evitar picos de latencia entre tokens (`TPOT`) en las sesiones activas.",
+      "Activa el despacho asíncrono de salida y postprocesado en CPU para que la tokenización o el muestreo del paso t no bloqueen el lanzamiento del paso t+1 en GPU.",
+      "Continuous batching vs Static batching: el batching estático requiere esperar a llenar el lote y esperar al más lento (`O(max_len)` desperdicio); el continuo desacopla llegada y salida por iteración.",
+      "Ten en cuenta que el continuous batching mejora la latencia media y el throughput bajo carga, pero por sí solo no acelera la velocidad de una única petición aislada (batch=1)."
+    ],
+    "ejemplo": "# En cada iteración t:\n# Batch t   = [ReqA (decode #45), ReqB (decode #12, emite EOS -> sale)]\n# Batch t+1 = [ReqA (decode #46), ReqC (prefill entra al slot libre)]",
+    "entrevista": "Continuous batching reevalúa el lote en cada iteración del Transformer usando tensores sin padding y memoria paginada, manteniendo alta la ocupación de GPU aunque las salidas tengan longitudes muy dispares."
+  },
+  "Coste por token": {
+    "que": "El coste por token es la métrica económica unitaria que expresa cuánto cuesta generar o procesar un volumen dado de tokens (habitualmente expresado en dólares por millón de tokens de entrada y de salida) tanto al consumir APIs gestionadas como al operar infraestructura autoalojada.",
+    "para": "Sirve para proyectar el presupuesto de sistemas de IA en producción, justificar decisiones técnicas (como cuantizar, cachear o destilar hacia modelos más pequeños) y fijar precios o límites de uso en productos SaaS basados en LLMs.",
+    "como": "En APIs comerciales se calcula ponderando las tarifas diferenciadas de entrada (input/prefill, más baratas porque paralelizan mejor y se benefician de prompt caching) frente a salida (output/decode, más caras por ser memory-bound y secuenciales) más el sobrecoste de tokens de razonamiento ocultos. En infraestructura propia se calcula dividiendo el coste horario total de la instancia GPU (cómputo + red + almacenamiento + factor de utilización media real) entre el goodput efectivo en tokens por segundo multiplicado por 3,600 segundos.",
+    "practicas": [
+      "Diferencia siempre tokens de entrada y de salida en tus estimaciones: un agente con ciclos largos o RAG multi-salto multiplica los tokens de entrada, mientras que modelos de razonamiento disparan los de salida.",
+      "Calcula el coste real usando la utilización media de 24 horas (p. ej., 35 %–55 % por valles nocturnos), nunca asumiendo 100 % de saturación pico en benchmark.",
+      "Aprovecha el Prefix/Prompt Caching (tanto en APIs como en vLLM/SGLang) para recortar entre un 50 % y un 90 % el coste de prefijos repetidos de sistema y documentos.",
+      "Aplica enrutamiento de modelos (model routing) para resolver consultas simples con modelos pequeños/baratos y escalar al modelo grande solo en casos complejos."
+    ],
+    "ejemplo": "# GPU H100 a $3.00/hora con throughput efectivo sostenido de 2,500 tok/s (utilización 45%):\n# Tokens/hora efectivos = 2,500 * 3,600 * 0.45 = 4,050,000 tokens\n# Coste por 1M tokens = $3.00 / 4.05 ≈ $0.74 / 1M tokens",
+    "entrevista": "El coste por token autoalojado depende de dividir el coste horario de GPU entre el goodput sostenido real (no el pico de benchmark), separando el peso económico entre prefill de entrada y decode de salida."
+  },
+  "Cuantización": {
+    "que": "La cuantización es la técnica de reducir la precisión numérica con la que se representan los pesos, las activaciones y/o la caché KV de un modelo neuronal, pasando habitualmente de punto flotante de 32 o 16 bits (FP32, FP16, BF16) a formatos de 8, 4 o menos bits (FP8, INT8, INT4).",
+    "para": "Sirve para reducir drásticamente el consumo de VRAM (permitiendo alojar modelos mayores en menos GPUs o ampliar el tamaño de lote y contexto) y acelerar la inferencia al disminuir los bytes transferidos desde la memoria HBM hacia los núcleos de cómputo y aprovechar instrucciones matriciales de baja precisión.",
+    "como": "Mapea un rango continuo real `[min, max]` a un conjunto discreto de niveles mediante una transformación afín `q = round(x / scale) + zero_point` (cuantización uniforme entera) o ajustando exponente y mantisa (como FP8 E4M3). Puede aplicarse por tensor completo, por canal de salida o por grupos pequeños de pesos (`group_size=128`) para acotar el error ante valores atípicos (outliers). Se ejecuta tras el entrenamiento sin reentrenar (PTQ, como AWQ o GPTQ) o incorporando nodos de simulación de cuantización durante el ajuste fino (QAT).",
+    "practicas": [
+      "Elige `W8A8` (FP8 o INT8) cuando el modelo opere en régimen compute-bound (batches altos, prefill largo) y `W4A16` (AWQ/GPTQ) cuando sea memory-bound (baja concurrencia o GPU pequeña).",
+      "Prefiere cuantización por canal o por grupo en pesos (`group_size=64` o `128`) frente a cuantización por tensor, ya que los outliers en LLMs destruyen la precisión si comparten una única escala global.",
+      "Cuantización simétrica vs asimétrica: la simétrica (`zero_point=0`) reduce operaciones extra en el kernel, mientras que la asimétrica aprovecha mejor todo el rango de 4 bits cuando las distribuciones están sesgadas.",
+      "No des por sentado que bajar bits siempre acelera: en hardware antiguo sin soporte nativo de Tensor Cores INT4/FP8, el coste de des-cuantizar en software puede anular la ganancia."
+    ],
+    "ejemplo": "# Cuantización dinámica rápida en PyTorch (CPU, Linear layers a INT8):\nimport torch\nquantized_model = torch.ao.quantization.quantize_dynamic(\n    model, {torch.nn.Linear}, dtype=torch.qint8\n)",
+    "entrevista": "La cuantización reduce el ancho de bit de pesos, activaciones o caché KV mediante escalas por canal o grupo, disminuyendo la huella en VRAM y el cuello de ancho de banda de memoria."
+  },
+  "Decodificación especulativa": {
+    "que": "La decodificación especulativa (speculative decoding) es una técnica de aceleración exacta para LLMs que utiliza un mecanismo rápido (un modelo borrador pequeño, cabezas Medusa o n-gramas) para proponer varios tokens futuros de golpe y validarlos en una sola pasada paralela del modelo objetivo grande.",
+    "para": "Sirve para reducir la latencia entre tokens (ITL/TPOT) en generación autorregresiva sin alterar matemáticamente la distribución de salida del modelo original. Es muy efectiva en tareas con alta predictibilidad local (código, resúmenes, edición de texto o extracción estructurada) y concurrencia baja o media.",
+    "como": "En cada paso, un modelo draft (o un módulo predictor ligero como Eagle/Medusa) genera autorregresivamente `K` tokens candidatos (p. ej. `K=4` o `5`) a muy bajo coste. Acto seguido, el modelo grande (target) evalúa los `K` tokens simultáneamente en una única pasada tipo prefill, lo que aprovecha mejor el paralelismo de los Tensor Cores al costar casi lo mismo en memoria que evaluar 1 solo token. Mediante muestreo de rechazo (speculative sampling), se aceptan los primeros `m` tokens coherentes con la distribución del modelo grande y, en el punto de rechazo, se remuestrea exactamente un token corregido garantizando equivalencia estadística exacta.",
+    "practicas": [
+      "Ten en cuenta la carga del servidor: bajo concurrencia muy alta (GPU ya compute-bound por batch grande), la verificación de `K` tokens extra por petición compite por cómputo y puede reducir el throughput global.",
+      "Elige métodos sin modelo borrador separado cuando operes en memoria ajustada: técnicas como `EAGLE`, `Medusa` o matching por n-gramas (`prompt lookup decoding` en RAG/edición) evitan mantener dos modelos y dos cachés KV distintos.",
+      "Monitoriza la tasa de aceptación media (`acceptance_rate`): si cae por debajo de ~2 tokens aceptados por paso (común en tareas muy creativas a temperatura alta), desactiva la especulación para ahorrar sobrecarga.",
+      "Asegúrate de que el modelo draft y el modelo target compartan exactamente el mismo tokenizador y vocabulario."
+    ],
+    "ejemplo": "vllm serve meta-llama/Llama-3.1-70B-Instruct \\\n  --speculative-config '{\"model\": \"meta-llama/Llama-3.1-8B-Instruct\", \"num_speculative_tokens\": 5}'",
+    "entrevista": "La decodificación especulativa propone K tokens baratos y los verifica en paralelo en una sola pasada del modelo grande con muestreo de rechazo, reduciendo la latencia sin cambiar la distribución exacta de salida."
+  },
+  "Destilación de modelos": {
+    "que": "La destilación de modelos (knowledge distillation) es un paradigma de entrenamiento en el que un modelo más pequeño y rápido (estudiante o student) aprende a reproducir el comportamiento de un modelo mucho más grande o de un ensemble (profesor o teacher).",
+    "para": "Sirve para obtener un salto significativo en velocidad, latencia y coste por token cuando la cuantización del modelo grande sigue siendo insuficiente para los requisitos del producto, manteniendo una calidad cercana al profesor en un dominio acotado.",
+    "como": "Existen dos variantes principales: destilación white-box (acceso a logits o estados internos del profesor) y black-box / sintética (muy común en LLMs cerrados o grandes). En white-box, el estudiante se entrena minimizando una combinación de pérdida supervisada estándar y divergencia KL entre su distribución softmax (suavizada con temperatura T) y los logits del profesor, capturando la llamada 'dark knowledge' sobre relaciones entre clases. En destilación basada en datos sintéticos, el profesor genera trazas de razonamiento, respuestas y ejemplos difíciles filtrados por verificadores para realizar SFT/DPO sobre el estudiante.",
+    "practicas": [
+      "Combina destilación sintética con filtrado automático estricto (tests unitarios en código, verificadores matemáticos, esquemas JSON) para no entrenar al estudiante con errores del profesor.",
+      "Ajusta la temperatura `T` en destilación por logits (valores típicos entre 2 y 5) para revelar la estructura probabilística de los tokens secundarios del profesor.",
+      "Destilación vs Cuantización: la destilación permite cambiar la arquitectura hacia un modelo más pequeño (70B -> 8B) ganando tanto en cómputo como en memoria, pero requiere entrenamiento y curación de datos.",
+      "Verifica restricciones legales y de términos de servicio cuando uses salidas de modelos propietarios comerciales como profesor para entrenar modelos propios."
+    ],
+    "ejemplo": "# Pérdida clásica de destilación por logits (Hinton et al.):\nloss_kd = F.kl_div(\n    F.log_softmax(student_logits / T, dim=-1),\n    F.softmax(teacher_logits / T, dim=-1),\n    reduction=\"batchmean\",\n) * (T * T)\nloss = alpha * loss_kd + (1.0 - alpha) * loss_ce",
+    "entrevista": "La destilación transfiere el conocimiento de un modelo profesor grande a un estudiante compacto mediante logits suaves o trazas sintéticas verificadas, logrando reducciones de tamaño y latencia de orden de magnitud."
+  },
+  "Dynamic batching": {
+    "que": "El dynamic batching es una técnica de servidor de inferencia que acumula temporalmente peticiones individuales que llegan por red y las agrupa en un único tensor/lote antes de enviarlas al modelo, optimizando la paralelización en GPU o aceleradores.",
+    "para": "Sirve para aumentar el throughput y la eficiencia de cómputo en modelos de ejecución de paso único (single-pass) como clasificadores, modelos de visión, embeddings, OCR o encoders BERT, donde las peticiones llegan de forma asíncrona desde muchos clientes.",
+    "como": "El servidor mantiene una cola de entrada por modelo y dos umbrales configurables: el tamaño máximo de lote (`max_batch_size`) y una ventana de espera máxima (`max_queue_delay_microseconds`). Cuando llega una petición, el scheduler espera hasta que se complete el lote máximo o expire el temporizador (lo que ocurra primero). En ese instante concatena las entradas en la dimensión de batch (añadiendo padding si difieren en longitud), ejecuta una sola invocación del runtime (Triton, ONNX Runtime, TorchServe) y distribuye cada slice de salida a la respuesta HTTP/gRPC correspondiente.",
+    "practicas": [
+      "Mantén `max_queue_delay_microseconds` conservador (p. ej., 2–15 ms) en APIs interactivas para que la espera adicional no rompa el presupuesto de latencia P99 cuando el tráfico sea bajo.",
+      "Define `preferred_batch_size` (como potencias de 2 o múltiplos de 8: `[8, 16, 32]`) para alinear las dimensiones matriciales con los Tensor Cores.",
+      "Dynamic batching vs Continuous batching: usa dynamic batching para modelos no autorregresivos (embeddings, visión, rerankers) y continuous batching para LLMs autorregresivos.",
+      "Agrupa por longitudes similares (bucketing) en encoders de texto para minimizar el desperdicio de cómputo causado por el padding hasta la secuencia más larga del lote."
+    ],
+    "ejemplo": "# Fragmento de config.pbtxt en Triton Inference Server:\ndynamic_batching {\n  preferred_batch_size: [ 8, 16, 32 ]\n  max_queue_delay_microseconds: 5000\n}",
+    "entrevista": "El dynamic batching agrupa peticiones concurrentes en tiempo real hasta llenar un tamaño preferido o agotar una ventana de espera máxima, maximizando el throughput de modelos de inferencia de una sola pasada."
+  },
+  "Enrutamiento de modelos": {
+    "que": "El enrutamiento de modelos (model routing) es una capa de decisión previa a la inferencia que analiza cada petición entrante y la dirige dinámicamente al modelo o despliegue más adecuado dentro de un catálogo heterogéneo.",
+    "para": "Sirve para reducir drásticamente el coste y la latencia media en producción sin sacrificar calidad en tareas complejas: la mayoría de consultas triviales o rutinarias se resuelven con modelos pequeños y rápidos, reservando modelos frontera o de razonamiento pesado solo para casos difíciles, dominios específicos o usuarios premium.",
+    "como": "Un router intercepta el prompt y extrae señales en milisegundos mediante clasificadores ligeros (DeBERTa/encoders entrenados en preferencias, similitud de embeddings contra clústeres históricos, heurísticas de longitud/herramientas o reglas de cumplimiento). En arquitecturas de cascada (cascading), la petición va primero a un modelo pequeño cuya respuesta se valida por confianza, logprobs o un verificador; solo si falla o tiene baja confianza se reenvía al modelo grande. Los sistemas avanzados también consideran salud, carga en cola y latencia en tiempo real de los endpoints destino.",
+    "practicas": [
+      "Mide la latencia del propio router: un clasificador de enrutamiento debe tardar menos de 10–30 ms para no empañar el ahorro conseguido al usar un modelo pequeño.",
+      "Evalúa primero el enrutamiento predictivo (elegir antes de generar) frente a cascada (probar el barato y reintentar con el caro): la cascada mejora precisión pero duplica la latencia en los casos escalados.",
+      "Incluye un mecanismo de fallback ante errores `429`/`5xx` o saturación de proveedores hacia modelos equivalentes para incrementar la disponibilidad global.",
+      "Registra qué porcentaje del tráfico va a cada ruta y audita periódicamente muestras derivadas a modelos baratos para detectar deriva de calidad silenciosa."
+    ],
+    "ejemplo": "def route_request(prompt: str, classifier) -> str:\n    complexity = classifier.predict_proba(prompt)\n    if complexity < 0.35:\n        return \"qwen-2.5-7b-instruct\"   # rápido y económico\n    if \"sql\" in prompt.lower() or complexity > 0.8:\n        return \"llama-3.1-70b-instruct\"\n    return \"qwen-2.5-32b-instruct\"",
+    "entrevista": "El model routing clasifica la complejidad, dominio o riesgo de cada petición en milisegundos para enviarla al modelo más económico que cumpla el umbral de calidad, optimizando la curva coste-calidad."
+  },
+  "Escalado de inferencia": {
+    "que": "El escalado de inferencia abarca las estrategias horizontales, verticales y arquitectónicas para adaptar la capacidad de cómputo de los servidores de modelos a la demanda de tráfico manteniendo los objetivos de latencia (SLO) y coste.",
+    "para": "Sirve para evitar tanto caídas por saturación y colas crecientes en picos de carga como el despilfarro de GPUs costosas ociosas durante horas valle, además de permitir servir modelos que superan la capacidad de una sola GPU o nodo.",
+    "como": "Combina escalado paralelo de un único despliegue —Tensor Parallelism (TP) para dividir capas entre GPUs conectadas por NVLink y bajar latencia, Pipeline Parallelism (PP) o Data Parallelism (DP) para multiplicar réplicas— con autoescalado horizontal en Kubernetes (HPA/KEDA) basado en métricas de inferencia (peticiones en espera, uso de bloques de caché KV, TTFT). En clústeres grandes de LLMs se emplea también desagregación Prefill/Decode (Prefill-Decode disaggregation), escalando de forma independiente los nodos intensivos en cómputo (prefill) de los intensivos en ancho de banda de memoria (decode).",
+    "practicas": [
+      "No escales GPUs basándote en el porcentaje de utilización de SM (`DCGM_FI_DEV_GPU_UTIL`); usa métricas propias del motor como saturación de caché KV (`kv_cache_usage_perc`) y cola de espera.",
+      "Prefiere réplicas independientes (Data Parallelism) antes que Tensor Parallelism entre nodos: TP exige interconexión ultrarrápida (NVLink) en el mismo nodo, mientras que cruzar red penaliza cada capa.",
+      "Mitiga los cold starts (que en imágenes con CUDA y pesos de decenas de GB pueden llevar minutos) mediante caché local NVMe, streaming de pesos desde almacenamiento de objetos rápido o manteniendo un mínimo de réplicas calientes.",
+      "Evalúa Prefill-Decode disaggregation cuando cargas con prompts masivos degraden el ITL de sesiones interactivas concurrentes."
+    ],
+    "ejemplo": "# KEDA ScaledObject escalando réplicas vLLM según caché KV ocupada:\ntriggers:\n  - type: prometheus\n    metadata:\n      serverAddress: http://prometheus:9090\n      query: avg(vllm:kv_cache_usage_perc)\n      threshold: \"0.75\"",
+    "entrevista": "Escalar inferencia requiere combinar Data/Tensor Parallelism según el límite de NVLink y autoescalado guiado por saturación de caché KV y colas, mitigando cold starts de pesos pesados."
+  },
+  "FP8": {
+    "que": "FP8 (8-bit Floating Point) es un formato numérico de punto flotante de 8 bits estandarizado en dos variantes principales: E4M3 (1 bit de signo, 4 de exponente, 3 de mantisa; mayor precisión) y E5M2 (1 signo, 5 exponente, 2 mantisa; mayor rango dinámico), soportado nativamente en Tensor Cores desde NVIDIA Ada Lovelace y Hopper (H100/L40S) y AMD MI300.",
+    "para": "Sirve para reducir a la mitad el uso de memoria respecto a FP16/BF16 y duplicar aproximadamente el rendimiento teórico de operaciones matriciales (TFLOPS) en GPUs modernas con una pérdida de calidad mínima en LLMs y modelos multimodales.",
+    "como": "Durante la cuantización a FP8, los pesos se almacenan en E4M3 usando factores de escala por tensor, por canal o por bloque (block-wise scaling, p. ej., bloques 128x128). En la inferencia `W8A8` (FP8 weights + FP8 activations), las activaciones también se escalan dinámicamente (online dynamic scaling) o mediante escalas estáticas calibradas antes de entrar a las instrucciones GEMM en FP8 de los Tensor Cores (Transformer Engine / CUTLASS / Marlin), acumulando los productos internos en FP16 o FP32 para preservar estabilidad numérica.",
+    "practicas": [
+      "Usa `E4M3` para pesos y activaciones en inferencia por su mayor precisión en mantisa; reserva `E5M2` principalmente para gradientes durante entrenamiento.",
+      "FP8 vs INT8: FP8 maneja mejor los valores atípicos de las activaciones gracias a su representación exponencial no uniforme, simplificando la calibración frente a INT8 SmoothQuant.",
+      "Verifica la capacidad de cómputo de tu GPU antes de activar FP8: requiere arquitectura Ada/Hopper (`sm_89`/`sm_90` o superior) para aceleración hardware nativa; en Ampere (A100) solo ahorraría almacenamiento vía weight-only si se convierte a FP16 al volar.",
+      "Mantén capas sensibles (embeddings, cabeza LM, routers MoE o capas de normalización) en BF16/FP16 para proteger la perplejidad."
+    ],
+    "ejemplo": "vllm serve meta-llama/Llama-3.1-70B-Instruct \\\n  --quantization fp8 \\\n  --kv-cache-dtype fp8 \\\n  --tensor-parallel-size 2",
+    "entrevista": "FP8 (en particular E4M3) aprovecha Tensor Cores nativos en Hopper y Ada para duplicar el throughput compute-bound y reducir a la mitad la VRAM con mejor manejo de outliers que INT8."
+  },
+  "GGUF": {
+    "que": "GGUF (GPT-Generated Unified Format) es un formato de archivo binario autocontenido creado por el ecosistema `llama.cpp` para almacenar pesos cuantizados de modelos de lenguaje y visión junto con toda su arquitectura, hiperparámetros y tokenizador en un único fichero.",
+    "para": "Sirve para distribuir y ejecutar modelos localmente de forma portable en CPU, Apple Silicon (Metal), GPUs de consumo (CUDA/Vulkan/ROCm) o configuraciones híbridas CPU+GPU sin depender de Python ni de múltiples archivos de configuración externos.",
+    "como": "El archivo comienza con un encabezado mágico y versión, seguido de un diccionario de metadatos clave-valor (arquitectura, número de capas, cabezas, vocabulario y merges del tokenizador) y una tabla de descriptores de tensores alineados en memoria. Esto permite al runtime hacer `mmap` (memory-mapping) directo del archivo desde disco a RAM sin copias ni deserialización lenta tipo pickle. Cada tensor puede emplear esquemas de cuantización mixta por bloques (como `Q4_K_M`, `Q5_K_M`, `Q8_0` o `IQ4_XS`), asignando más bits a capas críticas de atención/salida y menos bits a proyecciones MLP menos sensibles.",
+    "practicas": [
+      "Usa cuantizaciones tipo K-quants (`Q4_K_M` o `Q5_K_M`) como opción equilibrada: asignan mayor precisión a tensores críticos que una cuantización uniforme pura de 4 bits.",
+      "Mantén `mmap` habilitado en disco NVMe rápido para arranques casi instantáneos y compartir páginas de pesos entre procesos en el mismo host.",
+      "GGUF vs Safetensors/AWQ: usa GGUF para inferencia local, CPU, Apple Metal o descarga híbrida CPU+GPU con `llama.cpp`/Ollama; usa Safetensors con FP8/AWQ para serving concurrente de alto throughput en servidores GPU con vLLM.",
+      "Evita cuantizaciones extremas por debajo de 3 bits (`Q2_K`, `IQ2`) salvo casos límite de memoria, pues degradan notablemente el seguimiento de instrucciones y la coherencia."
+    ],
+    "ejemplo": "llama-server \\\n  -m ./models/Llama-3.1-8B-Instruct-Q4_K_M.gguf \\\n  --n-gpu-layers 99 \\\n  --ctx-size 8192 \\\n  --port 8080",
+    "entrevista": "GGUF empaqueta pesos cuantizados por bloques, metadatos y tokenizador en un único binario compatible con mmap, siendo el estándar de facto para inferencia local portable en CPU, Apple Silicon y GPU híbrida."
+  },
+  "GPTQ": {
+    "que": "GPTQ (Generative Pre-trained Transformer Quantization) es un método de cuantización post-entrenamiento (PTQ) basado en optimización de segundo orden (Optimal Brain Quantization) que comprime los pesos de un modelo (usualmente a 4 o 3 bits) minimizando el error cuadrático de reconstrucción capa por capa.",
+    "para": "Sirve para reducir hasta ~4x la memoria requerida por un LLM con degradación moderada cuando se dispone de un conjunto de calibración representativo, permitiendo correr modelos grandes en GPUs únicas o con menor VRAM.",
+    "como": "Para cada capa lineal, GPTQ pasa un lote pequeño de muestras de calibración (p. ej., 128 secuencias) y calcula la matriz aproximada del Hessiano `H = 2 X Xᵀ` a partir de las entradas `X`. Cuantiza los pesos columna a columna (o en bloques de columnas con factorización de Cholesky para eficiencia numérica) y, cada vez que introduce error de redondeo al cuantizar un peso, actualiza inmediatamente los pesos restantes aún sin cuantizar en la misma fila usando la inversa del Hessiano para compensar el error en la salida de la capa (`W X`).",
+    "practicas": [
+      "Usa `desc_act=True` (act-order: cuantizar columnas en orden decreciente de magnitud de activación) para mejorar la precisión, aunque puede reducir ligeramente la velocidad en algunos kernels antiguos si no usas Marlin.",
+      "Calibra con muestras representativas de tu dominio real y longitudes suficientes (p. ej. 2048 tokens) en lugar de usar solo textos genéricos cortos, pues GPTQ es sensible al dataset de calibración.",
+      "GPTQ vs AWQ: GPTQ ofrece a menudo ligera ventaja en perplejidad sobre el dominio de calibración, pero tarda más en cuantizar y tiene mayor riesgo de sobreajuste al set de calibración que AWQ.",
+      "Empaqueta los pesos en formatos con kernels rápidos (`gptq_marlin` en vLLM/AutoGPTQ) para evitar el cuello de des-cuantización lenta."
+    ],
+    "ejemplo": "from transformers import AutoModelForCausalLM, AutoTokenizer, GPTQConfig\n\ntokenizer = AutoTokenizer.from_pretrained(\"meta-llama/Llama-3.1-8B-Instruct\")\ngptq_cfg = GPTQConfig(bits=4, dataset=\"c4\", tokenizer=tokenizer, group_size=128)\nmodel = AutoModelForCausalLM.from_pretrained(\n    \"meta-llama/Llama-3.1-8B-Instruct\", device_map=\"auto\", quantization_config=gptq_cfg\n)",
+    "entrevista": "GPTQ cuantiza pesos por bloques usando la inversa del Hessiano de las activaciones de calibración para compensar el error de redondeo sobre los pesos aún no cuantizados de cada capa."
+  },
+  "GPU": {
+    "que": "Una GPU (Graphics Processing Unit) es un procesador masivamente paralelo diseñado originalmente para gráficos y adaptado hoy como acelerador principal de IA, compuesto por decenas o cientos de Streaming Multiprocessors (SM), unidades matriciales especializadas (Tensor Cores) y memoria de altísimo ancho de banda (HBM o GDDR).",
+    "para": "Sirve para ejecutar entrenamiento e inferencia de redes neuronales órdenes de magnitud más rápido que una CPU gracias a su enorme densidad de operaciones aritméticas paralelas (TFLOPS/PFLOPS) y su ancho de banda de memoria (varios TB/s en GPUs de centro de datos).",
+    "como": "Mientras una CPU dedica gran parte de su silicio a cachés grandes, predicción de saltos y ejecución compleja de pocos hilos secuenciales, una GPU dedica la mayoría de transistores a miles de unidades aritméticas simples (ALU/FP/INT) y Tensor Cores que multiplican matrices pequeñas (p. ej. 16x16) en un único ciclo. Los datos viajan desde la memoria principal (VRAM) a través de cachés L2 y memoria compartida por SM. En inferencia de LLMs, la fase de prefill suele quedar limitada por la capacidad de cómputo de los Tensor Cores (compute-bound), mientras que la fase de decode suele quedar limitada por la velocidad a la que la VRAM entrega los pesos y la caché KV (memory-bandwidth-bound).",
+    "practicas": [
+      "Dimensiona la GPU según el régimen de tu carga: prioriza TFLOPS para prefill masivo, visión o batch grande, y prioriza ancho de banda de memoria (TB/s) y capacidad de VRAM para decodificación interactiva de LLMs.",
+      "Conecta GPUs multi-tarjeta mediante NVLink/NVSwitch en el mismo nodo cuando necesites Tensor Parallelism, ya que PCIe introduce cuellos graves en los `AllReduce` por capa.",
+      "Monitoriza tanto el uso de cómputo como el uso de memoria y temperatura/throttling con `nvidia-smi` o DCGM Exporter.",
+      "GPU vs TPU/NPU: la GPU ofrece el ecosistema de software más maduro y flexible (CUDA, Triton, PyTorch) para cualquier arquitectura nueva; TPUs y NPUs destacan en eficiencia coste/vatio para cargas estables soportadas por compiladores XLA o runtimes dedicados."
+    ],
+    "ejemplo": "nvidia-smi --query-gpu=name,memory.used,memory.total,utilization.gpu,utilization.memory --format=csv -l 2",
+    "entrevista": "La GPU acelera la inferencia mediante miles de núcleos y Tensor Cores alimentados por VRAM de alto ancho de banda, alternando entre régimen compute-bound en prefill y memory-bound en decode."
+  },
+  "Hugging Face Hub": {
+    "que": "Hugging Face Hub es una plataforma colaborativa basada en Git con soporte para archivos binarios grandes (LFS/Xet) que centraliza el alojamiento, versionado y distribución de modelos, datasets, espacios de demostración (Spaces) y artefactos cuantizados de IA.",
+    "para": "Sirve como registro estándar para descubrir pesos preentrenados, almacenar variantes propias ajustadas o cuantizadas en repositorios privados de organización y automatizar su descarga reproducible en pipelines de CI/CD, entrenamiento y servidores de inferencia.",
+    "como": "Cada repositorio es un repo Git donde los archivos pequeños (JSON de configuración, `tokenizer.json`, README/Model Card) van en Git y los tensores pesados (`*.safetensors`, `*.gguf`) se gestionan por punteros LFS deduplicados y servidos vía CDN global. Los clientes (`huggingface_hub`, `transformers`, `vllm`) resuelven revisiones por rama, etiqueta o commit SHA exacto, descargan en paralelo (con `hf_transfer` o Xet) a una caché local indexada por hash en `~/.cache/huggingface/hub` y verifican la integridad mediante checksums.",
+    "practicas": [
+      "Fija siempre el parámetro `revision=\"<commit_sha>\"` en despliegues productivos para evitar que una actualización en `main` cambie silenciosamente los pesos o el tokenizador.",
+      "Prefiere pesos en formato `.safetensors` frente a `.bin` (Pickle) para evitar la ejecución arbitraria de código al cargar modelos y permitir mapeo directo a memoria.",
+      "Pre-descarga o espeja (mirror) los modelos en almacenamiento interno (S3, PVC de Kubernetes o artefactos OCI) dentro de VPCs productivas para eliminar fallos de red externa y acelerar los arranques.",
+      "Revisa siempre la licencia (`Apache-2.0`, `MIT`, licencias comunitarias con restricciones comerciales) y la Model Card antes de integrar un repositorio."
+    ],
+    "ejemplo": "hf download meta-llama/Llama-3.1-8B-Instruct \\\n  --revision 0e9e39f249a16976918f6564b8830bc894c89659 \\\n  --local-dir /models/llama-3.1-8b",
+    "entrevista": "Hugging Face Hub actúa como el registro Git+LFS de artefactos de IA, donde en producción conviene fijar el commit SHA, preferir Safetensors y cachear los pesos dentro de la infraestructura propia."
+  },
+  "Hugging Face": {
+    "que": "Hugging Face es el ecosistema de referencia en IA abierta que agrupa bibliotecas open-source (`transformers`, `tokenizers`, `accelerate`, `peft`, `optimum`, `safetensors`, `vllm`/TGI integraciones) y el Hub para entrenar, adaptar, evaluar y desplegar modelos fundacionales.",
+    "para": "Sirve como capa de estandarización que permite cargar con una misma API miles de arquitecturas de texto, visión, audio y multimodalidad, realizar prototipado rápido, fine-tuning y conversión hacia runtimes optimizados de producción.",
+    "como": "Su biblioteca central `transformers` abstrae las clases `AutoConfig`, `AutoTokenizer` y `AutoModel*` para instanciar dinámicamente la arquitectura a partir de `config.json` y mapear pesos de `safetensors` sobre PyTorch. Sobre ella, `tokenizers` ejecuta tokenización BPE/Unigram en Rust a alta velocidad, `accelerate` distribuye modelos grandes entre dispositivos (`device_map=\"auto\"`), `peft` inyecta adaptadores LoRA/QLoRA sin duplicar pesos base, y `optimum` exporta o ejecuta grafos optimizados sobre ONNX Runtime, OpenVINO o TensorRT.",
+    "practicas": [
+      "Usa `transformers` para experimentación, entrenamiento y batch offline, pero en serving HTTP concurrente de LLMs apoya la ejecución en motores dedicados (vLLM, SGLang, TGI o TensorRT-LLM) que añaden PagedAttention y batching continuo.",
+      "Evita activar `trust_remote_code=True` sin auditar primero el código Python del repositorio remoto, ya que ejecuta scripts externos directamente en tu entorno.",
+      "Especifica explícitamente `torch_dtype=torch.bfloat16` (o `float16`) y `attn_implementation=\"flash_attention_2\"` o `\"sdpa\"` al cargar modelos grandes; de lo contrario pueden cargarse en FP32 duplicando la memoria.",
+      "Utiliza `safetensors` y `tokenizers` rápidos (Rust) para reducir drásticamente el tiempo de inicialización y evitar cuellos de CPU en preprocesado."
+    ],
+    "ejemplo": "import torch\nfrom transformers import AutoModelForCausalLM, AutoTokenizer\n\nmodel_id = \"Qwen/Qwen2.5-7B-Instruct\"\ntok = AutoTokenizer.from_pretrained(model_id)\nmodel = AutoModelForCausalLM.from_pretrained(\n    model_id, torch_dtype=torch.bfloat16, attn_implementation=\"sdpa\", device_map=\"auto\"\n)",
+    "entrevista": "Hugging Face estandariza el ciclo de vida de modelos abiertos mediante transformers, safetensors y optimum, sirviendo como puente entre prototipado/fine-tuning y motores de inferencia productivos."
+  },
+  "INT8": {
+    "que": "INT8 es un formato numérico entero con signo de 8 bits (rango `-128` a `127`) utilizado para almacenar y operar pesos y activaciones de redes neuronales en lugar de representaciones en punto flotante de 16 o 32 bits.",
+    "para": "Sirve para reducir a la mitad la huella en memoria frente a FP16/BF16 y duplicar la tasa de operaciones por segundo en hardware con instrucciones vectoriales/matriciales enteras (Tensor Cores INT8 en NVIDIA Turing/Ampere/Hopper, VNNI en CPUs x86 o NPUs móviles).",
+    "como": "Cada tensor o canal se representa mediante valores enteros `q` acompañados de un factor de escala flotante `s` (y opcionalmente un `zero_point` `z` en esquema asimétrico), de modo que `x ≈ s · (q - z)`. Para modelos de visión y encoders funciona bien la cuantización estática `W8A8`; en LLMs grandes, las activaciones presentan canales con valores extremos (outliers sistemáticos > 50x la media) que degradan la cuantización uniforme. Por ello se emplean técnicas como `LLM.int8()` (descomposición mixta dejando los canales outlier en FP16) o `SmoothQuant` (migrar matemáticamente la dificultad de las activaciones hacia los pesos dividiendo activaciones y multiplicando pesos por un factor suave `s`).",
+    "practicas": [
+      "Usa `SmoothQuant` (`W8A8`) antes que `LLM.int8()` en producción: `LLM.int8()` ahorra memoria pero introduce partición de tensores que suele ser más lenta que FP16; SmoothQuant mantiene todo en kernels INT8 puros.",
+      "INT8 vs FP8: en GPUs Hopper/Ada prefiere FP8 por calibración más sencilla con outliers; en GPUs Ampere (A100, RTX 30xx), Turing (T4) o CPUs/NPUs donde no existe FP8 nativo, INT8 sigue siendo el estándar de aceleración.",
+      "Calibra las escalas de activación con un conjunto representativo de prompts cuando uses cuantización estática INT8 (`W8A8`) para no recortar picos de rango dinámicos.",
+      "Asegúrate de usar backends con instrucciones INT8 reales (cuBLASLt, ONNX Runtime QDQ, oneDNN/VNNI); simular INT8 en FP32 no da ninguna ganancia."
+    ],
+    "ejemplo": "# Transformación SmoothQuant antes de cuantizar a INT8:\n# Y = (X * diag(s)^-1) @ (diag(s) * W)\n# Reduce la varianza de outliers en X trasladándola a los pesos W.",
+    "entrevista": "INT8 comprime pesos y activaciones a enteros de 8 bits para acelerar cómputo en Tensor Cores o CPUs VNNI, usando SmoothQuant en LLMs para suavizar los outliers de activación sin perder precisión."
+  },
+  "Inference endpoint": {
+    "que": "Un inference endpoint es una interfaz de red desplegada y gestionada (API REST/gRPC, frecuentemente compatible con el esquema OpenAI `/v1/chat/completions` o protocolos como KServe V2) que expone un modelo cargado en memoria detrás de balanceadores de carga, autenticación y políticas de escalado.",
+    "para": "Sirve para que aplicaciones cliente, backends o agentes consuman predicciones de manera segura, predecible y desacoplada del hardware subyacente, tanto mediante endpoints gestionados en la nube (Bedrock, Vertex AI, HF Inference Endpoints, Azure ML) como sobre infraestructura propia.",
+    "como": "Las peticiones llegan por HTTPS/TLS a un API Gateway o ingress que autentica tokens (API keys/JWT), aplica rate limiting por cliente/tokens por minuto (TPM/RPM) y enruta al pool de réplicas sanas (comprobadas con healthchecks `/health` o `/ready` que validan que los pesos ya estén cargados en VRAM). El servidor de inferencia procesa el lote, emite tokens vía Server-Sent Events (SSE) si hay streaming activo y reporta métricas por petición (TTFT, tokens de entrada/salida, códigos de error) hacia observabilidad y facturación.",
+    "practicas": [
+      "Separa siempre las sondas `/live` (proceso vivo) de `/ready` (modelo cargado en GPU y listo para recibir tráfico): cargar pesos de 70 GB puede tardar minutos y marcaría falsos fallos reiniciando el pod en bucle.",
+      "Aplica rate limiting tanto por peticiones (RPM) como por tokens (TPM), ya que una sola petición con 100k tokens de contexto consume mucho más que cien peticiones cortas.",
+      "Expón endpoints compatibles con el protocolo OpenAI (`/v1/chat/completions`, `/v1/embeddings`) cuando sirvas LLMs para cambiar fácilmente entre proveedores gestionados y servidores propios sin reescribir clientes.",
+      "Habilita streaming SSE para respuestas generativas de usuario final y configura timeouts largos en el reverse proxy/load balancer para no cortar generaciones extensas."
+    ],
+    "ejemplo": "curl -N https://api.ejemplo.internal/v1/chat/completions \\\n  -H \"Authorization: Bearer $API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"llama-3.1-8b\",\"messages\":[{\"role\":\"user\",\"content\":\"Resume HTTP/3\"}],\"stream\":true}'",
+    "entrevista": "Un inference endpoint productivo envuelve el motor del modelo con autenticación, rate limiting por RPM/TPM, streaming SSE y probes /ready ligados a la carga completa del modelo en VRAM."
+  },
+  "Inferencia en CPU": {
+    "que": "La inferencia en CPU es la ejecución directa de modelos de aprendizaje automático sobre procesadores de propósito general (x86_64 o ARM64) utilizando extensiones vectoriales y matriciales SIMD (como AVX-512, AMX en Intel o NEON/SVE en ARM) sin depender de GPU.",
+    "para": "Sirve para desplegar modelos clásicos (XGBoost, regresión, árboles), encoders pequeños (embeddings, clasificación, NER, rerankers), LLMs muy cuantizados de baja concurrencia o cargas en entornos donde las GPUs resultan demasiado caras, escasas o innecesarias.",
+    "como": "Runtimes optimizados como ONNX Runtime, OpenVINO, `llama.cpp` o PyTorch con oneDNN compilan los operadores para ejecutar multiplicaciones de matrices en formato FP32, BF16 o INT8 aprovechando registros vectoriales anchos y cachés L1/L2/L3. Al igual que en decodificación de LLMs en GPU, la inferencia de modelos grandes en CPU está fuertemente limitada por el ancho de banda de la RAM del sistema (típicamente 50–400 GB/s en DDR5 de servidor frente a >3,000 GB/s en HBM3), por lo que la cuantización a 4 u 8 bits y el empaquetado amigable con caché determinan la velocidad.",
+    "practicas": [
+      "Fija la afinidad de hilos (`OMP_NUM_THREADS`, `taskset`) al número de núcleos físicos (evitando Hyper-Threading/SMT en cómputo denso) y respeta los límites de nodos NUMA para no cruzar memoria entre sockets.",
+      "Cuantiza a INT8 (`VNNI`) en encoders o a GGUF `Q4_K_M` en LLMs pequeños: reduce el tráfico por el bus de memoria DDR y acelera notablemente frente a FP32.",
+      "Inferencia en CPU vs GPU: en un solo hilo/usuario con embeddings cortos o árboles de decisión, una CPU moderna ofrece latencia de pocos milisegundos sin costes de transferencia PCIe; para batch grande o LLMs >7B concurrentes, la GPU es indispensable.",
+      "Evita saturar la misma CPU que ejecuta inferencia pesada con el event loop del servidor web o tareas del sistema."
+    ],
+    "ejemplo": "OMP_NUM_THREADS=16 GOMP_CPU_AFFINITY=\"0-15\" \\\n  llama-cli -m ./qwen2.5-3b-q4_k_m.gguf -t 16 -p \"Explica TLS 1.3\"",
+    "entrevista": "La inferencia en CPU es rentable y de baja latencia para modelos pequeños, tabulares o embeddings usando SIMD/VNNI y cuantización, pero en LLMs queda limitada rápidamente por el ancho de banda de la RAM DDR."
+  },
+  "Inferencia en GPU": {
+    "que": "La inferencia en GPU es la ejecución de modelos de deep learning y LLMs sobre tarjetas gráficas dedicadas en servidor o estación de trabajo, explotando sus Tensor Cores, VRAM de alto ancho de banda y paralelismo masivo para atender cargas intensivas o multiusuario.",
+    "para": "Sirve para lograr baja latencia y alto throughput simultáneamente en modelos con miles de millones de parámetros, entradas multimodales de alta resolución o servicios con decenas a cientos de peticiones concurrentes.",
+    "como": "El runtime carga permanentemente los pesos del modelo en VRAM (o particionados mediante Tensor/Pipeline Parallelism entre varias GPUs) para eliminar transferencias repetidas por PCIe. Las peticiones entrantes se agrupan mediante batching dinámico o continuo y ejecutan grafos compilados/fusionados (CUDA Graphs, TensorRT, FlashAttention, Triton) minimizando la comunicación con la CPU anfitriona. En modelos generativos, el sistema gestiona activamente el equilibrio entre fase de prefill (intensiva en TFLOPS) y fase de decode (intensiva en ancho de banda de VRAM y tamaño de caché KV).",
+    "practicas": [
+      "Mantén los pesos residentes en GPU y minimiza copias CPU↔GPU en el camino crítico (tokenización y postprocesado ligeros, sin pasar tensores intermedios innecesarios a CPU).",
+      "Usa precisión reducida (`BF16`/`FP16` base, `FP8` o `AWQ INT4`) desde el inicio: operar en FP32 en inferencia GPU desperdicia la mitad de VRAM y múltiples veces la velocidad de Tensor Cores.",
+      "Asegura un tamaño de lote o concurrencia suficiente durante las pruebas de capacidad; lanzar una GPU H100 con batch=1 en FP16 subutiliza más del 90 % de su capacidad aritmética.",
+      "Considera GPU sharing (MIG en NVIDIA A100/H100) cuando despliegues varios modelos pequeños que no llenan ni en VRAM ni en cómputo una GPU completa."
+    ],
+    "ejemplo": "# Particionado físico de una H100/A100 con MIG para aislar dos modelos pequeños:\nsudo nvidia-smi mig -cgi 3g.40gb,3g.40gb -C",
+    "entrevista": "La inferencia en GPU maximiza el throughput y soporta modelos de gran tamaño manteniendo pesos y caché KV en VRAM de alto ancho de banda, ejecutando kernels fusionados y batching sobre Tensor Cores."
+  },
+  "Inferencia en edge": {
+    "que": "La inferencia en edge es la ejecución de modelos directamente en dispositivos periféricos cercanos a la fuente de los datos —teléfonos móviles, cámaras inteligentes, vehículos, routers industriales o navegadores web— sin enviar los datos brutos a la nube para cada predicción.",
+    "para": "Sirve para garantizar latencia determinista de milisegundos sin depender de conectividad, preservar la privacidad de datos sensibles (voz, rostro, telemetría médica) en el dispositivo y ahorrar costes masivos de ancho de banda y nube.",
+    "como": "El modelo se entrena o destila en centro de datos y se compila específicamente para el SoC destino (NPU, DSP, GPU móvil o CPU ARM) mediante toolchains como LiteRT (TFLite), Core ML, ExecuTorch, ONNX Runtime Mobile, WebGPU/WebAssembly o Qualcomm QNN. Se aplica cuantización entera agresiva (`INT8` completo W8A8 o `INT4`), fusión de capas y planificación estática de buffers de memoria (memory arena) para evitar asignaciones dinámicas y respetar topes térmicos y de batería (TDP reducido).",
+    "practicas": [
+      "Diseña bajo presupuesto estricto de energía, RAM compartida y estrangulamiento térmico (thermal throttling): un modelo que corre rápido 10 segundos puede caer a la mitad de velocidad tras calentarse el dispositivo.",
+      "Usa operadores compatibles con el delegado NPU del hardware destino; si una sola capa no está soportada, el runtime hará fallback a CPU introduciendo copias de memoria que destruyen la latencia.",
+      "Prioriza arquitecturas livianas y especializadas (MobileNet, Whisper tiny/small, SLMs de 0.5B–3B cuantizados) frente a adaptar modelos de servidor recortados a la fuerza.",
+      "Implementa inferencia híbrida (edge-cloud): resuelve detección o clasificación local instantánea en el dispositivo y escala a la nube únicamente eventos ambiguos o complejos."
+    ],
+    "ejemplo": "# Conversión a ExecuTorch / CoreML / LiteRT con cuantización INT8:\nimport coremltools as ct\nmlmodel = ct.convert(traced_model, compute_precision=ct.precision.FLOAT16,\n                     compute_units=ct.ComputeUnit.ALL)  # CPU + GPU + Neural Engine\nmlmodel.save(\"VisionClassifier.mlpackage\")",
+    "entrevista": "La inferencia en edge ejecuta modelos compilados y cuantizados en NPUs o GPUs locales para lograr privacidad, funcionamiento offline y baja latencia bajo estrictos límites térmicos, de batería y memoria."
+  },
+  "Inferencia en producción": {
+    "que": "La inferencia en producción es la operación continua, fiable y observable de modelos en entornos reales atendiendo tráfico de usuarios o sistemas bajo acuerdos de nivel de servicio (SLO) de latencia, disponibilidad, precisión, seguridad y coste.",
+    "para": "Sirve para transformar un modelo validado en laboratorio en un servicio de ingeniería robusto capaz de soportar tráfico cambiante, fallos de hardware GPU, despliegues sin caída y degradación progresiva de los datos de entrada.",
+    "como": "Integra un motor de ejecución optimizado (vLLM, Triton, SGLang, ONNX Runtime) tras un plano de control con balanceo consciente de carga/prefijos, validación de entradas y guardrails de salida, monitoreo en tiempo real (TTFT, ITL, P99, tasa de errores, uso de VRAM/caché KV, detección de deriva de datos/prompts) y despliegue progresivo (canary o shadow traffic) antes de promover nuevas versiones de pesos, cuantizaciones o prompts.",
+    "practicas": [
+      "Trata la tríada `(modelo + versión de pesos + prompt de sistema + parámetros de muestreo)` como un artefacto versionado único con pruebas de regresión antes de desplegar.",
+      "Define SLOs claros por caso de uso (p. ej. `TTFT P95 < 400 ms` y `ITL P95 < 40 ms` en chat interactivo) y configura degradación elegante (circuit breakers, fallback a modelo más pequeño) ante picos o caídas de GPU.",
+      "Protege los nodos contra fallos silenciosos de hardware (ECC memory errors, Xid errors de GPU o caídas de NVLink) mediante comprobaciones automáticas y drenado rápido de nodos defectuosos.",
+      "Loguea muestras anonimizadas y métricas de negocio/feedback del usuario para detectar regresiones de calidad que las métricas de sistema (latencia/GPU%) nunca revelan."
+    ],
+    "ejemplo": "# Chequeo esencial de salud + métricas en producción (Prometheus):\n# - vllm:e2e_request_latency_seconds (P95/P99)\n# - vllm:time_to_first_token_seconds\n# - vllm:time_per_output_token_seconds\n# - vllm:num_requests_waiting / kv_cache_usage_perc",
+    "entrevista": "Llevar inferencia a producción significa operar un servicio observable bajo SLOs de latencia y coste, con versionado conjunto de pesos y prompts, degradación controlada, detección de fallos GPU y despliegues canary."
+  },
+  "Inferencia local": {
+    "que": "La inferencia local es la ejecución de modelos de IA directamente en la máquina del usuario o en un servidor propio dentro de la red local (workstation, portátil, mini-servidor) utilizando herramientas accesibles como `llama.cpp`, Ollama, LM Studio, MLX o vLLM local sin enviar datos a APIs externas.",
+    "para": "Sirve para garantizar privacidad total de código o documentos confidenciales, trabajar sin conexión a internet, eliminar el coste variable por token en experimentación o herramientas de escritorio, y desarrollar o depurar agentes de forma rápida e iterativa.",
+    "como": "El usuario descarga pesos empaquetados (habitualmente en formato GGUF o MLX safetensors cuantizados a 4 bits) y el motor local asigna capas entre la VRAM disponible de la GPU integrada/dedicada y la RAM del sistema (offloading parcial si no cabe entero). En Apple Silicon con memoria unificada, CPU y GPU comparten el mismo pool de RAM rápida sin copias PCIe, permitiendo correr modelos medianos (p. ej. 32B–70B cuantizados) en un portátil con suficiente RAM. El motor suele exponer una API HTTP local en `localhost` compatible con OpenAI para integrarse con IDEs o scripts.",
+    "practicas": [
+      "Calcula el ajuste en memoria antes de descargar: como regla rápida, un modelo `N` mil millones de parámetros en 4 bits (`Q4_K_M`) requiere ~`0.6 * N` GB más espacio para la caché KV según el contexto.",
+      "Evita que el modelo desborde capas a RAM lenta si tienes GPU dedicada discreta (PCIe), ya que el offloading parcial a CPU reduce drásticamente los tokens/s.",
+      "En Apple Silicon usa `MLX` o `llama.cpp` compilado con Metal; en Linux/Windows con NVIDIA usa CUDA en `llama.cpp`/Ollama para un usuario o `vLLM` si necesitas concurrencia multi-agente.",
+      "Recorta la ventana de contexto (`num_ctx`) al mínimo necesario (p. ej. 8k–16k en vez de 128k por defecto) para evitar que la caché KV ocupe toda la memoria."
+    ],
+    "ejemplo": "ollama pull qwen2.5-coder:14b-instruct-q4_K_M\nollama run qwen2.5-coder:14b-instruct-q4_K_M \"Refactoriza esta función en Go\"",
+    "entrevista": "La inferencia local ejecuta modelos cuantizados en el hardware propio (GGUF/MLX) eliminando costes por token y exposición de datos externos, cuidando que pesos y caché KV quepan en VRAM o memoria unificada."
+  }
+}

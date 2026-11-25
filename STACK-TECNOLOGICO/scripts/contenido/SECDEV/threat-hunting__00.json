@@ -1,0 +1,392 @@
+{
+  "Ajuste de reglas": {
+    "que": "El ajuste de reglas (rule tuning) es el proceso iterativo de refinar la lógica, los umbrales y las excepciones de una regla de detección en un SIEM, EDR o IDS para maximizar la relación señal-ruido. Su objetivo es reducir falsos positivos y falsos negativos sin degradar la cobertura sobre las técnicas de ataque que la regla modela.",
+    "para": "Resuelve la fatiga de alertas en el SOC cuando una regla recién desplegada dispara cientos de eventos benignos generados por herramientas administrativas, pipelines CI/CD o escáneres autorizados. Se aplica continuamente tras desplegar una regla nueva, después de cambios en la infraestructura de software o al incorporar hallazgos de un ciclo de threat hunting.",
+    "como": "El ingeniero analiza las alertas disparadas en el SIEM (como Microsoft Sentinel o Splunk) agrupando por campos clave como usuario, proceso padre, hash o ruta de binario. A partir de la causa raíz benigna, introduce filtros de exclusión acotados (allowlists basadas en pares proceso-firma digital o cuentas de servicio específicas), ajusta ventanas temporales de agregación o añade condiciones de correlación con otros eventos de telemetría. Cada modificación se versiona en un repositorio Git como Detection-as-Code, se valida contra conjuntos de datos históricos y pruebas unitarias en Sigma o KQL antes de promocionarse a producción.",
+    "practicas": [
+      "Nunca suprimir alertas por IP o nombre de archivo genérico sin anclar a atributos verificables como firma criptográfica, ruta completa y proceso padre (ParentImage).",
+      "Error típico: añadir exclusiones amplias que crean puntos ciegos aprovechables por atacantes mediante LOLBins o secuestro de rutas confiables.",
+      "Documentar cada excepción con ticket, propietario y fecha de expiración para evitar deuda de detección silenciosa.",
+      "Comparación: el ajuste de reglas optimiza una detección existente; la ingeniería de detección diseña nuevas reglas desde cero o tras un cambio arquitectónico."
+    ],
+    "ejemplo": "# Filtro de tuning en Sigma para excluir solo binario firmado de agente CI\nfilter_ci_runner:\n  ParentImage|endswith: '\\actions-runner\\Runner.Worker.exe'\n  Image|endswith: '\\git.exe'\n  Signed: 'true'\n  SignatureStatus: 'Valid'\ncondition: selection and not filter_ci_runner",
+    "entrevista": "El ajuste de reglas consiste en reducir la fatiga de alertas mediante exclusiones granulares y verificables sin abrir brechas que un atacante pueda explotar con binarios legítimos."
+  },
+  "Anomalía": {
+    "que": "En threat hunting, una anomalía es una desviación estadísticamente o conductualmente significativa respecto a la línea base esperada de un sistema, usuario, proceso o flujo de red. No equivale automáticamente a un incidente de seguridad, sino a una señal observable que requiere contextualización para distinguir actividad benigna inusual de un compromiso.",
+    "para": "Sirve para descubrir amenazas desconocidas, ataques zero-day o abuso de credenciales válidas donde no existen firmas ni indicadores de compromiso conocidos. Se utiliza como punto de partida en sesiones de hunting no estructurado o al aplicar modelos estadísticos y de frecuencia sobre grandes volúmenes de telemetría.",
+    "como": "El motor de análisis o el hunter calcula distribuciones de referencia sobre atributos concretos, como entropía de subdominios DNS, percentiles de volumen saliente por contenedor o rareza de pares proceso-padre mediante análisis de apilamiento (stacking). Cuando un evento supera un umbral Z-score, IQR o aparece en la cola larga de menor frecuencia (least frequency of occurrence), se marca como anomalía. Luego se correlaciona con telemetría de contexto —como despliegues recientes en CI/CD o ventanas de mantenimiento— para confirmar o descartar malicia.",
+    "practicas": [
+      "Combinar varias anomalías débiles en una ventana temporal acotada en lugar de investigar desviaciones aisladas con alto ruido.",
+      "Trampa común: confundir anomalía con ataque; un despliegue nuevo o un job batch mensual suele generar anomalías legítimas.",
+      "Normalizar las métricas por segmento homogéneo (por ejemplo, nodos de build vs servidores web) para evitar que perfiles dispares distorsionen la detección.",
+      "Comparación: una anomalía mide una desviación cuantitativa o de rareza respecto a la norma; un comportamiento anómalo evalúa una secuencia de acciones incompatible con el rol operativo del activo."
+    ],
+    "ejemplo": "// Detección de anomalía por Z-score en bytes salientes por pod/host\nDeviceNetworkEvents\n| where Timestamp > ago(7d)\n| summarize TotalBytes = sum(SentBytes) by DeviceName, bin(Timestamp, 1h)\n| summarize Avg = avg(TotalBytes), Std = stdev(TotalBytes), Max = max(TotalBytes) by DeviceName\n| extend ZScore = (Max - Avg) / Std\n| where ZScore > 3.5",
+    "entrevista": "Una anomalía es una desviación medible frente a la línea base que actúa como pista inicial de investigación, nunca como veredicto automático de compromiso."
+  },
+  "Brecha de detección": {
+    "que": "Una brecha de detección (detection gap) es la incapacidad parcial o total de los controles de visibilidad, telemetría o reglas analíticas para identificar una técnica de ataque específica en el entorno. Puede originarse por ausencia de logs, cobertura incompleta de endpoints, parsers rotos o lógica de detección insuficiente frente a variantes de evasión.",
+    "para": "Identificar brechas de detección permite priorizar inversiones en telemetría, ingeniería de detección y ejercicios purple team donde el riesgo real es mayor. Se evalúa tras revisar campañas recientes de inteligencia de amenazas, durante auditorías de cobertura MITRE ATT&CK o al concluir un ejercicio de simulación de adversarios.",
+    "como": "El equipo mapea las técnicas y sub-técnicas relevantes (por ejemplo, de MITRE ATT&CK) contra las fuentes de datos ingeridas en el SIEM y el catálogo de reglas activas usando herramientas como ATT&CK Navigator o DeTT&CT. Se ejecuta emulación atómica (como Atomic Red Team) para comprobar en laboratorio o producción controlada si cada paso genera evento crudo en Sysmon/EDR, llega al agregador de logs y dispara alerta. Donde la cadena se rompe —ya sea en recolección, normalización o regla— se registra formalmente la brecha con su severidad y plan de remediación.",
+    "practicas": [
+      "Distinguir entre brecha de visibilidad (no existe el log necesario) y brecha analítica (el log existe pero ninguna regla ni hunt lo inspecciona).",
+      "Verificar los parsers y esquemas tras actualizar agentes o servicios cloud; un cambio de formato suele crear brechas silenciosas.",
+      "Priorizar el cierre de brechas según la superficie de ataque crítica (por ejemplo, runners CI/CD, planos de control Kubernetes e IAM) antes que cubrir técnicas exóticas.",
+      "Comparación: una brecha de detección implica ceguera ante la técnica; un falso negativo es un caso concreto en el que una regla existente falló ante una instancia específica del ataque."
+    ],
+    "ejemplo": "# Evaluación de cobertura de técnica T1059.004 (Unix Shell) en inventario de telemetría\ntecnica: T1059.004\nfuente_requerida: auditd_execve / eBPF_process_exec\nestado_ingesta: parcial (falta en nodos worker de Kubernetes)\nregla_activa: false\nbrecha: visibilidad + analítica -> prioridad Alta",
+    "entrevista": "Una brecha de detección es cualquier punto donde la telemetría o las reglas dejan ciega a la organización frente a una técnica relevante, y se valida probando la cadena completa desde el evento hasta la alerta."
+  },
+  "Búsqueda con queries": {
+    "que": "La búsqueda con queries es la técnica operativa de consultar de forma interactiva repositorios de telemetría estructurada y semiestructurada mediante lenguajes de consulta analítica como KQL, SPL o SQL. Permite filtrar, agregar, correlacionar y visualizar millones de eventos para validar o refutar una hipótesis de amenaza.",
+    "para": "Resuelve la necesidad de inspeccionar grandes volúmenes de logs históricos y en tiempo real que no están cubiertos por alertas automáticas. Se utiliza en cada fase de investigación de hunting estructurado, en respuesta a incidentes para reconstruir líneas temporales y al prototipar nuevas reglas de detección.",
+    "como": "El hunter traduce una conducta adversaria en predicados de búsqueda sobre tablas normalizadas (por ejemplo, eventos de proceso, DNS, autenticación IAM o auditoría de Kubernetes). Primero aplica filtros de alta selectividad y rango temporal para reducir el conjunto escaneado; después realiza agregaciones (`summarize`, `stats`), uniones (`join`) entre fuentes dispares y cálculos de frecuencia inversa para aislar valores atípicos. Las consultas maduras y repetibles se parametrizan y guardan como plantillas de hunting o se convierten en reglas programadas.",
+    "practicas": [
+      "Filtrar siempre primero por partición temporal e índices de alta selectividad antes de aplicar expresiones regulares o `join` costosos.",
+      "Evitar suponer nombres de campos homogéneos entre fuentes; apoyarse en esquemas comunes como ASIM, ECS o CIM.",
+      "Guardar las queries junto con su hipótesis, campos requeridos y hallazgos esperados para facilitar auditoría y reutilización.",
+      "Comparación: la búsqueda con queries es interactiva y exploratoria bajo demanda; una regla de detección ejecuta una consulta acotada de forma continua o programada para generar alertas."
+    ],
+    "ejemplo": "// Query KQL para detectar ejecución de curl/wget desde procesos de servidor web o CI\nDeviceProcessEvents\n| where Timestamp >= ago(24h)\n| where InitiatingProcessFileName in~ (\"node\", \"java\", \"python3\", \"nginx\")\n| where FileName in~ (\"curl\", \"wget\", \"nc\")\n| project Timestamp, DeviceName, AccountName, InitiatingProcessFileName, ProcessCommandLine\n| order by Timestamp desc",
+    "entrevista": "La búsqueda con queries convierte la telemetría cruda en evidencia accionable mediante filtros selectivos, agregaciones y correlaciones entre fuentes para confirmar o descartar hipótesis."
+  },
+  "Caza de IOC": {
+    "que": "La caza de IOC (Indicators of Compromise) es la búsqueda retrospectiva y proactiva de artefactos forenses estáticos y observables —como hashes de archivos, direcciones IP, dominios maliciosos, mutex o rutas concretas— dentro de la telemetría histórica de la organización. Se sitúa en los niveles bajos de la Pirámide del Dolor porque los artefactos buscados son fáciles de rotar para el atacante.",
+    "para": "Sirve para verificar rápidamente si una campaña recién publicada en inteligencia de amenazas afectó al entorno antes de que los controles preventivos incorporaran las firmas. Se usa ante boletines críticos de CERT/CSIRT, compromisos de cadena de suministro (por ejemplo, paquetes comprometidos en npm o PyPI) o incidentes en proveedores.",
+    "como": "El analista ingiere feeds de inteligencia en formatos estándar como STIX/TAXII desde plataformas como MISP o OpenCTI y extrae los indicadores vigentes con su contexto temporal. A continuación ejecuta consultas por lotes (sweep queries) contra logs de proxy, DNS, EDR, historial de builds y registros de contenedores en ventanas de 30 a 90 días. Si aparece una coincidencia, valida si el artefacto sigue activo, verifica falsos positivos (por ejemplo, IPs compartidas de CDN) y escala a respuesta a incidentes.",
+    "practicas": [
+      "Aplicar ventanas de validez temporal (TTL) a IPs y dominios volátiles para no saturar investigaciones con infraestructura ya reasignada.",
+      "Error típico: depender exclusivamente de caza de IOC y asumir que no haber coincidencias implica ausencia de compromiso.",
+      "Automatizar los barridos de IOC mediante playbooks o listas de vigilancia (watchlists) para reservar el tiempo humano del hunter al análisis de comportamientos.",
+      "Comparación: la caza de IOC busca rastros estáticos de ataques ya conocidos; la caza de IoA persigue conductas y secuencias de ataque independientes de hashes o IPs concretas."
+    ],
+    "ejemplo": "// Barrido de hashes e IPs de campaña en logs de EDR y DNS (KQL)\nlet MaliciousHashes = dynamic([\"e3b0c44298fc1c149afbf4c8996fb924...\"]);\nlet MaliciousDomains = dynamic([\"cdn-update-telemetry[.]example\"]);\nunion\n(DeviceProcessEvents | where SHA256 in (MaliciousHashes)),\n(DeviceNetworkEvents | where RemoteUrl has_any (MaliciousDomains))\n| project Timestamp, DeviceName, ActionType, FileName, RemoteUrl",
+    "entrevista": "La caza de IOC permite validar rápido exposición histórica ante amenazas conocidas, pero es frágil ante adversarios que rotan infraestructura y debe complementarse siempre con caza de IoA."
+  },
+  "Caza de IoA": {
+    "que": "La caza de IoA (Indicators of Attack) es la búsqueda proactiva de patrones conductuales, secuencias de acciones y relaciones causales que delatan la intención de un adversario durante la ejecución de una intrusión. A diferencia de los IOC, los IoA se centran en los TTP (tácticas, técnicas y procedimientos) y en el encadenamiento de eventos en tiempo de ejecución.",
+    "para": "Permite detectar ataques avanzados que emplean binarios legítimos del sistema (living off the land), payloads en memoria sin archivo o infraestructura desechable nunca vista antes. Se emplea cuando se desea cobertura resiliente frente a variantes polimórficas y abuso de identidad o pipelines DevOps.",
+    "como": "El hunter modela la secuencia operativa esperada de una técnica adversaria, como la obtención de tokens de metadatos cloud seguida de llamadas a la API de IAM desde un rango IP externo, o la generación de una shell interactiva por un proceso de aplicación web. Luego consulta la telemetría de procesos (Sysmon/EDR), llamadas API (CloudTrail/Azure Activity) y flujo de red buscando la coocurrencia temporal y causal de esos eventos. Al aislar la cadena completa de comportamiento, puede identificar intrusiones activas aunque cada artefacto individual sea nuevo.",
+    "practicas": [
+      "Modelar la relación causal (por ejemplo, árbol de procesos padre-hijo y contexto de usuario/token) en lugar de eventos aislados.",
+      "Mantener el foco en la intención táctica de MITRE ATT&CK (ejecución, acceso a credenciales, movimiento lateral) para resistir cambios menores de sintaxis del atacante.",
+      "Error típico: escribir consultas de IoA demasiado genéricas que colapsan con scripts de automatización legítimos sin filtrar contexto operativo.",
+      "Comparación: un IoA responde a qué está intentando hacer el actor en secuencia; un IOC solo señala qué herramienta o servidor usó en un incidente pasado."
+    ],
+    "ejemplo": "// IoA: servidor Java/Python lanzando intérprete y leyendo credenciales AWS/SSH\nDeviceProcessEvents\n| where Timestamp > ago(48h)\n| where InitiatingProcessFileName in~ (\"java\", \"python3\", \"ruby\")\n| where FileName in~ (\"sh\", \"bash\", \"dash\")\n| where ProcessCommandLine has_any (\"/root/.ssh\", \"169.254.169.254\", \"aws configure\", \"env\")\n| project Timestamp, DeviceName, AccountName, InitiatingProcessCommandLine, ProcessCommandLine",
+    "entrevista": "La caza de IoA busca la mecánica y secuencia del ataque en lugar de artefactos estáticos, lo que obliga al adversario a cambiar sus TTP para evadirnos."
+  },
+  "Comportamiento anómalo": {
+    "que": "El comportamiento anómalo es un patrón de actividad ejecutado por un usuario, cuenta de servicio, proceso o carga de trabajo que contradice su perfil operativo esperado y sus relaciones habituales en el entorno. Combina desviaciones de frecuencia con incoherencias contextuales, como horarios, geolocalización, privilegios ejercidos o cadenas de llamadas inusuales.",
+    "para": "Sirve para descubrir compromisos silenciosos donde no se emplea malware tradicional, como robo de tokens OAuth, secuestro de sesiones, uso indebido de cuentas de servicio CI/CD o amenazas internas. Se utiliza tanto en analítica UEBA como en sesiones de hunting centradas en identidad, nube y aplicaciones.",
+    "como": "Se construyen perfiles de comportamiento por entidad (usuario, rol IAM, microservicio o host) correlacionando eventos de autenticación, acceso a repositorios, ejecución de comandos y tráfico este-oeste. Cuando una entidad ejecuta una acción fuera de su grafo habitual —por ejemplo, una cuenta de solo despliegue que enumera secretos en Vault y exporta snapshots de base de datos desde una nueva ASN—, el analista evalúa la plausibilidad operativa y la secuencia temporal. La confirmación exige reconstruir la sesión completa desde el evento inicial de autenticación o ejecución.",
+    "practicas": [
+      "Contextualizar siempre el rol técnico de la entidad: lo que es normal para un administrador de plataforma es altamente sospechoso para una cuenta de servicio de frontend.",
+      "Correlacionar identidad, dispositivo y red; una sola dimensión rara rara vez basta para confirmar compromiso.",
+      "Evitar reglas rígidas basadas únicamente en horarios laborales en equipos distribuidos o pipelines automatizados.",
+      "Comparación: una anomalía puede ser un pico aislado de bytes; un comportamiento anómalo describe una conducta coherente pero incompatible con la función legítima de la entidad."
+    ],
+    "ejemplo": "// Cuenta de servicio CI ejecutando operaciones IAM de lectura/creación de llaves\nCloudTrailEvents\n| where UserIdentityType == \"IAMUser\" and UserIdentityUserName startswith \"svc-ci-\"\n| where EventName in (\"CreateAccessKey\", \"AttachUserPolicy\", \"GetSecretValue\")\n| summarize Events = make_set(EventName), SourceIPs = make_set(SourceIpAddress) by UserIdentityUserName, bin(TimeGenerated, 1h)",
+    "entrevista": "El comportamiento anómalo evalúa si las acciones de una entidad tienen sentido respecto a su rol y contexto operativo, permitiendo detectar abuso de credenciales válidas sin malware."
+  },
+  "Detección de amenazas": {
+    "que": "La detección de amenazas es la capacidad continua de identificar intentos de intrusión, compromisos activos o actividades maliciosas mediante la observación, correlación y análisis de telemetría de seguridad. Integra controles automatizados (SIEM, EDR, NDR) y procesos proactivos liderados por humanos como el threat hunting.",
+    "para": "Su propósito es minimizar el tiempo de permanencia del atacante (dwell time) antes de que logre exfiltración de datos, cifrado o alteración de software en producción. Se aplica de forma permanente en toda la superficie técnica: endpoints, red, identidades, nube, contenedores y pipelines de desarrollo.",
+    "como": "Las fuentes de telemetría emiten eventos estructurados (logs de sistema, alertas de kernel eBPF/ETW, flujos Zeek, auditoría cloud) que se envían por colectores hacia un pipeline de normalización y enriquecimiento. Sobre esos datos operan motores de reglas deterministas (Sigma, KQL, SPL), análisis de comportamiento y modelos de inteligencia de amenazas que generan alertas priorizadas. Las señales ambiguas o técnicas no cubiertas se abordan mediante hunting periódico, cuya salida retroalimenta las reglas automáticas.",
+    "practicas": [
+      "Combinar detección basada en firmas, comportamiento e hipótesis; depender de una sola capa deja huecos evidentes.",
+      "Medir la eficacia mediante métricas operativas reales como tiempo medio de detección (MTTD), precisión de alertas y cobertura ATT&CK, no por volumen de logs ingeridos.",
+      "Error típico: confundir recopilación de logs con detección; almacenar terabytes sin reglas probadas ni hunting no detecta nada.",
+      "Comparación: la prevención bloquea ataques conocidos antes de ejecutarse; la detección asume que algunos controles fallarán y busca evidenciar la intrusión en curso."
+    ],
+    "ejemplo": "# Flujo arquitectónico mínimo de detección de amenazas\n[Endpoint Sysmon / Cloud Audit / Zeek]\n   -> [Colector Fluent Bit / Vector]\n   -> [Normalización ASIM/ECS + Enriquecimiento GeoIP/CMDB]\n   -> [Motor SIEM/EDR: Reglas Sigma/KQL + Hunting]\n   -> [Alerta triada -> SOAR / Respuesta a Incidentes]",
+    "entrevista": "La detección de amenazas combina telemetría bien normalizada, reglas automatizadas y hunting proactivo para reducir el dwell time cuando la prevención es superada."
+  },
+  "Diamond model": {
+    "que": "El Diamond Model of Intrusion Analysis es un marco analítico formal que representa cada evento de intrusión mediante cuatro vértices interconectados: Adversario (Adversary), Infraestructura (Infrastructure), Capacidad (Capability) y Víctima (Victim), situados sobre ejes socio-políticos y tecnológicos. Permite modelar relaciones causales y pivotar sistemáticamente durante investigaciones y campañas de hunting.",
+    "para": "Resuelve el problema de analizar incidentes de forma fragmentada cuando solo se observan IPs o hashes aislados. Se usa en inteligencia de amenazas, atribución analítica, investigación post-incidente y para derivar nuevas hipótesis de hunting a partir de un único vértice conocido.",
+    "como": "Dado un evento confirmado —por ejemplo, una capacidad (payload malicioso) descubierta en una víctima (servidor de build)— el analista documenta los cuatro vértices y añade meta-características como fase, dirección, resultado y recursos. Luego aplica el principio de pivoteo: usa la infraestructura observada (dominio C2) para buscar otras víctimas internas o descubrir capacidades adicionales descargadas desde el mismo servidor. Al enlazar múltiples diamantes a lo largo del tiempo se construyen hilos de actividad (activity threads) que describen toda la campaña del adversario.",
+    "practicas": [
+      "Utilizar cada vértice confirmado para formular preguntas de hunting sobre los otros tres vértices antes de cerrar una investigación.",
+      "Incluir metadatos obligatorios de confianza y marca temporal para no mezclar infraestructura reutilizada por distintos actores.",
+      "Error típico: forzar la atribución del vértice Adversario sin evidencia sólida cuando basta con rastrear Capacidad e Infraestructura para defender el entorno.",
+      "Comparación: la Cyber Kill Chain describe la progresión secuencial de fases de un ataque; el Diamond Model analiza la anatomía relacional de cada evento individual y cómo pivotar entre sus elementos."
+    ],
+    "ejemplo": "# Ejemplo de evento modelado con Diamond Model\nAdversario: Actor desconocido (posible grupo oportunista CI/CD)\nCapacidad: Script bash que extrae variables GITHUB_TOKEN y AWS_SECRET\nInfraestructura: 198.51.100[.]42:443 (C2 HTTPS) + dominio typo-squat\nVictima: Runner efímero de builds en proyecto backend-api\nPivoteo: Buscar otras víctimas conectadas a 198.51.100[.]42",
+    "entrevista": "El Diamond Model estructura cada evento de intrusión en adversario, capacidad, infraestructura y víctima, permitiéndonos pivotar sistemáticamente de un indicador conocido hacia el resto de la campaña."
+  },
+  "Equipo rojo morado": {
+    "que": "El equipo morado (Purple Team) es una práctica colaborativa y continua entre las funciones ofensivas (Red Team) y defensivas (Blue Team / Threat Hunting / Ingeniería de Detección) para validar y mejorar la eficacia real de detección y respuesta. No es necesariamente un departamento aislado, sino un modelo operativo basado en ciclos rápidos de simulación, observación y ajuste.",
+    "para": "Elimina la desconexión habitual de los ejercicios Red Team tradicionales donde el equipo ofensivo entrega un informe semanas después sin que el equipo azul haya ajustado sus detecciones. Se utiliza para cerrar brechas de detección, probar nuevas reglas contra TTP reales y entrenar a los threat hunters sobre telemetría auténtica.",
+    "como": "Ambas partes seleccionan un conjunto acotado de TTP prioritarios (por ejemplo, escalada de privilegios en contenedores o movimiento lateral vía SSH/WinRM) apoyándose en inteligencia de amenazas y MITRE ATT&CK. El Red Team ejecuta la técnica de forma controlada y transparente —en vivo o mediante herramientas de emulación como Caldera o Atomic Red Team— mientras el Blue Team verifica qué telemetría llega al SIEM/EDR y si disparan las alertas esperadas. Cuando una técnica pasa inadvertida, ajustan colectores, normalización y reglas en tiempo real y vuelven a ejecutar la prueba para confirmar la detección.",
+    "practicas": [
+      "Definir criterios de éxito claros por técnica: telemetría registrada, detección generada y tiempo de visibilidad en consola.",
+      "Documentar cada ejercicio como pruebas reproducibles (Detection-as-Code + scripts de emulación) para detectar regresiones futuras.",
+      "Error típico: convertir el ejercicio en una competición de ego entre atacantes y defensores en lugar de una sesión conjunta de ingeniería de resiliencia.",
+      "Comparación: el Red Team simula un adversario real de forma sigilosa para evaluar madurez global; el Purple Team prioriza transparencia y colaboración inmediata para maximizar la cobertura defensiva."
+    ],
+    "ejemplo": "# Ciclo Purple Team para técnica T1552.001 (Credentials in Files)\n1. Red ejecuta: grep -rn \"AKIA\" /var/lib/jenkins/workspaces/\n2. Blue consulta SIEM/EDR: Sysmon/auditd registra comando y lectura\n3. Resultado: Log presente, pero sin regla de detección -> Brecha analítica\n4. Ajuste: Se crea regla Sigma/KQL para búsqueda masiva de secretos en CI\n5. Re-test: Red repite paso 1 -> Alerta confirmada en 45 segundos",
+    "entrevista": "Un ejercicio Purple Team une ejecución ofensiva transparente y análisis defensivo en tiempo real para comprobar si nuestra telemetría y reglas realmente detectan los TTP críticos."
+  },
+  "Falso positivo": {
+    "que": "Un falso positivo (false positive) es una alerta o hallazgo marcado como potencialmente malicioso por una regla de detección, modelo analítico o consulta de hunting que, tras investigarse, corresponde a actividad legítima y autorizada. Representa un error de precisión que consume capacidad analítica sin corresponder a una amenaza real.",
+    "para": "Identificar, clasificar y cuantificar falsos positivos permite mantener sostenible la carga operativa del SOC y preservar la confianza del equipo en las alertas generadas. Se gestiona de manera continua durante el triaje de incidentes, la validación previa de nuevas reglas y los ciclos de ajuste de reglas.",
+    "como": "Cuando una regla dispara una alerta, el analista verifica el contexto completo: firma del binario, usuario iniciador, árbol de procesos, cambios recientes de infraestructura y tickets de despliegue. Si confirma que es benigno, etiqueta la alerta con su causa raíz (por ejemplo, herramienta administrativa, escáner de vulnerabilidades autorizado o comportamiento propio del compilador) y mide su frecuencia histórica. Con esa evidencia, el ingeniero de detección decide si refinar la regla mediante exclusiones específicas, añadir contexto de enriquecimiento o retirarla si su relación señal-ruido es inviable.",
+    "practicas": [
+      "Medir la tasa de falsos positivos por regla antes de activarla en modo bloqueante o de alta severidad (modo audit/shadow primero).",
+      "Error típico: acostumbrar al equipo a cerrar falsos positivos repetitivos manualmente sin corregir la regla, generando fatiga de alertas y riesgo de ignorar un ataque real.",
+      "Diferenciar entre falso positivo técnico (la lógica falló) y verdadero positivo benigno (la regla detectó exactamente lo que debía, como un pentest autorizado o un script inseguro de un desarrollador).",
+      "Comparación: un falso positivo genera ruido innecesario y desgaste operativo; un falso negativo deja pasar un compromiso real sin alertar."
+    ],
+    "ejemplo": "# Ejemplo de falso positivo típico en regla de reverse shell\nAlerta: bash ejecutado con redirección /dev/tcp o socket\nCausa raíz verificada: Script de healthcheck interno de contenedor\nAcción: No desactivar la regla; excluir solo ParentImage=/usr/local/bin/healthcheck.sh con hash verificado",
+    "entrevista": "Un falso positivo es una alerta disparada sobre actividad benigna; reducirlos con exclusiones precisas evita la fatiga de alertas sin comprometer la sensibilidad ante ataques reales."
+  },
+  "Hipótesis de amenaza": {
+    "que": "Una hipótesis de amenaza es una afirmación estructurada, específica y comprobable sobre cómo un adversario podría estar operando, evadiendo controles o abusando de activos concretos dentro del entorno. Actúa como el punto de partida científico del threat hunting basado en hipótesis.",
+    "para": "Evita que los hunters naveguen sin rumbo por millones de logs buscando anomalías genéricas sin criterio. Se formula al iniciar un ciclo de hunting a partir de nueva inteligencia de amenazas, cambios arquitectónicos (por ejemplo, adopción de Kubernetes o nuevos runners CI/CD), brechas de detección o hallazgos de seguridad de aplicaciones.",
+    "como": "El hunter combina conocimiento del entorno (activos críticos y superficie de exposición), TTP del adversario (MITRE ATT&CK) y telemetría disponible para redactar la hipótesis en formato verificable: actor/técnica + activo objetivo + evidencia esperada. A continuación define qué fuentes de datos necesita (Sysmon, CloudTrail, Zeek) y qué consultas o scripts ejecutará para validarla o refutarla. Al finalizar, el resultado —ya sea un compromiso hallado, una brecha de visibilidad o una refutación documentada— se registra en el informe de hunting.",
+    "practicas": [
+      "Formular hipótesis acotadas a un entorno, técnica y ventana temporal concretos; hipótesis vagas como 'buscar malware en servidores' son infalsables.",
+      "Verificar antes de cazar si la telemetría requerida existe y tiene la retención y granularidad necesarias.",
+      "Trampa común: considerar fallida una hipótesis refutada; descartar un vector con evidencia sólida valida defensas o descubre brechas de logging.",
+      "Comparación: una hipótesis de amenaza guía una investigación deductiva enfocada en un TTP; una búsqueda exploratoria de anomalías parte de datos sin suposición previa de técnica."
+    ],
+    "ejemplo": "# Plantilla de hipótesis de amenaza\nTítulo: Abuso de credenciales de runners CI/CD para movimiento lateral cloud\nSupuesto: Si un atacante compromete un build runner mediante una dependencia maliciosa, consultará el endpoint de metadatos (169.254.169.254) y usará el rol IAM desde una IP ajena a la VPC.\nTelemetría: VPC Flow Logs, CloudTrail, logs de red del host runner.\nCriterio de éxito: Identificar llamadas STS/IAM con el RoleSessionName del runner desde ASN externos.",
+    "entrevista": "Una hipótesis de amenaza es una conjetura falsable que vincula un TTP concreto con nuestros activos y telemetría para guiar la caza de forma metódica y reproducible."
+  },
+  "Hunting ad-hoc": {
+    "que": "El hunting ad-hoc es una actividad de búsqueda de amenazas no planificada, reactiva en su detonante pero proactiva en su ejecución, lanzada fuera del calendario regular ante un evento emergente. Suele responder a la publicación de una vulnerabilidad crítica zero-day, una nueva campaña de amenazas o una sospecha surgida durante otra investigación.",
+    "para": "Permite obtener respuestas rápidas sobre exposición potencial cuando aún no existen reglas de detección maduras ni firmas oficiales de los fabricantes. Se utiliza en emergencias como la divulgación de un RCE masivo en librerías ampliamente usadas (por ejemplo, Log4Shell o compromisos de dependencias OSS) o cambios súbitos en el panorama de amenazas.",
+    "como": "Un evento disparador activa una revisión rápida de inventario para identificar qué activos o servicios usan la tecnología afectada y qué telemetría cubre el vector de explotación. El hunter formula una hipótesis urgente, redacta consultas exploratorias directas contra el SIEM, EDR o herramientas de respuesta en vivo como Velociraptor, y busca tanto intentos de explotación como artefactos post-explotación. Una vez contenida la urgencia, los hallazgos y consultas valiosas se formalizan en reglas permanentes o en hunting programado.",
+    "practicas": [
+      "Mantener plantillas rápidas de inventario y consultas base listas para reducir el tiempo de arranque durante una emergencia.",
+      "Documentar incluso los hunts ad-hoc rápidos para evitar duplicar trabajo si la amenaza persiste días después.",
+      "Error típico: dejar que el hunting ad-hoc consuma el 100% del tiempo del equipo e impida ejecutar el programa estructurado y la ingeniería de detección.",
+      "Comparación: el hunting ad-hoc responde a urgencias imprevistas de alto impacto; el hunting programado sigue un calendario regular y planificado con backlog priorizado."
+    ],
+    "ejemplo": "// Hunting ad-hoc ante RCE crítico en librería Java: procesos hijos anómalos de java\nDeviceProcessEvents\n| where Timestamp > ago(72h)\n| where InitiatingProcessFileName == \"java\"\n| where FileName in~ (\"sh\", \"bash\", \"curl\", \"wget\", \"python\", \"powershell.exe\")\n| project Timestamp, DeviceName, ProcessCommandLine, InitiatingProcessCommandLine",
+    "entrevista": "El hunting ad-hoc es una caza rápida fuera de ciclo ante amenazas emergentes o zero-days para comprobar exposición antes de que existan detecciones automatizadas."
+  },
+  "Hunting basado en hipótesis": {
+    "que": "El hunting basado en hipótesis (hypothesis-driven hunting) es la metodología principal de threat hunting maduro que parte de una suposición fundamentada sobre cómo un atacante podría operar en el entorno y la somete a verificación empírica sobre la telemetría. Sigue un enfoque deductivo similar al método científico.",
+    "para": "Resuelve la limitación de esperar alertas o limitarse a buscar indicadores conocidos, permitiendo descubrir atacantes sofisticados y detectar brechas de visibilidad antes de un incidente grave. Se utiliza como estándar en programas de hunting estructurados orientados a riesgo y cobertura de TTP.",
+    "como": "El ciclo comienza formulando una hipótesis a partir de tres posibles fuentes: inteligencia de amenazas (qué hacen los adversarios del sector), conciencia situacional (activos críticos y cambios de arquitectura) o análisis de dominio (técnicas de ATT&CK sin detección actual). Después se identifican las fuentes de datos necesarias, se escriben consultas o artefactos de recolección (KQL, SPL, Velociraptor) y se analizan los resultados buscando evidencia de la técnica modelada. El cierre produce uno de tres resultados: amenaza detectada, nueva regla/ajuste de detección o mejora de recolección por brecha descubierta.",
+    "practicas": [
+      "Priorizar hipótesis ligadas a las 'joyas de la corona' y rutas de ataque probables (por ejemplo, identidad, secretos y CI/CD) antes que técnicas improbables.",
+      "Definir por adelantado qué evidencia confirmaría o refutaría la hipótesis para evitar sesgos de confirmación.",
+      "Trampa común: confundir hunting basado en hipótesis con ejecutar consultas genéricas copiadas de internet sin adaptarlas a la telemetría y convenciones propias.",
+      "Comparación: el hunting basado en hipótesis parte de una técnica o comportamiento modelado; el hunting basado en inteligencia arranca específicamente de reportes y observables de actores reales."
+    ],
+    "ejemplo": "# Flujo de hunting basado en hipótesis (T1098 - Account Manipulation)\n1. Hipótesis: Un atacante con acceso inicial añade claves SSH o roles OAuth persistentes.\n2. Datos: auditd / FileEvents (~/.ssh/authorized_keys) + logs IdP (añadir credenciales a App).\n3. Ejecución: Query buscando escrituras en authorized_keys fuera de herramientas de aprovisionamiento.\n4. Resultado: Sin malicia, pero se detecta falta de logging en 12 hosts -> Ticket de telemetría.",
+    "entrevista": "El hunting basado en hipótesis aplica el método científico a la seguridad: planteamos cómo podría actuar un adversario en nuestro entorno y usamos la telemetría para probarlo o descubrir brechas."
+  },
+  "Hunting basado en inteligencia": {
+    "que": "El hunting basado en inteligencia (intelligence-driven hunting) es un enfoque de búsqueda proactiva guiado por inteligencia de amenazas (CTI) accionable sobre campañas activas, TTP de grupos adversarios relevantes para el sector y nueva infraestructura maliciosa. Traduce reportes externos e internos de amenazas en búsquedas concretas dentro del entorno propio.",
+    "para": "Asegura que el esfuerzo de hunting se concentre en amenazas reales y actuales con alta probabilidad de afectar a la organización, en lugar de escenarios teóricos. Se emplea continuamente conforme llegan boletines de CTI, análisis de malware relevantes al stack tecnológico o avisos de campañas contra cadenas de suministro de software.",
+    "como": "El equipo de CTI o el propio hunter analiza informes de inteligencia (perfiles de actores APT, ransomware o grupos dirigidos a entornos cloud/DevOps) extrayendo tanto artefactos de nivel bajo (IOC) como, sobre todo, los TTP mapeados a MITRE ATT&CK. A partir de esos comportamientos se diseñan consultas específicas adaptadas a los logs internos (EDR, proxy, Kubernetes, IdP) para comprobar si la cadena de ataque se ha producido histórica o activamente. Los resultados retroalimentan tanto la base de conocimiento de CTI como las prioridades de ingeniería de detección.",
+    "practicas": [
+      "Elevar siempre la inteligencia más allá de hashes e IPs hacia los comportamientos descritos en el informe (TTPs).",
+      "Filtrar la inteligencia según el perfil real de tecnología y negocio; no todas las campañas globales aplican al stack propio.",
+      "Error típico: copiar reglas o IOC de reportes públicos sin validar falsos positivos ni compatibilidad con el esquema de telemetría interno.",
+      "Comparación: el hunting basado en inteligencia parte de amenazas externas documentadas por CTI; el hunting basado en anomalías o analítica parte de desviaciones estadísticas internas sin contexto previo de un actor."
+    ],
+    "ejemplo": "# Traducción de CTI a hunting sobre stack Linux/Cloud\nReporte CTI: Grupo X explota servicios expuestos y descarga binario en /dev/shm usando curl, persistiendo vía cron.\nQuery de hunt:\n- Procesos con cwd o argumentos apuntando a /dev/shm o /tmp\n- Modificaciones recientes en /etc/cron* o crontab -e iniciadas por usuarios no administrativos",
+    "entrevista": "El hunting basado en inteligencia convierte reportes de CTI sobre actores relevantes en búsquedas concretas de TTP e indicadores dentro de nuestra propia telemetría."
+  },
+  "Hunting estructurado": {
+    "que": "El hunting estructurado es una modalidad sistemática y repetible de threat hunting basada en hipótesis formales, metodologías estandarizadas y marcos como MITRE ATT&CK o TaHiTI. Busca técnicas de ataque específicas alineadas con objetivos de cobertura de riesgo y deja documentación trazable de cada iteración.",
+    "para": "Sirve para madurar un programa de detección de manera predecible, medir qué técnicas han sido auditadas y evitar depender únicamente de la intuición individual de un analista senior. Se utiliza como columna vertebral de equipos de hunting estables con cadencia semanal o por sprints.",
+    "como": "Se mantiene un backlog priorizado de hipótesis vinculadas a tácticas ATT&CK, activos críticos y brechas conocidas. En cada sprint de hunting, el analista selecciona una hipótesis, revisa los prerrequisitos de telemetría, ejecuta playbooks o notebooks reproducibles (por ejemplo, Jupyter con consultas a Elastic o Sentinel) y documenta hallazgos, falsos positivos y métricas. Al concluir, los resultados se convierten en nuevas reglas de detección, solicitudes de telemetría y actualización de la matriz de cobertura.",
+    "practicas": [
+      "Mantener plantillas uniformes de hipótesis, ejecución y cierre para que cualquier miembro del equipo pueda auditar o repetir el hunt.",
+      "Integrar el backlog de hunting con la matriz de ingeniería de detección y Purple Team para cerrar ciclos de mejora.",
+      "Trampa común: burocratizar tanto la documentación que el hunter dedique más tiempo a redactar tickets que a investigar telemetría.",
+      "Comparación: el hunting estructurado busca técnicas concretas mediante hipótesis planificadas y repetibles; el hunting no estructurado explora datos de forma libre buscando anomalías o patrones emergentes."
+    ],
+    "ejemplo": "# Estructura mínima de ticket en hunting estructurado\nid: HUNT-2026-014\ntecnica_attck: T1543.002 (Systemd Service)\nhipotesis: Persistencia en nodos Linux mediante creación/modificación de unit files en /etc/systemd/system\nfuentes: auditd, Sysmon for Linux, osquery\nestado_telemetria: Completa\nsalida: Nueva regla Sigma desplegada para creación fuera de Ansible/RPM",
+    "entrevista": "El hunting estructurado convierte la caza de amenazas en un proceso repetible basado en hipótesis mapeadas a ATT&CK que produce mejoras medibles en cobertura de detección."
+  },
+  "Hunting no estructurado": {
+    "que": "El hunting no estructurado es la búsqueda exploratoria de amenazas sin una hipótesis previa ligada a una técnica específica, impulsada por anomalías estadísticas, apilamiento de frecuencias o curiosidad analítica sobre conjuntos de datos. También se conoce como caza exploratoria o basada en datos.",
+    "para": "Sirve para descubrir amenazas totalmente imprevistas, anomalías operativas ocultas o abusos que no encajan en los escenarios habituales contemplados en el backlog estructurado. Se utiliza como complemento al hunting estructurado, especialmente cuando se incorpora una fuente de datos nueva o se analiza una red desconocida tras una adquisición.",
+    "como": "El hunter toma un conjunto amplio de telemetría —como ejecuciones de procesos en servidores de producción, registros DNS o eventos de autenticación OAuth— y aplica técnicas de reducción de datos como stacking (contar ocurrencias de menor a mayor), análisis de entropía o clustering. Examina los valores raros en las colas estadísticas, investiga los pares inusuales de usuario-recurso o proceso-destino de red y pivotea manualmente siguiendo pistas contextuales. Si detecta un patrón relevante o repetible, lo formaliza como hipótesis estructurada para investigaciones posteriores.",
+    "practicas": [
+      "Acotar el alcance por fuente de datos y ventana temporal; explorar todos los logs sin filtro produce parálisis por análisis.",
+      "Usar técnicas de apilamiento (least frequency of occurrence) para hacer visibles ejecutables o dominios únicos entre millones de eventos normales.",
+      "Error típico: depender únicamente de hunting no estructurado, lo que dificulta demostrar cobertura de técnicas y replicar resultados.",
+      "Comparación: el hunting no estructurado parte de los datos buscando rarezas para formular luego una explicación; el hunting estructurado parte de una hipótesis técnica y busca evidencia en los datos."
+    ],
+    "ejemplo": "// Stacking en SPL (Splunk) para detectar binarios ejecutados rara vez en producción\nindex=linux_edr sourcetype=sysmon_linux EventCode=1\n| stats count by Image, ParentImage\n| sort 0 count\n| head 50",
+    "entrevista": "El hunting no estructurado explora los datos mediante apilamiento y análisis estadístico para hallar anomalías imprevistas sin partir de una hipótesis fija."
+  },
+  "Hunting por búsqueda": {
+    "que": "El hunting por búsqueda (search-based hunting) es la técnica táctica de ejecutar consultas explícitas, agregaciones y correlaciones directamente sobre índices de logs y telemetría almacenada en plataformas SIEM o lagos de datos. Se enfoca en recuperar y agrupar registros mediante criterios deterministas o estadísticos definidos por el analista.",
+    "para": "Resuelve la necesidad de inspeccionar grandes historiales distribuidos en segundos sin conectarse máquina por máquina ni esperar a modelos complejos de machine learning. Es la modalidad más frecuente en operaciones diarias de hunting tanto en entornos on-premise como cloud-native.",
+    "como": "El analista formula preguntas concretas en el lenguaje nativo del repositorio (como KQL, SPL o Lucene/ES|QL) aprovechando esquemas indexados de eventos de proceso, red, identidad y aplicación. Combina operadores de filtrado, agrupación (`summarize`/`stats`), cálculo de cardinalidad (`dcount`/`dc`) para hallar dispersión lateral y cruce temporal entre tablas. Los resultados devueltos en tablas o series temporales permiten descartar ruido de golpe y aislar los hosts o identidades sospechosas para inspección profunda.",
+    "practicas": [
+      "Emplear funciones de cardinalidad (por ejemplo, usuarios distintos por IP o destinos distintos por proceso) para revelar escaneos y movimiento lateral.",
+      "Conocer las limitaciones del índice y retención de cada tabla antes de confiar en la ausencia de resultados.",
+      "Trampa común: ejecutar consultas globales con comodines iniciales (`*cmd*`) que agotan memoria del SIEM y devuelven resultados truncados.",
+      "Comparación: el hunting por búsqueda consulta telemetría centralizada histórica; la inspección en vivo con herramientas como Velociraptor recolecta artefactos forenses volátiles directamente del endpoint."
+    ],
+    "ejemplo": "// Cardinalidad de hosts destino por cuenta para detectar movimiento lateral SSH/RDP\nSecurityEvent\n| where EventID == 4624 and LogonType in (3, 10)\n| summarize TargetHosts = dcount(Computer), Hosts = make_set(Computer, 20) by TargetUserName, IpAddress\n| where TargetHosts >= 5",
+    "entrevista": "El hunting por búsqueda utiliza consultas indexadas de filtrado, agregación y cardinalidad sobre el SIEM o data lake para aislar comportamientos sospechosos a gran escala."
+  },
+  "Hunting programado": {
+    "que": "El hunting programado (scheduled hunting) es la ejecución planificada y periódica de campañas o consultas de hunting bajo una cadencia fija —diaria, semanal, mensual o por sprint— gestionada dentro de un calendario operativo. Combina hunting humano recurrente sobre áreas de alto riesgo con barridos automatizados que aún no califican para alerta en tiempo real.",
+    "para": "Garantiza continuidad y disciplina en la búsqueda proactiva, evitando que el día a día de incidentes y tickets relegue el threat hunting a una actividad ocasional. Se aplica para vigilar vectores persistentes (como abuso de tareas programadas, cuentas inactivas o cambios en políticas cloud) que requieren revisión periódica humana.",
+    "como": "El equipo define un calendario anual o trimestral donde cada ciclo asigna objetivos específicos (por ejemplo, identidad y SSO en semana 1, infraestructura Kubernetes en semana 2, endpoints y persistencia en semana 3). Las consultas de soporte pueden ejecutarse de forma automática mediante notebooks programados o búsquedas guardadas antes de la sesión, dejando al hunter el análisis de los resultados y la investigación de casos límite. Cada ejecución se registra con métricas de tiempo invertido, hallazgos y mejoras derivadas.",
+    "practicas": [
+      "Automatizar la pre-ejecución de consultas repetitivas para que el hunter dedique su tiempo al análisis contextual y no a copiar queries.",
+      "Revisar periódicamente si un hunt programado ya es lo bastante estable y preciso como para convertirse en regla de detección automatizada.",
+      "Error típico: mantener eternamente un hunt programado ruidoso en lugar de resolver la brecha o tunearlo como alerta.",
+      "Comparación: el hunting programado opera en cadencia predecible con objetivos planificados; el hunting ad-hoc se dispara de forma reactiva ante amenazas súbitas o zero-days."
+    ],
+    "ejemplo": "# Cadencia de hunting programado (ejemplo mensual)\nSemana 1: Identidad y acceso (tokens OAuth, MFA fatigue, asunción de roles IAM)\nSemana 2: Pipeline CI/CD y repositorios (runners, secrets, acciones no fijadas por commit SHA)\nSemana 3: Carga de trabajo cloud y Kubernetes (contenedores privilegiados, escapes)\nSemana 4: Endpoints corporativos y persistencia (LOLBins, servicios, WMI)",
+    "entrevista": "El hunting programado institucionaliza la caza proactiva mediante cadencias regulares sobre dominios críticos, asegurando consistencia sin desplazar la automatización hacia reglas."
+  },
+  "Informe de hunting": {
+    "que": "Un informe de hunting es el documento técnico y operativo emitido al cierre de una campaña o sesión de threat hunting que registra la hipótesis, metodología, alcance de datos analizados, hallazgos y acciones de remediación o detección resultantes. Actúa como memoria institucional y evidencia medible del valor generado por el equipo.",
+    "para": "Sirve para comunicar resultados claros tanto a ingeniería de detección y operaciones como a liderazgo técnico, demostrando retorno de inversión incluso cuando no se descubre una intrusión activa. Se elabora al finalizar cada hunt estructurado, ad-hoc relevante o campaña programada.",
+    "como": "El documento recopila metadatos clave: ID de campaña, técnicas ATT&CK cubiertas, hipótesis inicial y ventana temporal evaluada. Detalla exactamente qué tablas de telemetría se consultaron, las consultas empleadas (versionadas o enlazadas), las brechas de visibilidad detectadas durante el proceso y cualquier anomalía benigna o incidente escalado. Cierra con una lista accionable de entregables con responsables: nuevas reglas propuestas, ajustes de parsers, tickets de endurecimiento (hardening) o solicitud de nuevos logs.",
+    "practicas": [
+      "Incluir siempre los entregables concretos (reglas creadas, brechas descubiertas, cambios de configuración) porque un hunt sin compromiso hallado sigue aportando mejoras defensivas.",
+      "Separar un resumen ejecutivo breve (riesgo, cobertura, impacto) de los apéndices técnicos con queries y artefactos reproducibles.",
+      "Error típico: entregar informes genéricos con capturas sin consultas reproducibles ni estado de cobertura de datos.",
+      "Comparación: el informe de hunting documenta la validación proactiva de hipótesis y brechas defensivas; el informe de incidente reconstruye una intrusión confirmada, su impacto y contención."
+    ],
+    "ejemplo": "# Estructura resumida de Informe de Hunting\n1. Metadatos: ID HUNT-2026-09 | Técnica: T1550.001 (Application Access Token)\n2. Hipótesis y Alcance: Logs IdP y API Graph últimos 30 días (100% cobertura)\n3. Queries y Metodología: Análisis de tokens de refresco desde ASN no corporativos\n4. Hallazgos: 0 compromisos; 2 apps legacy sin Conditional Access\n5. Acciones: Regla KQL #DET-412 creada + ticket de endurecimiento IAM-88",
+    "entrevista": "El informe de hunting convierte el trabajo investigativo en resultados auditables: documenta qué se probó, qué visibilidad faltaba y qué reglas o controles quedaron reforzados."
+  },
+  "Ingeniería de detección": {
+    "que": "La ingeniería de detección (detection engineering) es la disciplina que diseña, desarrolla, prueba, despliega y mantiene detecciones automatizadas como software confiable mediante prácticas de ingeniería y Detection-as-Code. Su foco es transformar conocimiento de amenazas y hallazgos de hunting en alertas de alta precisión, mantenibles y versionadas.",
+    "para": "Resuelve la fragilidad de las reglas artesanales creadas directamente en la interfaz del SIEM sin pruebas, control de cambios ni medición de eficacia. Se aplica de forma continua para construir la cobertura de alertas de la organización y operacionalizar las salidas del threat hunting y del Purple Team.",
+    "como": "Los ingenieros definen detecciones en formatos declarativos portables (como Sigma) o nativos (KQL, SPL) dentro de repositorios Git con revisión por pares (pull requests). Cada regla incluye metadatos obligatorios (técnica MITRE ATT&CK, telemetría requerida, falsos positivos conocidos, severidad y playbook de respuesta) y pasa por un pipeline CI/CD que valida sintaxis, ejecuta pruebas unitarias y simula eventos positivos/negativos antes de desplegar vía API/Terraform al SIEM o EDR. En producción se monitorizan métricas de ruido y cobertura para disparar ciclos de ajuste o retiro.",
+    "practicas": [
+      "Tratar las detecciones como código (Detection-as-Code): versionado Git, revisión por pares, pruebas automatizadas y despliegue CI/CD.",
+      "Asociar cada regla a un runbook claro para el SOC; una alerta sin guía de investigación es deuda operativa.",
+      "Error típico: acumular cientos de reglas heredadas sin propietario ni pruebas, provocando colapso de alertas o fallos silenciosos tras cambios de esquema.",
+      "Comparación: el threat hunting investiga manualmente lo desconocido o no cubierto; la ingeniería de detección automatiza de forma fiable y escalable los patrones ya comprendidos."
+    ],
+    "ejemplo": "# Pipeline conceptual de Detection-as-Code\n1. PR en Git con regla Sigma + fixture JSON de evento malicioso y benigno\n2. CI valida esquema (sigma-cli / pySigma) y traduce a KQL/SPL\n3. Test runner valida: evento malicioso -> match; evento benigno -> no match\n4. Merge a main -> Terraform/API despliega regla al SIEM con etiqueta v1.2",
+    "entrevista": "La ingeniería de detección aplica prácticas de software —versionado, pruebas y CI/CD— para convertir hallazgos de amenazas y hunting en alertas precisas y sostenibles."
+  },
+  "KQL": {
+    "que": "KQL (Kusto Query Language) es un lenguaje de consulta de solo lectura optimizado para explorar, agregar y analizar grandes volúmenes de telemetría estructurada y semiestructurada en plataformas como Microsoft Sentinel, Microsoft Defender XDR y Azure Data Explorer. Emplea un modelo de tuberías (pipes `|`) donde la salida de cada operador alimenta al siguiente.",
+    "para": "Es el lenguaje principal para realizar threat hunting por búsqueda, construir reglas analíticas programadas y correlacionar eventos de endpoint, nube e identidad en ecosistemas basados en Microsoft o Azure Data Explorer. Se utiliza tanto en investigaciones interactivas como en detecciones automatizadas.",
+    "como": "Una consulta KQL comienza indicando la tabla origen (por ejemplo, `DeviceProcessEvents`, `SigninLogs` o `SecurityEvent`) seguida de operadores encadenados mediante `|`. Los filtros tempranos (`where`) acotan tiempo y campos indexados; `extend` crea columnas calculadas o parsea JSON (`parse_json`), `summarize` agrega métricas o conjuntos (`make_set`, `dcount`), y `join` o `union` cruzan múltiples tablas. El motor Kusto ejecuta las consultas de forma distribuida sobre almacenamiento columnar comprimido.",
+    "practicas": [
+      "Colocar el filtro de tiempo (`where Timestamp > ago(...)`) y filtros de igualdad exacta al inicio de la tubería para aprovechar particiones e índices.",
+      "Preferir `has` o `has_any` sobre `contains` cuando se buscan tokens completos, ya que `has` usa el índice de términos y es órdenes de magnitud más rápido.",
+      "Usar `let` para definir listas de indicadores, umbrales o subconsultas reutilizables que mejoren la legibilidad de la query.",
+      "Comparación: KQL utiliza sintaxis tabular en tuberías optimizada para Azure/Microsoft Sentinel; SPL cumple el rol equivalente en el ecosistema Splunk."
+    ],
+    "ejemplo": "SigninLogs\n| where TimeGenerated > ago(24h)\n| where ResultType == 0 // Login exitoso\n| where AppDisplayName has \"Azure Portal\"\n| summarize DistinctIPs = dcount(IPAddress), Locations = make_set(Location) by UserPrincipalName\n| where DistinctIPs >= 3",
+    "entrevista": "KQL es un lenguaje en tuberías optimizado para almacenamiento columnar que nos permite filtrar, parsear y correlacionar grandes volúmenes de telemetría en Sentinel y Defender."
+  },
+  "Línea base": {
+    "que": "La línea base (baseline) es la caracterización cuantitativa y cualitativa del comportamiento normal de los sistemas, usuarios, aplicaciones y flujos de red dentro de un entorno concreto durante un periodo representativo. Define qué procesos, horarios, destinos de red, volúmenes y privilegios forman parte de la operación legítima habitual.",
+    "para": "Constituye el punto de referencia indispensable para distinguir entre una anomalía real y el ruido propio de la infraestructura. Sin una línea base documentada o calculada sobre datos propios, el threat hunting genera exceso de falsos positivos al investigar actividad administrativa o de negocio completamente normal.",
+    "como": "Se construye recopilando telemetría durante un intervalo suficientemente amplio (habitualmente de 14 a 30 días para capturar ciclos semanales y cierres mensuales) segmentada por grupos funcionales equivalentes: servidores web, nodos CI/CD, estaciones de desarrolladores o bases de datos. Mediante agregaciones estadísticas (medias, percentiles p95/p99, listas de software habitual y grafos de comunicación permitidos) se establece el perfil esperado. Dado que el software y la arquitectura cambian continuamente, la línea base debe recalcularse de forma dinámica o revisarse tras cada despliegue mayor.",
+    "practicas": [
+      "Segmentar la línea base por rol de activo; mezclar servidores de build con equipos de finanzas destruye la utilidad del perfil.",
+      "Evitar tomar como línea base 'limpia' un entorno sin verificar primero si ya existe un compromiso persistente durante la ventana de aprendizaje.",
+      "Error típico: definir líneas base estáticas en entornos cloud efímeros donde contenedores y servicios escalan dinámicamente.",
+      "Comparación: la línea base representa la normalidad operativa medida; la anomalía es la desviación observada frente a esa línea base."
+    ],
+    "ejemplo": "// Construcción de línea base p95 de conexiones salientes por servicio\nDeviceNetworkEvents\n| where Timestamp between (ago(30d) .. ago(1d))\n| summarize DailyConns = count() by DeviceName, RemotePort, bin(Timestamp, 1d)\n| summarize P50 = percentile(DailyConns, 50), P95 = percentile(DailyConns, 95) by DeviceName, RemotePort",
+    "entrevista": "Una línea base define el comportamiento normal segmentado por tipo de activo y periodo operativo, sirviendo de referencia indispensable para detectar desviaciones relevantes."
+  },
+  "Madurez de threat hunting": {
+    "que": "La madurez de threat hunting es el nivel de capacidad sistemática, repetibilidad, cobertura de datos e impacto defensivo con el que una organización ejecuta la caza proactiva de amenazas. Modelos conocidos como el Hunting Maturity Model (HMM) de Sqrrl lo escalan desde HMM0 (dependencia total de alertas) hasta HMM4 (creación de procesos de análisis de datos propios y automatización continua).",
+    "para": "Sirve para diagnosticar objetivamente en qué punto se encuentra el equipo de seguridad y trazar una hoja de ruta realista antes de invertir en herramientas complejas o algoritmos avanzados. Ayuda a evitar la trampa de intentar cazar comportamientos sofisticados cuando aún faltan visibilidad básica e inventario de activos.",
+    "como": "Se evalúan cinco dimensiones clave: calidad y cobertura de telemetría recolectada, capacidad de análisis y herramientas de consulta disponibles, frecuencia y estructura de las hipótesis (ad-hoc vs programado), habilidades del personal y grado de automatización de hallazgos hacia ingeniería de detección. En niveles iniciales (HMM1) el equipo aplica inteligencia externa básica; en intermedios (HMM2-HMM3) sigue procedimientos de análisis documentados y crea nuevos métodos de detección de TTP; en nivel avanzado (HMM4) automatiza hunts exitosos y retroalimenta continuamente el ciclo defensivo.",
+    "practicas": [
+      "Priorizar primero la calidad y cobertura de telemetría (procesos, autenticación, red, cloud) antes de aspirar a niveles avanzados de modelado.",
+      "Medir la madurez por resultados convertidos en detecciones automáticas y brechas cerradas, no por el número de herramientas compradas.",
+      "Error típico: intentar ejecutar técnicas HMM3/HMM4 con personal insuficiente mientras el SOC está saturado de alertas sin ajustar (HMM0).",
+      "Comparación: HMM mide el grado de sofisticación y automatización del hunting; la Pirámide del Dolor mide qué tan difícil resulta para el atacante evadir el tipo de indicador buscado."
+    ],
+    "ejemplo": "# Escala resumida Hunting Maturity Model (HMM)\nHMM0 Inicial: Solo alertas automáticas, sin recolección centralizada suficiente.\nHMM1 Mínimo: Alta recolección de datos; caza guiada principalmente por IOC e intel externa.\nHMM2 Procedimental: Sigue procedimientos de análisis publicados por terceros.\nHMM3 Innovador: Crea nuevos análisis y detecciones propias centradas en TTP/IoA.\nHMM4 Líder: Automatiza la mayoría de hunts exitosos y libera al hunter para nuevas técnicas.",
+    "entrevista": "La madurez de threat hunting mide nuestra evolución desde reaccionar a alertas y buscar IOC básicos hasta crear análisis propios de TTP cuya salida se automatiza continuamente en detección."
+  },
+  "Microsoft Sentinel": {
+    "que": "Microsoft Sentinel es una plataforma SIEM y SOAR nativa de la nube alojada en Azure que centraliza ingestión de telemetría a escala, análisis con KQL, correlación de alertas y respuesta automatizada mediante playbooks. Integra de forma nativa conectores para entornos Microsoft 365, Azure, AWS, GCP, Sysmon, CEF y Syslog.",
+    "para": "Resuelve la visibilidad unificada y el análisis proactivo sobre infraestructuras híbridas y multicloud sin necesidad de administrar hardware ni clústeres de indexación propios. Se utiliza como repositorio central para threat hunting con KQL, ejecución de reglas analíticas programadas y orquestación de incidentes.",
+    "como": "Los eventos ingresan mediante Data Connectors hacia un espacio de trabajo de Log Analytics (Azure Monitor), donde se almacenan en tablas especializadas o normalizadas bajo el esquema ASIM (Advanced Security Information Model). Desde el módulo Hunting, el analista ejecuta cuadernos Jupyter o paquetes de consultas KQL predefinidas y personalizadas contra tablas activas o de archivo; los hallazgos pueden marcarse como Bookmarks para reconstruir grafos de entidad o promoverse directamente a incidentes. Las reglas analíticas programadas o de fusión (Fusion ML) generan alertas que disparan playbooks basados en Azure Logic Apps.",
+    "practicas": [
+      "Usar parsers ASIM en lugar de apuntar directamente a tablas de un solo proveedor para que reglas y hunts sobrevivan a cambios de firewall o EDR.",
+      "Separar tablas de alta frecuencia y bajo valor analítico hacia niveles Basic/Auxiliary Logs para controlar costos sin perder retención forense.",
+      "Gestionar reglas analíticas y hunting queries como código mediante Sentinel Repositories (GitHub/Azure DevOps) y plantillas ARM/Bicep.",
+      "Comparación: Microsoft Sentinel destaca por integración nativa con Azure/Defender y KQL serverless; Splunk y Elastic ofrecen mayor control de despliegue on-premise o multi-motor sin acoplamiento a Azure."
+    ],
+    "ejemplo": "// Uso de parser normalizado ASIM en Sentinel para cazar consultas DNS sospechosas\n_Im_Dns(starttime=ago(24h), endtime=now())\n| where DnsQueryTypeName in (\"TXT\", \"NULL\")\n| extend QueryLen = strlen(DnsQuery)\n| where QueryLen > 60\n| summarize Count = count() by SrcIpAddr, DnsQuery\n| order by Count desc",
+    "entrevista": "Microsoft Sentinel es un SIEM/SOAR cloud-native basado en Log Analytics y KQL que permite cazar amenazas a escala, normalizar fuentes con ASIM y automatizar respuesta vía Logic Apps."
+  },
+  "Proceso de threat hunting": {
+    "que": "El proceso de threat hunting es el ciclo metodológico repetible mediante el cual un equipo pasa de una idea o señal inicial a la confirmación de un hallazgo y la mejora permanente de las capacidades de detección. Marcos como TaHiTI o el ciclo clásico de cuatro fases estructuran este flujo de principio a fin.",
+    "para": "Aporta disciplina operativa, trazabilidad y mejora continua al hunting, garantizando que el esfuerzo investigativo no termine en notas aisladas sino en reglas, corrección de brechas de telemetría o contención de incidentes. Se aplica como estándar operativo en cada campaña de hunting estructurado.",
+    "como": "El flujo sigue cuatro etapas principales: primero, la creación de hipótesis a partir de inteligencia de amenazas, cambios de arquitectura o anomalías; segundo, la investigación mediante recolección y análisis de telemetría con consultas, herramientas EDR o análisis estadístico; tercero, el descubrimiento de nuevos patrones, TTP o compromisos reales que, de confirmarse, se escalan a Respuesta a Incidentes; y cuarto, el enriquecimiento y automatización, donde las consultas exitosas se traducen en reglas de detección y las carencias encontradas se convierten en requisitos de telemetría.",
+    "practicas": [
+      "Cerrar siempre el ciclo alimentando a ingeniería de detección; un hunt que no genera ni nueva regla, ni ajuste, ni validación documentada deja valor sin capturar.",
+      "Acotar el tiempo máximo de cada iteración (timeboxing, por ejemplo 4-8 horas por hipótesis) para no quedar atrapado indefinidamente en una pista estéril.",
+      "Error típico: iniciar el proceso directamente ejecutando queries sin verificar calidad de datos ni definir criterios de escalado a Incident Response.",
+      "Comparación: el proceso de threat hunting es proactivo y busca mejorar detección y descubrir compromisos ocultos; el proceso de respuesta a incidentes (NIST/PICERL) es reactivo y prioriza contención, erradicación y recuperación."
+    ],
+    "ejemplo": "# Ciclo estándar del proceso de threat hunting\n[1. Hipótesis] -> ¿Abuso de token OAuth en app CI?\n[2. Investigación] -> Query KQL en SigninLogs + AuditLogs + repositorio\n[3. Descubrimiento] -> Patrón anómalo confirmado o brecha de logs detectada\n[4. Retroalimentación] -> Regla Sigma/KQL a producción + reporte de hunting",
+    "entrevista": "El proceso de threat hunting sigue un ciclo cerrado: formular hipótesis, investigar en telemetría, identificar hallazgos o brechas y retroalimentar esos aprendizajes en detección automatizada."
+  },
+  "Recolección de datos": {
+    "que": "La recolección de datos en threat hunting es la captura, extracción, transporte y almacenamiento estructurado de eventos y artefactos desde endpoints, red, identidades, nube y aplicaciones hacia repositorios analizables. Constituye la base material sobre la que opera cualquier hipótesis o regla de detección.",
+    "para": "Resuelve la ceguera operativa: es imposible cazar técnicas de ataque si el sistema operativo o la plataforma cloud nunca registraron el evento o si los logs se perdieron antes de llegar al SIEM. Se diseña y audita continuamente al incorporar nuevas tecnologías o detectar brechas de visibilidad.",
+    "como": "En el origen se habilitan fuentes de auditoría nativas y agentes especializados —como Sysmon o eBPF en endpoints, Zeek/Suricata en tap de red, CloudTrail/Audit Logs en la nube y logs estructurados de aplicación— con políticas que registren líneas de comandos, hashes y contexto de usuario. Los colectores y forwarders (como Fluent Bit, Vector, Splunk Universal Forwarder o Azure Monitor Agent) filtran ruido innecesario en borde, añaden metadatos de activo y envían los eventos cifrados por TLS hacia colas (Kafka) o directamente al SIEM/data lake. Allí se aplican parsers y normalización a esquemas comunes antes de indexarlos con políticas de retención diferenciadas.",
+    "practicas": [
+      "Capturar argumentos completos de línea de comandos (Event ID 4688 con command line o Sysmon Event 1) y creación de procesos padre-hijo; sin ello el hunting de endpoints queda ciego.",
+      "Sincronizar relojes vía NTP/chrony en toda la infraestructura para que la correlación temporal entre fuentes sea fiable.",
+      "Error típico: ingerir logs verbosos sin filtrar eventos inútiles (como healthchecks cada segundo) que agotan presupuesto y desplazan logs críticos por falta de retención.",
+      "Comparación: la recolección de datos cubre la captura y transporte continuo hacia almacenamiento central; la agregación de logs consolida, normaliza y deduplica flujos provenientes de múltiples orígenes."
+    ],
+    "ejemplo": "# Configuración mínima de colector (Vector/Fluent) para envío seguro de auditd/app\n[sources.edr_logs]\ntype = \"file\"\ninclude = [\"/var/log/sysmon/*.json\"]\n\n[sinks.siem_ingest]\ntype = \"http\"\ninputs = [\"edr_logs\"]\nuri = \"https://siem.internal/ingest\"\ntls.verify_certificate = true",
+    "entrevista": "La recolección de datos garantiza que eventos críticos como ejecución de procesos, autenticación y flujos de red se capturen con fidelidad, relojes sincronizados y transporte seguro hacia el SIEM."
+  },
+  "Regla de detección": {
+    "que": "Una regla de detección es una especificación lógica y determinista —o basada en umbrales/correlación— que evalúa continuamente flujos de telemetría para generar una alerta cuando se cumplen condiciones asociadas a una técnica maliciosa o anomalía de seguridad. Es la unidad ejecutable básica de un SIEM, EDR o IDS.",
+    "para": "Permite automatizar la vigilancia 24/7 sobre patrones de ataque conocidos o comportamientos previamente validados mediante threat hunting, liberando a los analistas de revisar manualmente los mismos eventos cada día. Se despliega en producción tras pasar pruebas de precisión y validación de esquema.",
+    "como": "La regla define la fuente de datos objetivo, una consulta de selección (filtros sobre campos como `EventID`, `CommandLine`, `Image` o `EventName`), opcionalmente exclusiones conocidas y parámetros de ejecución como frecuencia, ventana de retrospección (lookback) y umbral de agrupación por entidad. El motor del SIEM o EDR ejecuta la evaluación en streaming o por lotes programados y, si se supera el criterio de disparo, emite una alerta enriquecida con severidad, mapeo ATT&CK y entidades involucradas. Las reglas portables suelen escribirse en formato Sigma para compilarse a múltiples plataformas.",
+    "practicas": [
+      "Diseñar cada regla enfocada en el comportamiento invariante de la técnica (T-code ATT&CK) en lugar de nombres de archivo o IPs efímeras.",
+      "Definir claramente la agrupación (grouping by host/user) y supresión temporal (throttling) para no generar cien alertas idénticas por un único bucle.",
+      "Error típico: desplegar reglas sin probar su costo de ejecución ni validar que los campos referenciados existan realmente en los logs ingeridos.",
+      "Comparación: una regla de detección evalúa automáticamente telemetría de forma continua; una consulta de hunting es exploratoria, interactiva y puede tolerar mayor complejidad y ruido."
+    ],
+    "ejemplo": "title: Ejecución de Descarga Remota desde Intérprete Web\nstatus: experimental\nlogsource:\n  category: process_creation\n  product: linux\ndetection:\n  selection:\n    ParentImage|endswith: ['/node', '/java', '/python3']\n    Image|endswith: ['/curl', '/wget']\n  condition: selection\nlevel: high",
+    "entrevista": "Una regla de detección automatiza sobre el SIEM o EDR la identificación continua de una técnica concreta, incorporando lógica de agrupación, contexto ATT&CK y filtros validados."
+  },
+  "Retroalimentación a detección": {
+    "que": "La retroalimentación a detección (detection feedback loop) es el flujo formal que transfiere los aprendizajes, consultas validadas, brechas de visibilidad y casos límite descubiertos durante el threat hunting o la respuesta a incidentes hacia el equipo de ingeniería de detección. Cierra el ciclo entre la exploración humana y la automatización defensiva.",
+    "para": "Evita que el threat hunting sea un esfuerzo efímero donde los mismos TTP deben cazarse manualmente una y otra vez cada mes. Se ejecuta al término de cada campaña de hunting, ejercicio Purple Team o cierre post-incidente.",
+    "como": "Cuando un hunter valida una consulta capaz de detectar un IoA con nivel de ruido manejable, documenta el caso de uso, las muestras de eventos positivos/negativos y el mapeo ATT&CK en un ticket o Pull Request hacia el repositorio de detecciones. Ingeniería de detección adapta la query al estándar productivo (Sigma/KQL/SPL), aplica reglas de tuning sobre falsos positivos descubiertos durante el hunt, añade pruebas automatizadas y despliega la nueva alerta al SIEM. Paralelamente, las carencias de datos se envían a ingeniería de plataforma o SRE para habilitar nuevos logs o ajustar colectores.",
+    "practicas": [
+      "Medir la proporción de hunts que producen al menos una nueva regla, un ajuste de regla existente o una mejora de telemetría como KPI principal del equipo.",
+      "Transferir también ejemplos reales de falsos positivos encontrados durante el hunt para ahorrar semanas de tuning posterior.",
+      "Error típico: dejar los resultados del hunting en wikis desconectadas sin un canal estandarizado (Git/Jira) integrado con el backlog de ingeniería de detección.",
+      "Comparación: la retroalimentación a detección institucionaliza y automatiza lo descubierto manualmente; el hunting ad-hoc y estructurado vuelven entonces a enfocarse en la siguiente frontera desconocida."
+    ],
+    "ejemplo": "# Entregables típicos de retroalimentación tras un hunt\n1. Query validada -> PR en repo detection-rules/sigma/cloud/aws_sts_enum.yml\n2. Falso positivo identificado -> Excluir rol svc-terraform-readonly en staging\n3. Brecha detectada -> Ticket INFRA-302 para activar DNS Query Logging en VPC prod\n4. Resultado -> Técnica T1087.004 pasa de caza manual mensual a detección continua",
+    "entrevista": "La retroalimentación a detección asegura que cada hallazgo y consulta exitosa del threat hunting se convierta en reglas automatizadas o mejoras de telemetría, escalando la capacidad del equipo."
+  },
+  "SPL": {
+    "que": "SPL (Search Processing Language) es el lenguaje de consulta, transformación y análisis estadístico de Splunk diseñado para procesar datos de máquina y telemetría de seguridad indexados por tiempo. Emplea una sintaxis basada en tuberías (`|`) inspirada en Unix que encadena comandos de búsqueda, extracción, correlación y visualización.",
+    "para": "Es la herramienta esencial para ejecutar threat hunting por búsqueda, construir alertas en tiempo real o programadas y modelar anomalías en despliegues SIEM basados en Splunk o Splunk Enterprise Security. Se usa tanto en investigaciones ad-hoc como en dashboards operativos y reglas de correlación.",
+    "como": "Una búsqueda SPL comienza con términos de filtro inicial sobre `index`, `sourcetype` y ventana temporal (`earliest`/`latest`), aplicando la reducción más restrictiva posible antes de la primera tubería. A continuación encadena comandos de transformación como `rex` o `spath` para extraer campos, `eval` para calcular métricas derivadas, `stats` o `eventstats` para agregaciones estadísticas, y `lookup` para enriquecer con inteligencia de amenazas o inventario CMDB. El motor distribuye la fase de búsqueda (map) entre los indexers y consolida resultados (reduce) en el search head.",
+    "practicas": [
+      "Especificar siempre `index=`, `sourcetype=` y ventana temporal acotada al inicio para evitar escaneos completos sobre todos los buckets.",
+      "Preferir `tstats` sobre modelos de datos acelerados (CIM) cuando se caza sobre grandes volúmenes para obtener respuestas en segundos en lugar de minutos.",
+      "Evitar el uso abusivo del comando `transaction` en grandes volúmenes; sustituirlo por agrupaciones con `stats` por identificador de sesión o correlación temporal.",
+      "Comparación: SPL es el estándar de tuberías orientado a eventos y esquemas en lectura (schema-on-read) de Splunk; KQL cumple el papel análogo en plataformas Microsoft con almacenamiento columnar."
+    ],
+    "ejemplo": "index=edr sourcetype=sysmon EventCode=1\n| eval cmd_len=len(CommandLine)\n| where match(Image, \"(?i)(powershell|pwsh|bash)$\") AND cmd_len > 250\n| stats count values(CommandLine) as cmds by host, User, ParentImage\n| sort - count",
+    "entrevista": "SPL es el lenguaje en tuberías de Splunk que permite filtrar en el origen y transformar telemetría con comandos como stats, eval y tstats para cazar anomalías y TTP a gran escala."
+  }
+}

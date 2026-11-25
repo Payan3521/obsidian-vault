@@ -1,0 +1,197 @@
+{
+  "Agile": {
+    "que": "Filosofía y marco de valores para el desarrollo de software formalizado en el Manifiesto Ágil (2001), basado en cuatro valores y doce principios. Prioriza la entrega frecuente de software funcional, la colaboración continua con el cliente y la adaptación rápida frente a planes rígidos.",
+    "para": "Resuelve la desconexión entre las especificaciones iniciales y las necesidades reales en entornos con alta incertidumbre o requisitos cambiantes. Se utiliza cuando el dominio evoluciona durante el proyecto y el costo de descubrir errores tarde supera al de iterar.",
+    "como": "Opera dividiendo el alcance en ciclos cortos llamados iteraciones donde equipos multidisciplinarios y autoorganizados planifican, construyen, prueban y entregan incrementos verificables. Al cierre de cada ciclo, el equipo recoge retroalimentación directa de usuarios o stakeholders sobre software en ejecución para reordenar el backlog. Paralelamente, realiza inspecciones internas de proceso para ajustar prácticas técnicas, ritmo sostenible y calidad del código.",
+    "practicas": [
+      "Agile es un conjunto de principios, no una metodología prescriptiva: Scrum, Kanban y XP son implementaciones concretas bajo ese paraguas.",
+      "Trampa común ('Agile teatral'): adoptar ceremonias y tableros sin entregas frecuentes a producción ni autonomía técnica real.",
+      "Mantener el backlog priorizado por valor de negocio y riesgo técnico, evitando compromisos cerrados a largo plazo cuando los requisitos aún no se validan.",
+      "Agile vs Cascada: Agile reduce el riesgo de construir el producto equivocado mediante validación continua; Cascada asume requisitos estables y predecibles."
+    ],
+    "ejemplo": "Valores del Manifiesto Ágil:\n1. Individuos e interacciones > procesos y herramientas\n2. Software funcionando > documentación extensiva\n3. Colaboración con el cliente > negociación contractual\n4. Respuesta ante el cambio > seguir un plan",
+    "entrevista": "Agile no consiste en ir más rápido ni en eliminar la planificación, sino en acortar los ciclos de retroalimentación para descubrir errores de producto y arquitectura cuando todavía es barato corregirlos."
+  },
+  "Ciclo de vida de desarrollo de software (SDLC)": {
+    "que": "Marco estructural que define las fases, artefactos, roles y puntos de control por los que atraviesa un sistema de software desde su concepción hasta su retiro. Abarca típicamente planificación, análisis de requisitos, diseño, implementación, pruebas, despliegue y mantenimiento.",
+    "para": "Estandariza cómo una organización coordina ingeniería, calidad, seguridad y negocio para entregar software predecible y auditable. Se aplica en todo proyecto profesional, adaptando el orden e intensidad de cada fase según el modelo de proceso elegido (cascada, iterativo, ágil).",
+    "como": "El flujo comienza con la definición de alcance y viabilidad, seguida de la captura de requisitos funcionales y no funcionales. A partir de ellos se diseña la arquitectura, los modelos de datos y las interfaces, que luego se traducen en código bajo control de versiones. El artefacto compilado pasa por pruebas automatizadas y manuales, se despliega mediante pipelines en producción y entra en operación continua con monitoreo, parches y eventual desmantelamiento.",
+    "practicas": [
+      "Integrar seguridad desde las primeras fases (Shift-Left / SSDLC) mediante análisis estático (SAST), revisión de dependencias (SCA) y modelado de amenazas antes de llegar a producción.",
+      "Definir criterios de salida explícitos (Definition of Done, puertas de cobertura o SLA de defectos) entre fases para evitar acumular deuda oculta.",
+      "Error frecuente: tratar el mantenimiento como una etapa menor, cuando suele consumir más del 60 % del costo total de propiedad (TCO) del sistema.",
+      "El SDLC es el ciclo completo de vida; metodologías como Scrum o Cascada solo determinan cómo se secuencian o iteran sus actividades."
+    ],
+    "ejemplo": "Fases SDLC + puertas de control:\n1. Requisitos   -> PRD / Criterios de aceptación\n2. Diseño       -> ADR / Diagramas C4 / Threat Model\n3. Implement.   -> PR + SAST + Unit Tests\n4. Verificación -> Integration / E2E / QA Staging\n5. Despliegue   -> Canary / Blue-Green\n6. Operación    -> Observabilidad + Postmortems + Decommission",
+    "entrevista": "El SDLC no es sinónimo de cascada: es el conjunto de disciplinas necesarias para concebir, validar, operar y retirar software, sin importar si se ejecutan de forma secuencial o en iteraciones continuas."
+  },
+  "Clean code, DRY - KISS - YAGNI": {
+    "que": "Conjunto de principios de diseño y legibilidad orientados a mantener el código comprensible, conciso y fácil de modificar a lo largo del tiempo. Clean Code busca expresividad e intención clara; DRY evita duplicar conocimiento; KISS favorece soluciones simples; YAGNI prohíbe implementar funcionalidad especulativa.",
+    "para": "Combate el deterioro progresivo de la base de código (software rot) cuando múltiples desarrolladores la mantienen durante años. Se aplica en el día a día al diseñar módulos, escribir funciones y revisar pull requests para minimizar bugs y costo de cambio.",
+    "como": "Clean Code se materializa mediante nombres descriptivos, funciones cortas con un solo nivel de abstracción, manejo explícito de errores y ausencia de efectos secundarios ocultos. DRY centraliza reglas de negocio y lógica compartida en abstracciones únicas sin confundir similitud sintáctica accidental con el mismo concepto de dominio. KISS y YAGNI actúan como filtro en diseño: se elige la estructura de datos o flujo más directo que cumpla los requisitos actuales y se difieren extensiones hasta que exista una necesidad real verificada.",
+    "practicas": [
+      "Trampa clásica de DRY: crear abstracciones prematuras acoplando dos flujos que hoy lucen parecidos pero evolucionarán por razones de negocio distintas ('la duplicación es más barata que la abstracción equivocada').",
+      "KISS no significa código simplista ni falta de estructura, sino evitar sobreingeniería como patrones complejos donde basta una función pura o un mapa.",
+      "Aplicar la regla del Boy Scout en cada cambio: dejar el módulo ligeramente más limpio y legible sin mezclar refactors masivos con fixes urgentes.",
+      "YAGNI + pruebas automatizadas: en lugar de diseñar ganchos especulativos para futuros requisitos, mantén buen desacople y tests que permitan refactorizar seguro cuando el requisito llegue."
+    ],
+    "ejemplo": "// Violación YAGNI/KISS vs directo\n// Mal: AbstractDiscountStrategyFactoryBuilder para 1 cupón\n// Bien:\nfunction applyDiscount(total: number, rate: number): number {\n  if (rate <= 0 || rate >= 1) throw new RangeError(\"Invalid rate\");\n  return Number((total * (1 - rate)).toFixed(2));\n}",
+    "entrevista": "DRY trata de no duplicar conocimiento de negocio ni reglas únicas de verdad, mientras que KISS y YAGNI nos protegen de pagar hoy el costo de complejidad de requisitos futuros que quizá nunca existan."
+  },
+  "Cohesión y acoplamiento": {
+    "que": "Métricas cualitativas y estructurales fundamentales del diseño modular de software. La cohesión mide qué tan estrechamente relacionadas y enfocadas están las responsabilidades dentro de un mismo módulo; el acoplamiento mide el grado de dependencia e interconexión entre módulos distintos.",
+    "para": "Permite construir sistemas donde un cambio en un requisito afecte al menor número posible de archivos y equipos. Es el criterio rector para delimitar clases, paquetes, servicios y contextos delimitados (bounded contexts) sin caer en monolitos enmarañados ni en fragmentación excesiva.",
+    "como": "La alta cohesión se logra agrupando datos y comportamientos que cambian por la misma razón (de menor a mayor calidad: coincidental, lógica, temporal, procedimental, comunicacional, secuencial y funcional). El bajo acoplamiento se consigue comunicando módulos a través de interfaces estables, eventos o contratos mínimos en lugar de exponer estructuras internas o estado global mutable. Al desacoplar por abstracciones y agrupar por cohesión funcional, el grafo de dependencias se vuelve acíclico y cada pieza puede probarse y desplegarse de forma aislada.",
+    "practicas": [
+      "Objetivo arquitectónico universal: alta cohesión interna y bajo acoplamiento externo.",
+      "Señal de baja cohesión: clases tipo 'Utils' o 'Manager' con métodos sin estado común; señal de alto acoplamiento: 'shotgun surgery' (un cambio obliga a tocar diez módulos) o 'feature envy'.",
+      "Cuidado con el acoplamiento temporal o semántico oculto: dos microservicios que comparten base de datos siguen fuertemente acoplados aunque hablen por HTTP.",
+      "Cohesión vs DRY: a veces conviene tolerar una pequeña duplicación de DTOs entre fronteras para no acoplar dos módulos independientes."
+    ],
+    "ejemplo": "// Alto acoplamiento: OrderService accede directo al esquema interno\n// db.query(\"UPDATE inventory_items SET qty = qty - 1 WHERE ...\");\n\n// Bajo acoplamiento + alta cohesión:\ninterface InventoryPort { reserve(sku: string, qty: number): Promise<void>; }\nclass OrderService {\n  constructor(private readonly inventory: InventoryPort) {}\n}",
+    "entrevista": "La alta cohesión mantiene junto lo que cambia junto, y el bajo acoplamiento asegura que las fronteras entre módulos dependan de contratos mínimos para que un cambio local no propague fallos en cascada."
+  },
+  "Desarrollo iterativo e incremental": {
+    "que": "Estrategia de construcción de software que combina la entrega por partes funcionales acumulativas (incremental) con ciclos repetidos de refinamiento y mejora sobre lo ya construido (iterativo). Cada ciclo produce una versión ejecutable y verificable del sistema.",
+    "para": "Reduce el riesgo técnico y de producto cuando no es viable definir ni validar toda la solución de una sola vez. Permite poner valor en manos de usuarios temprano, validar hipótesis arquitectónicas y ajustar prioridades con base en evidencia real.",
+    "como": "El proyecto se divide en porciones verticales de valor (slices) que atraviesan interfaz, lógica y persistencia en lugar de capas horizontales aisladas. En cada iteración se selecciona un conjunto de incrementos, se diseña lo suficiente para integrarlos, se implementan con pruebas automatizadas y se revisan con stakeholders. La retroalimentación obtenida ajusta tanto el diseño interno de los módulos existentes (iteración) como el orden o alcance de los próximos incrementos.",
+    "practicas": [
+      "Diferencia clave: 'incremental' agrega piezas completas una tras otra (como armar un rompecabezas); 'iterativo' refina un esbozo de baja fidelidad hasta volverlo robusto (como esculpir).",
+      "Evitar construir solo por capas horizontales (todo el backend primero, luego el frontend): impide validar flujo real hasta el final.",
+      "Cada incremento debe quedar integrado, probado y potencialmente desplegable; de lo contrario, las iteraciones solo disfrazan una cascada tardía.",
+      "Controlar la deuda técnica en cada iteración destinando capacidad a refactorización conforme el diseño evoluciona."
+    ],
+    "ejemplo": "Iteración 1 (Incremento mínimo): Login básico + carrito en memoria.\nIteración 2 (Refina + agrega): Persistencia en BD + validación de stock.\nIteración 3 (Refina + agrega): Pasarela de pago + manejo idempotente de reintentos.",
+    "entrevista": "Lo incremental entrega valor por rebanadas funcionales completas, mientras lo iterativo nos permite refinar el diseño y los requisitos a partir de lo que aprendemos en cada entrega."
+  },
+  "DevOps": {
+    "que": "Cultura organizacional, conjunto de prácticas e ingeniería de plataformas que unifica el desarrollo de software (Dev) y la operación de infraestructura (Ops). Busca acortar el ciclo de vida de entrega manteniendo alta fiabilidad, seguridad y observabilidad en producción.",
+    "para": "Elimina el muro de responsabilidad entre quienes escriben código y quienes lo operan, reduciendo despliegues manuales propensos a fallos y tiempos largos de recuperación. Es esencial en organizaciones que necesitan lanzar cambios frecuentes con estabilidad medida (métricas DORA).",
+    "como": "Se apoya en automatización integral: el código de aplicación y la infraestructura como código (IaC con Terraform/OpenTofu) viven en control de versiones. Cada cambio dispara pipelines de CI/CD que ejecutan pruebas, escaneos de seguridad, empaquetado inmutable (contenedores) y despliegues progresivos (canary, blue-green). En producción, la telemetría unificada (logs estructurados, métricas y trazas distribuidas con OpenTelemetry) alimenta alertas basadas en SLOs y postmortems sin culpables (blameless).",
+    "practicas": [
+      "Medir el desempeño con las cuatro métricas DORA: Deployment Frequency, Lead Time for Changes, Change Failure Rate y Time to Restore Service.",
+      "Tratar toda configuración de entorno como código versionado (GitOps) para eliminar el 'configuration drift' entre staging y producción.",
+      "Antipatrón común: renombrar al equipo de sysadmins como 'equipo DevOps' creando otro silo en lugar de dar propiedad end-to-end a los equipos de producto.",
+      "DevOps vs SRE: DevOps define la cultura y colaboración continua; SRE (Site Reliability Engineering) implementa principios de ingeniería de software sobre la operación usando presupuestos de error y SLOs."
+    ],
+    "ejemplo": "# Flujo GitOps típico\ngit push origin main -> CI build & test -> push image:sha\n-> actualiza tag en repo de manifiestos -> ArgoCD sincroniza\n-> monitoreo SLO (latencia p99, tasa 5xx) -> rollback automático si degrada",
+    "entrevista": "DevOps no es un rol ni una herramienta concreta, sino una cultura respaldada por automatización y observabilidad donde el equipo que construye el servicio comparte la responsabilidad de operarlo con fiabilidad."
+  },
+  "Diseño por contratos e inversión de dependencias": {
+    "que": "Dos principios complementarios de arquitectura orientada a objetos y modular: el Diseño por Contrato (DbC, Bertrand Meyer) especifica formalmente precondiciones, postcondiciones e invariantes en las interfaces; la Inversión de Dependencias (DIP, Robert C. Martin) establece que los módulos de alto nivel no deben depender de los de bajo nivel, sino ambos de abstracciones.",
+    "para": "Permite desacoplar la lógica de negocio de detalles volátiles (bases de datos, SDKs externos, transporte) y garantizar que las implementaciones intercambiables respeten exactamente la semántica esperada por el consumidor.",
+    "como": "En DIP, el módulo de dominio define una interfaz o puerto (por ejemplo, un repositorio o pasarela) que describe qué necesita sin conocer la tecnología concreta; la capa de infraestructura implementa esa interfaz y se inyecta en tiempo de ejecución (inyección de dependencias). Sobre esa interfaz, el Diseño por Contrato define qué debe cumplir el llamador antes de invocar (precondición), qué garantiza el proveedor al terminar (postcondición) y qué condiciones del objeto permanecen válidas siempre (invariante), alineándose con el Principio de Sustitución de Liskov (LSP).",
+    "practicas": [
+      "No confundir DIP con Inyección de Dependencias (DI): DIP es el principio arquitectónico de invertir la dirección de la flecha de dependencia; DI es el mecanismo de pasar la implementación desde fuera.",
+      "Al implementar una interfaz en un adaptador, nunca fortalecer las precondiciones ni debilitar las postcondiciones respecto al contrato original (violaría LSP).",
+      "Validar contratos en los límites del sistema (esquemas, tipos, aserciones) y en pruebas de contrato automatizadas cuando las implementaciones cruzan servicios.",
+      "Evitar interfaces espejo 1:1 de una clase concreta sin abstracción real ('interfaces por dogma' que solo duplican firmas)."
+    ],
+    "ejemplo": "interface PaymentGateway {\n  // Pre: amount > 0; Post: retorna txId único o lanza PaymentDeclinedError\n  charge(orderId: string, amount: number): Promise<string>;\n}\nclass CheckoutUseCase {\n  constructor(private readonly gateway: PaymentGateway) {}\n}",
+    "entrevista": "La inversión de dependencias coloca la interfaz del lado del dominio para que la infraestructura dependa de él, y el diseño por contratos garantiza que cualquier implementación de esa interfaz sea sustituible sin sorpresas."
+  },
+  "Extreme Programming (XP)": {
+    "que": "Metodología ágil creada por Kent Beck enfocada en la excelencia técnica de ingeniería para responder al cambio sin degradar la calidad. Combina ciclos de entrega muy cortos con prácticas estrictas de programación, pruebas y diseño continuo.",
+    "para": "Resuelve proyectos con requisitos cambiantes o alta complejidad técnica donde Scrum por sí solo no indica cómo evitar que el código se vuelva frágil. Es la fuente directa de muchas prácticas modernas de ingeniería profesional.",
+    "como": "XP articula cinco valores (comunicación, simplicidad, retroalimentación, coraje y respeto) mediante doce prácticas interdependientes que se refuerzan entre sí. El trabajo avanza en iteraciones semanales con planificación ligera, integración continua varias veces al día y propiedad colectiva del código. Cada funcionalidad se construye mediante Desarrollo Guiado por Pruebas (TDD), programación en pareja (pair programming) para revisión en tiempo real, refactorización constante y diseño simple mantenido por una batería automatizada de tests.",
+    "practicas": [
+      "Las prácticas de XP funcionan como sistema: hacer refactorización continua sin suite sólida de tests automatizados resulta riesgoso.",
+      "TDD sigue el ciclo Red-Green-Refactor: primero escribir la prueba que falla, luego el código mínimo que la pasa y finalmente limpiar el diseño.",
+      "Programación en pareja con rotación frecuente reduce silos de conocimiento (bus factor) y defectos tempranos sin esperar revisiones asíncronas largas.",
+      "XP vs Scrum: Scrum gestiona el ritmo, roles y entrega de producto; XP define las prácticas técnicas de código y verificación necesarias para sostener ese ritmo."
+    ],
+    "ejemplo": "Ciclo TDD en XP:\n1. Red:      test(\"calcula IVA 21%\") -> FAIL\n2. Green:    return base * 1.21;     -> PASS\n3. Refactor: extraer constante TAX_RATE y limpiar casos borde -> PASS",
+    "entrevista": "XP demostró que la agilidad de negocio solo es sostenible a largo plazo cuando se apoya en disciplina técnica como TDD, integración continua, refactorización constante y propiedad colectiva del código."
+  },
+  "Integración y entrega continua (CI-CD)": {
+    "que": "Práctica de ingeniería que automatiza la integración frecuente de código (Continuous Integration) y la preparación o publicación automatizada de artefactos verificados hacia entornos reales (Continuous Delivery / Continuous Deployment).",
+    "para": "Elimina el 'infierno de integración' de ramas de larga duración y reduce el riesgo y esfuerzo manual de cada lanzamiento. Permite detectar regresiones minutos después de un commit y liberar cambios pequeños de forma predecible.",
+    "como": "En CI, cada desarrollador integra cambios en la rama principal diariamente (trunk-based development o ramas muy cortas), disparando un pipeline que compila, ejecuta linters, pruebas unitarias y de integración, y genera un artefacto versionado e inmutable. En Continuous Delivery, ese artefacto queda empaquetado, probado en entornos equivalentes a producción (staging) y listo para desplegarse con una aprobación manual; en Continuous Deployment, si supera todas las puertas automatizadas y análisis de seguridad, se despliega directamente en producción con estrategias progresivas y rollback automático.",
+    "practicas": [
+      "Distinguir Entrega Continua (despliegue automatizable bajo decisión de negocio) de Despliegue Continuo (todo commit verde llega a producción sin intervención humana).",
+      "Mantener el pipeline rápido (< 10-15 min en feedback principal); si tarda una hora, el equipo deja de integrar con frecuencia.",
+      "Usar feature flags para desacoplar despliegue técnico (deployment) de activación comercial (release) cuando una funcionalidad tarda varios días.",
+      "Error común: mantener ramas de feature durante semanas y ejecutar pipelines solo al final; eso sigue siendo integración tardía."
+    ],
+    "ejemplo": "on: [push]\njobs:\n  ci-cd:\n    steps:\n      - run: npm ci && npm run lint && npm test\n      - run: docker build -t app:${{ github.sha }} .\n      - run: ./deploy.sh canary ${{ github.sha }}",
+    "entrevista": "CI garantiza que el código de todo el equipo integre y pase pruebas varias veces al día, mientras CD automatiza el camino hasta producción para que desplegar sea un evento rutinario y reversible."
+  },
+  "Kanban": {
+    "que": "Método de gestión de flujo de trabajo originado en el sistema de producción de Toyota y adaptado al software por David J. Anderson. Se basa en visualizar cada etapa del trabajo, limitar el trabajo en curso (WIP) y optimizar el flujo continuo sin iteraciones de duración fija.",
+    "para": "Ideal para equipos con demanda impredecible o flujo continuo de peticiones —como soporte, plataforma, operaciones o mantenimiento— donde planificar sprints cerrados resulta artificial. También ayuda a detectar cuellos de botella en cualquier proceso existente.",
+    "como": "El tablero Kanban representa explícitamente las columnas del flujo real (p. ej., Por hacer, En análisis, En desarrollo, Revisión, Desplegado) junto con políticas claras de paso entre estados. Cada columna tiene un límite máximo de WIP (Work In Progress): cuando una columna alcanza su tope, nadie inicia nuevas tareas sino que colabora para desbloquear y terminar las existentes (sistema pull). El rendimiento se mide continuamente mediante Lead Time (desde solicitud hasta entrega), Cycle Time (desde inicio de ejecución hasta entrega) y Throughput.",
+    "practicas": [
+      "Kanban no es solo un tablero con columnas: sin límites explícitos de WIP ni gestión activa de bloqueos no estás aplicando Kanban.",
+      "Usar la Ley de Little (Lead Time promedio = WIP / Throughput) para demostrar por qué reducir el trabajo simultáneo acelera la entrega individual.",
+      "Definir clases de servicio explícitas (p. ej., Expedite para incidentes críticos con límite estricto) para evitar que todo se vuelva urgente.",
+      "Kanban vs Scrum: Scrum trabaja por cadencias fijas (sprints) con roles definidos y cambio restringido durante el sprint; Kanban es flujo continuo con límites de WIP y métricas de ciclo."
+    ],
+    "ejemplo": "Tablero con límites WIP:\n[Backlog] -> [Análisis (2)] -> [Dev (3)] -> [Code Review (2)] -> [Done]\nSi Code Review tiene 2/2 tarjetas, Dev no puede mover otra: debe revisar primero.",
+    "entrevista": "Kanban optimiza la velocidad y previsibilidad de entrega limitando el trabajo en progreso mediante un sistema pull, porque empezar menos cosas a la vez hace que las tareas terminen antes."
+  },
+  "Modelo V (V-model)": {
+    "que": "Extensión disciplinada del modelo en cascada en la que cada fase de especificación y diseño del lado descendente se empareja directamente con una fase correspondiente de verificación y validación en el lado ascendente.",
+    "para": "Se emplea en sistemas críticos, regulados o embebidos (automoción, aeronáutica, dispositivos médicos, banca core) donde los requisitos son estables y la normativa exige trazabilidad estricta y evidencia formal de pruebas por nivel.",
+    "como": "La rama izquierda desciende desde los requisitos de usuario y negocio hacia la especificación del sistema, el diseño arquitectónico y el diseño detallado de módulos hasta llegar a la codificación en el vértice inferior. Desde el momento en que se redacta cada nivel izquierdo, se diseñan los casos de prueba de su nivel espejo en la rama derecha: pruebas unitarias frente al diseño detallado, de integración frente a la arquitectura, de sistema frente a la especificación técnica y de aceptación (UAT) frente a los requisitos de usuario. La ejecución asciende validando cada nivel antes de liberar.",
+    "practicas": [
+      "Su mayor fortaleza es exigir el diseño de pruebas en paralelo con cada especificación, evitando descubrir ambigüedades recién al final.",
+      "Mantener una matriz de trazabilidad bidireccional entre requisito, componente y caso de prueba para superar auditorías (p. ej., ISO 26262 o DO-178C).",
+      "Limitación clave: al igual que Cascada, asume requisitos estables desde el inicio y produce software ejecutable tarde, por lo que falla en productos con alta incertidumbre.",
+      "Modelo V vs Cascada: ambos son secuenciales, pero el Modelo V formaliza la correspondencia 1:1 entre niveles de diseño y niveles de prueba desde fases tempranas."
+    ],
+    "ejemplo": "Requisitos de usuario <================> Pruebas de Aceptación (UAT)\n  Requisitos de sistema <==============> Pruebas de Sistema\n    Diseño arquitectónico <============> Pruebas de Integración\n      Diseño detallado <===============> Pruebas Unitarias\n                        \\ Codificación /",
+    "entrevista": "El Modelo V mejora la cascada clásica vinculando cada nivel de especificación con su nivel espejo de pruebas desde el inicio, lo que lo hace ideal para sistemas críticos con trazabilidad regulada pero poco flexible al cambio."
+  },
+  "Modelo en cascada": {
+    "que": "Modelo de proceso secuencial y lineal del SDLC (formalizado a partir de la descripción de Winston Royce en 1970) en el que cada fase debe completarse, aprobarse y documentarse formalmente antes de iniciar la siguiente.",
+    "para": "Funciona cuando los requisitos están completamente claros, cerrados y son poco propensos a cambiar, como migraciones determinísticas, contratos regulatorios cerrados o hardware/firmware con ciclos de fabricación rígidos.",
+    "como": "El proyecto avanza unidireccionalmente por etapas definidas: análisis de requisitos, diseño del sistema, implementación, verificación/pruebas, despliegue y mantenimiento. Cada etapa culmina en una puerta de revisión (stage-gate) donde se firma un artefacto entregable —como el documento de especificación de requisitos o el diseño de arquitectura— que sirve de entrada congelada para la siguiente fase. Como el código ejecutable aparece en la mitad tardía del proyecto, los errores de requisitos o de integración suelen detectarse en la fase de pruebas, generando retrabajo costoso.",
+    "practicas": [
+      "Úsalo solo cuando el dominio sea conocido, el alcance sea estable y el costo de cambiar en producción supere la incertidumbre inicial.",
+      "Trampa histórica: el artículo original de Royce de 1970 ya advertía que una cascada estricta sin retroalimentación ni prototipos era riesgosa y propensa a fallar.",
+      "Si el contrato exige hitos tipo cascada (alcance/presupuesto fijo), reduce riesgo incorporando prototipos tempranos y entregas internas verificables en la fase de análisis.",
+      "Cascada vs Iterativo: Cascada busca predecir todo al principio para evitar cambios; los modelos iterativos asumen el cambio y reducen el lote de verificación."
+    ],
+    "ejemplo": "Flujo secuencial con puertas:\n[Requisitos SRS] --(sign-off)--> [Arquitectura] --(sign-off)--> [Código]\n  --> [QA completo] --> [Release único] --> [Mantenimiento]",
+    "entrevista": "El modelo en cascada optimiza la predictibilidad documental cuando los requisitos son estables y bien conocidos, pero su costo de cambio crece exponencialmente si el cliente descubre qué necesita recién al ver el producto final."
+  },
+  "Modelo espiral": {
+    "que": "Modelo evolutivo de ciclo de vida propuesto por Barry Boehm (1986) que combina el enfoque iterativo y el prototipado con un análisis sistemático y explícito de riesgos en cada vuelta. Cada ciclo alrededor de la espiral amplía el alcance y la madurez del producto.",
+    "para": "Indicado para sistemas grandes, complejos, de alto costo o con incertidumbre tecnológica severa —como infraestructura crítica, sistemas aeroespaciales o plataformas nuevas— donde un fallo de viabilidad sería catastrófico.",
+    "como": "Cada iteración recorre cuatro cuadrantes consecutivos: 1) determinación de objetivos, alternativas y restricciones; 2) evaluación de alternativas e identificación y mitigación de riesgos (mediante prototipos, simulaciones o benchmarks); 3) desarrollo y verificación del nivel siguiente del producto; y 4) planificación de la siguiente vuelta con revisión de stakeholders. El radio de la espiral representa el costo acumulado y el ángulo indica el progreso dentro de la fase actual, permitiendo abortar o pivotar temprano si un riesgo resulta inaceptable.",
+    "practicas": [
+      "Su elemento diferenciador no es iterar, sino estar dirigido por el riesgo (risk-driven): cada vuelta ataca primero el riesgo técnico o de negocio más peligroso.",
+      "Requiere experiencia real en gestión de riesgos; si se subestiman o se omiten prototipos de prueba, degenera en burocracia costosa.",
+      "Poco rentable para proyectos pequeños o de bajo riesgo debido al overhead de evaluación y revisión en cada ciclo.",
+      "Espiral vs Ágil: ambos iteran, pero el Modelo Espiral enfatiza análisis formal de riesgos, alternativas y compromisos contractuales por ciclo; Ágil enfatiza entrega continua de valor ligero."
+    ],
+    "ejemplo": "Vuelta 1 (Riesgo: latencia de algoritmo): Objetivos -> Prototipo benchmark -> Validar p99 -> Planificar Vuelta 2.\nVuelta 2 (Riesgo: concurrencia): Objetivos -> PoC carga -> Core funcional -> Planificar despliegue.",
+    "entrevista": "La esencia del modelo espiral es que las decisiones de cada iteración las dicta el análisis de riesgos: primero resuelves con prototipos lo que podría hacer fracasar el proyecto antes de comprometer la construcción completa."
+  },
+  "Prototipado": {
+    "que": "Técnica de ingeniería de requisitos y modelo de desarrollo que consiste en construir versiones tempranas, parciales o simuladas de un sistema para explorar soluciones, reducir ambigüedad y validar expectativas con usuarios antes de la implementación definitiva.",
+    "para": "Resuelve el problema de que los usuarios rara vez saben expresar con precisión lo que necesitan hasta que interactúan con algo concreto. Se usa en descubrimiento de requisitos de UX/UI, validación de flujos complejos y pruebas de viabilidad técnica (PoC).",
+    "como": "Se parte de los requisitos iniciales o dudas abiertas para definir el alcance acotado del prototipo (baja fidelidad como wireframes o papel, o alta fidelidad interactivo/funcional). Los usuarios o stakeholders prueban el artefacto en sesiones guiadas para detectar omisiones, malentendidos de negocio o fricción de uso. Existen dos variantes operativas: el prototipo desechable (throwaway), que se descarta tras validar los requisitos para construir el sistema limpio desde cero, y el prototipo evolutivo, que comienza con los requisitos más claros y se refina progresivamente hasta convertirse en el producto final.",
+    "practicas": [
+      "Nunca conviertas un prototipo desechable ('código rápido sin tests ni arquitectura') en producción bajo presión de fechas: es la vía más rápida hacia deuda técnica crítica.",
+      "Alinear expectativas con el cliente: un prototipo visual realista puede hacer creer que el sistema ya está terminado al 90 %, ocultando toda la lógica backend pendiente.",
+      "Elegir la fidelidad mínima necesaria: wireframes baratos para validar flujo de requisitos; prototipo ejecutable o PoC solo para validar interacción crítica o riesgo técnico.",
+      "En elicitación de requisitos, combinar prototipado con criterios de aceptación explícitos para que el aprendizaje quede documentado y sea verificable."
+    ],
+    "ejemplo": "Tipo        | Fidelidad | Destino del código | Uso principal\n------------+-----------+--------------------+---------------------------\nWireframe   | Baja      | Desechable         | Flujo y alcance de pantalla\nClick-dummy | Media-Alta| Desechable         | Validación UX con usuarios\nPoC / Spike | Funcional | Desechable/Refinado| Viabilidad técnica / APIs",
+    "entrevista": "El prototipado es una herramienta de descubrimiento y validación temprana de requisitos: permite equivocarse barato frente al usuario, siempre que se respete la frontera entre un prototipo desechable y código de producción."
+  },
+  "Scrum": {
+    "que": "Marco de trabajo ágil liviano (definido en la Guía de Scrum) para desarrollar y mantener productos complejos mediante ciclos de tiempo fijo llamados Sprints. Estructura la colaboración en tres responsabilidades, tres artefactos con sus compromisos y cinco eventos.",
+    "para": "Ayuda a equipos multidisciplinarios a entregar incrementos de valor de forma regular, mantener visibilidad del progreso y adaptarse al cambio mediante empirismo (transparencia, inspección y adaptación). Se usa en desarrollo de producto donde los requisitos evolucionan sprint a sprint.",
+    "como": "El Product Owner ordena el Product Backlog (compromiso: Product Goal). Al inicio de cada Sprint (1 a 4 semanas), el equipo realiza la Sprint Planning seleccionando ítems para el Sprint Backlog (compromiso: Sprint Goal). Cada día los Developers sincronizan su avance hacia la meta en un Daily Scrum de 15 minutos con apoyo del Scrum Master para eliminar impedimentos. Al cierre, el Incremento terminado (compromiso: Definition of Done) se inspecciona con stakeholders en la Sprint Review y el equipo ajusta su forma de trabajar en la Sprint Retrospective.",
+    "practicas": [
+      "Proteger la Sprint Goal: el alcance puede renegociarse con el Product Owner si aparece información nueva, pero cambiar prioridades arbitrariamente a mitad de sprint destruye la previsibilidad.",
+      "Nunca sacrificar la Definition of Done para 'terminar más puntos': un ítem sin pruebas o integración real no es un Incremento.",
+      "La Daily Scrum es una reunión de sincronización entre Developers para ajustar el plan del día, no un reporte de estado jerárquico para jefes.",
+      "Scrum vs Kanban: Scrum impone sprints acotados y cadencia fija de revisión; Kanban gestiona flujo continuo sin sprints obligatorios."
+    ],
+    "ejemplo": "Estructura oficial Scrum:\nRoles (3):       Product Owner, Scrum Master, Developers\nArtefactos (3):  Product Backlog (Product Goal),\n                 Sprint Backlog (Sprint Goal),\n                 Increment (Definition of Done)\nEventos (5):     Sprint, Planning, Daily, Review, Retrospective",
+    "entrevista": "Scrum no es una receta de productividad sino un marco empírico: sus eventos y artefactos existen para hacer transparentes los impedimentos y validar incrementos terminados en cada Sprint."
+  }
+}

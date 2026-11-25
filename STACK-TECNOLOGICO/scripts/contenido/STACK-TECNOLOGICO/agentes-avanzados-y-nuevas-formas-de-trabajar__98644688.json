@@ -1,0 +1,132 @@
+{
+  "Sistema multiagente": {
+    "que": "Arquitectura de software compuesta por múltiples agentes autónomos basados en LLM, cada uno con su propio rol, ventana de contexto, herramientas y memoria, que colaboran o compiten para resolver objetivos complejos. A diferencia de un agente monolítico con un único prompt, distribuye las responsabilidades entre especialistas coordinados mediante un grafo de estados, paso de mensajes o un supervisor central.",
+    "para": "Resuelve la degradación de rendimiento de un solo agente cuando el contexto crece en exceso, el número de herramientas satura al modelo o la tarea exige perspectivas contrapuestas (como planificar, implementar y auditar). Se usa en pipelines de desarrollo automatizado, investigación paralela y automatización operativa donde distintas fases requieren permisos aislados.",
+    "como": "Un agente orquestador o grafo de ejecución (como LangGraph, AutoGen o CrewAI) recibe el objetivo inicial y lo descompone en subtareas tipadas. Cada subtarea se despacha mediante paso de mensajes o protocolos estándar como A2A (Agent-to-Agent) hacia un agente especialista, el cual ejecuta su propio bucle ReAct sobre un contexto aislado y devuelve un artefacto estructurado. El coordinador agrega las salidas parciales, resuelve conflictos mediante un agente evaluador o reglas deterministas y actualiza el estado compartido hasta cumplir la condición de parada.",
+    "practicas": [
+      "Define contratos de entrada y salida tipados (JSON Schema o Pydantic) entre agentes para evitar que errores de formato se propaguen en cascada.",
+      "Sistema multiagente vs agente único: empieza con un solo agente bien equipado; escala a multiagente solo cuando necesites aislamiento de permisos, paralelismo real o separación estricta entre autor y revisor.",
+      "Impón límites globales de presupuesto de tokens y máximo de transferencias (max_handoffs) para prevenir bucles infinitos de delegación.",
+      "Evita reenviar el historial conversacional completo entre nodos; transfiere resúmenes concisos o referencias a artefactos para contener latencia y coste."
+    ],
+    "ejemplo": "graph.add_node(\"planner\", planner_agent)\ngraph.add_node(\"coder\", coder_agent)\ngraph.add_node(\"reviewer\", reviewer_agent)\ngraph.add_conditional_edges(\"reviewer\", route_on_approval, {\n    \"approved\": END,\n    \"rejected\": \"coder\",\n})",
+    "entrevista": "Un sistema multiagente intercambia simplicidad de ejecución por aislamiento de contexto, especialización de herramientas y verificación independiente entre roles."
+  },
+  "Skills de agente": {
+    "que": "Paquetes modulares y portables de instrucciones procedimentales, scripts auxiliares y referencias (estandarizados en formatos como Agent Skills mediante archivos SKILL.md) que dotan a un agente de capacidades especializadas bajo demanda. Funcionan como manuales operativos cargados dinámicamente en el contexto solo cuando la tarea del usuario coincide con su ámbito.",
+    "para": "Resuelve el problema de inflar el system prompt con decenas de guías de dominio que consumen tokens y degradan la atención del modelo en tareas cotidianas. Se utiliza para estandarizar flujos repetibles de un equipo —como migraciones, auditorías o despliegues— sin necesidad de ajustar pesos del modelo ni construir servidores MCP dedicados para cada procedimiento.",
+    "como": "Al iniciar la sesión, el runtime del agente indexa únicamente el nombre y la descripción breve del frontmatter YAML de cada SKILL.md disponible, manteniendo mínimo el consumo inicial de tokens. Cuando el agente identifica que la petición coincide con el disparador semántico de una skill, lee el archivo completo para inyectar el procedimiento detallado en su contexto activo (progressive disclosure). A continuación, sigue los pasos indicados y ejecuta los scripts o plantillas empaquetados dentro de la skill utilizando sus herramientas estándar de consola o archivos.",
+    "practicas": [
+      "Skills de agente vs MCP: usa MCP para exponer conectividad, estado y herramientas externas; usa skills para enseñar al agente las reglas de negocio y el orden operativo en que debe usarlas.",
+      "Redacta el campo description del frontmatter con escenarios de activación concretos y verbos claros, ya que es la única señal empleada para el enrutamiento inicial.",
+      "Mantén el SKILL.md conciso (idealmente bajo 500 líneas) y delega documentación extensa o tablas a archivos de referencia secundarios cargados solo si hacen falta.",
+      "Encapsula validaciones deterministas o transformaciones repetitivas en scripts ejecutables dentro de la carpeta de la skill en lugar de pedir al LLM que las improvise cada vez."
+    ],
+    "ejemplo": "---\nname: db-migration-check\ndescription: Valida migraciones SQL antes de merge; usar al modificar schema/ o migrations/.\n---\n1. Ejecuta `scripts/check_locks.sh` sobre el diff actual.\n2. Comprueba que toda columna `NOT NULL` tenga `DEFAULT` o backfill en dos fases.",
+    "entrevista": "Las skills de agente aplican carga progresiva de conocimiento procedimental en tiempo de ejecución, evitando saturar el system prompt sin perder especialización operativa."
+  },
+  "Spec-driven development": {
+    "que": "Metodología de ingeniería de software asistida por IA en la que una especificación estructurada y versionada (requisitos, contratos de API, invariantes y criterios de aceptación) actúa como fuente de verdad primaria antes de generar código. El código pasa a ser un artefacto derivado que se valida continuamente contra dicha especificación.",
+    "para": "Mitiga la deriva arquitectónica, las alucinaciones de requisitos y la deuda técnica propias de la generación ad hoc cuando se construyen sistemas complejos o mantenidos por equipos. Se usa en el desarrollo de funcionalidades críticas, APIs públicas y refactorizaciones amplias donde los agentes necesitan restricciones explícitas y verificables.",
+    "como": "El ingeniero y el agente redactan primero una especificación versionada en el repositorio (Markdown estructurado, OpenAPI, JSON Schema o escenarios BDD/Gherkin) detallando entradas, salidas, invariantes y manejo de errores. A partir de esa spec, un agente planificador deriva tareas atómicas y genera la suite de pruebas automáticas antes o en paralelo a la implementación. Un agente ejecutor produce el código necesario para satisfacer los tests y linters, mientras un verificador comprueba que no existan divergencias entre la conducta implementada y el contrato original.",
+    "practicas": [
+      "Versiona las especificaciones junto al código en Git para que cualquier cambio de comportamiento quede revisado en el mismo Pull Request.",
+      "Spec-driven development vs Vibe coding: el vibe coding optimiza la velocidad de prototipado desechable; spec-driven optimiza mantenibilidad, trazabilidad y fiabilidad en producción.",
+      "Incluye invariantes negativas ('qué NO debe ocurrir') y códigos de error explícitos, ya que los modelos tienden a asumir únicamente el camino feliz.",
+      "Vincula cada requisito de la especificación con al menos una prueba automatizada (unitaria, de contrato o property-based) para evitar que la documentación quede desfasada."
+    ],
+    "ejemplo": "# Spec: POST /v1/transfers\n- Invariante: idempotency_key obligatorio (UUIDv4); reintentos devuelven HTTP 200 con mismo transfer_id.\n- Restricción: amount > 0 en centavos enteros; rechazar flotantes con HTTP 422.\n- Concurrencia: control optimista por versión de cuenta; conflicto devuelve HTTP 409.",
+    "entrevista": "En spec-driven development la especificación ejecutable gobierna a los agentes y convierte la generación de código en un proceso verificable frente a contrato."
+  },
+  "Subagentes": {
+    "que": "Instancias de agente efímeras o especializadas que un agente principal invoca programáticamente para delegar una subtarea acotada, ejecutándose con su propia ventana de contexto, prompt de sistema y subconjunto de herramientas. Al finalizar, devuelven únicamente el resultado o resumen estructurado al agente padre.",
+    "para": "Evita contaminar o desbordar la ventana de contexto del agente principal durante exploraciones extensas, lecturas masivas de archivos o ejecuciones independientes en paralelo. Se emplea habitualmente para investigar bases de código grandes, ejecutar auditorías desde distintos ángulos (seguridad, rendimiento) o paralelizar subtareas sin bloquear el hilo principal.",
+    "como": "El agente padre invoca una herramienta de delegación indicando el rol, las restricciones de entorno (como modo solo lectura o workspace aislado mediante git worktree) y un prompt autónomo con criterios claros de cierre. El runtime instancia una conversación hija limpia sin arrastrar el historial ruidoso del padre, ejecuta el ciclo autónomo de herramientas del subagente y entrega su salida final como respuesta al padre. Cuando varios subagentes editan archivos en paralelo, el orquestador aísla sus copias de trabajo y fusiona los resultados al terminar.",
+    "practicas": [
+      "Aplica mínimo privilegio: da herramientas de solo lectura a subagentes investigadores y workspaces aislados (ramas o worktrees) a subagentes escritores concurrentes.",
+      "Redacta prompts autosuficientes con rutas exactas, contexto relevante y formato de retorno esperado, porque el subagente no conoce el historial previo del padre.",
+      "Subagentes vs Skills: una skill inyecta instrucciones en la misma ventana de contexto; un subagente aísla trabajo pesado en una sesión independiente.",
+      "Restringe la profundidad de anidación entre subagentes para evitar explosiones de coste, latencia y trazas difíciles de depurar."
+    ],
+    "ejemplo": "{\n  \"tool\": \"invoke_subagent\",\n  \"arguments\": {\n    \"type\": \"research\",\n    \"role\": \"Security Auditor\",\n    \"workspace\": \"inherit\",\n    \"prompt\": \"Revisa src/auth/ buscando fugas de tokens JWT en logs; devuelve archivo, línea y severidad.\"\n  }\n}",
+    "entrevista": "Los subagentes actúan como subrutinas con contexto aislado que protegen la ventana de atención del agente coordinador y habilitan paralelismo seguro."
+  },
+  "Timeouts de agente": {
+    "que": "Límites temporales máximos impuestos sobre cada capa de ejecución de un agente autónomo: por petición al LLM, por invocación de herramienta y por sesión o tarea completa (wall-clock timeout). Operan como cortacircuitos temporales para evitar ejecuciones bloqueadas o latencias ilimitadas.",
+    "para": "Protege los recursos de cómputo, las conexiones abiertas y los presupuestos de SLA en producción cuando un proveedor de inferencia se degrada, una API externa no contesta o un comando queda colgado esperando entrada por consola. Es obligatorio en agentes interactivos, workers asíncronos y pipelines CI/CD.",
+    "como": "El orquestador envuelve cada nivel de ejecución con temporizadores jerárquicos (como asyncio.wait_for en Python o context.WithTimeout en Go). Para llamadas al LLM se configuran tanto el timeout hasta el primer token (TTFT) como el tiempo total de respuesta en streaming; para procesos locales de herramientas se envía primero SIGTERM y, tras un periodo de gracia, SIGKILL si exceden su cuota. Al vencer un temporizador, el runtime captura el fallo, guarda el último checkpoint válido y entrega al agente un mensaje de error recuperable o ejecuta una ruta de aborto controlado.",
+    "practicas": [
+      "Configura tres umbrales independientes: timeout de herramienta (segundos), timeout de turno del modelo (decenas de segundos) y timeout global de tarea (minutos).",
+      "Timeouts de agente vs Límite de pasos (max_steps): el timeout acota tiempo real de reloj ante bloqueos de red o procesos colgados, mientras max_steps acota iteraciones lógicas rápidas.",
+      "Ejecuta comandos de herramientas sin TTY interactiva y con banderas no interactivas (--yes, CI=true), ya que un prompt esperando stdin siempre agotará el timeout.",
+      "Cuando caduque una herramienta no crítica, devuelve el timeout como observación al agente para que reintente o cambie de estrategia antes de matar toda la sesión."
+    ],
+    "ejemplo": "async def run_tool_with_timeout(call, timeout_s: float = 15.0):\n    try:\n        return await asyncio.wait_for(execute_tool(call), timeout=timeout_s)\n    except asyncio.TimeoutError:\n        return {\"error\": f\"Tool {call.name} excedió {timeout_s}s; simplifica o cambia de vía.\"}",
+    "entrevista": "Los timeouts jerárquicos en LLM, herramientas y sesión global garantizan disponibilidad y evitan procesos zombis cuando la red, una herramienta o el modelo se bloquean."
+  },
+  "Trazabilidad de agente": {
+    "que": "Capacidad de registrar, correlacionar y reconstruir de extremo a extremo cada paso de razonamiento, prompt exacto, invocación de herramienta, cambio de estado y consumo de tokens durante la ejecución de un agente. Se implementa mediante trazas distribuidas jerárquicas basadas en estándares como OpenTelemetry GenAI.",
+    "para": "Resuelve la opacidad de los sistemas probabilísticos cuando producen respuestas erróneas, bucles inesperados o picos de gasto en producción. Es indispensable para depurar fallos complejos, auditar cumplimiento normativo, imputar costes por tenant y construir datasets de evaluación continua a partir de ejecuciones reales.",
+    "como": "El runtime instrumenta el bucle agéntico creando un trace_id raíz por tarea y anidando spans padre-hijo para cada turno del modelo (llm.call), llamada a herramienta (tool.execute), consulta RAG (retrieval.query) o delegación a subagente (agent.handoff), propagando contexto W3C Trace Context. Cada span registra metadatos normalizados (modelo, latencia, TTFT, tokens consumidos, códigos de error) y se exporta de forma asíncrona vía OTLP hacia backends como Langfuse, Arize Phoenix, LangSmith o Grafana Tempo. Antes de persistir payloads completos, un filtro de saneamiento enmascara credenciales y datos personales (PII).",
+    "practicas": [
+      "Adopta convenciones semánticas abiertas como OpenTelemetry GenAI (gen_ai.usage.input_tokens, gen_ai.request.model) para evitar vendor lock-in en observabilidad.",
+      "Aplica scrubbing de secretos, cabeceras Authorization y PII antes de exportar spans; los agentes suelen leer archivos de configuración o respuestas con datos sensibles.",
+      "Trazabilidad de agente vs Logging tradicional: los logs planos pierden la relación causal entre un subagente, sus reintentos y la inferencia que los disparó; las trazas conservan el árbol completo.",
+      "Etiqueta cada traza con la versión del prompt, el hash de las herramientas y el identificador de commit para reproducir regresiones con exactitud."
+    ],
+    "ejemplo": "with tracer.start_as_current_span(\"agent.step\") as span:\n    span.set_attribute(\"gen_ai.request.model\", model_name)\n    span.set_attribute(\"agent.step_index\", step_idx)\n    res = invoke_llm(messages)\n    span.set_attribute(\"gen_ai.usage.output_tokens\", res.usage.output_tokens)",
+    "entrevista": "La trazabilidad agéntica convierte una ejecución probabilística opaca en un grafo de spans auditable con causalidad, latencia y coste por cada paso."
+  },
+  "Verificación de acciones del agente": {
+    "que": "Conjunto de controles deterministas o independientes que validan la seguridad, validez de argumentos y cumplimiento de políticas sobre las acciones propuestas por un agente antes y después de ejecutarse. Funciona como una capa de autorización y comprobación de efectos entre el modelo de lenguaje y los sistemas reales.",
+    "para": "Impide que una alucinación, un error de planificación o una inyección de prompts indirecta ejecute operaciones destructivas irreversibles, exfiltre datos o introduzca fallos silenciosos. Es fundamental en agentes con acceso de escritura en código, bases de datos, infraestructura cloud o transacciones externas.",
+    "como": "El runtime intercepta cada estructura tool_call emitida por el modelo mediante un middleware de políticas antes de invocar el ejecutor real, validando esquemas, listas blancas de comandos o reglas declarativas (p. ej. OPA/Rego). Las operaciones de solo lectura avanzan automáticamente, mientras las mutantes pueden ejecutarse primero en modo dry run, dentro de un sandbox aislado o quedar en pausa solicitando aprobación humana (Human-in-the-Loop, HITL). Tras la ejecución, una fase de posverificación comprueba invariantes reales mediante tests, compiladores, linters o consultas de estado antes de dar la acción por válida.",
+    "practicas": [
+      "Clasifica las herramientas por nivel de impacto (solo lectura, reversible local, irreversible externo) y reserva el bloqueo HITL para acciones irreversibles para evitar fatiga de aprobación.",
+      "Valida rutas de archivos, consultas SQL y parámetros de shell en código determinista tras la salida del LLM; nunca confíes la seguridad únicamente a instrucciones en el prompt.",
+      "Pre-verificación (policy/dry run) vs Posverificación (tests/aserciones): la pre-verificación evita daños antes de actuar y la posverificación demuestra que el cambio cumplió el objetivo.",
+      "Separa el contexto del ejecutor del de un verificador independiente en tareas críticas para evitar el sesgo de confirmación del propio modelo."
+    ],
+    "ejemplo": "READ_ONLY_SQL = (\"SELECT\", \"EXPLAIN\")\ndef verify_sql_action(query: str) -> None:\n    keyword = query.strip().split()[0].upper()\n    if keyword not in READ_ONLY_SQL:\n        raise PermissionError(f\"Operación {keyword} bloqueada sin aprobación HITL\")",
+    "entrevista": "El control de acceso y la integridad nunca se delegan al prompt del LLM: toda acción con efectos secundarios requiere validación determinista, sandboxing o HITL."
+  },
+  "Vibe coding": {
+    "que": "Estilo de desarrollo exploratorio asistido por IA (acuñado por Andrej Karpathy en 2025) en el que el usuario guía la creación de software mediante lenguaje natural o voz, acepta los cambios generados por el agente e itera pegando errores sin revisar en profundidad el código producido. Privilegia la fluidez creativa y la velocidad inicial sobre el diseño arquitectónico formal.",
+    "para": "Sirve para validar ideas de producto en horas, construir prototipos desechables, demos interactivas o scripts personales de bajo riesgo donde el coste de diseñar es mayor que el de volver a empezar. No resulta adecuado para software de producción con requisitos de seguridad, escalabilidad, cumplimiento o mantenimiento colaborativo a largo plazo.",
+    "como": "El desarrollador interactúa con un IDE o agente de codificación (como Cursor, Windsurf, Claude Code o Replit Agent) describiendo funcionalidades de alto nivel y dejando que el modelo cree archivos, instale paquetes y lance el servidor local. Ante errores en consola o defectos visuales, copia la traza de error o una captura al chat para que el agente parchee el código automáticamente en bucles rápidos. Al carecer de especificaciones formales y pruebas diseñadas por humanos, la estabilidad depende de la ventana de contexto activa y de la capacidad del modelo para no introducir regresiones al editar.",
+    "practicas": [
+      "Limita el vibe coding a prototipos, pruebas de concepto y utilidades temporales; si un proyecto pasa a producción, cúbrelo con especificaciones y tests antes de seguir escalando.",
+      "Realiza commits frecuentes en Git antes de cada instrucción grande para revertir limpiamente cuando el agente entre en un bucle de arreglos que rompen otras partes.",
+      "Vibe coding vs Ingeniería asistida por IA: en ingeniería profesional la IA acelera la escritura, pero el desarrollador entiende el diff, diseña los límites y responde por las pruebas.",
+      "Mantén activos al menos un linter y comprobación estricta de tipos (TypeScript strict, mypy, ruff) para detectar fallos estructurales que el agente oculta con parches."
+    ],
+    "ejemplo": "Prompt 1: \"Crea una web Next.js con Tailwind para registrar hábitos usando localStorage.\"\nPrompt 2: \"Sale TypeError: Cannot read properties of undefined (reading 'map'). Arregla eso.\"\nPrompt 3: \"Añade modo oscuro y gráfica semanal con diseño minimalista.\"",
+    "entrevista": "El vibe coding maximiza la velocidad de exploración al ceder el control de implementación al agente, pero requiere una transición deliberada hacia pruebas y especificaciones antes de ir a producción."
+  },
+  "Voice agent": {
+    "que": "Agente conversacional autónomo capaz de escuchar audio humano en tiempo real, comprender la intención, invocar herramientas o sistemas de negocio y responder mediante voz sintetizada con fluidez natural. Integra transporte de audio de baja latencia, detección de actividad de voz (VAD), razonamiento LLM y gestión de turnos conversacionales.",
+    "para": "Resuelve flujos de interacción donde las manos o la vista están ocupadas o hablar resulta más rápido y natural que escribir, como atención telefónica automatizada, asistentes clínicos, soporte al cliente o conducción. Se aplica cuando el usuario espera tiempos de respuesta cercanos a una conversación humana (< 500–800 ms) y posibilidad de interrumpir en cualquier momento.",
+    "como": "El cliente captura audio PCM/Opus y lo envía en streaming por WebRTC o WebSockets hacia un servidor de medios (como LiveKit o Pipecat). Un detector VAD (p. ej. Silero) junto a un modelo de fin de turno determina cuándo terminó de hablar el usuario o cuándo interrumpe al agente (barge-in), cancelando de inmediato la síntesis saliente y truncando la respuesta pendiente. El procesamiento avanza bien mediante una tubería en streaming (STT -> LLM -> TTS frase a frase) o mediante un modelo multimodal nativo voz a voz, disparando llamadas a herramientas en paralelo.",
+    "practicas": [
+      "Usa WebRTC frente a WebSockets hacia el dispositivo del usuario final para beneficiarte de transporte UDP, jitter buffers adaptativos y cancelación acústica de eco (AEC).",
+      "Implementa barge-in limpio: al detectar habla entrante durante la locución del agente, vacía el buffer de reproducción al instante y ajusta el historial con solo lo que el usuario llegó a oír.",
+      "Pipeline en cascada (STT+LLM+TTS) vs Modelo nativo Voz a Voz: la cascada brinda mayor control, auditabilidad textual y menor coste; el modelo nativo minimiza latencia y capta emoción.",
+      "Adapta el texto del LLM para ser escuchado (frases cortas, sin markdown ni URLs literales) y sintetiza por chunks desde el primer signo de puntuación."
+    ],
+    "ejemplo": "pipeline = Pipeline([\n    transport.input(),      # Audio WebRTC + cancelación de eco\n    SileroVADAnalyzer(),    # Detecta habla, silencios y barge-in\n    DeepgramSTT(),          # Transcripción en streaming\n    OpenAILLM(tools=[check_booking]),\n    CartesiaTTS(),          # Síntesis incremental por frase\n    transport.output(),\n])",
+    "entrevista": "El desafío principal de un voice agent es sostener latencia extremo a extremo por debajo de ~500 ms mientras coordina turnos, cancelación de eco, barge-in y llamadas a herramientas."
+  },
+  "Voz a voz": {
+    "que": "Arquitectura de modelos multimodales nativos (Speech-to-Speech, S2S) que procesan audio hablado directamente como entrada y generan audio hablado como salida dentro de un único modelo unificado, sin requerir una etapa intermedia obligatoria de transcripción a texto para razonar. Suele exponerse mediante protocolos bidireccionales en tiempo real como una Realtime API.",
+    "para": "Elimina la latencia acumulada y la pérdida de señales acústicas (tono, emoción, pausas, énfasis, acento o ruido ambiental) propias de las arquitecturas en cascada STT -> LLM -> TTS. Se emplea en asistentes de voz de máxima naturalidad, interpretación simultánea y experiencias interactivas donde la prosodia cambia el significado.",
+    "como": "El audio capturado se fragmenta en tramas de pocos milisegundos (por ejemplo PCM16 a 24 kHz) y un codificador neuronal lo proyecta directamente como tokens o representaciones continuas dentro del Transformer multimodal. El modelo razona conjuntamente sobre contexto acústico y semántico, pudiendo ejecutar function calling para consultar sistemas externos antes o durante la respuesta. En la salida, genera tokens de audio en streaming hacia un decodificador acústico integrado que emite fragmentos de voz en paralelo, permitiendo interrupción instantánea desde el servidor mediante VAD integrado.",
+    "practicas": [
+      "Voz a voz nativo vs Cascada (STT+LLM+TTS): S2S logra menor latencia (300–500 ms) y entiende prosodia, mientras la cascada facilita aplicar guardrails deterministas sobre texto y combinar proveedores más baratos.",
+      "Habilita eventos asíncronos de transcripción paralela en la sesión Realtime para alimentar sistemas de trazabilidad, RAG, cumplimiento normativo y analítica.",
+      "Controla la duración de la ventana de audio y compacta turnos antiguos: los tokens de audio consumen contexto y presupuesto mucho más rápido que el texto equivalente.",
+      "Define directrices explícitas de ritmo, idioma y registro vocal en el prompt de sistema, ya que el modelo adapta su estilo acústico según el contexto conversacional."
+    ],
+    "ejemplo": "{\n  \"type\": \"session.update\",\n  \"session\": {\n    \"modalities\": [\"audio\", \"text\"],\n    \"voice\": \"alloy\",\n    \"input_audio_format\": \"pcm16\",\n    \"turn_detection\": { \"type\": \"server_vad\", \"silence_duration_ms\": 400 }\n  }\n}",
+    "entrevista": "Los modelos voz a voz unifican percepción acústica y síntesis en un solo modelo multimodal, reduciendo latencia y preservando la prosodia a cambio de mayor coste y menor modularidad que una cascada."
+  }
+}

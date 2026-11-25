@@ -1,0 +1,392 @@
+{
+  "API gateway": {
+    "que": "Un API gateway es un proxy inverso especializado que actúa como punto de entrada único (Policy Enforcement Point) para un conjunto de microservicios o APIs backend. Centraliza el enrutamiento de peticiones HTTP/gRPC, la terminación TLS, la autenticación y la aplicación de políticas de tráfico antes de reenviar las llamadas a los servicios internos.",
+    "para": "Evita duplicar lógica transversal de seguridad (validación de tokens, rate limiting, logging, CORS y filtrado de cabeceras) en cada microservicio individual. Se usa siempre que se exponen APIs a clientes externos, socios o aplicaciones frontend para reducir la superficie de ataque directa de los backends.",
+    "como": "1) El cliente envía una petición HTTPS al gateway, que termina la conexión TLS y verifica opcionalmente mTLS. 2) Ejecuta la cadena de filtros de entrada: valida el token JWT (firma JWKS, expiración `exp`, audiencia `aud`), aplica cuotas mediante algoritmos como token bucket en Redis y valida esquemas OpenAPI/JSON Schema. 3) Reemplaza o enriquece cabeceras (inyecta identidad verificada, elimina cabeceras internas como `X-Forwarded-User` enviadas por el cliente) y enruta hacia el upstream en la red privada.",
+    "practicas": [
+      "Validar el JWT en el gateway, pero no confiar ciegamente en cabeceras HTTP planas si la red interna no está autenticada (combinar con mTLS o propagar tokens firmados de corta vida).",
+      "Aplicar rate limiting por clave de API, IP y usuario autenticado para mitigar fuerza bruta y DoS en endpoints costosos.",
+      "API gateway vs WAF: el WAF inspecciona firmas L7 contra ataques genéricos (SQLi, XSS), mientras que el API gateway aplica contratos, autenticación y cuotas de negocio; suelen desplegarse en serie.",
+      "Error típico: dejar rutas de depuración (`/actuator`, `/metrics`, `/swagger-ui`) expuestas en las reglas de enrutamiento público o permitir verbos HTTP no declarados."
+    ],
+    "ejemplo": "location /api/v1/orders {\n  auth_jwt \"API\" token=$http_authorization;\n  auth_jwt_key_file /etc/nginx/jwks.json;\n  limit_req zone=api_per_user burst=20 nodelay;\n  proxy_set_header X-Forwarded-User \"\";\n  proxy_pass http://orders-service.internal:8080;\n}",
+    "entrevista": "Un API gateway unifica la aplicación de políticas de identidad, contrato y cuota en la frontera de las APIs, pero debe complementarse con validación de esquemas y autorización granular dentro de cada microservicio."
+  },
+  "ASLR": {
+    "que": "ASLR (Address Space Layout Randomization) es una mitigación a nivel de sistema operativo que aleatoriza las direcciones base de las regiones clave de memoria de un proceso en cada ejecución. Afecta a la pila (stack), el montón (heap), las bibliotecas compartidas (como `libc`) y, si el binario es PIE, al propio segmento ejecutable.",
+    "para": "Dificulta que un atacante explote vulnerabilidades de corrupción de memoria (desbordamientos de búfer o use-after-free) redirigiendo el flujo de ejecución hacia direcciones fijas conocidas, como gadgets ROP o funciones del sistema. Se utiliza de forma estándar en sistemas operativos modernos para elevar el coste de la explotación remota y local.",
+    "como": "Durante `execve()`, el cargador del kernel genera desplazamientos pseudoaleatorios usando el generador de entropía del kernel y los aplica al mapear el stack, el `mmap()` base (bibliotecas) y el brk (heap). En Linux se controla mediante `/proc/sys/kernel/randomize_va_space` (valor `2` para aleatorización completa). Si el binario se compila con `-fPIE -pie`, la tabla de direcciones del propio ejecutable también se reubica al inicio.",
+    "practicas": [
+      "Compilar todos los binarios nativos con `-fPIE -pie` (Position Independent Executable); sin PIE, el segmento `.text` permanece en una dirección fija y sirve como fuente de gadgets ROP.",
+      "Combinar siempre ASLR con DEP/NX y Stack Canaries: ASLR oculta las direcciones, mientras que NX impide ejecutar datos inyectados.",
+      "Evitar fugas de punteros en logs, respuestas HTTP o mensajes de error (information disclosure / format string), ya que filtrar una sola dirección permite calcular la base de `libc` y anular ASLR.",
+      "En arquitecturas de 32 bits la entropía de ASLR es baja y vulnerable a fuerza bruta en servicios que hacen `fork()`; en 64 bits ofrece un espacio significativamente mayor."
+    ],
+    "ejemplo": "# Verificar estado de ASLR en Linux (2 = completo)\ncat /proc/sys/kernel/randomize_va_space\n# Compilar binario con PIE habilitado\ngcc -O2 -fPIE -pie -fstack-protector-strong app.c -o app\n# Comprobar si un binario es PIE\nreadelf -h app | grep Type  # DYN (Shared object file)",
+    "entrevista": "ASLR convierte las direcciones de memoria en objetivos móviles para frenar ataques de reutilización de código como ROP, aunque requiere compilar con PIE y prevenir fugas de punteros para ser efectivo."
+  },
+  "Aislamiento de contenedores": {
+    "que": "El aislamiento de contenedores es el conjunto de mecanismos del kernel y del runtime que restringe la visibilidad de recursos, los privilegios y el consumo de hardware de un contenedor respecto al host y a otros contenedores. En Linux se sustenta en namespaces, cgroups, capacidades POSIX, seccomp y perfiles MAC (AppArmor/SELinux).",
+    "para": "Limita el radio de impacto si un atacante logra ejecución remota de código dentro de una aplicación empaquetada en contenedor, impidiendo que acceda al sistema de archivos del host, vea procesos ajenos o escale a root en el nodo. Es esencial en entornos multi-tenant y plataformas de orquestación como Kubernetes.",
+    "como": "Al lanzar un contenedor, el runtime (`containerd`/`runc`) crea namespaces aislados (`pid`, `net`, `mnt`, `ipc`, `uts`, `user`) mediante `clone()`/`unshare()`, cambia la raíz con `pivot_root` y limita CPU/RAM con `cgroups v2`. Luego elimina capacidades de root (`CAP_SYS_ADMIN`, `CAP_NET_RAW`) y adjunta un filtro BPF mediante `seccomp` que bloquea llamadas al sistema peligrosas (como `ptrace` o `kexec_load`). Adicionalmente, SELinux o AppArmor etiquetan el proceso para restringir accesos a archivos y sockets.",
+    "practicas": [
+      "Ejecutar contenedores con usuario no-root (`USER 10001`, `runAsNonRoot: true`), sistema de archivos raíz en solo lectura (`readOnlyRootFilesystem: true`) y `allowPrivilegeEscalation: false`.",
+      "Eliminar todas las capacidades (`cap_drop: ALL`) y añadir únicamente las imprescindibles, evitando absolutamente `--privileged` y montajes del socket `/var/run/docker.sock`.",
+      "Contenedores vs máquinas virtuales: los contenedores comparten el kernel del host, por lo que una vulnerabilidad de kernel afecta al aislamiento; para cargas no confiables usar sandboxes con microVMs como Kata Containers o gVisor.",
+      "Activar perfiles `seccomp` (al menos `RuntimeDefault`) para reducir la superficie de syscalls expuestas al kernel."
+    ],
+    "ejemplo": "securityContext:\n  runAsNonRoot: true\n  runAsUser: 10001\n  readOnlyRootFilesystem: true\n  allowPrivilegeEscalation: false\n  capabilities:\n    drop: [\"ALL\"]\n  seccompProfile:\n    type: RuntimeDefault",
+    "entrevista": "Un contenedor no es un límite de seguridad fuerte por defecto; su aislamiento depende de combinar namespaces, user namespaces, eliminación de capacidades, seccomp y sistema de archivos de solo lectura."
+  },
+  "Aislamiento de procesos": {
+    "que": "El aislamiento de procesos es una propiedad garantizada por el kernel del sistema operativo por la cual cada proceso se ejecuta en su propio espacio de direcciones virtuales privado y con un contexto de seguridad independiente. Ningún proceso puede leer ni escribir en la memoria de otro sin una interfaz explícita de comunicación entre procesos (IPC) autorizada.",
+    "para": "Evita que un fallo, fuga de memoria o compromiso en una aplicación afecte la confidencialidad o integridad de otros procesos del mismo sistema (por ejemplo, claves TLS en un proceso vecino o credenciales de otro usuario). Es la base de la separación de privilegios en arquitecturas multiproceso como navegadores web, servidores OpenSSH o NGINX.",
+    "como": "La MMU (Memory Management Unit) del procesador, configurada por el kernel mediante tablas de páginas por proceso, traduce las direcciones virtuales a físicas y genera un fallo de página (`SIGSEGV`) si un proceso intenta acceder a páginas no mapeadas para él. El kernel asigna a cada proceso UID/GID, descriptores de archivo independientes y restricciones mediante `rlimit`, `setuid()`, `chroot` o `namespaces`. La interacción entre procesos requiere syscalls mediadas por el kernel como pipes, sockets UNIX o memoria compartida explícita.",
+    "practicas": [
+      "Dividir aplicaciones monolíticas expuestas a red en múltiples procesos con distintos niveles de privilegio (arquitectura privilege-separated: un proceso parsea entrada no confiable sin privilegios y otro mínimo gestiona secretos).",
+      "Ejecutar cada servicio bajo un usuario del sistema dedicado sin shell interactiva (`/sbin/nologin`) para evitar lectura cruzada vía `/proc` o `ptrace`.",
+      "Restringir `ptrace` mediante `kernel.yama.ptrace_scope=1` o `2` en Linux para que procesos del mismo usuario no puedan inspeccionar la memoria de sus pares.",
+      "Aislamiento de procesos vs hilos (threads): los hilos comparten el mismo espacio de direcciones y descriptores, por lo que un buffer overflow en un hilo compromete a todo el proceso."
+    ],
+    "ejemplo": "# Restringir ptrace a procesos padre-hijo únicamente\nsysctl -w kernel.yama.ptrace_scope=1\n# Lanzar servicio systemd con aislamiento de procesos y /proc oculto\n[Service]\nUser=appuser\nPrivateTmp=yes\nProtectProc=invisible",
+    "entrevista": "El aislamiento de procesos mediante espacios de direcciones virtuales y privilegios separados es el primer límite real de contención en memoria, a diferencia de los hilos que comparten todo el estado."
+  },
+  "Arquitectura segura": {
+    "que": "La arquitectura segura es la disciplina y el resultado de diseñar la topología, los componentes, los flujos de datos y los controles de un sistema de software de modo que la seguridad sea una propiedad estructural y no un parche posterior. Integra modelos de amenazas, límites de confianza, segmentación, gestión de identidades y resiliencia desde la fase de diseño.",
+    "para": "Reduce vulnerabilidades sistémicas costosas de corregir en producción (como acceso directo a bases de datos desde internet o escaladas laterales triviales) y asegura que el fallo de un control individual no comprometa todo el sistema. Se aplica al concebir plataformas cloud, microservicios, APIs y sistemas distribuidos.",
+    "como": "Parte de un modelado de amenazas (STRIDE, diagramas de flujo de datos) para identificar activos críticos y límites de confianza. Sobre ese mapa se aplican patrones arquitectónicos: defensa en profundidad por capas (WAF, API gateway, service mesh), segmentación en subredes privadas, principio de menor privilegio mediante identidades efímeras (OIDC/IAM/mTLS), gestión centralizada de secretos y observabilidad auditable.",
+    "practicas": [
+      "Diseñar asumiendo que el perímetro puede caer (assume breach): autenticar y autorizar cada salto interno en lugar de confiar en la IP de origen.",
+      "Minimizar la superficie expuesta colocando únicamente balanceadores, proxies o API gateways en subredes públicas y manteniendo cómputo y datos en subredes privadas.",
+      "Integrar revisiones de arquitectura y threat modeling antes de escribir código, documentando decisiones en Security Architecture Decision Records (ADRs).",
+      "Error típico: confundir cumplimiento normativo o acumulación de herramientas perimetrales con una arquitectura segura coherente."
+    ],
+    "ejemplo": "[Internet] -> [WAF / CDN] -> [API Gateway (DMZ/Pública)]\n                                  |\n                          mTLS + JWT validado\n                                  v\n[Subred Privada App: Microservicios con Service Mesh]\n                                  |\n                     IAM Role + TLS + SG estricto\n                                  v\n[Subred Aislada Datos: RDS / KMS / Secret Manager]",
+    "entrevista": "Una arquitectura segura no busca construir un perímetro impenetrable, sino minimizar la superficie expuesta, establecer límites de confianza explícitos y contener el radio de impacto ante cualquier compromiso."
+  },
+  "Bastion host": {
+    "que": "Un bastion host es un servidor especialmente endurecido (hardened) situado en la frontera de una red —habitualmente en una DMZ o subred pública— cuya única función es actuar como punto de entrada controlado para administración hacia redes internas. Reduce al mínimo el software instalado, los servicios activos y los puertos expuestos.",
+    "para": "Evita exponer directamente puertos administrativos (SSH 22, RDP 3389, WinRM) de servidores internos o bases de datos a internet. Se usa para centralizar la autenticación fuerte, la auditoría de sesiones y el filtrado de origen cuando los operadores necesitan acceso administrativo a infraestructura privada.",
+    "como": "El bastion reside en una subred con ruta controlada hacia la red privada y reglas de firewall/Security Group que solo aceptan conexiones desde IPs corporativas o VPN sobre TLS/SSH. El administrador se autentica contra el bastion (idealmente con certificados SSH de corta duración o MFA) y desde allí abre un túnel (`ProxyJump`) o sesión hacia el host destino sin almacenar claves privadas en el propio bastion. Todo comando o sesión se registra en un colector de logs remoto.",
+    "practicas": [
+      "No almacenar nunca llaves SSH privadas (`id_rsa`) ni credenciales en el bastion host; usar SSH Agent Forwarding con precaución o preferiblemente `ssh -J` (`ProxyJump`) y certificados efímeros.",
+      "Endurecer el sistema operativo deshabilitando compiladores, servicios innecesarios, acceso SSH con contraseña y habilitando `AllowUsers` más MFA.",
+      "Bastion host vs VPN / Zero Trust Access: en entornos cloud modernos conviene reemplazar el bastion SSH expuesto por alternativas sin puertos públicos como AWS SSM Session Manager o un Identity-Aware Proxy.",
+      "Enviar logs de `sshd` y auditoría de sesiones (`auditd`) en tiempo real a un SIEM externo para evitar que un atacante en el bastion borre sus rastros."
+    ],
+    "ejemplo": "# Conexión segura atravesando el bastion sin copiar claves privadas al bastion\nssh -J admin@bastion.ejemplo.com -i ~/.ssh/ephemeral_cert appadmin@10.20.4.15\n\n# En ~/.ssh/config\nHost prod-app\n  HostName 10.20.4.15\n  ProxyJump bastion.ejemplo.com",
+    "entrevista": "Un bastion host concentra y endurece el acceso administrativo para no exponer puertos de gestión internos, aunque en arquitecturas modernas suele reemplazarse por túneles autenticados por identidad sin puertos públicos."
+  },
+  "Compartimentación": {
+    "que": "La compartimentación es un patrón de diseño que divide un sistema, aplicación o infraestructura en dominios aislados (compartimentos) con límites claros de memoria, red, datos o identidad. Su objetivo es impedir que una brecha en una unidad se propague libremente al resto del sistema.",
+    "para": "Contiene el radio de impacto (blast radius) tras un compromiso, fallo de software o robo de credenciales, evitando que un ataque en un componente de bajo riesgo permita leer datos críticos o tomar el control completo. Se aplica en multi-tenancy SaaS, cuentas cloud separadas, microservicios y separación de planos de datos y control.",
+    "como": "Se implementa aplicando aislamiento físico o lógico en varios niveles: cuentas o proyectos cloud independientes por entorno y cliente (prod vs dev), subredes segmentadas, bases de datos o esquemas separados con claves de cifrado por tenant (CMK), y procesos/contenedores sin privilegios compartidos. La comunicación entre compartimentos solo ocurre a través de interfaces explícitas y autenticadas.",
+    "practicas": [
+      "Separar entornos (desarrollo, staging, producción) en cuentas o clusters distintos; nunca compartir credenciales ni redes planas entre ellos.",
+      "En plataformas SaaS multi-tenant, aplicar aislamiento lógico (Row-Level Security) o físico (esquemas/BD dedicadas) junto con claves KMS diferenciadas para clientes críticos.",
+      "Compartimentación vs Defensa en profundidad: la defensa en profundidad apila controles en serie frente a un mismo activo, mientras que la compartimentación divide horizontalmente los activos en celdas independientes.",
+      "Evitar identidades compartidas o roles IAM comodín (`*`) que atraviesen múltiples compartimentos y anulen el aislamiento."
+    ],
+    "ejemplo": "# Ejemplo de compartimentación de tenants con PostgreSQL Row-Level Security\nALTER TABLE facturas ENABLE ROW LEVEL SECURITY;\nCREATE POLICY aislamiento_tenant ON facturas\n  USING (tenant_id = current_setting('app.current_tenant')::uuid);",
+    "entrevista": "La compartimentación aplica el principio de mamparos estancos de un barco: asume que un módulo caerá y garantiza que el daño quede confinado sin propagarse al resto del sistema."
+  },
+  "Control-flow integrity": {
+    "que": "Control-Flow Integrity (CFI) es una técnica de protección a nivel de compilador y hardware que valida, antes de ejecutar una transferencia de control indirecta (como punteros a función, llamadas virtuales C++ o retornos `ret`), que el destino pertenece al grafo de flujo de control (CFG) legítimo calculado en tiempo de compilación.",
+    "para": "Mitiga ataques avanzados de reutilización de código como ROP (Return-Oriented Programming), JOP (Jump-Oriented Programming) y secuestro de vtables que logran eludir DEP/NX y, tras una fuga de información, también ASLR. Se emplea en navegadores, kernels, hipervisores y binarios C/C++ de alto riesgo.",
+    "como": "CFI consta de dos vertientes: Forward-Edge CFI (protege llamadas y saltos indirectos verificando antes del salto que la dirección destino coincide con la tabla de tipos/firmas permitida en el CFG) y Backward-Edge CFI (protege retornos `ret` mediante una Shadow Stack protegida por hardware como Intel CET o ARM PAC). Si el destino real difiere del esperado, el procesador o el runtime aborta inmediatamente el proceso.",
+    "practicas": [
+      "Habilitar CFI en Clang/LLVM (`-fsanitize=cfi` con `-flto`) o MSVC Control Flow Guard (`/guard:cf`) para binarios C/C++ expuestos a entrada no confiable.",
+      "Activar soporte de hardware cuando esté disponible (Intel CET Shadow Stack o ARM Pointer Authentication) para proteger el backward-edge con sobrecarga mínima.",
+      "CFI vs Stack Canaries: los canaries detectan corrupción secuencial del stack antes del retorno, mientras que CFI protege también llamadas indirectas y punteros en el heap mediante validación contra el CFG.",
+      "Recordar que sin LTO (Link-Time Optimization) o visibilidad completa de módulos dinámicos, la precisión del CFG se degrada (coarse-grained CFI)."
+    ],
+    "ejemplo": "# Compilación con Forward-Edge CFI en Clang (requiere LTO y visibilidad oculta)\nclang++ -O2 -flto -fvisibility=hidden \\\n  -fsanitize=cfi -fno-sanitize-trap=cfi \\\n  parser.cpp -o parser",
+    "entrevista": "CFI impide que un atacante desvíe la ejecución mediante corrupción de memoria al restringir todas las llamadas indirectas y retornos únicamente a destinos válidos del grafo de flujo de control."
+  },
+  "DEP - NX bit": {
+    "que": "DEP (Data Execution Prevention), implementado en hardware mediante el bit NX (No-Execute en x86_64, XD en Intel o XN en ARM), es una protección de memoria que marca las páginas de datos —como el stack y el heap— como no ejecutables. Cualquier intento del procesador de decodificar instrucciones desde una página marcada con NX dispara una excepción inmediata.",
+    "para": "Neutraliza la técnica clásica de explotación consistente en inyectar shellcode dentro de un búfer de datos y saltar a esa dirección para ejecutarlo. Es una defensa obligatoria en todos los sistemas operativos modernos y la base sobre la que se apoyan ASLR y CFI.",
+    "como": "En las entradas de la tabla de páginas de la arquitectura de 64 bits, el bit más significativo (bit 63 en x86_64) actúa como bit NX. El sistema operativo marca el segmento `.text` como lectura/ejecución (`R-X`) y el stack, heap y `.data` como lectura/escritura (`RW-`, W^X: Write XOR Execute). Si el puntero de instrucción (`RIP`/`PC`) intenta ejecutar código en una página `RW-`, la MMU genera un Page Fault fatal que el kernel convierte en `SIGSEGV` o `STATUS_ACCESS_VIOLATION`.",
+    "practicas": [
+      "Aplicar estrictamente la política W^X (Write XOR Execute): ninguna página de memoria debe tener permisos simultáneos de escritura y ejecución (`RWX`).",
+      "Compilar siempre sin la bandera `-z execstack` y verificar con `readelf -l` que el encabezado `GNU_STACK` no tenga permiso `E` (RWE).",
+      "En motores JIT (navegadores, JVM, V8), alternar permisos con `mprotect()` de `RW-` (al escribir código generado) a `R-X` (al ejecutarlo) y nunca dejar regiones permanentes `RWX`.",
+      "DEP/NX no detiene ataques que reutilizan código ya marcado como ejecutable (ROP / ret2libc); por ello debe combinarse con ASLR y CFI."
+    ],
+    "ejemplo": "# Verificar que el stack no es ejecutable en un binario ELF\nreadelf -lW /bin/ls | grep -A1 GNU_STACK\n# Salida esperada: RWE ausente -> solo RW\n\n# Enlazar explícitamente con stack no ejecutable\ngcc -Wl,-z,noexecstack app.c -o app",
+    "entrevista": "El bit NX impone la separación W^X en hardware para impedir la ejecución de shellcode inyectado en stack o heap, obligando al atacante a recurrir a técnicas más complejas como ROP."
+  },
+  "DMZ": {
+    "que": "Una DMZ (Demilitarized Zone o subred perimetral) es una zona de red intermedia aislada entre la red pública externa no confiable (internet) y la red interna corporativa o de datos. Alberga exclusivamente los servicios que deben aceptar conexiones entrantes desde el exterior.",
+    "para": "Evita que el compromiso de un servicio expuesto a internet —como un reverse proxy, servidor web o relay SMTP— otorgue acceso directo a bases de datos, controladores de dominio o servicios internos. Se utiliza para establecer una capa de contención física o lógica entre el tráfico entrante y los activos críticos.",
+    "como": "Se implementa mediante dos firewalls en serie o un firewall con al menos tres interfaces (externa, DMZ e interna), o en la nube mediante subredes dedicadas con tablas de rutas y Network ACLs diferenciadas. El tráfico externo solo puede alcanzar puertos específicos en la DMZ (p. ej. TCP 443), y los servidores de la DMZ solo pueden iniciar conexiones hacia puertos concretos de la red interna (p. ej. TCP 8080 de una API). Las conexiones iniciadas desde la DMZ hacia redes internas sensibles o desde internet hacia la red interna se bloquean por defecto.",
+    "practicas": [
+      "Nunca alojar bases de datos, almacenes de secretos ni controladores de identidad (Active Directory/IdP) dentro de la DMZ.",
+      "Prohibir las conexiones iniciadas desde la DMZ hacia el resto de la red corporativa salvo los flujos mínimos estrictamente documentados hacia el siguiente tier.",
+      "DMZ tradicional vs arquitectura cloud/Zero Trust: en la nube la DMZ equivale a una subred pública con NAT/ALB/API Gateway, mientras que Zero Trust sustituye la confianza basada en zona por autenticación mTLS por servicio.",
+      "Error típico: configurar un host en la DMZ con doble tarjeta de red (dual-homed) puenteando tráfico sin inspección o sin reglas restrictivas de salida (egress)."
+    ],
+    "ejemplo": "# Flujo permitido en DMZ de 3 zonas:\n# 1) Internet -> DMZ (ALB/Reverse Proxy): PERMIT TCP 443\n# 2) DMZ -> Subred App Interna: PERMIT TCP 8443 (solo desde SG del Proxy)\n# 3) DMZ -> Subred Datos / Admin: DENY ALL\n# 4) Internet -> Subred App / Datos: DENY ALL",
+    "entrevista": "La DMZ actúa como zona amortiguadora para servicios expuestos a internet, asegurando que un compromiso perimetral no dé visibilidad ni conectividad directa hacia los datos internos."
+  },
+  "Diseño para auditoría": {
+    "que": "El diseño para auditoría (Design for Auditability) es un patrón arquitectónico que garantiza que todas las acciones relevantes para la seguridad —autenticaciones, decisiones de autorización, cambios de privilegios y acceso a datos sensibles— generen registros completos, correlacionables e inmutables.",
+    "para": "Permite detectar intrusiones en curso, realizar investigación forense tras un incidente y demostrar cumplimiento normativo (PCI-DSS, SOC 2, ISO 27001) sin depender de suposiciones. Debe concebirse desde el inicio porque añadir logs de seguridad a posteriori suele dejar puntos ciegos y formatos inconsistentes.",
+    "como": "Se definen eventos auditables obligatorios en puntos de control centrales (API gateway, servicio de identidad, motor RBAC/ABAC, capa de datos) usando un formato estructurado (JSON/CEF) con campos estándar: timestamp UTC, `actor_id`, `trace_id`/`correlation_id`, acción, recurso, IP origen y resultado (`allow`/`deny`). Los eventos se envían de forma asíncrona y segura (TLS) a un colector externo o almacenamiento WORM (Write-Once-Read-Many) separado de la infraestructura de aplicación.",
+    "practicas": [
+      "Incluir siempre un `correlation_id` propagado de punta a punta para reconstruir toda la cadena de llamadas entre microservicios.",
+      "No registrar nunca secretos en los logs (contraseñas, tokens JWT, claves API, números PAN o PII sin enmascarar) para evitar convertir el SIEM en un objetivo de alto valor.",
+      "Almacenar los logs fuera del servidor que los genera con políticas de inmutabilidad (p. ej. S3 Object Lock) para que un atacante con acceso al host no pueda borrar la evidencia.",
+      "Diferenciar logs operacionales/debug de eventos de auditoría de seguridad: los segundos no deben desactivarse por muestreo ni rotación agresiva."
+    ],
+    "ejemplo": "{\n  \"ts\": \"2026-11-25T05:12:04Z\",\n  \"event\": \"authz.decision\",\n  \"trace_id\": \"4bf92f3577b34da6a3ce929d0e0e4736\",\n  \"actor\": \"usr_9481\",\n  \"action\": \"delete\",\n  \"resource\": \"invoice/8821\",\n  \"outcome\": \"DENY\",\n  \"reason\": \"missing_role:billing_admin\"\n}",
+    "entrevista": "Diseñar para auditoría significa asegurar trazabilidad criptográfica o inmutable y correlación distribuida de cada decisión crítica sin exponer secretos en los registros."
+  },
+  "Diseño para recuperación": {
+    "que": "El diseño para recuperación (Design for Recovery / Cyber Resilience) es el enfoque arquitectónico que prepara un sistema para resistir fallos, restaurar su integridad y reanudar operaciones seguras dentro de objetivos definidos de tiempo (RTO) y pérdida de datos (RPO) tras un ciberataque o desastre.",
+    "para": "Asume que las medidas preventivas pueden fallar ante ransomware, borrado malicioso o corrupción de datos, asegurando la continuidad del negocio sin pagar rescates ni reconstruir entornos manualmente desde cero. Es crítico en sistemas de misión crítica, plataformas financieras y entornos cloud.",
+    "como": "Combina infraestructura inmutable declarada como código (IaC en Terraform/GitOps) para recrear entornos limpios, copias de seguridad cifradas en una cuenta o bóveda aislada (air-gapped / WORM con Object Lock) y rotación automatizada de todas las credenciales y certificados comprometidos. Incorpora pruebas periódicas de restauración automatizada, mecanismos de degradación elegante (circuit breakers) y guías de contención rápida (kill switches).",
+    "practicas": [
+      "Mantener copias de seguridad inmutables en una cuenta administrativa separada cuyas credenciales no existan en el entorno de producción (evita que el ransomware borre los backups).",
+      "Definir y probar periódicamente el RTO (Recovery Time Objective) y RPO (Recovery Point Objective) mediante simulacros reales de restauración; un backup no probado no existe.",
+      "Diseñar mecanismos para rotar en masa llaves de cifrado, secretos y tokens de sesión ante una brecha sin requerir despliegues manuales complejos.",
+      "Versionar toda la configuración de red, firewall e IAM en Git para reaprovisionar desde un estado limpio y verificado tras un incidente."
+    ],
+    "ejemplo": "# Política conceptual de backup inmutable (AWS S3 Object Lock)\naws s3api put-object-lock-configuration \\\n  --bucket backups-aislados-prod \\\n  --object-lock-configuration '{\n    \"ObjectLockEnabled\": \"Enabled\",\n    \"Rule\": {\"DefaultRetention\": {\"Mode\": \"COMPLIANCE\", \"Days\": 30}}\n  }'",
+    "entrevista": "Un sistema verdaderamente resiliente no solo intenta prevenir ataques, sino que garantiza reconstrucción limpia mediante IaC, backups inmutables aislados y rotación ágil de credenciales dentro del RTO y RPO."
+  },
+  "Doble verificación de autorización": {
+    "que": "La doble verificación de autorización es un patrón de defensa en profundidad que exige validar los permisos del sujeto en más de un punto independiente de la arquitectura —típicamente en la frontera (API gateway / controlador) y nuevamente en el servicio de dominio o capa de datos— antes de ejecutar una operación.",
+    "para": "Previene vulnerabilidades graves como BOLA/IDOR (Broken Object Level Authorization) o escaladas de privilegios causadas cuando una validación perimetral genérica es eludida mediante llamadas internas, cambios de ruta o desincronización entre gateway y backend. Se aplica en microservicios, APIs multi-tenant y operaciones sensibles.",
+    "como": "1) En el borde, el API gateway o proxy de identidad autentica al usuario y verifica permisos gruesos (p. ej. rol `customer` y scope `orders:read`). 2) Al llegar la petición al microservicio, este vuelve a verificar la identidad propagada (vía JWT interno o claims firmados) y aplica autorización a nivel de recurso u objeto (comprobando `order.owner_id == current_user.id` en la consulta SQL o motor de políticas como OPA).",
+    "practicas": [
+      "Nunca delegar toda la autorización al API gateway; el gateway desconoce la propiedad dinámica de cada registro en base de datos.",
+      "Incluir el identificador de tenant o propietario directamente en la cláusula `WHERE` de las consultas para evitar fugas por olvido en la capa de servicio.",
+      "En acciones de altísimo riesgo (transferencias grandes, borrado de cuenta, despliegue a producción), combinar validación técnica doble con control dual humano (four-eyes principle).",
+      "Asegurar que el contexto de identidad no pueda falsificarse entre capas usando mTLS o tokens firmados en lugar de cabeceras HTTP sin firma."
+    ],
+    "ejemplo": "// 1) Gateway valida scope 'invoices:read'\n// 2) Servicio de negocio verifica pertenencia exacta del objeto:\nfunc GetInvoice(ctx context.Context, invoiceID string) (*Invoice, error) {\n  user := auth.FromContext(ctx)\n  return db.QueryRow(\"SELECT * FROM invoices WHERE id = $1 AND tenant_id = $2\", invoiceID, user.TenantID)\n}",
+    "entrevista": "La doble verificación combina una comprobación gruesa de rol o scope en el borde con una verificación obligatoria de propiedad a nivel de objeto dentro del servicio, cerrando brechas tipo BOLA/IDOR."
+  },
+  "Fail safe defaults": {
+    "que": "Fail safe defaults (valores por defecto seguros ante fallos) es el principio de diseño por el cual el acceso se deniega por defecto y cualquier error, excepción, timeout o configuración incompleta hace que el sistema falle cerrado (fail-closed) en lugar de conceder acceso.",
+    "para": "Elimina brechas accidentales causadas por errores de programación, caídas de servicios de autorización, variables de entorno vacías o reglas de firewall mal ordenadas. Es obligatorio en motores de autorización, reglas de red, validación de entrada y manejo de excepciones de seguridad.",
+    "como": "Las listas de control de acceso (ACL), políticas IAM y reglas de firewall comienzan con una regla implícita o explícita de denegación total (`deny all`) y solo habilitan permisos mediante listas blancas (allowlists) específicas. En el código de autorización, la variable de decisión se inicializa en `false`/`DENY`, y bloques `try/catch` o timeouts hacia un PDP (Policy Decision Point) devuelven `403 Forbidden` o `503` rechazando la operación.",
+    "practicas": [
+      "Usar siempre listas blancas (allowlists) sobre listas negras (denylists); las listas negras fallan abiertas frente a variantes o codificaciones no previstas.",
+      "Inicializar decisiones de acceso en `DENY` y verificar que los `catch` en filtros de autenticación no ejecuten `next()` silenciosamente.",
+      "Fail-closed vs Fail-open: en seguridad (autenticación, WAF estricto, KMS) debe fallar cerrado; solo en controles puramente auxiliares donde la disponibilidad prima sobre la inspección (p. ej. telemetría) podría evaluarse fail-open bajo análisis de riesgo.",
+      "Probar explícitamente casos de error (IdP caído, token sin campo `role`, cabecera ausente) en pruebas unitarias de autorización."
+    ],
+    "ejemplo": "function authorize(user, action, resource) {\n  try {\n    if (!user || !policyEngine.isReady()) return false; // fail-closed\n    return policyEngine.allow(user, action, resource) === true;\n  } catch (err) {\n    auditLog.error(\"authz_error\", err);\n    return false; // nunca permitir acceso tras una excepción\n  }\n}",
+    "entrevista": "Fail safe defaults garantiza que tanto la configuración inicial como cualquier fallo inesperado en tiempo de ejecución denieguen el acceso por defecto en lugar de abrir una puerta trasera accidental."
+  },
+  "Firewall": {
+    "que": "Un firewall es un sistema de control de tráfico de red que inspecciona los paquetes que atraviesan un perímetro o segmento y decide permitirlos, rechazarlos o descartarlos según un conjunto ordenado de reglas basadas en direcciones IP, puertos, protocolos y estado de conexión.",
+    "para": "Impone políticas de segmentación y reduce la superficie de exposición ocultando servicios internos no autorizados frente a redes externas o segmentos adyacentes. Es el control fundamental de capas 3 y 4 (y hasta capa 7 en Next-Generation Firewalls) tanto en redes tradicionales como en la nube.",
+    "como": "Los firewalls con estado (stateful) mantienen una tabla de conexiones activas (`conntrack` en Linux) analizando cabeceras IP (origen/destino) y TCP/UDP (puertos, flags SYN/ACK) contra la lista de reglas de arriba hacia abajo hasta encontrar la primera coincidencia, aplicando finalmente una regla por defecto `DROP`/`DENY`. Los NGFW añaden inspección profunda de paquetes (DPI) para identificar protocolos de aplicación independientemente del puerto.",
+    "practicas": [
+      "Configurar siempre una política por defecto de denegación tanto en tráfico entrante (ingress) como saliente (egress); restringir el egress frena exfiltración de datos y shells inversas.",
+      "Mantener reglas específicas por IP/subred y puerto exacto, evitando aperturas amplias (`0.0.0.0/0` a rangos `1-65535`).",
+      "Firewall de red (L3/L4) vs WAF (L7 HTTP): un firewall tradicional no entiende SQL injection ni XSS dentro de una petición HTTPS válida; ambos son complementarios.",
+      "Revisar periódicamente reglas huérfanas o temporales que quedaron abiertas tras ventanas de mantenimiento."
+    ],
+    "ejemplo": "# Reglas básicas con nftables (política drop por defecto)\nnft add table inet filter\nnft add chain inet filter input '{ type filter hook input priority 0; policy drop; }'\nnft add rule inet filter input ct state established,related accept\nnft add rule inet filter input tcp dport 443 accept",
+    "entrevista": "Un firewall aplica control de acceso de red con estado en capas L3/L4 mediante denegación por defecto, y resulta mucho más efectivo cuando también controla el tráfico saliente (egress)."
+  },
+  "HSM": {
+    "que": "Un HSM (Hardware Security Module) es un dispositivo criptográfico físico dedicado y certificado (típicamente bajo FIPS 140-2/140-3 nivel 3 o superior) diseñado para generar, almacenar y operar con claves criptográficas privadas dentro de un perímetro resistente a manipulaciones (tamper-resistant / tamper-responsive).",
+    "para": "Garantiza que las claves maestras más críticas —como la clave raíz de una Autoridad Certificadora (CA), claves de firma de código o claves maestras de cifrado (KEK)— nunca abandonen el hardware en texto claro ni sean extraídas mediante acceso físico o compromiso del servidor anfitrión. Se usa en banca (PCI-HSM), PKI corporativa y servicios Cloud KMS.",
+    "como": "La aplicación se comunica con el HSM mediante interfaces estándar como PKCS#11, KMIP o APIs REST (en Cloud HSM) enviando únicamente los datos o hashes a firmar, cifrar o descifrar. Todas las operaciones matemáticas (RSA, ECDSA, AES-GCM) ocurren en el coprocesador seguro del HSM. Si detecta apertura física, sondas de voltaje o anomalías térmicas, circuitos de protección borran (zeroize) inmediatamente las claves de la memoria.",
+    "practicas": [
+      "Generar las claves sensibles directamente dentro del HSM (`non-extractable`) en lugar de generarlas en software e importarlas después.",
+      "Usar cifrado por envoltorio (envelope encryption): el HSM protege la KEK (Key Encryption Key) y cifra las DEK (Data Encryption Keys) locales para mantener alto rendimiento.",
+      "HSM vs TPM: el HSM es un módulo de red o PCIe de alto rendimiento y multi-cliente para infraestructura crítica, mientras que el TPM es un chip local ligado a la placa base de un único dispositivo.",
+      "Configurar quorum/M-of-N de administradores y backups cifrados bajo llaves del propio HSM para evitar pérdida irreversible de claves."
+    ],
+    "ejemplo": "# Listar objetos en un HSM mediante PKCS#11 y firmar un hash sin exportar la clave privada\npkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so \\\n  --login --pin 1234 --sign --mechanism ECDSA \\\n  --id 01 --input-file digest.bin --output-file sig.bin",
+    "entrevista": "Un HSM ofrece una frontera física resistente a manipulaciones donde las claves críticas se generan y utilizan sin salir jamás en claro a la memoria del servidor."
+  },
+  "Identity-aware proxy": {
+    "que": "Un Identity-Aware Proxy (IAP) o proxy consciente de identidad es un proxy inverso Zero Trust que intercepta todas las peticiones hacia aplicaciones internas y toma decisiones de acceso basándose en la identidad verificada del usuario y el estado de su dispositivo, sin depender de la ubicación de red ni de VPNs tradicionales.",
+    "para": "Permite exponer aplicaciones administrativas o corporativas internas de forma segura a empleados remotos sin otorgar acceso a toda la subred privada como haría una VPN de red. Se utiliza ampliamente en arquitecturas BeyondCorp para reemplazar VPNs heredadas en el acceso a consolas web, SSH y APIs internas.",
+    "como": "Cuando un usuario solicita `app.interna.com`, el IAP intercepta la conexión TLS, redirige a un proveedor de identidad (OIDC/SAML) exigiendo autenticación con MFA resistente a phishing (FIDO2/WebAuthn) y consulta señales de postura del dispositivo (MDM: cifrado de disco, versión de SO, certificado de dispositivo). Si la política de contexto se cumple, el IAP inyecta una aserción firmada (JWT) en la cabecera y reenvía la petición hacia el backend, el cual rechaza cualquier tráfico que no provenga del IAP.",
+    "practicas": [
+      "Verificar en la aplicación backend la firma criptográfica del JWT emitido por el IAP (y no solo la presencia de la cabecera de usuario) para evitar suplantación si alguien alcanza el backend directamente.",
+      "Combinar identidad del usuario con postura del dispositivo (Device Trust) y reevaluar sesiones periódicamente ante cambios de riesgo.",
+      "Identity-Aware Proxy vs VPN tradicional: la VPN otorga conectividad L3 a segmentos completos facilitando movimiento lateral, mientras que el IAP concede acceso L7 granular por aplicación.",
+      "Bloquear en el firewall/Security Group del backend todo acceso directo que no provenga de las IPs o identidad mTLS del IAP."
+    ],
+    "ejemplo": "# El backend verifica el JWT firmado inyectado por el IAP (ej. Google Cloud IAP)\njwt_header = request.headers.get(\"X-Goog-IAP-JWT-Assertion\")\nclaims = id_token.verify_token(\n    jwt_header, certs_url=\"https://www.gstatic.com/iap/verify/public_key-jwk\",\n    audience=\"/projects/12345/global/backendServices/67890\"\n)",
+    "entrevista": "Un Identity-Aware Proxy traslada el control de acceso desde la red hacia la identidad verificada y la postura del dispositivo por petición, eliminando la confianza implícita de las VPN tradicionales."
+  },
+  "Jump server": {
+    "que": "Un jump server (o jump host) es un servidor intermediario dedicado a través del cual los administradores o scripts de operación saltan para conectarse a sistemas ubicados en zonas de red más restringidas o aisladas, como subredes privadas sin acceso directo desde la red corporativa.",
+    "para": "Centraliza y controla los saltos administrativos entre zonas de distinta sensibilidad (por ejemplo, desde la red de oficina hacia un entorno de producción aislado), permitiendo aplicar MFA, filtrado de origen y registro centralizado de sesiones. Se usa en redes empresariales e infraestructuras segmentadas donde las estaciones de trabajo no tienen ruta directa a los servidores destino.",
+    "como": "El operador inicia sesión SSH o RDP hacia el jump server autenticado por directorio/MFA y, desde esa sesión o mediante port forwarding / `ProxyJump`, establece la conexión secundaria hacia el servidor interno en la red privada. Los firewalls internos aceptan conexiones administrativas únicamente cuando la IP de origen pertenece al jump server.",
+    "practicas": [
+      "Preferir túneles `ProxyJump` (donde la sesión SSH destino se cifra extremo a extremo desde el equipo del operador) frente a sesiones interactivas dobles que exponen claves o contraseñas en la memoria del jump server.",
+      "Jump server vs Bastion host: en la práctica suelen usarse como sinónimos, pero un bastion host hace énfasis en el endurecimiento perimetral expuesto a una zona no confiable (DMZ/internet), mientras que un jump server enfatiza su rol de puente de salto hacia segmentos internos.",
+      "Grabar sesiones administrativas (keystroke logging / video RDP) y rotar credenciales mediante acceso Just-In-Time (JIT) en lugar de cuentas permanentes.",
+      "Evitar que los usuarios naveguen por internet o ejecuten herramientas de escritorio desde el jump server."
+    ],
+    "ejemplo": "# Túnel SSH extremo a extremo a través de un jump server\nssh -J operador@jump.corp.local dbadmin@10.50.10.22\n\n# Redirección segura de puerto hacia una consola interna\nssh -N -L 5432:rds.privado.local:5432 -J operador@jump.corp.local 10.50.10.5",
+    "entrevista": "Un jump server centraliza los saltos administrativos hacia zonas restringidas bajo MFA y auditoría, siendo ideal usar ProxyJump para mantener el cifrado extremo a extremo sin dejar credenciales en el puente."
+  },
+  "Measured boot": {
+    "que": "Measured Boot (arranque medido) es un proceso mediante el cual cada etapa de la secuencia de arranque de un sistema mide criptográficamente (calcula el hash) del siguiente componente antes de ejecutarlo y registra esa medición en los Platform Configuration Registers (PCR) de un chip TPM.",
+    "para": "A diferencia del Secure Boot que bloquea el arranque si falla una firma, el Measured Boot no detiene necesariamente el sistema, sino que crea una evidencia íntegra e infalsificable del estado exacto del software arrancado. Sirve para habilitar atestación remota (demostrar a un servidor que el nodo está limpio) y sellado de claves de cifrado de disco (como BitLocker o LUKS con TPM).",
+    "como": "1) El código inmutable inicial (CRTM en el firmware) mide la etapa siguiente (UEFI/BIOS) y ejecuta `TPM2_PCR_Extend(PCR[0], hash(UEFI))`, operación unidireccional (`PCR_new = SHA256(PCR_old || hash)`). 2) Cada eslabón —UEFI, bootloader GRUB, kernel Linux, initramfs y parámetros de arranque— mide al siguiente y extiende distintos PCRs (0 a 7, 8+, etc.). 3) Al finalizar, el TPM firma los valores PCR con su Attestation Key (Quote) para verificación remota o libera secretos sellados solo si los PCR coinciden con los valores esperados.",
+    "practicas": [
+      "Combinar Secure Boot con Measured Boot: Secure Boot impide cargar código no firmado y Measured Boot registra qué configuración exacta y qué módulos firmados se cargaron realmente.",
+      "Incluir el estado de configuración y la línea de comandos del kernel en los PCR medidos para evitar ataques donde se arranca un kernel firmado con parámetros inseguros (`init=/bin/sh`).",
+      "Integrar las mediciones del TPM con sistemas de atestación remota (p. ej. Keylime) antes de entregar secretos de producción o certificados mTLS a nodos nuevos.",
+      "Recordar que las actualizaciones legítimas de firmware o kernel cambian los valores PCR; planificar políticas basadas en firmas o actualización automática de sellos."
+    ],
+    "ejemplo": "# Leer registros PCR del TPM 2.0 en Linux\ntpm2_pcrread sha256:0,2,4,7\n# Desbloquear disco LUKS atado al PCR 7 (estado de Secure Boot)\nsystemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 /dev/nvme0n1p3",
+    "entrevista": "Measured Boot extiende hashes encadenados de cada etapa del arranque en los PCR del TPM, permitiendo detectar manipulaciones sutiles mediante atestación remota y desbloquear claves solo ante un estado íntegro."
+  },
+  "Menor privilegio": {
+    "que": "El principio de menor privilegio (Principle of Least Privilege, PoLP) establece que todo usuario, proceso, servicio o componente de software debe recibir exclusivamente los permisos mínimos necesarios para desempeñar su función legítima y únicamente durante el tiempo requerido.",
+    "para": "Minimiza el daño potencial ante el compromiso de una cuenta, una vulnerabilidad de inyección SQL, un fallo en un contenedor o un error humano. Si un servicio web solo necesita hacer `SELECT` e `INSERT` en dos tablas, un atacante que lo explote no podrá ejecutar `DROP TABLE` ni leer el sistema de archivos.",
+    "como": "Se aplica descomponiendo identidades y permisos en todas las capas: cuentas de servicio dedicadas por microservicio (en lugar de compartir una cuenta global), políticas IAM restringidas a acciones concretas y ARNs exactos (sin `*`), scopes OAuth2 granulares, usuarios no-root en Linux/contenedores y acceso Just-In-Time (JIT) con expiración automática para tareas administrativas.",
+    "practicas": [
+      "Nunca conectar una aplicación web a la base de datos usando cuentas administrativas (`sa`, `postgres`, `root`); crear un rol de aplicación restringido al esquema y operaciones necesarias.",
+      "Reemplazar permisos permanentes de administrador por elevación temporal (Just-In-Time / PAM) con aprobación y expiración automática.",
+      "Menor privilegio vs Separación de funciones: el menor privilegio limita la cantidad total de permisos de una entidad, mientras que la separación de funciones divide una operación crítica entre dos entidades distintas para evitar fraude.",
+      "Auditar periódicamente permisos efectivos no utilizados en IAM (access analyzer) para reducir privilegios acumulados (privilege creep)."
+    ],
+    "ejemplo": "{\n  \"Effect\": \"Allow\",\n  \"Action\": [\"s3:GetObject\", \"s3:PutObject\"],\n  \"Resource\": \"arn:aws:s3:::facturas-prod/tenant-a/*\"\n}",
+    "entrevista": "El menor privilegio reduce sistemáticamente el radio de impacto al otorgar a cada identidad humana o técnica únicamente los permisos exactos, sobre recursos específicos y durante el menor tiempo posible."
+  },
+  "Microsegmentación": {
+    "que": "La microsegmentación es una técnica de seguridad de red granular que divide la infraestructura hasta el nivel de carga de trabajo individual (máquina virtual, pod o servicio) aplicando políticas de comunicación explícitas de tipo allowlist para todo el tráfico este-oeste (interno).",
+    "para": "Frena el movimiento lateral dentro de centros de datos, VPCs y clusters Kubernetes: aunque un atacante comprometa un pod o servidor web en la red interna, las políticas impiden que escanee o alcance otros servicios con los que ese componente no tiene relación funcional. Es un pilar práctico de la arquitectura Zero Trust.",
+    "como": "A diferencia de las VLANs o firewalls perimetrales tradicionales basados en subredes IP, la microsegmentación asocia políticas a la identidad o etiquetas de la carga de trabajo (`app=checkout`, `env=prod`). Se implementa mediante agentes en el host, plugins CNI basados en eBPF (Cilium) / NetworkPolicies en Kubernetes o sidecars de un Service Mesh con mTLS, aplicando reglas `deny-all` por defecto y permitiendo únicamente pares origen-destino-puerto/L7 autorizados.",
+    "practicas": [
+      "Desplegar una política base `default-deny` en cada namespace de Kubernetes antes de empezar a abrir flujos explícitos entre servicios.",
+      "Basar las políticas en etiquetas de identidad o certificados mTLS (SPIFFE/SPIRE) en lugar de direcciones IP efímeras que cambian con el autoescalado.",
+      "Segmentación de red tradicional vs Microsegmentación: la segmentación agrupa sistemas por subredes/zonas (macro), mientras que la microsegmentación aísla cada workload individualmente para bloquear tráfico este-oeste.",
+      "No olvidar permitir explícitamente DNS (`UDP/TCP 53` hacia CoreDNS) al aplicar políticas de salida estrictas para evitar caídas operativas."
+    ],
+    "ejemplo": "apiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: allow-api-to-db\nspec:\n  podSelector:\n    matchLabels: { app: postgres }\n  ingress:\n    - from: [{ podSelector: { matchLabels: { app: orders-api } } }]\n      ports: [{ protocol: TCP, port: 5432 }]",
+    "entrevista": "La microsegmentación aplica políticas deny-all a nivel de carga de trabajo individual basadas en identidad, neutralizando el movimiento lateral en el tráfico este-oeste."
+  },
+  "No confiar en el cliente": {
+    "que": "El principio 'no confiar en el cliente' (Never Trust the Client) establece que toda entrada, estado, cálculo o control proveniente del navegador, aplicación móvil, CLI o dispositivo del usuario está completamente bajo control de un posible atacante y carece de garantías de integridad.",
+    "para": "Evita vulnerabilidades críticas de lógica de negocio y seguridad como manipulación de precios en carritos de compra, evasión de validaciones de formularios, escalada de privilegios modificando campos ocultos o suplantación de identidad mediante cabeceras falsificadas. Es fundamental en aplicaciones web, APIs REST/GraphQL y apps móviles.",
+    "como": "Toda regla de negocio, cálculo monetario, verificación de autenticación/autorización, control de cuotas y sanitización debe ejecutarse de forma autoritativa en el servidor. Las validaciones en JavaScript o apps móviles sirven exclusivamente para mejorar la experiencia de usuario (UX). El servidor deriva la identidad del usuario a partir de una sesión cifrada o token JWT verificado criptográficamente, nunca de un `user_id` o `role` enviado en el cuerpo JSON.",
+    "practicas": [
+      "Nunca aceptar precios, descuentos, roles (`isAdmin: true`) o identificadores de propietario provenientes del cliente; recalcular o consultar siempre la fuente de verdad en el servidor.",
+      "Recordar que ofuscar código cliente, ocultar botones en la UI, usar `readonly` en HTML o aplicar SSL pinning en móviles no impide que un atacante intercepte y modifique peticiones con un proxy como Burp Suite o `curl`.",
+      "Validar formato, tipo, longitud y rango de cada parámetro en el backend usando esquemas estrictos y rechazo por defecto.",
+      "Firmar o almacenar en servidor cualquier estado temporal (como flujos multi-paso o tokens de restablecimiento) para impedir saltos de paso."
+    ],
+    "ejemplo": "// VULNERABLE: confiar en precio y userId del cliente\n// total = req.body.price * req.body.qty;\n\n// SEGURO: derivar identidad del token y precio desde BD\nconst userId = req.auth.sub;\nconst product = await db.products.findById(req.body.productId);\nconst total = product.unitPrice * validatePositiveInt(req.body.qty);",
+    "entrevista": "Cualquier dato que cruza desde el cliente puede ser interceptado o forjado con curl o un proxy, por lo que el backend debe revalidar cada entrada, recalcular reglas críticas y derivar la identidad únicamente de tokens verificados."
+  },
+  "Protección de memoria": {
+    "que": "La protección de memoria agrupa los mecanismos de hardware, sistema operativo y compilador destinados a evitar que los programas accedan a memoria no asignada o corrompan estructuras de control críticas como direcciones de retorno y punteros de función.",
+    "para": "Previene o dificulta la explotación de vulnerabilidades de corrupción de memoria (buffer overflows, use-after-free, double free) en lenguajes no seguros en memoria como C y C++, que históricamente causan gran parte de las fallas críticas de ejecución remota y escalada de privilegios.",
+    "como": "Combina aislamiento por tablas de páginas en la MMU (espacios de direcciones separados y permisos R/W/X), protecciones en tiempo de compilación y ejecución —DEP/NX (W^X), ASLR, Stack Canaries y CFI— y hardening de asignadores de memoria (cuarentena de bloques liberados, punteros seguros o Pointer Authentication). A nivel de lenguaje, el uso de lenguajes memory-safe (Rust, Go, Java) elimina estas clases de fallo en tiempo de compilación o runtime.",
+    "practicas": [
+      "Activar el conjunto completo de banderas de hardening en compiladores C/C++: `-fPIE -pie`, `-fstack-protector-strong`, `-D_FORTIFY_SOURCE=2`, `-Wl,-z,relro,-z,now` (Full RELRO) y `-Wl,-z,noexecstack`.",
+      "Adoptar lenguajes con seguridad de memoria (como Rust) para nuevos componentes expuestos a parseo de datos no confiables (parsers de red, imágenes, protocolos).",
+      "Ejecutar pruebas continuas con sanitizadores (`AddressSanitizer`, `UndefinedBehaviorSanitizer`) y fuzzing (libFuzzer/AFL++) en CI antes de pasar a producción.",
+      "Verificar binarios entregados con herramientas como `checksec` para detectar regresiones en la configuración de compilación."
+    ],
+    "ejemplo": "# Compilación C endurecida estándar\ngcc -O2 -D_FORTIFY_SOURCE=2 -fstack-protector-strong \\\n    -fPIE -pie -Wl,-z,relro,-z,now,-z,noexecstack \\\n    servidor.c -o servidor\n# Verificar mitigaciones del binario\nchecksec --file=servidor",
+    "entrevista": "La protección de memoria combina defensas en capas —NX, ASLR, Stack Canaries, Full RELRO y CFI— para neutralizar la corrupción de memoria, aunque la mitigación definitiva en código nuevo es usar lenguajes memory-safe."
+  },
+  "Red privada": {
+    "que": "Una red privada es un segmento de red aislado sin enrutamiento directo hacia internet ni asignación de direcciones IP públicas en sus interfaces, accesible únicamente desde dentro de la propia red, mediante túneles cifrados o a través de intermediarios autorizados.",
+    "para": "Reduce drásticamente la superficie de ataque directa al ocultar bases de datos, colas de mensajes, microservicios internos y paneles administrativos de escaneos y ataques automatizados desde internet. Es un elemento básico en el diseño de VPCs cloud y arquitecturas multicapa.",
+    "como": "Se construye asignando rangos de direcciones privadas (RFC 1918: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) en subredes cuya tabla de rutas carece de ruta por defecto hacia un Internet Gateway (IGW). Si las instancias necesitan descargar actualizaciones o consultar APIs externas, el tráfico saliente pasa por un NAT Gateway en la subred pública o un proxy de salida filtrado, mientras que las conexiones internas a servicios de la nube usan PrivateLink / VPC Endpoints sin salir a internet.",
+    "practicas": [
+      "Colocar siempre las bases de datos, cachés, nodos de cómputo de backend y almacenes de secretos en subredes privadas sin IPs públicas.",
+      "Controlar también el tráfico saliente (egress) desde la red privada usando proxies o firewalls de DNS para evitar descargas de malware o exfiltración.",
+      "Red privada vs Zero Trust: que una carga esté en una red privada no la hace inmune a ataques internos; sigue siendo obligatorio cifrar en tránsito (TLS/mTLS) y autenticar cada llamada.",
+      "Usar PrivateLink / VPC Endpoints para conectar con servicios gestionados (S3, KMS) de modo que el tráfico no atraviese la red pública."
+    ],
+    "ejemplo": "# Tabla de rutas típica de una subred privada en VPC\n# Destino         -> Objetivo\n# 10.0.0.0/16     -> local (tráfico interno VPC)\n# 0.0.0.0/0       -> nat-gw-01a (solo salida controlada; sin ruta entrante desde IGW)",
+    "entrevista": "Una red privada elimina la exposición directa en internet al suprimir IPs públicas y rutas entrantes desde el Internet Gateway, pero dentro de ella sigue siendo imprescindible autenticar y cifrar bajo principios Zero Trust."
+  },
+  "Sandboxing": {
+    "que": "El sandboxing es una técnica de aislamiento estricto que encierra código potencialmente peligroso, no confiable o de terceros dentro de un entorno altamente restringido con acceso mínimo o nulo al sistema anfitrión, la red y el sistema de archivos.",
+    "para": "Permite ejecutar entradas de alto riesgo —como renderizado de páginas web, apertura de documentos PDF, plugins de usuarios o código generado dinámicamente— asumiendo que el código puede explotar vulnerabilidades dentro de la caja sin comprometer el sistema operativo subyacente. Se usa en navegadores (Chrome/Firefox), lectores de documentos y plataformas de ejecución serverless multi-tenant.",
+    "como": "Combina múltiples barreras del sistema operativo o virtualización: reducción drástica de llamadas al sistema mediante `seccomp-bpf` o `pledge`/`unveil`, aislamiento de espacios de nombres sin privilegios (`user namespaces`), sistemas de archivos virtuales temporales, ausencia de interfaz de red y políticas MAC estrictas. En cargas multi-tenant críticas se emplean microVMs (Firecracker) o kernels de espacio de usuario (gVisor) para evitar compartir el kernel del host.",
+    "practicas": [
+      "Aplicar el principio de denegación total dentro del sandbox: bloquear red, escritura en disco persistente y syscalls innecesarias (`execve`, `socket`, `ptrace`).",
+      "Para ejecutar código arbitrario de múltiples clientes no confiables (p. ej. runners CI/CD o FaaS), preferir aislamiento basado en hipervisor/microVM frente a contenedores estándar que comparten kernel.",
+      "Sandboxing vs Aislamiento de procesos: el sandbox añade restricciones explícitas de capacidades, sistema de archivos y syscalls sobre el aislamiento básico de memoria de un proceso.",
+      "No asumir que un sandbox en el mismo lenguaje (como `vm` de Node.js) es seguro; el aislamiento real debe imponerse a nivel de kernel o hipervisor."
+    ],
+    "ejemplo": "# Lanzar un proceso muy restringido con bubblewrap (bwrap) sin red ni acceso al HOME\nbwrap --ro-bind /usr /usr --symlink usr/lib /lib \\\n      --tmpfs /tmp --unshare-all --die-with-parent \\\n      -- /usr/bin/python3 parse_untrusted.py",
+    "entrevista": "El sandboxing confina código no confiable tras múltiples barreras —namespaces, seccomp-bpf o microVMs— asumiendo que el código interno puede llegar a ser comprometido pero evitando que escape hacia el host."
+  },
+  "Secure boot": {
+    "que": "Secure Boot es un mecanismo de seguridad definido en la especificación UEFI que verifica criptográficamente las firmas digitales de cada componente crítico durante el arranque —bootloaders, controladores UEFI y kernel del sistema operativo— antes de permitir su ejecución.",
+    "para": "Impide que bootkits, rootkits persistentes o sistemas operativos no autorizados se carguen antes de que el sistema operativo tome el control y active sus defensas. Es esencial en estaciones de trabajo corporativas, servidores de infraestructura y dispositivos IoT.",
+    "como": "La placa base almacena en memoria NVRAM protegida una jerarquía de claves: Platform Key (PK), Key Exchange Keys (KEK), base de datos de firmas permitidas (`db`) y base de datos de firmas revocadas (`dbx`). Al encender el equipo, el firmware UEFI valida la firma RSA/ECDSA de cada binario PE/COFF (ej. `shimx64.efi`, `grubx64.efi`, `vmlinuz`) contra `db` y comprueba que su hash no esté en `dbx`. Si la firma es inválida o falta, el firmware aborta la carga.",
+    "practicas": [
+      "Proteger la configuración UEFI/BIOS con contraseña administrativa para impedir que alguien con acceso físico desactive Secure Boot fácilmente.",
+      "Mantener actualizada la lista de revocación `dbx` (mediante `fwupd`) para bloquear bootloaders legítimos antiguos con vulnerabilidades conocidas (como BootHole).",
+      "Secure Boot vs Measured Boot: Secure Boot impone prevención bloqueando binarios no firmados, mientras que Measured Boot registra hashes en el TPM para verificación y atestación posterior.",
+      "En entornos propios o embebidos, enrollar claves propias (Custom PK/KEK/db) en lugar de confiar indefinidamente en certificados genéricos de terceros."
+    ],
+    "ejemplo": "# Comprobar el estado de Secure Boot en Linux\nmokutil --sb-state\n# Salida esperada: SecureBoot enabled\n\n# Inspeccionar firma de un binario de arranque EFI\nsbverify --list /boot/efi/EFI/ubuntu/grubx64.efi",
+    "entrevista": "Secure Boot establece una cadena de confianza desde el firmware UEFI verificando firmas criptográficas en cada etapa del arranque para bloquear rootkits y bootkits antes de cargar el sistema operativo."
+  },
+  "Secure enclave": {
+    "que": "Un Secure Enclave (o Enclave Seguro) es un subsistema de hardware aislado —ya sea un coprocesador de seguridad dedicado como el Secure Enclave de Apple o un entorno TEE aislado en memoria— con su propia raíz de confianza, motor criptográfico y memoria cifrada separada del procesador principal.",
+    "para": "Protege operaciones altamente sensibles como gestión de claves de dispositivo, verificación biométrica, identidad criptográfica del equipo y almacenamiento de credenciales incluso si el kernel del sistema operativo principal resulta comprometido. En IoT y dispositivos móviles actúa como ancla de identidad física inmutable.",
+    "como": "El enclave arranca mediante su propia ROM inmutable verificando su firmware dedicado, genera una clave raíz única grabada en silicio en fábrica (UID / PUF) que nunca es accesible por software externo y se comunica con el procesador principal únicamente a través de un buzón de mensajes (mailbox) o interfaz RPC restringida. En dispositivos IoT suele acoplarse con un Elemento Seguro (SE) vía I2C/SPI para firmar retos TLS mTLS y verificar actualizaciones OTA sin exponer claves privadas en la flash principal.",
+    "practicas": [
+      "Generar las claves de identidad del dispositivo (como el par de claves X.509 para mTLS IoT) dentro del enclave como no exportables.",
+      "Vincular los datos sensibles cifrados (keychain o secretos locales) a políticas del enclave que exijan verificación biométrica o PIN del usuario y conteo de intentos fallidos en hardware.",
+      "Secure Enclave vs TPM: ambos proveen raíz de confianza en hardware; el TPM sigue el estándar TCG orientado a PCRs, medición de arranque y PCs/servidores, mientras que Secure Enclave suele ser un coprocesador integrado SoC orientado a gestión de claves, biometría e identidad en móviles/IoT.",
+      "Mantener mínima la superficie de la API expuesta hacia el procesador principal para evitar vulnerabilidades en el canal de comunicación."
+    ],
+    "ejemplo": "// Flujo conceptual IoT / móvil: firmar desafío TLS sin extraer clave privada\n// 1. Servidor envía nonce TLS\n// 2. OS envía hash(handshake) por mailbox al Secure Enclave\n// 3. Enclave firma con clave ECDSA P-256 residente en silicio\n// 4. OS adjunta firma en CertificateVerify",
+    "entrevista": "Un Secure Enclave aísla las claves privadas y la identidad del dispositivo en silicio independiente, garantizando que ni siquiera un kernel comprometido pueda extraer las credenciales criptográficas."
+  },
+  "Segmentación de red": {
+    "que": "La segmentación de red es la práctica arquitectónica de dividir una red informática en subredes o zonas lógicas separadas según su nivel de confianza, función o criticidad de los datos, controlando estrictamente el tráfico permitido entre ellas.",
+    "para": "Limita el alcance de un incidente de seguridad impidiendo que un atacante en una red de usuarios, invitados o DMZ alcance directamente servidores de aplicaciones, bases de datos o sistemas OT/IoT críticos. Además facilita la visibilidad del tráfico y el cumplimiento de normativas como PCI-DSS (aislamiento del CDE).",
+    "como": "Se implementa en capa 2/3 mediante VLANs, VRFs, subredes independientes en VPCs y enrutamiento controlado a través de firewalls, Network ACLs y Security Groups que actúan como puntos de estrangulamiento (choke points). Cada segmento tiene reglas explícitas de entrada y salida que bloquean por defecto cualquier comunicación no declarada entre zonas (por ejemplo, impidiendo que la red de oficinas hable con la red de bases de datos de producción).",
+    "practicas": [
+      "Separar como mínimo en zonas distintas: red pública/DMZ, capa de aplicación, capa de datos, red de gestión (out-of-band) y redes corporativas de usuario.",
+      "Combinar controles sin estado en frontera de subred (Network ACLs) con controles con estado a nivel de instancia (Security Groups).",
+      "Segmentación de red vs Microsegmentación: la segmentación agrupa sistemas por subredes según rol o confianza; la microsegmentación lleva ese aislamiento a cada carga de trabajo individual dentro de una misma subred.",
+      "Evitar reglas de enrutamiento transitivo involuntario en VPC peering o Transit Gateways que comuniquen entornos dev con prod."
+    ],
+    "ejemplo": "# Arquitectura típica de 3 segmentos en VPC (10.0.0.0/16)\n# Subred Pública (10.0.1.0/24) : ALB / NAT Gateway (acceso 443 desde 0.0.0.0/0)\n# Subred Privada App (10.0.2.0/24) : Contenedores (solo acepta 8080 desde SG-ALB)\n# Subred Aislada Datos (10.0.3.0/24): RDS (solo acepta 5432 desde SG-App)",
+    "entrevista": "La segmentación de red divide la infraestructura en zonas de confianza con puntos de control intermedios para reducir la superficie expuesta y frenar la propagación lateral entre capas."
+  },
+  "Separación de funciones": {
+    "que": "La separación de funciones (Separation of Duties, SoD) es un principio de control interno que divide las tareas críticas o sensibles entre múltiples personas, cuentas o componentes de modo que ningún individuo ni sistema único pueda completar de forma unilateral una acción de alto riesgo desde su inicio hasta su aprobación final.",
+    "para": "Previene el fraude interno, errores catastróficos en producción y abusos de privilegios tras el compromiso de una sola cuenta. Es esencial en flujos CI/CD (quien escribe código no lo aprueba y despliega solo), gestión financiera, administración de PKI/KMS y operaciones de base de datos.",
+    "como": "Se implementa definiendo roles mutuamente excluyentes en sistemas IAM y plataformas de ingeniería: por ejemplo, en Git se exige revisión obligatoria (`CODEOWNERS`, branch protection) por un par distinto al autor antes del merge; en despliegues a producción un pipeline automatizado con credenciales dedicadas realiza el cambio tras aprobación de un segundo operador; y en finanzas o acceso a secretos críticos se exige quórum M-de-N.",
+    "practicas": [
+      "Bloquear en repositorios la autoaprobación de Pull Requests y exigir al menos una revisión independiente junto con checks de seguridad en CI antes de desplegar a producción.",
+      "Separar al administrador de sistemas/infraestructura del auditor de seguridad: quien opera servidores no debe poder modificar ni borrar los logs del SIEM.",
+      "Separación de funciones vs Menor privilegio: menor privilegio restringe lo que una cuenta puede hacer al mínimo necesario; separación de funciones exige que una operación sensible requiera la colaboración de al menos dos entidades independientes.",
+      "Evitar cuentas de emergencia compartidas sin control; si existe una cuenta break-glass, protegerla con aprobación dual y alerta inmediata."
+    ],
+    "ejemplo": "# Regla conceptual de protección de rama en CI/CD\nrequired_pull_request_reviews:\n  required_approving_review_count: 1\n  dismiss_stale_reviews: true\n  require_code_owner_reviews: true\n  allow_bypass_pull_request_allowances: [] # ni admins hacen push directo",
+    "entrevista": "La separación de funciones exige más de un actor o componente independiente para completar operaciones críticas, neutralizando tanto el fraude interno como el impacto de una única cuenta comprometida."
+  },
+  "Service mesh": {
+    "que": "Un service mesh es una capa de infraestructura dedicada —desacoplada del código de las aplicaciones— que gestiona, cifra, autentica y observa toda la comunicación servicio-a-servicio (tráfico este-oeste) dentro de una arquitectura de microservicios.",
+    "para": "Resuelve el problema de implementar de forma uniforme mTLS automático, rotación rápida de certificados, autorización entre servicios y trazabilidad distribuida en cientos de microservicios escritos en distintos lenguajes sin duplicar librerías de seguridad en cada uno. Es habitual en clusters Kubernetes con Istio, Linkerd o Cilium.",
+    "como": "Se divide en un Data Plane (proxies ligeros como Envoy inyectados como sidecars junto a cada pod, o proxies por nodo en modo ambient/eBPF) y un Control Plane (`istiod`) que actúa como CA interna emitiendo identidades SPIFFE (`spiffe://cluster.local/ns/prod/sa/orders`) mediante certificados X.509 de vida corta. El proxy intercepta el tráfico transparente vía iptables/eBPF, establece mTLS con el servicio destino, valida la identidad del par y evalúa políticas de autorización L7 (`AuthorizationPolicy`) antes de reenviar la petición HTTP/gRPC.",
+    "practicas": [
+      "Configurar el modo mTLS en `STRICT` (y no dejarlo indefinidamente en `PERMISSIVE`) para garantizar que ningún servicio acepte tráfico en texto plano dentro del cluster.",
+      "Combinar identidades de carga de trabajo (mTLS SPIFFE en el service mesh) con la validación de identidad del usuario final (JWT) para aplicar autorización en dos dimensiones.",
+      "Service mesh vs API gateway: el API gateway protege el tráfico norte-sur (entrada externa hacia el cluster), mientras que el service mesh gobierna y cifra el tráfico este-oeste entre microservicios internos.",
+      "Monitorizar la latencia y consumo de memoria de los sidecars, o evaluar modos sin sidecar (como Istio Ambient o Cilium) en clusters muy densos."
+    ],
+    "ejemplo": "apiVersion: security.istio.io/v1\nkind: PeerAuthentication\nmetadata:\n  name: default-strict-mtls\n  namespace: prod\nspec:\n  mtls:\n    mode: STRICT",
+    "entrevista": "Un service mesh delega en la infraestructura el cifrado mTLS automático, la identidad criptográfica entre servicios y las políticas de autorización L7 para todo el tráfico este-oeste sin tocar el código de negocio."
+  }
+}

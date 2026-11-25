@@ -2,22 +2,25 @@
 titulo: "Ingesta de datos"
 categoria:
   - "17. IA — nueva era (sección ampliada)"
+  - "56. Datos para IA"
 tags:
   - "mapa-tecnologico"
   - "nivel-conocer"
   - "ia-nueva-era-sección-ampliada"
+  - "datos-para-ia"
 nivel: conocer
 estrella: false
 relacionado_con:
-  - "[[Búsqueda híbrida (dense + BM25)]]"
-  - "[[Chunking (fijo - semántico - recursivo + overlap)]]"
   - "[[Embeddings]]"
+  - "[[Búsqueda híbrida (dense + BM25)]]"
+  - "[[Chunking]]"
+  - "[[Chunking (fijo - semántico - recursivo + overlap)]]"
+  - "[[Conjunto dorado]]"
+  - "[[Data pipeline para IA]]"
+  - "[[Datasets para fine-tuning]]"
+  - "[[ETL para IA]]"
+  - "[[Estructuración de datos no estructurados]]"
   - "[[Evaluación RAG (RAGAS, faithfulness, recall@k, MRR)]]"
-  - "[[Generación con citas]]"
-  - "[[Query rewriting - HyDE - Multi-query]]"
-  - "[[RAG]]"
-  - "[[Re-ranking (cross-encoder, Cohere)]]"
-  - "[[Vector DB (pgvector, Pinecone, Weaviate, Qdrant, Chroma, Milvus, Redis Vector)]]"
 ---
 
 # Ingesta de datos
@@ -26,19 +29,20 @@ relacionado_con:
 
 ## Contexto en el mapa
 
-[[RAG]] → ➕ [[Ingesta de datos]] → ➕ [[Chunking (fijo - semántico - recursivo + overlap)]] → [[Embeddings]] → ➕ [[Vector DB (pgvector, Pinecone, Weaviate, Qdrant, Chroma, Milvus, Redis Vector)]] → ➕ [[Búsqueda híbrida (dense + BM25)]] → ➕ [[Query rewriting - HyDE - Multi-query]] → ➕ [[Re-ranking (cross-encoder, Cohere)]] → ➕ [[Generación con citas]] → ➕ [[Evaluación RAG (RAGAS, faithfulness, recall@k, MRR)]].
+**Pipelines y preparación:** [[Datasets para fine-tuning]], [[Formato de datos de fine-tuning]], [[Data pipeline para IA]], [[ETL para IA]], [[Procesamiento de documentos]], [[OCR]], [[Extracción de texto]], [[Parsing de PDF]], [[Estructuración de datos no estructurados]], [[Metadatos para RAG]], [[Índice de búsqueda]], [[Reciprocal rank fusion]], [[Fusión de rango recíproco]], [[Golden dataset]], [[Conjunto dorado]], [[Ingesta de datos]], [[Chunking]], [[Embeddings]].
 
 ## Relaciones
 
-- [[Búsqueda híbrida (dense + BM25)]]
-- [[Chunking (fijo - semántico - recursivo + overlap)]]
 - [[Embeddings]]
+- [[Búsqueda híbrida (dense + BM25)]]
+- [[Chunking]]
+- [[Chunking (fijo - semántico - recursivo + overlap)]]
+- [[Conjunto dorado]]
+- [[Data pipeline para IA]]
+- [[Datasets para fine-tuning]]
+- [[ETL para IA]]
+- [[Estructuración de datos no estructurados]]
 - [[Evaluación RAG (RAGAS, faithfulness, recall@k, MRR)]]
-- [[Generación con citas]]
-- [[Query rewriting - HyDE - Multi-query]]
-- [[RAG]]
-- [[Re-ranking (cross-encoder, Cohere)]]
-- [[Vector DB (pgvector, Pinecone, Weaviate, Qdrant, Chroma, Milvus, Redis Vector)]]
 
 ## Mis notas
 

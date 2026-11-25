@@ -1,0 +1,184 @@
+{
+  "Prompt registry": {
+    "que": "Un Prompt registry es un repositorio centralizado y versionado que almacena, indexa y distribuye plantillas de prompts junto con sus metadatos de modelo, hiperparámetros y esquemas de salida. Funciona como un registro de artefactos (análogo a un Docker Registry o npm) desacoplado del código fuente de la aplicación.",
+    "para": "Resuelve el acoplamiento rígido de prompts incrustados como cadenas literales en el código, lo que impide iterar o auditar cambios sin redesplegar servicios. Se utiliza en sistemas en producción con múltiples equipos, modelos o entornos (desarrollo, staging, producción) que requieren gobernanza y trazabilidad.",
+    "como": "Cada prompt se registra bajo un identificador único (slug) con versiones inmutables (por ejemplo, v1, v2 o hash SHA) y etiquetas de entorno como `production` o `canary`. En tiempo de ejecución, el SDK del cliente consulta la API REST o caché local del registry (como Langfuse, Braintrust o PromptLayer) solicitando el alias activo. El servidor devuelve el template compilable junto con la configuración del modelo (`temperature`, `max_tokens`, `response_format`) y registra qué versión generó cada traza de telemetría.",
+    "practicas": [
+      "Usa aliases mutables (`production`, `staging`) apuntando a versiones inmutables (`v12`) para promover cambios sin tocar el código.",
+      "Almacena los hiperparámetros del modelo y el JSON Schema de salida junto al texto del prompt, porque un cambio de modelo rompe instrucciones acopladas a otro.",
+      "Implementa caché en memoria con TTL corto y fallback local embebido para que una caída del registry no tumbe las llamadas al LLM.",
+      "Prompt registry vs Git repo: un repo Git versiona bien texto en CI/CD, mientras que un registry añade promoción en caliente, métricas por versión y A/B testing sin redespliegue."
+    ],
+    "ejemplo": "from langfuse import Langfuse\n\nlf = Langfuse()\nprompt = lf.get_prompt(\"sql-generator\", label=\"production\")\ncompiled = prompt.compile(dialect=\"postgresql\", question=\"Ventas Q4\")\n# prompt.version -> 4, prompt.config -> {\"model\": \"gpt-4o\", \"temperature\": 0}",
+    "entrevista": "Un prompt registry desacopla el ciclo de vida del texto y la configuración del LLM respecto al despliegue de código, habilitando promoción por aliases, trazabilidad por versión y fallbacks seguros."
+  },
+  "Prompt regression testing": {
+    "que": "Prompt regression testing es la práctica de ingeniería que ejecuta de forma automatizada una batería de casos de evaluación contra un prompt modificado para comprobar que no degrada la calidad, el formato ni las políticas de seguridad respecto a una línea base. Aplica la lógica de las pruebas de regresión de software al comportamiento estocástico de los LLMs.",
+    "para": "Evita el efecto 'whack-a-mole', donde ajustar un prompt para corregir un caso borde rompe silenciosamente decenas de casos que antes funcionaban bien. Es indispensable antes de promover cambios de prompt, actualizar versiones de modelo base o modificar ejemplos few-shot en pipelines CI/CD.",
+    "como": "Un runner de evaluación (como Promptfoo, DeepEval o LangSmith) carga un dataset dorado (golden dataset) de entradas y salidas esperadas o criterios de rúbrica. Ejecuta las variantes candidata y de referencia (baseline) sobre las mismas entradas usando temperatura mínima o múltiples muestras. Luego aplica evaluadores deterministas (regex, JSON Schema, SQL parser) y LLM-as-a-Judge o similitud semántica, calculando tasas de acierto, latencia y coste para bloquear o aprobar el merge en CI.",
+    "practicas": [
+      "Combina aserciones deterministas baratas (formato JSON, longitud, ausencia de PII) antes de invocar evaluadores LLM-as-a-Judge más lentos y costosos.",
+      "Versiona el dataset dorado junto al código e incluye casos reales fallidos en producción para evitar que un bug resuelto vuelva a aparecer.",
+      "No dependas de una sola ejecución con temperatura > 0; usa `temperature=0` cuando sea posible o promedia varias pasadas (pass@k / consistencia) para filtrar varianza estocástica.",
+      "Error típico: usar el mismo modelo y el mismo prompt como juez y evaluado, introduciendo sesgo de auto-preferencia."
+    ],
+    "ejemplo": "# promptfooconfig.yaml\nprompts: [prompts/extract_v2.txt]\nproviders: [openai:gpt-4o-mini]\ntests:\n  - vars: { text: \"Factura #104 por $250\" }\n    assert:\n      - type: is-json\n      - type: javascript\n        value: \"JSON.parse(output).total === 250\"",
+    "entrevista": "El prompt regression testing convierte los cambios de prompts en artefactos verificables en CI/CD mediante datasets dorados y aserciones mixtas (deterministas + LLM-as-a-Judge) comparadas contra una línea base."
+  },
+  "Prompt rollback": {
+    "que": "Prompt rollback es la operación de revertir de inmediato una plantilla de prompt activa en producción a una versión anterior validada tras detectar una degradación de calidad, formato, coste o seguridad. Constituye el mecanismo de recuperación rápida dentro de la gestión del ciclo de vida de prompts (LLMOps).",
+    "para": "Minimiza el tiempo medio de recuperación (MTTR) cuando un cambio de prompt introduce alucinaciones, rompe el parseo de respuestas estructuradas o dispara el consumo de tokens en tráfico real. Se utiliza en incidentes de producción donde el código de aplicación es correcto y el fallo reside únicamente en las instrucciones o ejemplos activos.",
+    "como": "Cuando las métricas en línea (tasa de error de parseo, latencia, feedback negativo o guardrails) superan un umbral, un operador o un sistema automatizado reasigna el puntero o alias `production` en el prompt registry hacia el número de versión previo inmutable. Los clientes que consultan el registry invalidan su caché local mediante webhooks, SSE o expiración de TTL y comienzan a renderizar el template anterior en segundos sin reiniciar contenedores ni ejecutar un rollback completo de despliegue.",
+    "practicas": [
+      "Mantén todas las versiones de prompts estrictamente inmutables: nunca edites la versión `vN` en sitio; crea `vN+1` y reasigna el alias para que el rollback sea atómico.",
+      "Verifica la compatibilidad hacia atrás entre la versión antigua del prompt y los consumidores actuales de código (campos del JSON de salida o variables esperadas en el template).",
+      "Automatiza el rollback mediante monitores de errores de esquema (por ejemplo, si fallos de Pydantic superan el 2% en 5 minutos).",
+      "Trampa común: depender de un TTL de caché de 1 hora en los microservicios, lo que deja el rollback inefectivo durante toda esa ventana."
+    ],
+    "ejemplo": "# Reasignación atómica del alias de producción vía CLI/API\ncurl -X PATCH https://registry.internal/v1/prompts/invoice-parser/aliases/production \\\n  -H \"Authorization: Bearer $TOKEN\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"target_version\": 14}'",
+    "entrevista": "Un prompt rollback eficaz requiere versiones inmutables, aliases desacoplados del despliegue y compatibilidad de contrato con el código consumidor para restaurar la calidad en segundos."
+  },
+  "Prompt sobreespecificado": {
+    "que": "Un prompt sobreespecificado es un anti-patrón que consiste en sobrecargar las instrucciones con reglas excesivamente rígidas, microgestión paso a paso innecesaria, restricciones redundantes o formatos sobre-restringidos que ahogan la capacidad de generalización del modelo. Produce salidas frágiles ante variaciones legítimas de la entrada.",
+    "para": "Identificar y corregir este anti-patrón sirve para recuperar fluidez, precisión semántica y tasa de cumplimiento en modelos modernos, reduciendo además el consumo innecesario de tokens y latencia. Se aborda cuando un prompt acumula decenas de parches contradictorios ('no hagas X', 'usa exactamente Y palabras') y empieza a fallar en casos sencillos.",
+    "como": "El exceso de restricciones compite dentro de la ventana de atención del Transformer, diluyendo la prioridad de las instrucciones críticas (efecto 'lost in the middle' o sobrecarga atencional). Además, al imponer reglas sintácticas arbitrarias junto con tareas semánticas complejas, el modelo gasta capacidad de razonamiento en satisfacer restricciones superficiales o cae en bucles de incumplimiento parcial. La mitigación consiste en podar reglas duplicadas, sustituir prohibiciones negativas por objetivos positivos claros y trasladar validaciones estrictas de formato a Structured Outputs o código post-proceso.",
+    "practicas": [
+      "Delega las restricciones de estructura rígida a esquemas nativos (JSON Schema / `response_format`) en lugar de describirlas con cinco párrafos en prosa.",
+      "Cuando añadas una regla nueva para corregir un caso borde, revisa si puedes eliminar o unificar dos reglas antiguas que la provoquen.",
+      "Prefiere especificar el criterio de éxito y 2-3 ejemplos representativos (few-shot) antes que listar 30 excepciones condicionales tipo `if/else` en lenguaje natural.",
+      "Prompt sobreespecificado vs Prompt ambiguo: el ambiguo subespecifica el objetivo y genera respuestas dispersas; el sobreespecificado impone micro-reglas conflictivas o innecesarias que vuelven frágil al modelo."
+    ],
+    "ejemplo": "# Anti-patrón (sobreespecificado):\n\"Responde en exactamente 3 frases de máximo 12 palabras, sin usar adjetivos, empezando cada una con un verbo en infinitivo y sin mencionar precios salvo que sean en euros.\"\n\n# Mejora (objetivo claro + esquema):\n\"Resume el incidente en un máximo de 3 puntos clave accionables.\"",
+    "entrevista": "Un prompt sobreespecificado degrada el rendimiento porque satura la atención del modelo con micro-restricciones que compiten entre sí; es mejor definir objetivos claros y delegar el formato estricto a Structured Outputs."
+  },
+  "Prompt template": {
+    "que": "Un Prompt template es una plantilla parametrizada que separa la estructura estática de instrucciones, rol y ejemplos respecto a los datos dinámicos de entrada mediante marcadores de posición (placeholders). Actúa como la interfaz tipada entre la lógica de la aplicación y el modelo de lenguaje.",
+    "para": "Permite reutilizar una misma estrategia de prompting across miles de entradas distintas, mantener el código limpio y prevenir errores de concatenación manual o inyecciones accidentales de formato. Se utiliza en prácticamente cualquier pipeline LLM con entrada de usuario, contextos recuperados por RAG o flujos agénticos.",
+    "como": "El motor de plantillas (como Jinja2, Mustache, f-strings controlados o `ChatPromptTemplate` de LangChain) recibe un diccionario de variables y valida que estén presentes antes de renderizar los mensajes (`system`, `user`, `assistant`). Durante la compilación, inserta bloques condicionales, itera sobre listas de documentos o ejemplos few-shot y aplica escapes o delimitadores XML/Markdown para aislar los datos no confiables del usuario respecto a las instrucciones del sistema.",
+    "practicas": [
+      "Separa estrictamente el bloque de instrucciones (`system`) del contenido dinámico del usuario usando delimitadores claros (por ejemplo etiquetas XML `<contexto>...</contexto>`) para mitigar prompt injection.",
+      "Valida los tipos y la presencia de todas las variables requeridas antes de invocar al modelo; evita renderizar cadenas con `{variable}` sin sustituir.",
+      "Evita lógica compleja (bucles anidados o formateo pesado) dentro de la plantilla: pre-formatea los datos en Python/TypeScript y pasa texto limpio.",
+      "Prompt template vs String interpolation simple: un template formal soporta mensajes estructurados por rol, validación de variables y sanitización."
+    ],
+    "ejemplo": "from jinja2 import Template\n\ntpl = Template(\n    \"Clasifica el ticket en [bug, billing].\\n\"\n    \"<ticket>{{ user_input | e }}</ticket>\"\n)\nrendered = tpl.render(user_input=\"No carga mi factura\")",
+    "entrevista": "Un prompt template desacopla las instrucciones fijas de los datos variables mediante validación de parámetros y delimitadores explícitos, reduciendo errores de formato y riesgos de prompt injection."
+  },
+  "Prompt versioning": {
+    "que": "Prompt versioning es la disciplina de asignar identificadores inmutables y trazables (como versiones semánticas, enteros incrementales o hashes de contenido) a cada revisión de una plantilla de prompt y su configuración asociada. Trata al prompt como un artefacto de código de primera clase.",
+    "para": "Resuelve la imposibilidad de reproducir resultados históricos o diagnosticar cuándo y por qué cambió el comportamiento de un sistema basado en LLM. Es imprescindible para auditorías, cumplimiento normativo, experimentos A/B y depuración de incidentes en producción.",
+    "como": "Cada modificación en el texto del prompt, en sus ejemplos few-shot o en los parámetros del modelo genera una nueva instantánea inmutable acompañada de metadatos (autor, timestamp, mensaje de cambio y hash SHA-256). Al ejecutarse una petición, el sistema adjunta el `prompt_id` y `prompt_version` a los logs y trazas de observabilidad (OpenTelemetry / Langfuse). Esto permite cruzar métricas de negocio, latencia y coste por cada versión exacta que procesó una petición.",
+    "practicas": [
+      "Versiona el paquete completo (system prompt, user template, modelo objetivo, temperature y tools) como una unidad atómica, ya que cambiar cualquiera altera la salida.",
+      "Aplica inmutabilidad estricta: nunca sobrescribas una versión publicada; cualquier ajuste genera una versión nueva.",
+      "Registra el `prompt_version` en cada evento de telemetría para poder segmentar tasas de alucinación o satisfacción por versión.",
+      "Usa hashes de contenido cuando versiones en Git junto al código y versiones enteras o semánticas (SemVer) cuando gestiones ciclos de vida en un registry."
+    ],
+    "ejemplo": "{\n  \"prompt_id\": \"support-triage\",\n  \"version\": \"1.4.0\",\n  \"sha256\": \"9f86d081884c7d659a2feaa0c55ad015\",\n  \"model\": \"claude-3-5-sonnet\",\n  \"changelog\": \"Añadido ejemplo negativo para falsos positivos de reembolso\"\n}",
+    "entrevista": "El prompt versioning garantiza reproducibilidad y observabilidad tratando el texto, los hiperparámetros y el esquema de salida como un artefacto inmutable vinculado a cada traza de producción."
+  },
+  "Pruebas de regresión de prompt": {
+    "que": "Las pruebas de regresión de prompt son conjuntos de evaluaciones automatizadas diseñadas para verificar que una actualización en un prompt, sus ejemplos o el modelo subyacente no degrade las métricas de calidad, precisión o seguridad previamente alcanzadas. Adaptan el testing de regresión continuo al carácter probabilístico de los LLMs.",
+    "para": "Previenen regresiones silenciosas en producción cuando se optimiza un prompt para un nuevo requisito o cuando un proveedor depreca un checkpoint de modelo. Se ejecutan en pipelines de integración continua (CI) antes de aprobar cambios o antes de promover una nueva versión a producción.",
+    "como": "El flujo parte de un conjunto de prueba representativo (golden set) que cubre casos estándar, casos borde y pruebas adversarias de seguridad. El motor de evaluación ejecuta tanto la versión en producción como la candidata sobre ese conjunto y compara resultados mediante rúbricas híbridas: validadores sintácticos exactos (esquema JSON, tipos, palabras prohibidas) y jueces basados en modelos (LLM-as-a-Judge) o métricas de similitud. Si el puntaje cae por debajo de un umbral o rompe una aserción crítica, el pipeline bloquea la promoción.",
+    "practicas": [
+      "Incluye casos negativos y adversarios (intentos de jailbreak o entradas vacías) dentro del suite de regresión, no solo el 'happy path'.",
+      "Fija los pesos y versiones del juez (LLM-as-a-Judge) para que el criterio de evaluación no cambie mientras comparas versiones del prompt.",
+      "Separa el conjunto de desarrollo (sobre el que iteras el prompt) del conjunto de regresión final para evitar sobreajuste (overfitting) al test.",
+      "Mide también latencia y tokens consumidos en la regresión: un prompt que mejora 1% en precisión pero duplica el coste puede ser una regresión operativa."
+    ],
+    "ejemplo": "def test_extract_regression(eval_runner, golden_cases):\n    scores = eval_runner.run(prompt_file=\"extract_v3.j2\", cases=golden_cases)\n    assert scores.json_valid_rate == 1.0\n    assert scores.accuracy >= 0.94\n    assert scores.avg_latency_ms < 1200",
+    "entrevista": "Las pruebas de regresión de prompt aseguran la estabilidad continua de un sistema LLM midiendo calidad funcional, seguridad, coste y latencia frente a un golden dataset en cada cambio."
+  },
+  "Registro de prompts": {
+    "que": "Un registro de prompts (prompt registry) es una plataforma o servicio centralizado dedicado a almacenar, catalogar, versionar y servir plantillas de prompts y sus configuraciones de ejecución de forma desacoplada del código de la aplicación. Centraliza la gobernanza de las instrucciones que consumen los LLMs en una organización.",
+    "para": "Elimina la dispersión de prompts duplicados en repositorios distintos y permite que ingenieros de producto, expertos de dominio o equipos de seguridad auditen e iteren instrucciones sin esperar ciclos completos de CI/CD de microservicios. Es clave en arquitecturas con múltiples servicios, agentes o experimentos frecuentes.",
+    "como": "Los autores publican versiones inmutables del prompt en el registro junto con su esquema de variables, modelo objetivo y etiquetas (labels) de entorno. Las aplicaciones clientes solicitan el prompt por nombre y etiqueta vía SDK o API HTTP, manteniendo una copia en caché local para latencia mínima y resiliencia ante fallos de red. El registro se integra con sistemas de trazabilidad y evaluación para asociar métricas reales de uso a cada revisión publicada.",
+    "practicas": [
+      "Define permisos de acceso basados en roles (RBAC) para que cualquiera pueda proponer borradores, pero solo revisores aprobados promuevan la etiqueta de producción.",
+      "Empaqueta una copia de respaldo ('fallback bundle') en la build de la aplicación para garantizar disponibilidad incluso si el registro externo no responde.",
+      "Documenta en cada entrada del registro el contrato de entrada (variables) y el contrato de salida esperado para evitar roturas en los consumidores.",
+      "Registro dedicado vs variables de entorno: las variables de entorno carecen de historial, validación de esquema, diffing y promoción gradual."
+    ],
+    "ejemplo": "# Estructura lógica de una entrada en un registro de prompts\nname: \"clinical-summary\"\nlabels:\n  production: 7\n  canary: 8\nversions:\n  8:\n    model: \"gemini-2.5-pro\"\n    variables: [\"patient_notes\", \"language\"]",
+    "entrevista": "Un registro de prompts actúa como fuente única de verdad para los artefactos de prompting, permitiendo gobernanza, distribución en caliente y correlación directa entre versión y telemetría."
+  },
+  "Rollback de prompt": {
+    "que": "El rollback de prompt es el procedimiento operativo de restaurar inmediatamente una versión previa y estable de un prompt en producción tras observar fallos funcionales, desviaciones de formato, picos de coste o vulnerabilidades en una versión recién promovida. Es el equivalente a revertir una feature flag o una configuración crítica.",
+    "para": "Permite contener incidentes en aplicaciones de IA generativa en cuestión de segundos sin compilar, empaquetar ni redesplegar los servicios que consumen el modelo. Se aplica cuando los monitores de producción o los usuarios reportan regresiones justo después de actualizar un prompt.",
+    "como": "Dado que las versiones en el registro son inmutables, el rollback no borra ni reescribe texto; simplemente actualiza el puntero del entorno activo (por ejemplo, cambia `production` de `v9` a `v8`). Tras el cambio de puntero, los workers o microservicios detectan la nueva asignación mediante invalidación de caché (push por webhook o polling corto) y enrutan las siguientes peticiones con la plantilla anterior. Paralelamente, las trazas posteriores permiten confirmar que la tasa de errores vuelve a la línea base.",
+    "practicas": [
+      "Ensaya el rollback antes de incidentes reales para comprobar que la invalidación de caché en los clientes ocurre en el tiempo esperado.",
+      "Conserva los registros de evaluación que aprobaron la versión anterior para saber con certeza hacia qué revisión estable volver.",
+      "Evita hacer cambios de esquema incompatibles entre versiones consecutivas sin versionar también el código consumidor; de lo contrario el rollback romperá el parseador.",
+      "Combina el rollback con despliegue progresivo (canary 5% -> 25% -> 100%) para limitar el radio de impacto antes de necesitar una reversión total."
+    ],
+    "ejemplo": "# Flujo CLI de reversión rápida en un registro\npromptctl promote --name checkout-assistant --env production --version 11\npromptctl status --name checkout-assistant\n# production -> v11 (rollback desde v12 por error tasa JSON > 3%)",
+    "entrevista": "Un rollback de prompt rápido se apoya en versiones inmutables, punteros de entorno desacoplados, invalidación ágil de caché y compatibilidad de esquema con el código en ejecución."
+  },
+  "Self-consistency": {
+    "que": "Self-consistency (autoconsistencia) es una técnica de decodificación e inferencia para Chain-of-Thought que genera múltiples cadenas de razonamiento diversas para un mismo problema y selecciona la respuesta final más frecuente mediante votación mayoritaria. Explota el principio de que un problema complejo admite varios caminos lógicos hacia la misma solución correcta, mientras los errores tienden a divergir.",
+    "para": "Aumenta sustancialmente la precisión en tareas de razonamiento aritmético, lógico, simbólico y de sentido común donde una única pasada greedy (`temperature=0`) puede cometer un error de cálculo o seguir un camino defectuoso. Se usa cuando la fiabilidad prima sobre la latencia y el coste de tokens.",
+    "como": "Dado un prompt con Chain-of-Thought ('piensa paso a paso'), se invoca al LLM $k$ veces en paralelo con decodificación estocástica (`temperature > 0`, por ejemplo 0.7, o `top_p` < 1.0) para muestrear trayectorias de razonamiento independientes. Un extractor normaliza únicamente la respuesta final de cada muestra (descartando las variaciones en la explicación intermedia). Finalmente, se aplica votación mayoritaria simple o ponderada por probabilidad/confianza para emitir el resultado ganador.",
+    "practicas": [
+      "Utiliza temperatura moderada (0.5–0.8) para generar diversidad real de razonamientos; con `temperature=0` todas las muestras serán casi idénticas y desperdiciarás cómputo.",
+      "Normaliza las respuestas antes de votar (por ejemplo `42.0`, `42` y `cuarenta y dos` deben mapearse al mismo candidato) para no fragmentar el voto.",
+      "Ajusta el número de muestras $k$ según el presupuesto: pasar de $k=1$ a $k=5$ suele dar la mayor ganancia marginal de precisión antes de saturar.",
+      "Self-consistency vs Self-refine: Self-consistency muestrea caminos independientes en paralelo y vota; Self-refine itera secuencialmente corrigiendo un mismo borrador."
+    ],
+    "ejemplo": "from collections import Counter\n\nsamples = [extract_answer(call_llm(prompt, temperature=0.7)) for _ in range(5)]\nwinner, votes = Counter(samples).most_common(1)[0]\nprint(f\"Respuesta: {winner} ({votes}/5 votos)\")",
+    "entrevista": "Self-consistency mejora la robustez del razonamiento muestreando múltiples cadenas Chain-of-Thought estocásticas y eligiendo la respuesta más consistente por mayoría, intercambiando cómputo en inferencia por precisión."
+  },
+  "Self-critique": {
+    "que": "Self-critique (autocrítica) es un patrón de prompting donde se solicita al propio modelo que audite y evalúe críticamente una respuesta generada previamente frente a un conjunto explícito de reglas, principios o criterios de calidad. A diferencia de la corrección directa, su foco está en la fase de diagnóstico y detección de fallos.",
+    "para": "Sirve para detectar alucinaciones, sesgos, incumplimientos de políticas de seguridad (como en Constitutional AI), huecos lógicos o violaciones de formato antes de mostrar la salida al usuario final. Se emplea como paso intermedio de verificación en flujos de redacción, generación de código y moderación.",
+    "como": "Tras generar una salida inicial $y_0$ ante la entrada $x$, se inicia un segundo turno o llamada dedicada pasando $(x, y_0)$ junto con una rúbrica o lista de principios (por ejemplo: 'verifica citas contra el contexto y comprueba ausencia de datos inventados'). El modelo produce una crítica estructurada enumerando defectos específicos, severidad y evidencias. Esta salida diagnóstica puede alimentar una decisión de filtrado/rechazo o servir como entrada para una etapa posterior de revisión.",
+    "practicas": [
+      "Proporciona criterios concretos y verificables en el prompt de crítica en lugar de pedir genéricamente 'revisa si está bien'.",
+      "Separa el rol de generador y el rol de crítico en llamadas distintas (sin arrastrar el sesgo conversacional) para obtener evaluaciones más objetivas.",
+      "Combina la autocrítica con acceso a fuentes o herramientas externas (grounding): sin verificación externa, un LLM puede reafirmar sus propias alucinaciones.",
+      "Self-critique vs Self-refine: Self-critique produce el diagnóstico evaluativo (la crítica); Self-refine encadena generación, autocrítica y reescritura iterativa hasta converger."
+    ],
+    "ejemplo": "critique_prompt = f\"\"\"Evalúa la respuesta según la rúbrica:\n1. ¿Todas las cifras aparecen en <fuente>? \n2. ¿Responde directamente a la pregunta?\n<fuente>{context}</fuente>\n<respuesta>{draft}</respuesta>\nLista solo fallos detectados en JSON.\"\"\"",
+    "entrevista": "Self-critique aprovecha la capacidad de discriminación del modelo —a menudo superior a su generación en una sola pasada— para auditar una salida frente a criterios explícitos antes de aceptarla o refinarla."
+  },
+  "Self-refine": {
+    "que": "Self-refine es un patrón iterativo de prompting en el que un mismo modelo genera una salida inicial, produce retroalimentación crítica sobre sus propios errores y reescribe el resultado en un bucle cerrado hasta cumplir un criterio de calidad o alcanzar un límite de iteraciones. Emula el ciclo humano de borrador, revisión y edición.",
+    "para": "Mejora significativamente la calidad en tareas abiertas y complejas —como síntesis técnica, refactorización de código, mejora de estilo o resolución de restricciones múltiples— donde es difícil acertar todos los requisitos en un único pase autoregresivo. Se usa cuando la calidad final justifica múltiples llamadas secuenciales.",
+    "como": "El bucle consta de tres prompts especializados (o turnos): 1) Generación: produce el borrador $y_0$ a partir de $x$; 2) Feedback (crítica): analiza $y_t$ señalando fallos accionables y específicos; 3) Refinamiento: toma $(x, y_t, \\text{feedback}_t)$ y genera una versión mejorada $y_{t+1}$. El ciclo se repite hasta que el módulo de feedback emite una señal de parada ('sin errores críticos') o se alcanza `max_iters`.",
+    "practicas": [
+      "Fija siempre un máximo estricto de iteraciones (típicamente 2 a 3); tras 3 rondas los retornos suelen ser decrecientes o el modelo introduce cambios cosméticos innecesarios.",
+      "Exige que la crítica sea accionable ('el método X no maneja nulos') en lugar de vaga ('hazlo mejor'), o la reescritura perderá foco.",
+      "Integra señales deterministas reales en el feedback cuando existan (salida de compilador, linter o tests unitarios) para anclar el refinamiento a la realidad.",
+      "Trampa común: en tareas de conocimiento factual sin contexto externo, Self-refine puede volver más elocuente una alucinación en lugar de corregir el hecho."
+    ],
+    "ejemplo": "draft = llm(f\"Escribe una función SQL para: {task}\")\nfor _ in range(2):\n    feedback = llm(f\"Señala bugs o mejoras en:\\n{draft}\")\n    if \"SIN_ERRORES\" in feedback:\n        break\n    draft = llm(f\"Corrige este código según el feedback:\\n{draft}\\n{feedback}\")",
+    "entrevista": "Self-refine convierte la generación en un bucle cerrado de borrador-feedback-reescritura con límite de iteraciones, rindiendo mejores resultados cuando el feedback es específico o se apoya en validadores deterministas."
+  },
+  "Step-back prompting": {
+    "que": "Step-back prompting es una técnica de prompting en dos etapas que primero pide al modelo abstraer los principios generales, conceptos físicos, reglas de negocio o esquemas de alto nivel subyacentes a una pregunta concreta antes de resolverla. Separa la recuperación de conocimiento abstracto del razonamiento detallado final.",
+    "para": "Reduce los errores provocados por perderse en detalles superficiales o distractores dentro de preguntas complejas de ciencia, derecho, arquitectura o depuración. Es especialmente útil cuando la respuesta correcta depende de aplicar una ley, teorema o política general que el modelo podría omitir al saltar directo al cálculo.",
+    "como": "En el primer paso (abstracción), se transforma la consulta específica $q$ en una pregunta más general ('step-back question'), por ejemplo pasando de un caso numérico concreto a '¿Qué principios de termodinámica rigen este sistema?'. El modelo genera esos principios generales $P$. En el segundo paso (razonamiento), se inyectan tanto la pregunta original $q$ como los principios $P$ en el contexto del prompt para derivar la respuesta final fundamentada en $P$.",
+    "practicas": [
+      "Usa ejemplos few-shot en la primera etapa para enseñar al modelo el nivel de abstracción adecuado de la pregunta 'step-back'.",
+      "Asegúrate de incluir la respuesta de principios generada dentro del contexto del segundo prompt para anclar el razonamiento final.",
+      "Evalúa si tu caso realmente gana frente a Chain-of-Thought estándar: Step-back destaca en preguntas ricas en detalles específicos donde importa el marco teórico, no en aritmética simple.",
+      "Step-back prompting vs Chain-of-Thought: CoT razona linealmente hacia adelante desde los datos del problema; Step-back sube primero al plano conceptual para bajar luego al caso particular."
+    ],
+    "ejemplo": "# Paso 1 (Abstracción)\nq = \"¿Qué ocurre con la presión de un gas ideal si reduzco el volumen a la mitad a temperatura constante?\"\nprinciples = llm(f\"Formula el concepto o ley general aplicable a: {q}\")\n# Paso 2 (Razonamiento anclado)\nanswer = llm(f\"Principios:\\n{principles}\\n\\nResponde paso a paso a: {q}\")",
+    "entrevista": "Step-back prompting mejora la precisión en problemas densos en detalles al obligar al modelo a abstraer primero los principios o reglas generales y usarlos después como ancla para el razonamiento específico."
+  },
+  "Versionado de prompts": {
+    "que": "El versionado de prompts es la práctica de ingeniería que asigna identificadores únicos e inmutables a cada iteración de una plantilla de prompt y a sus parámetros de ejecución asociados, conservando su historial completo de cambios. Permite rastrear, comparar y restaurar cualquier estado exacto de las instrucciones enviadas a un LLM.",
+    "para": "Resuelve la falta de reproducibilidad en sistemas de IA generativa, donde una mínima modificación de redacción o de temperatura puede alterar drásticamente las salidas en producción. Se usa para auditar decisiones del modelo, ejecutar pruebas comparativas (A/B) y garantizar despliegues seguros en equipos colaborativos.",
+    "como": "Cada revisión aprobada genera una nueva versión inmutable (incremental o semántica) junto con su hash, autor, fecha y metadatos del modelo (`model`, `temperature`, `tools`, `response_format`). Los servicios consumidores referencian un alias de entorno o una versión fijada explícitamente, y la capa de observabilidad registra esa versión en cada log de inferencia. De este modo, ante una anomalía o auditoría se puede reconstruir exactamente qué texto y configuración produjeron una respuesta concreta.",
+    "practicas": [
+      "Acopla la versión del prompt con el identificador exacto del checkpoint del modelo y sus parámetros de muestreo, nunca solo el texto plano.",
+      "Adopta una convención clara de versionado (por ejemplo SemVer: mayor para cambios incompatibles de esquema de salida, menor para ajustes de instrucciones).",
+      "Exige un mensaje de cambio o referencia a evaluación en cada nueva versión para mantener trazable el motivo de la iteración.",
+      "Fija versiones explícitas en pruebas reproducibles y usa aliases (`production`) en servicios que requieran despliegue desacoplado."
+    ],
+    "ejemplo": "# Registro de metadatos por versión en YAML\nprompt_name: sql-assistant\nversion: 2.1.0\nauthor: data-platform\nmodel_config:\n  model: gpt-4o\n  temperature: 0.0\nschema_ref: schemas/sql_response_v2.json",
+    "entrevista": "El versionado de prompts trata instrucciones, ejemplos, esquema y parámetros del modelo como un artefacto inmutable único, habilitando reproducibilidad, auditoría y comparación objetiva en producción."
+  }
+}

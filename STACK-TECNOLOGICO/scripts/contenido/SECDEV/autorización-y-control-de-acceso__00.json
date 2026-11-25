@@ -1,0 +1,392 @@
+{
+  "ABAC": {
+    "que": "ABAC (Attribute-Based Access Control) es un modelo de control de acceso que evalúa atributos dinámicos del sujeto, el recurso, la acción y el entorno para decidir si permite o deniega una operación. A diferencia de los modelos basados solo en roles estáticos, expresa reglas booleanas sobre propiedades arbitrarias como departamento, clasificación del dato, hora o ubicación de red.",
+    "para": "Resuelve escenarios donde los permisos dependen del contexto y de relaciones entre entidad y dato, evitando la proliferación inmanejable de roles. Se emplea en plataformas cloud (como políticas IAM con condiciones), microservicios con políticas centralizadas y sistemas con requisitos regulatorios granulares.",
+    "como": "Cuando un cliente solicita acceso, el Policy Enforcement Point (PEP) intercepta la petición y recopila atributos del sujeto (claims del JWT, grupo, nivel de clearance), del recurso (propietario, etiqueta de sensibilidad, tenant_id), de la acción (read, approve) y del entorno (IP origen, postura del dispositivo, timestamp). El PEP envía ese contexto al Policy Decision Point (PDP), que evalúa políticas escritas en lenguajes como Rego o XACML mediante un motor lógico. Si faltan atributos en el token, un Policy Information Point (PIP) los consulta en directorios LDAP, bases de datos o servicios externos. El PDP devuelve una decisión determinista (Allow/Deny) con denegación por defecto si ninguna regla coincide.",
+    "practicas": [
+      "Fija el orden de precedencia explícito (deny-overrides) para evitar que una regla permisiva anule una restricción crítica.",
+      "Valida que los atributos del sujeto y del recurso provengan de fuentes autoritativas (IdP firmado o base de datos interna), nunca de cabeceras o parámetros manipulables por el cliente.",
+      "ABAC vs RBAC: RBAC agrupa permisos por función organizacional y es simple de auditar; ABAC aporta granularidad contextual a costa de mayor complejidad al razonar quién tiene acceso efectivo.",
+      "Combina RBAC para permisos gruesos de módulo con ABAC para restricciones por instancia, estado del flujo o ventana temporal."
+    ],
+    "ejemplo": "allow if {\n  input.action == \"approve_invoice\"\n  input.user.department == \"finance\"\n  input.resource.amount <= input.user.approval_limit\n  input.resource.owner_id != input.user.id\n  net.cidr_contains(\"10.20.0.0/16\", input.env.source_ip)\n}",
+    "entrevista": "ABAC evalúa atributos del sujeto, recurso, acción y entorno en tiempo de ejecución para aplicar decisiones contextuales sin multiplicar roles estáticos."
+  },
+  "ACL": {
+    "que": "Una ACL (Access Control List) es una estructura de datos asociada directamente a un objeto o recurso que enumera qué identidades (usuarios o grupos) tienen permitidas o denegadas operaciones específicas sobre él. Cada entrada de la lista, llamada ACE (Access Control Entry), vincula un principal con una máscara de permisos como lectura, escritura o ejecución.",
+    "para": "Sirve para controlar el acceso de forma directa por recurso individual cuando distintos usuarios necesitan permisos heterogéneos sobre objetos concretos, como archivos, buckets, tópicos o carpetas compartidas. Es el mecanismo base en sistemas de archivos POSIX/NTFS, almacenamiento de objetos y reglas de filtrado de red.",
+    "como": "Cada recurso almacena en sus metadatos o en una tabla índice una lista ordenada de ACEs con formato `(principal, operación, efecto)`. Al llegar una petición sobre el recurso R para el usuario U y la acción A, el sistema de archivos o servicio recupera la ACL de R y recorre sus entradas o busca la intersección con la identidad y grupos de U. En implementaciones con entradas Deny explícitas (como NTFS), las denegaciones suelen evaluarse antes que las concesiones; en POSIX tradicional se evalúa el bit más específico (propietario, grupo, otros) o las entradas extendidas con máscara. Si ninguna entrada concede el permiso solicitado, el acceso se rechaza.",
+    "practicas": [
+      "Evita gestionar permisos de miles de recursos asignando usuarios individuales; agrupa sujetos en grupos o usa ACL heredables con precaución.",
+      "Audita periódicamente ACLs huérfanas tras bajas de empleados o migraciones para evitar privilegios residuales.",
+      "ACL vs RBAC: una ACL responde a 'quién puede tocar este objeto' (centrada en el recurso), mientras RBAC responde a 'qué puede hacer este rol en el sistema' (centrada en el sujeto).",
+      "Prefiere denegación por defecto y evita mezclar ACEs Allow y Deny complejos si la plataforma no garantiza un orden de evaluación claro."
+    ],
+    "ejemplo": "$ setfacl -m u:svc_backup:r--,g:app_admins:rw- /var/data/facturas.db\n$ getfacl /var/data/facturas.db\nuser::rw-\nuser:svc_backup:r--\ngroup:app_admins:rw-\nmask::rw-\nother::---",
+    "entrevista": "Una ACL adjunta permisos directamente a cada recurso mediante entradas por identidad, ideal para control por objeto pero difícil de gobernar a gran escala sin agrupación."
+  },
+  "API key": {
+    "que": "Una API key es un token opaco y de larga duración utilizado para identificar y autorizar de forma básica a una aplicación cliente o proyecto que consume una API. A diferencia de un token OAuth con identidad de usuario, suele representar al consumidor técnico o proyecto y carece de estándar criptográfico de claims como un JWT.",
+    "para": "Sirve para autenticar integraciones máquina a máquina simples, aplicar cuotas de tráfico (rate limiting), facturación y telemetría por cliente, o restringir el acceso a endpoints de servicio sin flujo interactivo. No debe usarse por sí sola para delegar sesiones de usuario final ni para operaciones de alto riesgo sin controles adicionales.",
+    "como": "El proveedor genera una cadena aleatoria con alta entropía (por ejemplo, 256 bits vía CSPRNG), calcula su hash criptográfico (SHA-256 o Argon2/HMAC) y almacena solo el hash junto con metadatos de scopes permitidos, IP allowlist y expiración en la base de datos o API Gateway. El cliente envía la clave en cada petición mediante una cabecera dedicada como `X-API-Key` o `Authorization: ApiKey <valor>` sobre TLS. El gateway o middleware aplica el mismo hash al valor recibido, busca el registro en caché o DB, verifica estado activo, restricciones de origen y cuota, y adjunta el contexto del cliente al request.",
+    "practicas": [
+      "Nunca envíes API keys en la query string (`?api_key=...`), porque quedan registradas en logs de proxies, historiales y cabeceras Referer.",
+      "Almacena en servidor únicamente un hash con prefijo identificable (ej. `sk_live_abc1...`) para permitir búsqueda rápida y revocación sin guardar el secreto en claro.",
+      "Aplica principio de menor privilegio: vincula cada clave a permisos acotados, entorno (dev/prod), expiración y restricción por IP o dominio.",
+      "Rota las claves periódicamente soportando un periodo de gracia con doble clave activa y escanea repositorios con herramientas de secret detection."
+    ],
+    "ejemplo": "GET /v1/orders HTTP/1.1\nHost: api.ejemplo.com\nX-API-Key: <TU_API_KEY>\nAccept: application/json",
+    "entrevista": "Una API key identifica al proyecto o servicio consumidor para control de acceso y cuotas, debe transmitirse solo en cabeceras sobre TLS, almacenarse hasheada y limitarse con scopes y rotación."
+  },
+  "Aislamiento de tenants": {
+    "que": "El aislamiento de tenants es el conjunto de controles arquitectónicos, lógicos y físicos que garantizan que los datos, procesos, claves criptográficas y recursos de un cliente (tenant) en un entorno compartido sean inaccesibles e invisibles para cualquier otro tenant. Impide tanto la lectura o modificación cruzada como la interferencia de recursos (noisy neighbor).",
+    "para": "Resuelve el riesgo fundamental de las aplicaciones SaaS multi-tenant donde múltiples organizaciones comparten infraestructura, bases de datos o runtimes. Es indispensable para cumplir requisitos de privacidad, contratos enterprise y normativas como SOC 2, ISO 27001 o GDPR.",
+    "como": "El aislamiento opera por capas a lo largo de toda la petición. En la capa de identidad, el IdP emite un token firmado con el claim `tenant_id` inmutable que el gateway o middleware extrae en lugar de aceptar un ID en la URL o body. En la capa de cómputo y caché, las claves de Redis, colas de mensajes y rutas de almacenamiento incluyen el prefijo del tenant o namespaces aislados. En la capa de datos, se aplica uno de tres modelos: silo (base de datos por tenant), bridge (esquema por tenant) o pool (tablas compartidas forzadas mediante Row-Level Security y claves de cifrado por tenant en KMS).",
+    "practicas": [
+      "Deriva siempre el `tenant_id` del token autenticado en el servidor, jamás de parámetros de ruta, query strings o cabeceras enviadas por el cliente sin validar.",
+      "Aplica defensa en profundidad en la capa de datos (por ejemplo, RLS en PostgreSQL) para que un bug en la aplicación no exponga filas de otro tenant.",
+      "Incluye el `tenant_id` en todas las claves de caché, índices de búsqueda y rutas de object storage para evitar colisiones o fugas por caché compartida.",
+      "Ejecuta pruebas automatizadas de integración cross-tenant en CI intentando acceder con el token del tenant A a IDs existentes del tenant B."
+    ],
+    "ejemplo": "-- Aislamiento en capa de sesión antes de ejecutar consultas\nSET LOCAL app.current_tenant_id = 'tnt_98412';\nSELECT id, total FROM invoices; -- Filtrado automático por política RLS",
+    "entrevista": "El aislamiento de tenants exige derivar el tenant desde credenciales firmadas y aplicarlo en cada capa —cómputo, caché, almacenamiento y base de datos— para que un fallo único no rompa la frontera entre clientes."
+  },
+  "Audience (JWT)": {
+    "que": "El claim `aud` (Audience) en un JSON Web Token (RFC 7519) identifica a los destinatarios previstos para los cuales fue emitido el token, generalmente expresados como una URI o identificador lógico del servicio o API recurso. Si una API recibe un token cuyo `aud` no la incluye, debe rechazarlo incluso si la firma y la expiración son válidas.",
+    "para": "Sirve para prevenir ataques de confusión de tokens (token replay cross-service), donde un atacante reutiliza un JWT válido emitido para el Servicio A contra el Servicio B que confía en el mismo proveedor de identidad. Es crítico en arquitecturas de microservicios y ecosistemas OAuth 2.0/OIDC con múltiples resource servers.",
+    "como": "Durante el flujo de emisión, el cliente solicita acceso especificando el recurso destino (por ejemplo, parámetro `audience` o `resource` según RFC 8707). El Authorization Server incluye en el payload del JWT el campo `\"aud\": \"https://api.pagos.ejemplo.com\"` (o un arreglo de strings) y lo firma con su clave privada. Cuando el Resource Server recibe el token en la cabecera `Authorization: Bearer`, la librería de validación verifica primero la firma criptográfica, `iss` y `exp`, y después comprueba por igualdad exacta que su propio identificador configurado esté contenido en `aud`. En Python/Node/Go, este check suele activarse pasando el parámetro `audience` al verificador JWT.",
+    "practicas": [
+      "Configura siempre la validación estricta de `aud` en cada microservicio; confiar solo en `iss` y firma permite reutilizar tokens entre servicios.",
+      "Usa identificadores de audiencia específicos por API o dominio de negocio en lugar de valores genéricos compartidos por toda la organización.",
+      "Audience vs Scope: `aud` define *qué servicio* puede aceptar el token; `scope` define *qué acciones o permisos* puede ejecutar dentro de ese servicio.",
+      "Rechaza tokens sin claim `aud` en endpoints protegidos salvo que exista una razón explícita y documentada."
+    ],
+    "ejemplo": "jwt.decode(\n  token,\n  public_key,\n  algorithms=[\"RS256\"],\n  issuer=\"https://auth.ejemplo.com/\",\n  audience=\"https://api.billing.ejemplo.com\"\n)",
+    "entrevista": "Validar el claim `aud` en cada API garantiza que el JWT fue emitido específicamente para ese servicio y bloquea la reutilización lateral de tokens válidos entre microservicios."
+  },
+  "Autorización": {
+    "que": "La autorización es el proceso de seguridad mediante el cual un sistema determina si una identidad ya autenticada (usuario, servicio o proceso) tiene permiso para ejecutar una acción concreta sobre un recurso específico. Se ejecuta después de la autenticación y aplica políticas de control de acceso según modelos como RBAC, ABAC o ReBAC.",
+    "para": "Resuelve la protección de datos y funcionalidades frente a accesos no permitidos, tanto de usuarios externos maliciosos como de cuentas internas con privilegios excesivos. Sin autorización en cada operación del servidor, un atacante autenticado puede leer o modificar recursos ajenos (Broken Access Control, #1 en OWASP Top 10).",
+    "como": "Tras verificar quién es el sujeto en la fase de autenticación, el punto de entrada (API Gateway, middleware o capa de dominio) construye una tupla de decisión con sujeto, acción, recurso y contexto. Esta consulta se evalúa contra las políticas activas siguiendo el principio de denegación por defecto (fail-closed / default deny): solo si existe una regla positiva válida y ninguna restricción superior la bloquea, se ejecuta la operación. Además de los permisos funcionales de ruta o método (autorización a nivel de función), el backend debe verificar la relación del sujeto con la instancia solicitada (autorización a nivel de objeto) antes de responder o mutar estado.",
+    "practicas": [
+      "Aplica autorización en el servidor para cada endpoint, método HTTP y resolver GraphQL; ocultar botones en el frontend no es un control de seguridad.",
+      "Configura denegación por defecto (default-deny) en middlewares y gateways para que un endpoint nuevo sin anotación de permiso nunca quede expuesto.",
+      "Autorización vs Autenticación: la autenticación verifica *quién eres* (AuthN); la autorización verifica *qué puedes hacer* (AuthZ).",
+      "Separa la comprobación de permiso funcional (rol/scope) de la comprobación de acceso al registro concreto (ownership/tenant)."
+    ],
+    "ejemplo": "@require_permission(\"invoices:read\")\ndef get_invoice(user, invoice_id):\n    inv = db.get_invoice(invoice_id)\n    if not inv or inv.tenant_id != user.tenant_id:\n        raise ForbiddenError()\n    return inv",
+    "entrevista": "La autorización decide en servidor si un sujeto autenticado puede realizar una acción sobre un recurso específico, aplicándose con denegación por defecto tanto a nivel de función como de objeto."
+  },
+  "Break-glass access": {
+    "que": "El break-glass access (acceso de emergencia) es un mecanismo excepcional y controlado que otorga privilegios elevados de forma temporal para resolver incidentes críticos cuando los canales habituales de acceso o el IdP están caídos o bloqueados. Su nombre alude a romper el cristal de una alarma: es visible, auditado y dispara alertas inmediatas.",
+    "para": "Sirve para evitar bloqueos totales (lockout) durante caídas severas de infraestructura, corrupción de políticas IAM o fallos del proveedor SSO sin mantener cuentas de administrador permanentes con acceso cotidiano. Equilibra la disponibilidad operativa en crisis con el principio de menor privilegio en operación normal.",
+    "como": "Se provisionan previamente una o pocas cuentas aisladas fuera de la federación SSO estándar (por ejemplo, usuario root de cloud o administrador local dedicado) con credenciales largas almacenadas en un gestor/vault físico o bóveda PAM bajo control dual (split-knowledge o aprobación M-of-N) y MFA hardware independiente. En condiciones normales nadie inicia sesión con ellas. Ante una emergencia, el operador solicita el secreto registrando el ticket de incidente, lo que dispara alertas automáticas al SOC/SIEM en tiempo real. Toda acción ejecutada durante la sesión se graba en logs inmutables y, al cerrar el incidente, se revoca la sesión y se rotan inmediatamente las credenciales utilizadas.",
+    "practicas": [
+      "Desvincula las cuentas break-glass del IdP corporativo principal para que sigan funcionando si falla el SSO o la red interna.",
+      "Exige control dual (dos personas para reconstruir o aprobar la credencial) y MFA basado en FIDO2/hardware dedicado guardado en custodia segura.",
+      "Monitoriza cualquier uso de la cuenta break-glass con alertas de severidad crítica y rotación obligatoria tras cada uso o simulacro.",
+      "Prueba el procedimiento periódicamente en ejercicios de game day; un acceso de emergencia que nadie ha probado suele fallar cuando más se necesita."
+    ],
+    "ejemplo": "# Regla de detección SIEM (conceptual) para uso de cuenta de emergencia\nevent.provider == \"aws.cloudtrail\" and\nuserIdentity.arn == \"arn:aws:iam::123456789012:root\" and\neventName in (\"ConsoleLogin\", \"CreateAccessKey\", \"AttachUserPolicy\")\n# Acción: alerta PagerDuty P1 + bloqueo/rotación post-incidente",
+    "entrevista": "El break-glass access provee cuentas de emergencia aisladas del SSO con custodia reforzada, alertas en tiempo real y rotación post-uso para garantizar recuperación en crisis sin dejar privilegios permanentes."
+  },
+  "Casbin": {
+    "que": "Casbin es una librería de autorización open-source multiparadigma disponible para múltiples lenguajes (Go, Python, Java, Node.js, Rust, .NET) que separa el metamodelo de acceso de los datos de política. Permite implementar ACL, RBAC, RBAC con dominios/tenants y ABAC dentro del propio proceso de la aplicación mediante un archivo de configuración de modelo y adaptadores de almacenamiento.",
+    "para": "Resuelve la necesidad de incorporar un motor de autorización flexible y embebido sin depender de llamadas de red externas en cada petición ni reescribir lógica ad-hoc de permisos. Es muy usado en backends monolíticos y microservicios que requieren evaluar modelos combinados (como RBAC multi-tenant + ABAC) con latencia de microsegundos.",
+    "como": "Casbin se configura mediante un archivo `model.conf` basado en el metamodelo PERM (Policy, Effect, Request, Matchers). La sección `[request_definition]` define la forma de la consulta (ej. `sub, dom, obj, act`), `[policy_definition]` la estructura de las reglas almacenadas, `[role_definition]` las relaciones de herencia o dominios (`g = _, _, _`), `[policy_effect]` cómo combinar coincidencias (`some(where (p.eft == allow))`) y `[matchers]` la expresión booleana que evalúa el motor. En tiempo de ejecución, el `Enforcer` carga las políticas desde un adaptador (CSV, PostgreSQL, Redis, etc.) y `Enforce(sub, obj, act)` evalúa el matcher compilando expresiones y recorriendo la jerarquía de roles en memoria.",
+    "practicas": [
+      "Sincroniza las políticas entre réplicas usando un Watcher (Redis, Kafka, etcd) cuando modificas reglas en caliente; de lo contrario cada instancia tendrá caché obsoleta.",
+      "Usa RBAC con dominios (`g = _, _, _`) en sistemas multi-tenant para evitar que un rol `admin` de un tenant aplique en otro.",
+      "Casbin vs OPA: Casbin corre embebido en el lenguaje de la app con modelo PERM orientado a tablas de políticas; OPA es un PDP desacoplado con lenguaje declarativo Rego para infraestructura y APIs heterogéneas.",
+      "Protege los endpoints administrativos que llaman a `AddPolicy` o `AddGroupingPolicy` y valida el input antes de persistir reglas."
+    ],
+    "ejemplo": "[request_definition]\nr = sub, obj, act\n[policy_definition]\np = sub, obj, act\n[role_definition]\ng = _, _\n[policy_effect]\ne = some(where (p.eft == allow))\n[matchers]\nm = g(r.sub, p.sub) && keyMatch2(r.obj, p.obj) && r.act == p.act",
+    "entrevista": "Casbin es un motor de autorización embebido basado en el metamodelo PERM que desacopla las reglas de negocio del almacenamiento y soporta ACL, RBAC multi-tenant y ABAC en memoria."
+  },
+  "Column-level security": {
+    "que": "Column-level security (seguridad a nivel de columna) es un control de acceso granular en bases de datos y capas de datos que restringe qué usuarios o roles pueden leer o modificar atributos específicos (columnas) dentro de una tabla. Permite compartir una misma tabla mientras se ocultan o enmascaran campos sensibles como salarios, PII o secretos.",
+    "para": "Resuelve escenarios donde distintos perfiles consultan la misma entidad pero no deben ver todas sus propiedades, reduciendo la superficie de exposición de datos sensibles sin duplicar tablas. Se usa ampliamente en analítica, data warehouses, sistemas CRM/ERP y aplicaciones con cumplimiento PCI-DSS o GDPR.",
+    "como": "Existen tres mecanismos principales de implementación. En bases de datos relacionales como PostgreSQL o SQL Server, se conceden privilegios `GRANT SELECT (col1, col2)` sobre columnas concretas omitiendo las sensibles, o se exponen vistas seguras que excluyen o transforman columnas restringidas. En motores modernos (Snowflake, BigQuery, SQL Server Dynamic Data Masking), se asocian etiquetas de clasificación o políticas de enmascaramiento a columnas para devolver el valor real solo a roles autorizados y `***` o un hash al resto. A nivel de aplicación/API, se proyectan explícitamente los campos permitidos mediante DTOs según los permisos del usuario antes de serializar la respuesta.",
+    "practicas": [
+      "Prohíbe el uso de `SELECT *` en consultas de aplicación cuando existan columnas restringidas; enumera explícitamente las columnas permitidas.",
+      "Combina Column-level security con proyección estricta en DTOs/serializers de la API para prevenir fugas por Mass Assignment o GraphQL introspection.",
+      "Column-level security vs Row-level security (RLS): RLS filtra *qué filas* (registros) ve un usuario; Column-level security controla *qué campos* de esas filas puede leer o escribir.",
+      "Recuerda que el enmascaramiento dinámico no siempre impide inferencias mediante cláusulas `WHERE` u `ORDER BY` sobre la columna oculta si el usuario puede enviar SQL arbitrario."
+    ],
+    "ejemplo": "REVOKE SELECT ON employees FROM role_analyst;\nGRANT SELECT (id, full_name, department, hired_at)\nON employees TO role_analyst;\n-- La columna salary queda inaccesible para role_analyst",
+    "entrevista": "Column-level security restringe el acceso a campos específicos dentro de una tabla mediante permisos granulares, vistas o enmascaramiento, evitando exponer PII o datos sensibles a roles sin necesidad de conocerlos."
+  },
+  "Cross-tenant data leak": {
+    "que": "Un cross-tenant data leak es una vulnerabilidad o incidente de seguridad en un sistema multi-tenant donde un usuario o proceso de un cliente (tenant A) logra acceder, inferir o modificar datos pertenecientes a otro cliente (tenant B). Constituye una falla crítica de aislamiento lógico o físico y suele clasificarse como Broken Access Control.",
+    "para": "Comprender este patrón de fallo sirve para diseñar defensas preventivas en arquitecturas SaaS, auditorías AppSec y pruebas de penetración. Su detección temprana evita brechas de confidencialidad masivas, pérdida de confianza y sanciones contractuales o regulatorias.",
+    "como": "Ocurre típicamente por uno de cuatro vectores técnicos: 1) IDOR / falta de validación de `tenant_id` en consultas `WHERE id = ?` cuando el ID es predecible o incluso un UUID filtrado por otra vía; 2) claves de caché compartidas en Redis/CDN que indexan por `resource_id` o URL sin incluir el `tenant_id`; 3) variables globales, singletons o pools de conexiones DB que conservan contexto del tenant anterior (`SET app.tenant_id` sin resetear en `finally`); y 4) trabajos asíncronos o webhooks que procesan lotes mezclando registros sin revalidar el contexto del tenant propietario.",
+    "practicas": [
+      "Obliga a que todas las consultas de repositorio pasen por una capa tenant-aware o políticas RLS en la base de datos en lugar de confiar en filtros manuales por endpoint.",
+      "Resetea siempre el contexto de sesión en pools de conexiones (`RESET ALL` o transacciones `SET LOCAL`) para evitar contaminación entre peticiones consecutivas.",
+      "Incluye el identificador de tenant en las claves de caché, rutas S3 y encabezados `Vary` si aplica.",
+      "Implementa pruebas de seguridad automatizadas con dos tenants de prueba que verifiquen endpoints REST, GraphQL, exportaciones CSV y buscadores."
+    ],
+    "ejemplo": "// VULNERABLE: clave de caché sin tenant_id\nconst key = `report:${reportId}`;\n// SEGURO: espacio de nombres aislado por tenant autenticado\nconst safeKey = `tenant:${req.auth.tenantId}:report:${reportId}`;",
+    "entrevista": "Un cross-tenant data leak ocurre cuando falla la frontera de aislamiento entre clientes —por consultas sin filtro de tenant, caché compartida o pools con estado residual— permitiendo leer o alterar datos ajenos."
+  },
+  "Cuenta de servicio": {
+    "que": "Una cuenta de servicio (service account) es una identidad no humana diseñada para autenticar y autorizar cargas de trabajo automatizadas, microservicios, pipelines CI/CD o demonios frente a APIs y recursos de infraestructura. Carece de interacción humana directa (no usa navegador ni MFA interactivo) y se autentica mediante credenciales criptográficas o identidad federada.",
+    "para": "Resuelve la necesidad de que procesos autónomos operen con identidad propia, auditable y con permisos acotados sin compartir credenciales personales de desarrolladores. Permite revocar, rotar y auditar acciones máquina a máquina de forma independiente.",
+    "como": "En plataformas modernas (Kubernetes, GCP, AWS IAM Roles, Workload Identity), una cuenta de servicio se define como un objeto de identidad al que se asocian roles o políticas mínimas. En lugar de incrustar secretos estáticos (JSON keys o contraseñas), el entorno de ejecución emite un token OIDC de corta duración firmado por la plataforma (por ejemplo, Kubernetes projected ServiceAccount token o metadatos IMDSv2). La carga de trabajo intercambia ese token mediante OAuth/STS (Workload Identity Federation) por credenciales efímeras válidas solo minutos u horas para acceder a bases de datos, buckets o APIs destino.",
+    "practicas": [
+      "Usa una cuenta de servicio dedicada por microservicio o pipeline; compartir una cuenta global viola el menor privilegio y dificulta la atribución en auditorías.",
+      "Sustituye llaves estáticas descargadas en archivos por credenciales efímeras basadas en Workload Identity / OIDC o IAM Roles.",
+      "Deshabilita el montaje automático de tokens de cuenta de servicio (`automountServiceAccountToken: false`) en pods de Kubernetes que no consultan la API del clúster.",
+      "Restringe qué identidades humanas o pipelines pueden suplantar (`iam:PassRole` / `ServiceAccountTokenCreator`) a una cuenta de servicio privilegiada."
+    ],
+    "ejemplo": "apiVersion: v1\nkind: Pod\nspec:\n  serviceAccountName: payments-worker\n  automountServiceAccountToken: false",
+    "entrevista": "Una cuenta de servicio representa una identidad no humana para workloads automatizados que debe aislarse por servicio, aplicarse con menor privilegio y autenticarse idealmente con tokens efímeros vía Workload Identity en lugar de secretos estáticos."
+  },
+  "Escalada de privilegios horizontal": {
+    "que": "La escalada de privilegios horizontal (también asociada a BOLA/IDOR) ocurre cuando un usuario autenticado logra acceder o manipular recursos, datos o acciones pertenecientes a otro usuario con el mismo nivel de privilegio dentro de la aplicación. No obtiene capacidades de administrador, sino que cruza la frontera lateral hacia cuentas pares.",
+    "para": "Identificar y mitigar este vector sirve para proteger la confidencialidad e integridad de los datos de cada usuario en aplicaciones multiusuario y APIs. Es una de las fallas más frecuentes y explotadas en aplicaciones web y móviles modernas (OWASP API1:2023 Broken Object Level Authorization).",
+    "como": "La vulnerabilidad se produce cuando un endpoint recibe un identificador de objeto (`id`, `account_number`, `order_uuid`, `filename`) controlado por el cliente y consulta directamente el almacenamiento sin comprobar que dicho objeto pertenezca al sujeto autenticado. El atacante primero autentica su cuenta legítima, observa una petición como `GET /api/orders/1042`, sustituye el identificador por `1041` o un UUID filtrado en otro endpoint, y el backend devuelve el registro de otro usuario. Incluso con UUIDv4 aleatorios, la falta de validación de propiedad sigue siendo vulnerable si los identificadores aparecen en logs, URLs compartidas o respuestas de listado.",
+    "practicas": [
+      "Valida en el servidor la propiedad o pertenencia del recurso frente al `user_id` o `tenant_id` extraído de la sesión/token en cada operación de lectura, actualización o borrado.",
+      "Incluye la condición de pertenencia directamente en la consulta a base de datos (`WHERE id = :id AND owner_id = :auth_user_id`) para evitar fallos de lógica.",
+      "No confíes en UUIDs aleatorios u ofuscación de IDs como sustituto de autorización; la seguridad por oscuridad no detiene fugas de identificadores.",
+      "Horizontal vs Vertical: la horizontal accede a datos de un usuario par (mismo rol); la vertical obtiene permisos de un rol superior (ej. usuario normal a admin)."
+    ],
+    "ejemplo": "// VULNERABLE\nSELECT * FROM profiles WHERE id = $1;\n\n// SEGURO: verificación explícita de propietario autenticado\nSELECT * FROM profiles WHERE id = $1 AND user_id = $2;",
+    "entrevista": "La escalada horizontal ocurre cuando un usuario accede a recursos de otro usuario de su mismo nivel por falta de verificación de propiedad en el servidor, y se corrige validando ownership en cada consulta."
+  },
+  "Escalada de privilegios vertical": {
+    "que": "La escalada de privilegios vertical ocurre cuando un usuario o atacante con un nivel de acceso limitado (por ejemplo, invitado o usuario estándar) logra obtener capacidades o ejecutar operaciones reservadas a un rol superior (como moderador, administrador o root). Rompe la jerarquía de roles y funciones del sistema.",
+    "para": "Prevenirla protege funciones críticas de administración, configuración de seguridad, gestión de usuarios y acceso masivo a datos. Es crucial en paneles administrativos, APIs con roles diferenciados y sistemas operativos o contenedores.",
+    "como": "En aplicaciones web y APIs, suele explotarse por falta de verificación de rol en endpoints administrativos (`/api/admin/users/delete`), confianza en flags de cliente (`isAdmin=true` en cookies o JWT sin firma verificada), Mass Assignment al actualizar el propio perfil (`{\"role\": \"admin\"}`), o rutas alternativas sin middleware de autorización. En infraestructura, sucede por binarios SUID mal configurados, permisos `sudo` excesivos, capacidades Linux peligrosas (`CAP_SYS_ADMIN`) o políticas IAM con `iam:CreatePolicyVersion` / `PassRole`. Una vez obtenida la función superior, el atacante consolida acceso persistente o lee datos de todos los usuarios.",
+    "practicas": [
+      "Aplica autorización a nivel de función (BFLA) en cada ruta y controlador del backend verificando explícitamente el rol o permiso requerido.",
+      "Protege los modelos de entrada contra Mass Assignment mediante DTOs explícitos que ignoren campos privilegiados como `role`, `is_admin` o `tier`.",
+      "Separa o protege con autenticación reforzada (MFA, red interna o gateway dedicado) las interfaces y APIs de administración.",
+      "Verifica en CI/CD con tests negativos que usuarios estándar reciban HTTP 403 en todos los endpoints de administración."
+    ],
+    "ejemplo": "// Mass Assignment prevenido usando lista blanca de campos\nconst { displayName, email } = req.body; // Ignora req.body.role\nawait db.users.update({ where: { id: req.user.id }, data: { displayName, email } });",
+    "entrevista": "La escalada vertical permite a una cuenta de menor rango ejecutar funciones de un rol superior, por lo que exige validar permisos de función en el servidor y blindar campos privilegiados contra Mass Assignment."
+  },
+  "Fine-grained authorization": {
+    "que": "La autorización de grano fino (fine-grained authorization, FGA) es un enfoque de control de acceso que toma decisiones a nivel de instancia individual, acción concreta o atributo específico del recurso en lugar de limitarse a permisos amplios por módulo o rol. Puede considerar relaciones en grafo (ReBAC), contexto temporal o condiciones sobre el contenido del dato.",
+    "para": "Resuelve requerimientos complejos en plataformas colaborativas, B2B y financieras donde un usuario puede editar el documento X porque es coautor en una carpeta compartida, pero solo leer el documento Y y aprobar montos menores a cierto umbral. Evita otorgar permisos globales excesivos cuando los modelos de roles gruesos se quedan cortos.",
+    "como": "En arquitecturas modernas, FGA se implementa mediante motores especializados como OpenFGA / SpiceDB (inspirados en Google Zanzibar) o motores de políticas como OPA/Cedar. El servicio de autorización mantiene un grafo de tuplas relacionales `(objeto, relación, sujeto)` como `(document:readme, editor, user:ana)` o reglas contextuales. Cuando el backend recibe una petición, consulta al servicio FGA (`Check(user:ana, can_edit, document:readme)`), que resuelve transitivamente jerarquías (carpeta padre -> documento, equipo -> miembro) en milisegundos usando índices en memoria y caché con tokens de consistencia (zookies) para evitar condiciones de carrera tras cambios de permisos.",
+    "practicas": [
+      "Reserva FGA para lógica de acceso por instancia o relaciones jerárquicas; no compliques permisos simples de sistema que RBAC resuelve limpiamente.",
+      "Usa tokens de consistencia (como Zookies en Zanzibar) al consultar listas tras una revocación inmediata para evitar lecturas obsoletas (New Enemy Problem).",
+      "Fine-grained vs Coarse-grained: coarse-grained controla el acceso a un servicio o endpoint ('puede usar /invoices'); fine-grained decide sobre registros y campos exactos ('puede aprobar invoice #88').",
+      "Optimiza listados grandes usando expansión de objetos autorizados (`ListObjects` o filtros SQL precomputados) en vez de llamar `Check()` elemento por elemento en un bucle N+1."
+    ],
+    "ejemplo": "# Modelo estilo Zanzibar / OpenFGA\ntype folder\n  relations\n    define owner: [user]\n    define viewer: [user] or owner\ntype document\n  relations\n    define parent: [folder]\n    define viewer: [user] or viewer from parent",
+    "entrevista": "Fine-grained authorization decide permisos por instancia y relación específica —típicamente mediante motores tipo Zanzibar o políticas contextuales— evitando sobre-privilegiar usuarios con roles gruesos."
+  },
+  "Just-in-time access": {
+    "que": "El acceso Just-in-Time (JIT) es un modelo de control de acceso privilegiado donde los usuarios o cargas de trabajo no poseen permisos elevados permanentes (zero standing privileges), sino que los solicitan y obtienen únicamente durante una ventana de tiempo acotada cuando necesitan realizar una tarea específica.",
+    "para": "Reduce drásticamente la ventana de exposición ante robo de credenciales, sesiones secuestradas o amenazas internas, ya que una cuenta comprometida fuera de su ventana operativa carece de privilegios administrativos. Es clave en entornos cloud, producción Kubernetes/DB y cumplimiento de estándares como NIST 800-53 e ISO 27001.",
+    "como": "El operador inicia sesión con un perfil base sin privilegios en producción y solicita elevación temporal indicando motivo, alcance (rol o recurso exacto) y duración (por ejemplo, 30 minutos) mediante una plataforma PAM o cloud PIM (AWS IAM Identity Center, Azure PIM, Teleport). Según el nivel de riesgo, el flujo exige aprobación automática contra un ticket válido o aprobación explícita de un par, más reautenticación MFA. Al aprobarse, el sistema emite credenciales efímeras o asigna temporalmente el rol en el IdP/PDP y programa un temporizador de revocación automática que termina las sesiones activas al expirar el TTL.",
+    "practicas": [
+      "Establece duraciones máximas cortas por defecto (15 a 60 minutos) y exige renovación explícita si la tarea continúa.",
+      "Acompaña JIT con revocación real de tokens o sesiones activas al expirar la ventana; quitar el rol en el IdP sin invalidar sesiones abiertas deja acceso residual.",
+      "JIT vs Break-glass: JIT es el flujo cotidiano planificado con aprobación y expiración; break-glass es el mecanismo excepcional de emergencia cuando fallan los canales normales.",
+      "Vincula cada solicitud JIT a un identificador de ticket o cambio para mantener trazabilidad completa entre motivo, aprobador y acciones ejecutadas."
+    ],
+    "ejemplo": "# Solicitud JIT efímera de acceso a rol productivo por 30 minutos\n$ tsh request create --roles=prod-db-readonly \\\n  --reason=\"INC-4821: revisar bloqueo en tabla orders\" \\\n  --max-duration=30m",
+    "entrevista": "Just-in-time access elimina los privilegios permanentes otorgando elevación temporal, acotada en alcance y vinculada a un ticket, con revocación automática al vencer el TTL."
+  },
+  "Multi-tenancy security": {
+    "que": "La seguridad en multi-tenancy abarca el diseño de controles de identidad, autorización, aislamiento de datos, cifrado, redes y observabilidad necesarios para operar múltiples clientes independientes (tenants) sobre una misma infraestructura de software compartida sin comprometer confidencialidad, integridad ni disponibilidad.",
+    "para": "Sirve para construir aplicaciones SaaS escalables y eficientes en costos sin sacrificar la separación de seguridad que exigiría un despliegue dedicado por cliente. Previene tanto fugas de datos entre organizaciones como impactos de denegación de servicio provocados por un tenant ruidoso o malicioso.",
+    "como": "Comienza federando o aislando el plano de identidad por tenant (OIDC/SAML por organización) de modo que cada token emitido lleve un `tenant_id` verificado criptográficamente. En cada petición, un middleware de contexto inyecta ese `tenant_id` en el ámbito de ejecución para que el motor de autorización (RBAC/ABAC por tenant), el cliente de caché, el bus de eventos y las consultas SQL con Row-Level Security queden automáticamente restringidos. Para clientes con requisitos estrictos, se combina con claves de cifrado por tenant (BYOK/CMK), cuotas de rate limiting por organización y particionamiento de logs para que cada cliente audite solo sus eventos.",
+    "practicas": [
+      "Implementa propagación obligatoria del contexto de tenant (context propagation) en peticiones HTTP, colas asíncronas y jobs programados, fallando si el contexto está ausente.",
+      "Aplica rate limiting y cuotas de recursos por tenant para mitigar el problema de noisy neighbor o abuso desde una cuenta gratuita.",
+      "Separa el plano de control administrativo interno del plano de datos de los tenants y exige JIT + auditoría cuando soporte acceda a un tenant.",
+      "Cifra datos sensibles con claves lógicas o KMS distintas por tenant cuando el modelo de amenazas requiera aislamiento criptográfico o borrado criptográfico (crypto-shredding)."
+    ],
+    "ejemplo": "// Middleware que exige tenant_id firmado y lo propaga al contexto\nfunc TenantMiddleware(next http.Handler) http.Handler {\n  return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {\n    tid := claimsFromJWT(r.Context()).TenantID\n    if tid == \"\" { http.Error(w, \"missing tenant\", 403); return }\n    next.ServeHTTP(w, r.WithContext(WithTenant(r.Context(), tid)))\n  })\n}",
+    "entrevista": "Multi-tenancy security integra identidad por organización, propagación obligatoria del tenant en memoria y asíncrono, RLS en datos, cuotas por cliente y cifrado segmentado para asegurar entornos SaaS compartidos."
+  },
+  "Open Policy Agent (OPA)": {
+    "que": "Open Policy Agent (OPA) es un motor de políticas de propósito general open-source (graduado de CNCF) que desacopla la toma de decisiones de autorización del código de las aplicaciones e infraestructura. Evalúa políticas declarativas escritas en lenguaje Rego sobre entradas JSON estructuradas y devuelve decisiones estructuradas al sistema llamador.",
+    "para": "Sirve para unificar el control de acceso y cumplimiento normativo a través de todo el stack: autorización en microservicios, API Gateways (Envoy), admisión en Kubernetes (OPA Gatekeeper), validación de Terraform/IaC y pipelines CI/CD. Elimina reglas de autorización duplicadas e inconsistentes en múltiples lenguajes.",
+    "como": "OPA actúa como Policy Decision Point (PDP) desplegado como sidecar en el mismo pod, demonio en el host o librería Go embebida. El servicio o gateway (PEP) intercepta la petición, serializa el contexto (usuario, método, ruta, recurso, entorno) en un documento JSON `input` y lo envía vía HTTP REST (`POST /v1/data/<ruta>`) o gRPC a OPA. OPA combina ese `input` con datos de contexto cargados en memoria (`data`, sincronizados periódicamente mediante Bundles firmados desde un servidor PAP) y evalúa las reglas Rego compiladas. Finalmente devuelve `{\"result\": true}` o un objeto complejo con razones de denegación y obligaciones.",
+    "practicas": [
+      "Despliega OPA como sidecar o en el mismo host con bundles firmados en memoria para mantener latencias de decisión por debajo de milisegundos y evitar puntos únicos de fallo en red.",
+      "Usa el patrón fail-closed en el PEP: si OPA no responde o devuelve error, la petición debe ser denegada por defecto.",
+      "OPA vs lógica en código: OPA brilla cuando múltiples servicios/tecnologías comparten políticas o estas cambian independientemente del ciclo de deploy; para reglas CRUD triviales de una sola app puede añadir sobrecarga innecesaria.",
+      "Escribe pruebas unitarias exhaustivas para cada política Rego (`opa test`) e intégralas en CI junto con verificación de firma de bundles."
+    ],
+    "ejemplo": "curl -s -X POST http://localhost:8181/v1/data/authz/allow \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"input\": {\"user\": \"alice\", \"role\": \"editor\", \"method\": \"PUT\", \"owner\": \"alice\"}}'",
+    "entrevista": "OPA es un PDP desacoplado que evalúa políticas declarativas en Rego sobre JSON, permitiendo unificar autorización y policy-as-code desde microservicios hasta Kubernetes y Terraform."
+  },
+  "Ownership check": {
+    "que": "Un ownership check (comprobación de propiedad) es la verificación explícita en el servidor de que el sujeto autenticado es el propietario legítimo —o posee una relación autorizada equivalente— del registro o recurso específico sobre el que intenta operar. Constituye la defensa directa contra vulnerabilidades de acceso a nivel de objeto (IDOR / BOLA).",
+    "para": "Resuelve el riesgo de que un usuario autenticado con permiso general para usar un endpoint (por ejemplo, `GET /invoices/{id}` o `DELETE /comments/{id}`) manipule el identificador para leer, alterar o borrar recursos de otros usuarios. Es obligatorio en prácticamente toda aplicación multiusuario.",
+    "como": "Cuando llega una petición que referencia un recurso por ID, el controlador o capa de dominio extrae el `user_id` (y `tenant_id` si aplica) de la sesión o token verificado en el servidor, nunca del payload de entrada. Luego recupera el recurso de la base de datos o incluye la condición de propiedad directamente en la cláusula de búsqueda (`WHERE id = ? AND owner_id = ?`). Si el registro no existe o pertenece a otro usuario, la aplicación aborta antes de ejecutar efectos secundarios y responde con 403 Forbidden o 404 Not Found (preferido si se quiere evitar enumeración de existencia de IDs).",
+    "practicas": [
+      "Aplica ownership check en todas las operaciones (GET, PUT, PATCH, DELETE) y también en acciones secundarias como descargas de adjuntos, webhooks o exportaciones.",
+      "Devuelve `404 Not Found` cuando el recurso no pertenezca al usuario si revelar su existencia supone una fuga de información (enumeración de IDs).",
+      "No delegues el ownership check únicamente a la UI ni asumas que 'el usuario no conoce el ID de otro'; verifica siempre en backend.",
+      "Contempla excepciones legítimas explícitas (por ejemplo, rol `support_admin` auditado) mediante reglas claras y no desactivando la verificación."
+    ],
+    "ejemplo": "@app.delete(\"/api/notes/{note_id}\")\ndef delete_note(note_id: int, current_user: User = Depends(get_auth_user)):\n    deleted = db.execute(\n        \"DELETE FROM notes WHERE id = %s AND author_id = %s RETURNING id\",\n        (note_id, current_user.id),\n    ).fetchone()\n    if not deleted:\n        raise HTTPException(status_code=404, detail=\"Not found\")",
+    "entrevista": "Un ownership check valida en el servidor que la identidad autenticada sea propietaria del recurso solicitado, cerrando la puerta a ataques IDOR/BOLA incluso si el atacante conoce el identificador."
+  },
+  "PBAC": {
+    "que": "PBAC (Policy-Based Access Control) es un paradigma de autorización en el que las decisiones de acceso se rigen por políticas declarativas centralizadas y legibles que combinan roles, atributos, contexto y requisitos de negocio o cumplimiento. Unifica la lógica de acceso en reglas formales desacopladas del código imperativo de la aplicación.",
+    "para": "Resuelve la fragmentación de reglas de seguridad dispersas en condicionales `if/else` por distintos microservicios y facilita alinear controles técnicos con normativas de negocio o auditoría. Se utiliza en arquitecturas enterprise, API Gateways y plataformas cloud con múltiples equipos y regulaciones.",
+    "como": "El ciclo PBAC se apoya en la arquitectura de políticas estándar (PAP, PDP, PEP, PIP). Los responsables de seguridad o producto definen políticas declarativas en el Policy Administration Point (PAP) usando lenguajes como Rego, Cedar o XACML y las versionan como código. El PDP sincroniza esas políticas y evalúa cada petición interceptada por el PEP consultando atributos adicionales al PIP si es necesario. Así, modificar una regla (por ejemplo, exigir MFA adicional para transferencias nocturnas o restringir datos por país) se realiza actualizando la política centralizada sin recompilar ni redesplegar los servicios.",
+    "practicas": [
+      "Versiona las políticas PBAC en Git con revisión por pares y pruebas automatizadas antes de publicarlas en el PDP.",
+      "Evita duplicar lógica de autorización dentro de los servicios cuando ya existe un PDP PBAC; mantén el PEP limpio y determinista.",
+      "PBAC vs ABAC: ABAC define el mecanismo de usar atributos para decidir; PBAC enfatiza la gobernanza mediante políticas declarativas centralizadas que pueden combinar atributos, roles y obligaciones.",
+      "Diseña políticas pequeñas y composables con documentación de negocio vinculada a cada regla para facilitar auditorías."
+    ],
+    "ejemplo": "// Política declarativa estilo AWS Cedar (PBAC)\npermit(\n  principal in Group::\"Managers\",\n  action == Action::\"ApproveExpense\",\n  resource\n) when {\n  resource.department == principal.department && resource.amount <= 5000\n};",
+    "entrevista": "PBAC centraliza la autorización en políticas declarativas desacopladas del código —combinando roles, atributos y reglas de negocio— para gobernar y auditar el acceso de forma uniforme."
+  },
+  "Policy administration point (PAP)": {
+    "que": "El Policy Administration Point (PAP) es el componente de la arquitectura de control de acceso encargado de crear, editar, validar, versionar y distribuir las políticas de autorización hacia los motores de decisión (PDP). Actúa como fuente de verdad y plano de gestión del ciclo de vida de las políticas.",
+    "para": "Resuelve el problema de administrar de forma segura y trazable reglas de acceso distribuidas entre decenas de microservicios o clusters sin editar archivos manualmente en cada servidor. Es fundamental para gobernanza, auditoría de cambios y despliegue seguro de políticas.",
+    "como": "En un enfoque tradicional, el PAP ofrece una consola o API administrativa donde los administradores definen reglas en XACML o JSON y las publican en un repositorio. En arquitecturas modernas de Policy as Code, el PAP suele materializarse como un repositorio Git con pipelines CI/CD que ejecutan linters y tests (`opa test`, `cedar validate`), firman criptográficamente el paquete de políticas (bundle) y lo publican en un servidor de artefactos o registry OCI. Los PDPs consultan periódicamente o reciben webhooks del PAP para descargar únicamente bundles válidos y firmados.",
+    "practicas": [
+      "Exige firma criptográfica en los bundles distribuidos por el PAP para impedir inyección de políticas maliciosas en tránsito o reposo.",
+      "Aplica flujo GitOps (Pull Requests, revisión obligatoria de seguridad y pruebas automatizadas) sobre el PAP para tener historial completo de quién cambió qué regla.",
+      "PAP vs PDP vs PEP: el PAP *gestiona y publica* políticas, el PDP *decide* evaluándolas, y el PEP *intercepta y aplica* la decisión en tiempo de ejecución.",
+      "Restringe el acceso de escritura al PAP con MFA y menor privilegio, ya que comprometer el PAP equivale a controlar toda la autorización del sistema."
+    ],
+    "ejemplo": "# Pipeline PAP: validar, testear y empaquetar bundle firmado para PDPs\nopa test ./policies ./tests -v &&\nopa build -b ./policies -o bundle.tar.gz --signing-key private_key.pem",
+    "entrevista": "El PAP es el plano de gestión donde se crean, validan, versionan y distribuyen —idealmente vía GitOps y bundles firmados— las políticas que luego evalúan los PDPs."
+  },
+  "Policy as code": {
+    "que": "Policy as Code es la práctica de expresar reglas de seguridad, autorización, cumplimiento e infraestructura en archivos declarativos legibles por máquina (como Rego, Cedar o Sentinel), gestionados con las mismas herramientas del desarrollo de software: control de versiones, pruebas unitarias y pipelines CI/CD.",
+    "para": "Elimina las políticas ambiguas en documentos PDF o configuraciones manuales propensas a error humano, haciendo que la seguridad sea verificable, repetible y automatizada desde fases tempranas (shift-left). Se emplea en autorización de aplicaciones, admisión de Kubernetes, revisión de Terraform y gobernanza cloud.",
+    "como": "Los equipos escriben políticas en un lenguaje declarativo junto con casos de prueba positivos y negativos dentro de un repositorio Git. Al abrir un Pull Request, el pipeline de CI ejecuta la batería de pruebas de la política y evalúa los cambios de infraestructura o aplicación (por ejemplo, el plan JSON de Terraform o manifiestos YAML) contra las reglas declaradas. En tiempo de ejecución, un motor PDP (como OPA) consume el artefacto compilado para bloquear despliegues o peticiones no conformes en el PEP, generando un registro auditable vinculando cada decisión a un commit concreto.",
+    "practicas": [
+      "Trata las políticas como código de producción: exige code review, pruebas unitarias para casos límite y cobertura de escenarios de denegación.",
+      "Ejecuta las políticas en dos momentos: prevención temprana en CI/CD (shift-left) y refuerzo continuo en runtime (admission controllers o gateways).",
+      "Mantén mensajes de error accionables en las denegaciones para que los desarrolladores entiendan qué regla falló y cómo corregirla.",
+      "Evita reglas demasiado acopladas a detalles internos frágiles; parametriza umbrales y excepciones aprobadas con fecha de caducidad."
+    ],
+    "ejemplo": "# Regla Policy as Code para bloquear buckets S3 públicos en Terraform plan\ndeny[msg] {\n  r := input.resource_changes[_]\n  r.type == \"aws_s3_bucket_acl\"\n  r.change.after.acl == \"public-read\"\n  msg := sprintf(\"Bucket %s no puede ser public-read\", [r.address])\n}",
+    "entrevista": "Policy as Code convierte reglas de autorización y cumplimiento en código versionado y testeable en CI/CD, logrando gobernanza automatizada, auditable y consistente entre desarrollo y producción."
+  },
+  "Policy decision point (PDP)": {
+    "que": "El Policy Decision Point (PDP) es el componente lógico responsable de evaluar políticas de autorización frente a los atributos de una petición y emitir un veredicto determinista (Permit, Deny y, opcionalmente, obligaciones o consejos). Concentra el motor de evaluación sin encargarse de interceptar tráfico de red ni aplicar el bloqueo físico.",
+    "para": "Desacopla la lógica compleja de autorización del código de negocio, permitiendo que APIs, gateways y servicios consulten un cerebro de decisiones consistente y auditable. Resulta esencial en arquitecturas de microservicios donde múltiples componentes deben aplicar las mismas reglas de acceso.",
+    "como": "Cuando el Policy Enforcement Point (PEP) recibe una operación protegida, construye una consulta estructurada con sujeto, acción, recurso y contexto, y la envía al PDP (mediante llamada en memoria, sidecar localhost o RPC). El PDP carga las políticas vigentes desde el PAP y, si la regla requiere atributos no incluidos en la petición, consulta a un Policy Information Point (PIP) como una base de datos o directorio. Luego ejecuta la evaluación booleana o en grafo y devuelve la decisión al PEP junto con un identificador de decisión para trazabilidad.",
+    "practicas": [
+      "Coloca el PDP cerca del PEP (embebido o sidecar) y utiliza caché de decisiones acotada por TTL corto cuando los atributos cambian poco, evitando latencias de red.",
+      "Registra en logs estructurados cada decisión crítica del PDP (sujeto, recurso, acción, veredicto, versión de política) sin volcar secretos.",
+      "PDP vs PEP: el PDP *calcula* la respuesta según políticas; el PEP *intercepta* la solicitud y ejecuta la acción de permitir o rechazar.",
+      "Asegura el canal entre PEP y PDP (mTLS o socket local) para impedir que un atacante falsifique respuestas de autorización."
+    ],
+    "ejemplo": "// Petición del PEP al PDP y respuesta de decisión\n// POST /v1/data/app/authz\n{\"input\": {\"subject\": \"u_42\", \"action\": \"read\", \"resource\": \"doc_9\"}}\n// Respuesta del PDP:\n{\"result\": {\"allow\": true, \"policy_version\": \"v1.14.2\"}}",
+    "entrevista": "El PDP es el motor que evalúa las políticas vigentes frente al contexto de la petición y emite el veredicto de autorización, desacoplando las reglas del código que intercepta el tráfico."
+  },
+  "Policy enforcement point (PEP)": {
+    "que": "El Policy Enforcement Point (PEP) es el componente situado en la ruta crítica de ejecución que intercepta las peticiones entrantes, consulta al PDP si la operación está permitida y hace cumplir el veredicto permitiendo el paso o bloqueando la solicitud. Es el guardián efectivo en la frontera de la aplicación o recurso.",
+    "para": "Garantiza que ninguna solicitud alcance la lógica de negocio o los datos sin haber sido autorizada previamente, centralizando la aplicación uniforme de controles. Se implementa habitualmente en API Gateways, proxies Envoy, middlewares web o admission webhooks de Kubernetes.",
+    "como": "Al recibir una petición HTTP, gRPC o una consulta a datos, el PEP extrae las credenciales (por ejemplo, JWT validado), normaliza el método, la ruta o el recurso objetivo, y empaqueta ese contexto en una consulta para el PDP. Si el PDP responde `Allow`, el PEP puede ejecutar obligaciones adicionales (como inyectar cabeceras de usuario o enmascarar campos) y reenviar la petición al backend. Si el PDP responde `Deny`, no responde a tiempo o devuelve error, el PEP interrumpe el flujo inmediatamente retornando HTTP 403 Forbidden (o 401 si falta identidad).",
+    "practicas": [
+      "Configura siempre comportamiento fail-closed: ante timeout, caída o error de parseo del PDP, el PEP debe denegar el acceso.",
+      "Normaliza rutas (`..`, doble slash, case sensitivity) antes de enviar la ruta al PDP para evitar bypasses de autorización por path confusion.",
+      "PEP en gateway vs PEP en servicio: el gateway aplica controles gruesos de borde, pero los checks sobre entidades concretas (ownership) suelen requerir un PEP o consulta al PDP dentro del servicio de dominio.",
+      "No confíes en cabeceras internas inyectadas por el PEP si el backend es accesible directamente sin pasar por el PEP (usa mTLS o firma interna)."
+    ],
+    "ejemplo": "// Middleware PEP fail-closed en Go\nallowed, err := pdpClient.Evaluate(ctx, req.User, req.Method, req.Path)\nif err != nil || !allowed {\n    http.Error(w, \"Forbidden\", http.StatusForbidden)\n    return\n}",
+    "entrevista": "El PEP intercepta cada solicitud en el borde o middleware, consulta al PDP con rutas normalizadas y aplica denegación obligatoria (fail-closed) si no obtiene una aprobación explícita."
+  },
+  "Privilege escalation": {
+    "que": "Privilege escalation (escalada de privilegios) es la vulnerabilidad o técnica mediante la cual un actor obtiene capacidades, roles o acceso a datos superiores o distintos a los que originalmente tenía autorizados. Abarca tanto el salto vertical hacia niveles administrativos o kernel como el movimiento horizontal hacia recursos de otros usuarios.",
+    "para": "Comprender este concepto es central en AppSec, seguridad de infraestructura y threat modeling porque suele ser el paso decisivo que convierte un acceso inicial menor en el compromiso total del sistema. Mitigarla protege los activos críticos incluso si un atacante logra comprometer una cuenta de bajo rango.",
+    "como": "En la capa de aplicación, ocurre cuando faltan controles de autorización a nivel de función (BFLA) u objeto (BOLA/IDOR), existen fallos de Mass Assignment, validación insuficiente de claims JWT (`alg: none` o falta de firma) o flujos rotos de restablecimiento de contraseña. En sistemas operativos y cloud, se materializa explotando binarios SUID, configuraciones permisivas de `sudo`, políticas IAM con capacidad de modificar sus propios permisos (`iam:AttachUserPolicy`, `PassRole`), contenedores privilegiados con socket Docker montado o vulnerabilidades de memoria en el kernel. El resultado es asumir una identidad superior o ampliar el conjunto efectivo de permisos.",
+    "practicas": [
+      "Aplica el principio de menor privilegio y segregación de funciones en aplicaciones, contenedores y cuentas IAM para cortar rutas de escalada encadenadas.",
+      "Verifica autorización en el servidor en cada transición de estado, endpoint y operación de base de datos.",
+      "Audita periódicamente grafos de permisos IAM y configuraciones de Linux (`sudo -l`, capacidades, permisos de escritura en scripts cron/systemd).",
+      "Implementa boundaries de permisos (como AWS IAM Permissions Boundaries) para impedir que un rol delegue más privilegios de los que tiene."
+    ],
+    "ejemplo": "# Ejemplo clásico de escalada en IAM: permitir AttachUserPolicy sobre sí mismo\n{\n  \"Effect\": \"Allow\",\n  \"Action\": \"iam:AttachUserPolicy\",\n  \"Resource\": \"arn:aws:iam::123456789012:user/${aws:username}\"\n} # Permite adjuntarse AdministratorAccess si no hay Permissions Boundary",
+    "entrevista": "La escalada de privilegios permite ampliar capacidades más allá de lo autorizado —ya sea en app (IDOR, BFLA, Mass Assignment) o infraestructura (IAM, SUID, contenedores)— y se frena con menor privilegio, permission boundaries y verificación en servidor."
+  },
+  "Privileged access management (PAM)": {
+    "que": "Privileged Access Management (PAM) es el conjunto de procesos, controles y herramientas dedicados a custodiar, limitar, otorgar temporalmente y auditar el acceso a cuentas con altos privilegios (administradores cloud, root Linux, DBAs, cuentas de servicio críticas). Centraliza las credenciales maestras para evitar su uso directo sin control.",
+    "para": "Reduce el riesgo de robo de credenciales administrativas, movimientos laterales y errores humanos destructivos en producción. Además satisface exigencias de auditoría regulatoria que demandan trazabilidad completa de quién accedió como administrador, cuándo y qué ejecutó.",
+    "como": "Una solución PAM (como CyberArk, HashiCorp Vault/Boundary, Teleport o StrongDM) actúa como intermediario (bastion/broker) entre el operador y los sistemas destino. Las contraseñas y claves SSH reales se almacenan rotadas automáticamente dentro de una bóveda cifrada y nunca se entregan en claro al usuario cuando se usa acceso proxy. El operador se autentica mediante SSO + MFA, solicita acceso Just-in-Time con aprobación vinculada a un ticket, y el PAM establece la sesión proxificada (SSH, RDP, Kubernetes o SQL), grabando comandos, pulsaciones o vídeo en logs inmutables y revocando el acceso al expirar el tiempo.",
+    "practicas": [
+      "Elimina secretos compartidos estáticos activando rotación automática de contraseñas y emisión de certificados SSH/DB efímeros de corta vida.",
+      "Enruta sesiones administrativas a través de un proxy/bastión PAM en lugar de entregar la credencial real al equipo del operador.",
+      "Combina PAM con Just-in-Time access para que no existan administradores permanentes fuera de las ventanas aprobadas.",
+      "Protege la propia infraestructura PAM como sistema Tier-0 (aislamiento de red, MFA hardware y respaldo cifrado de emergencia)."
+    ],
+    "ejemplo": "# Emisión de credencial DB efímera vía PAM/Vault (dura 15 min)\n$ vault read database/creds/prod-readonly\nusername: v-token-ana-8f92a1\npassword: ***\nlease_duration: 15m",
+    "entrevista": "PAM centraliza y protege las cuentas críticas mediante bóvedas con rotación, credenciales efímeras, flujos Just-in-Time y proxies que graban toda sesión administrativa."
+  },
+  "RBAC": {
+    "que": "RBAC (Role-Based Access Control) es un modelo de control de acceso en el que los permisos se agrupan en roles que representan funciones organizacionales (como `viewer`, `editor`, `billing_admin`) y los usuarios adquieren permisos al ser asignados a uno o varios roles. Desacopla al usuario individual de los permisos técnicos directos.",
+    "para": "Simplifica la administración de accesos en organizaciones medianas y grandes: cuando cambia de puesto una persona o entra un nuevo empleado, basta con reasignar su rol en lugar de editar decenas de ACLs individuales. Facilita además las revisiones periódicas de acceso y auditorías.",
+    "como": "El modelo formal (estándar NIST RBAC) consta de usuarios (U), roles (R), permisos (P, pares operación-objeto) y sesiones (S). Se establecen dos relaciones muchos-a-muchos: asignación usuario-rol (UA) y asignación permiso-rol (PA). En RBAC jerárquico, los roles superiores heredan los permisos de roles inferiores; en RBAC con restricciones, se añaden reglas de separación de funciones (SoD) que impiden asignar roles incompatibles al mismo usuario. Al autenticarse, el sujeto obtiene sus roles (en el JWT o consultando al directorio/DB) y el backend comprueba si alguno de ellos contiene el permiso requerido por la acción.",
+    "practicas": [
+      "Diseña la aplicación verificando *permisos* finos (ej. `invoices:approve`) en el código y mapea permisos a roles en configuración, evitando hardcodear nombres de rol (`if user.role == 'admin'`) por toda la base de código.",
+      "Limita el número de roles base y aplica revisiones trimestrales de membresía para evitar acumulación de privilegios (privilege creep).",
+      "RBAC vs ABAC: RBAC decide según el rol estático del usuario y es fácil de auditar; ABAC añade atributos dinámicos cuando necesitas reglas sobre qué instancia concreta puede tocar.",
+      "Si incluyes roles en el JWT, mantén TTL cortos o un mecanismo de revocación para que quitar un rol surta efecto rápido."
+    ],
+    "ejemplo": "roles:\n  billing_viewer: [\"invoices:read\", \"payments:read\"]\n  billing_admin:  [\"invoices:read\", \"invoices:write\", \"refunds:create\"]\nuser_roles:\n  ana: [\"billing_viewer\"]",
+    "entrevista": "RBAC asigna permisos a roles funcionales y usuarios a roles, simplificando la gestión y auditoría; la mejor práctica es comprobar permisos granulares en código y mapearlos a roles en configuración."
+  },
+  "Rego": {
+    "que": "Rego es el lenguaje de consulta declarativo de propósito general utilizado por Open Policy Agent (OPA) para definir políticas de autorización y validación sobre datos JSON estructurados. Está inspirado en Datalog y diseñado para expresar reglas sobre estructuras anidadas como tokens JWT, peticiones API y manifiestos YAML.",
+    "para": "Sirve para escribir políticas legibles, componibles y fácilmente testeables sin lógica imperativa compleja ni efectos secundarios. Permite describir qué condiciones deben cumplirse para permitir una petición o rechazar una configuración insegura en CI/CD y runtime.",
+    "como": "Una política Rego se agrupa en un `package` y contiene reglas que asignan valores o conjuntos (`allow`, `deny`) evaluando expresiones lógicas sobre dos árboles globales: `input` (la petición o manifiesto entrante) y `data` (contexto o políticas externas). Dentro del cuerpo de una regla, todas las expresiones se combinan mediante conjunción lógica (AND); varias reglas con el mismo nombre funcionan como disyunción (OR). Rego soporta iteración declarativa sin bucles explícitos usando variables libres o `[_]` y `some x in ...`, y se compila en un árbol de evaluación determinista garantizado para terminar siempre (sin bucles infinitos).",
+    "practicas": [
+      "Empieza siempre las reglas booleanas con `default allow := false` para garantizar denegación por defecto si ninguna regla se satisface.",
+      "Usa `import rego.v1` (estándar actual de OPA v1.0) para aprovechar sintaxis moderna con `if` y `contains` más segura frente a errores tipográficos.",
+      "Extrae condiciones repetidas en reglas auxiliares con nombre claro y acompáñalas con tests unitarios (`test_...`) usando `with input as ...` para simular escenarios.",
+      "Evita reglas con iteraciones cartesianas innecesarias sobre arreglos enormes; indexa el `data` por clave (objetos/mapas) para búsquedas O(1)."
+    ],
+    "ejemplo": "package authz\nimport rego.v1\n\ndefault allow := false\n\nallow if {\n  input.method == \"GET\"\n  \"reader\" in input.user.roles\n  input.resource.tenant == input.user.tenant\n}",
+    "entrevista": "Rego es el lenguaje declarativo tipo Datalog de OPA para evaluar datos JSON con denegación por defecto, iteración sin bucles infinitos y pruebas unitarias integradas."
+  },
+  "Role explosion": {
+    "que": "La role explosion (explosión de roles) es un antipatrón en sistemas RBAC en el que el número de roles crece de forma combinatoria e inmanejable al intentar modelar permisos contextuales, por proyecto, región o cliente mediante roles estáticos. Acaba generando cientos o miles de roles casi idénticos como `editor_proyectoA_latam_soloLecturaFinanzas`.",
+    "para": "Reconocer este problema sirve para saber cuándo un modelo RBAC puro ha alcanzado su límite y debe evolucionar hacia RBAC parametrizado, ABAC o ReBAC. Resolverlo restaura la auditabilidad del sistema y reduce errores de asignación manual.",
+    "como": "Se produce cuando cada nueva dimensión de autorización (tenant, departamento, entorno, nivel de aprobación) multiplica el producto cartesiano de roles existentes (`N_funciones × M_proyectos × K_entornos`). Esto satura la base de datos de identidad, supera el límite de tamaño de claims en tokens JWT/SAML, vuelve inviables las revisiones periódicas de acceso y provoca que los administradores concedan roles demasiado amplios por frustración. La solución técnica consiste en separar la función del alcance: mantener pocos roles base y mover las dimensiones variables a atributos (ABAC), dominios explícitos (`role@domain`) o relaciones de grafo (ReBAC).",
+    "practicas": [
+      "Detecta la explosión de roles temprano: si tienes más roles que usuarios o nombres de rol que incluyen IDs de recursos/clientes, cambia de modelo.",
+      "Migra las dimensiones variables (región, cliente, límite de gasto) de nombres de rol a atributos en ABAC o tuplas relacionales en ReBAC.",
+      "Usa RBAC con ámbito/dominio (scoped RBAC, como asignar el rol `editor` *sobre* `project:42`) en lugar de crear un rol `project_42_editor`.",
+      "Establece convenciones de nomenclatura y un proceso de gobernanza antes de aprobar nuevos roles globales."
+    ],
+    "ejemplo": "# ANTIPATRÓN (Role explosion): 1 rol por cada combinación\nroles = [\"billing_viewer_t1_eu\", \"billing_viewer_t2_us\", \"billing_admin_t1_eu\", ...]\n\n# SOLUCIÓN (Scoped RBAC / ABAC): pocos roles + alcance o atributos\nassignment = {\"user\": \"ana\", \"role\": \"billing_viewer\", \"scope\": \"tenant:t1\", \"region\": \"eu\"}",
+    "entrevista": "La role explosion ocurre cuando intentamos codificar atributos o recursos en nombres de roles estáticos generando una combinatoria inauditable, y se resuelve pasando a scoped RBAC, ABAC o ReBAC."
+  },
+  "Row-level security (RLS)": {
+    "que": "Row-level security (RLS) es una capacidad nativa de los motores de bases de datos relacionales (como PostgreSQL o SQL Server) que restringe automáticamente qué filas concretas de una tabla puede leer, insertar, actualizar o eliminar una sesión de base de datos según políticas evaluadas por el propio motor.",
+    "para": "Proporciona una barrera de defensa en profundidad directamente en la capa de datos para aislamiento multi-tenant y control de acceso por propietario. Si un desarrollador olvida añadir una cláusula `WHERE tenant_id = ...` en el código o en un ORM, la base de datos filtra o bloquea igualmente las filas ajenas.",
+    "como": "En PostgreSQL se activa con `ALTER TABLE ... ENABLE ROW LEVEL SECURITY`, lo que impone denegación por defecto para usuarios sin privilegio `BYPASSRLS`. Luego se crean políticas (`CREATE POLICY`) con expresiones booleanas `USING (...)` para filtrar lecturas y borrados, y `WITH CHECK (...)` para validar escrituras, comparando columnas de la fila (ej. `tenant_id`) contra variables de sesión como `current_setting('app.current_tenant_id', true)`. Al inicio de cada transacción, la aplicación ejecuta `SET LOCAL app.current_tenant_id = '...'` usando un rol de aplicación sin superusuario ni `BYPASSRLS`, y el planificador inyecta automáticamente el predicado en cada consulta.",
+    "practicas": [
+      "Nunca conectes la aplicación web con el dueño de la tabla (`owner`) o un superusuario, porque en PostgreSQL ambos evitan RLS salvo que fuerces `FORCE ROW LEVEL SECURITY`.",
+      "Usa `SET LOCAL` dentro de una transacción en lugar de `SET` de sesión cuando utilices connection poolers (como PgBouncer en modo transaction) para evitar fugas entre peticiones.",
+      "Crea índices sobre las columnas usadas en las políticas RLS (ej. `tenant_id`) para evitar degradación severa de rendimiento por escaneos secuenciales.",
+      "Asegúrate de definir tanto `USING` como `WITH CHECK` para impedir que un tenant inserte o reasigne filas hacia otro tenant."
+    ],
+    "ejemplo": "ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;\nCREATE POLICY tenant_isolation ON invoices\n  USING (tenant_id = current_setting('app.tenant_id', true)::uuid)\n  WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);",
+    "entrevista": "Row-level security traslada el aislamiento de filas al motor de base de datos mediante políticas `USING`/`WITH CHECK` evaluadas por transacción, protegiendo contra olvidos de `WHERE` en el código."
+  },
+  "Scope (OAuth)": {
+    "que": "Un scope en OAuth 2.0 (RFC 6749) es una cadena que representa un permiso acotado y específico que una aplicación cliente solicita sobre los recursos protegidos de un usuario o sistema. Limita qué operaciones puede realizar el token de acceso emitido, independientemente de todos los privilegios que posea el usuario real.",
+    "para": "Implementa el principio de menor privilegio en autorización delegada: permite que una app de calendario lea tus eventos (`calendar.readonly`) sin poder borrar correos o cambiar tu contraseña. También permite segmentar acceso máquina a máquina en flujos `client_credentials`.",
+    "como": "Durante la solicitud de autorización (`/authorize` o `/token`), el cliente envía una lista de scopes separados por espacios (por ejemplo, `scope=read:orders write:refunds`). El Authorization Server verifica si el cliente tiene permitido pedir esos scopes y, en flujos interactivos, los muestra en la pantalla de consentimiento para que el usuario apruebe o limite la delegación. El servidor emite entonces un Access Token que contiene únicamente los scopes concedidos (en el claim `scope` o `scp` si es JWT, o asociados en introspección RFC 7662). Finalmente, el Resource Server inspecciona cada petición y rechaza con `403 Forbidden` (cabecera `insufficient_scope`) si falta el scope requerido.",
+    "practicas": [
+      "No confundas scopes de OAuth con roles RBAC de aplicación: el scope limita lo que *la app cliente* puede hacer en nombre del usuario, pero el backend debe seguir verificando los permisos propios del usuario y el ownership.",
+      "Define scopes granulares orientados a capacidades (`orders:read`, `orders:write`) en lugar de un único scope comodín (`all` o `admin`).",
+      "Valida en el Authorization Server que un usuario sin privilegios no pueda obtener scopes administrativos aunque el cliente los solicite.",
+      "Solicita scopes de forma incremental (incremental authorization) únicamente en el momento en que el usuario activa una funcionalidad que los requiere."
+    ],
+    "ejemplo": "HTTP/1.1 403 Forbidden\nWWW-Authenticate: Bearer realm=\"api\", error=\"insufficient_scope\", scope=\"invoices:write\"",
+    "entrevista": "Un scope de OAuth acota qué acciones concretas puede delegar un cliente usando un token, aplicando menor privilegio en la API sin reemplazar la validación de permisos y propiedad del usuario en el backend."
+  }
+}

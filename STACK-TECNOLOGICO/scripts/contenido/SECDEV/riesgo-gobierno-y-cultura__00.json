@@ -1,0 +1,366 @@
+{
+  "Auditoría externa": {
+    "que": "Evaluación formal, independiente y objetiva de los controles de seguridad, procesos de desarrollo y cumplimiento normativo realizada por un tercero ajeno a la organización. A diferencia de una autoevaluación, el auditor externo emite un dictamen o atestación formal (como un informe SOC 2 Type II o una certificación ISO/IEC 27001) sobre la eficacia operativa de los controles durante un periodo determinado.",
+    "para": "Demuestra ante clientes, reguladores, socios comerciales y consejos de administración que las afirmaciones de seguridad de la empresa están respaldadas por evidencia verificable. Se utiliza de forma periódica (anual o semestral) para desbloquear ventas B2B enterprise, cumplir mandatos legales (PCI-DSS, HIPAA, DORA) o validar la postura tras cambios arquitectónicos mayores.",
+    "como": "El proceso inicia con la definición del alcance (sistemas en producción, pipelines CI/CD, repositorios y proveedores críticos) y la designación del equipo auditor acreditado. Durante la fase de trabajo de campo, el auditor recopila evidencia mediante muestreo estadístico de pull requests aprobadas, logs inmutables de despliegue, registros de acceso IAM y entrevistas de recorrido (walkthroughs). Luego contrasta el diseño del control frente a su operación continua buscando excepciones o brechas temporales. Los hallazgos se clasifican por severidad (no conformidades mayores, menores u observaciones), la organización ejecuta planes de acción correctiva y el auditor emite el informe final de atestación.",
+    "practicas": [
+      "Automatizar la recolección de evidencia desde Git, Jira, AWS Config y el pipeline CI/CD (Compliance-as-Code) para evitar semanas de capturas manuales.",
+      "Ejecutar auditorías de preparación (readiness assessments) y simulacros internos antes de contratar al auditor oficial para corregir brechas sin afectar el informe.",
+      "Auditoría externa vs. pentesting: la auditoría verifica la existencia y operación continua de controles y procesos frente a un marco normativo; el pentesting evalúa la explotabilidad técnica real de activos en un instante dado.",
+      "Trampa común: preparar controles cosméticos solo para la ventana de muestreo ('audit theater') y desactivarlos después, lo que provoca fallos graves en auditorías Type II continuas."
+    ],
+    "ejemplo": "control_id: CC8.1-CHANGE-MGMT\nevidence_source: github_branch_protection\nsampling_period: 2026-01-01..2026-06-30\ncheck_rule: required_approving_review_count >= 2 AND dismiss_stale_reviews == true\nassertion: 0 direct_pushes_to_main AND 100% PRs_linked_to_ticket",
+    "entrevista": "Una auditoría externa no busca mejorar el código por sí misma, sino aportar validación independiente con trazabilidad verificable de que nuestros controles SDLC operan de forma consistente en el tiempo."
+  },
+  "Auditoría interna": {
+    "que": "Actividad independiente y objetiva de aseguramiento y consultoría dentro de la propia organización, diseñada para evaluar la eficacia de la gestión de riesgos, el control interno y los procesos de gobierno de seguridad. Opera bajo la tercera línea de defensa, reportando normalmente al Comité de Auditoría o a la alta dirección para mantener autonomía respecto a Ingeniería y al CISO.",
+    "para": "Detecta desviaciones de políticas, fallos en controles técnicos y deuda de cumplimiento antes de que se materialicen en incidentes o no conformidades ante reguladores externos. Se utiliza de forma continua o por ciclos trimestrales para validar que los equipos de DevSecOps aplican realmente las guardrails definidas.",
+    "como": "El equipo de auditoría interna elabora un plan anual basado en riesgos priorizando sistemas críticos, flujos financieros o aplicaciones expuestas a internet. Define un programa de pruebas para verificar controles clave como la rotación de secretos, la separación de funciones (SoD) en despliegues y el cumplimiento de SLAs de remediación de vulnerabilidades. Extrae datos directamente de APIs de telemetría (SIEM, repositorios, gestores de identidades) para evitar sesgos del área auditada. Documenta los hallazgos en un informe interno con responsables y fechas límite, realizando seguimiento periódico hasta verificar el cierre efectivo.",
+    "practicas": [
+      "Garantizar la independencia organizacional: quien diseña u opera un control de AppSec no debe ser quien lo audite internamente.",
+      "Usar pruebas basadas en datos completos (análisis de población total sobre logs de CI/CD) en lugar de muestras pequeñas cuando exista telemetría automatizada.",
+      "Auditoría interna vs. auditoría externa: la interna tiene enfoque preventivo y de mejora operativa continua sin consecuencias comerciales directas; la externa emite un dictamen oficial frente a terceros.",
+      "Error típico: tratar al auditor interno como un adversario ocultándole contexto, lo que impide corregir problemas sistémicos a tiempo."
+    ],
+    "ejemplo": "Hallazgo AI-2026-04: Separación de funciones en despliegue\nMuestra: 412 despliegues a producción en Q1\nDesviación: 19 despliegues ejecutados por el mismo autor del commit sin aprobación peer.\nCausa raíz: Bypass de rama protegida habilitado para rol 'Maintainer'.\nAcción: Desactivar 'allow_force_pushes' y restringir bypass a cuentas break-glass auditadas.",
+    "entrevista": "La auditoría interna actúa como tercera línea de defensa para validar objetivamente que las políticas de seguridad y los controles automatizados del SDLC no solo existen en papel, sino que funcionan sin atajos."
+  },
+  "Blameless postmortem": {
+    "que": "Análisis retrospectivo estructurado tras un incidente de seguridad o disponibilidad cuyo principio rector es no buscar culpables individuales, sino identificar las fallas sistémicas en procesos, herramientas, arquitectura y controles. Asume que las personas actúan de buena fe con la información y contexto disponibles en el momento del fallo.",
+    "para": "Fomenta la transparencia radical para que los ingenieros reporten errores tempranos, secretos expuestos o configuraciones inseguras sin miedo a represalias punitivas. Se utiliza obligatoriamente tras incidentes de severidad alta o media (brechas, caídas, despliegues vulnerables) para convertir cada fallo en mejoras medibles de resiliencia.",
+    "como": "Tras la contención y erradicación del incidente, un facilitador neutral convoca a los involucrados (AppSec, SRE, desarrollo y producto) dentro de las 48-72 horas siguientes. Se reconstruye una línea temporal objetiva basada en timestamps reales de logs, alertas, commits y chats operativos, separando hechos de hipótesis. Luego se aplican técnicas como los '5 Porqués' centradas en qué barrera técnica faltó (por ejemplo, ausencia de pre-commit hook o política IAM demasiado permisiva) en lugar de señalar quién cometió el error. Finalmente se crean tickets de acción preventiva con propietario, prioridad y fecha límite en el backlog de ingeniería.",
+    "practicas": [
+      "Documentar siempre qué funcionó bien durante la detección y respuesta, además de las brechas técnicas y organizativas.",
+      "Separar las acciones en remediación táctica inmediata y rediseño estructural (guardrails automatizadas que hagan imposible repetir el error humano).",
+      "Blameless no significa ausencia de responsabilidad (accountability): el equipo sigue siendo responsable de ejecutar las mejoras acordadas y aprender del fallo.",
+      "Trampa común: escribir postmortems que terminan con 'recordar al desarrollador tener más cuidado', en lugar de implementar controles automáticos en el pipeline."
+    ],
+    "ejemplo": "Incidente INC-842: Exposición temporal de bucket S3 con logs de sesión.\nCausa sistémica: Módulo Terraform sin validación OPA/Checkov en PR permitió 'acl = public-read'.\nAcciones:\n1. [P0] Activar S3 Block Public Access a nivel de organización AWS (SCP).\n2. [P1] Añadir regla Checkov CKV_AWS_20 bloqueante en CI.",
+    "entrevista": "Un blameless postmortem sustituye la culpa individual por ingeniería de sistemas: si un desarrollador pudo provocar un incidente con un solo clic, el fallo real es la ausencia de guardrails en la plataforma."
+  },
+  "Change advisory board (CAB)": {
+    "que": "Comité multidisciplinario encargado de evaluar, priorizar y autorizar cambios de alto impacto o riesgo en entornos productivos, ponderando impacto técnico, riesgos de seguridad y continuidad del negocio. En organizaciones modernas de DevSecOps, evoluciona de una reunión semanal bloqueante hacia un órgano de gobierno enfocado únicamente en cambios excepcionales o de arquitectura crítica.",
+    "para": "Previene interrupciones de servicio y regresiones de seguridad derivadas de modificaciones complejas que cruzan múltiples dominios (redes, identidad, bases de datos o criptografía). Se utiliza para cambios no estándar, migraciones de infraestructura core o ventanas de mantenimiento con riesgo elevado.",
+    "como": "El solicitante registra una solicitud de cambio (RFC) con alcance, plan de despliegue, análisis de impacto de seguridad, resultados de pruebas y plan de rollback verificado. Los cambios estándar de bajo riesgo y cubiertos por pipelines automatizados (CI/CD con SAST, DAST, pruebas unitarias y canary) se preaprueban automáticamente sin pasar por reunión. Para cambios de alto riesgo, el CAB revisa la evidencia técnica de forma asíncrona o en sesión periódica, solicita mitigaciones adicionales si hay exposición de seguridad y emite aprobación o rechazo formal con trazabilidad en el sistema ITSM.",
+    "practicas": [
+      "Implementar 'Standard Changes' preaprobados mediante pipelines automatizados; enviar cada microservicio o PR normal al CAB destruye la velocidad de entrega sin aumentar la seguridad.",
+      "Exigir siempre un plan de rollback probado y criterios claros de aborto antes de aprobar cambios de infraestructura o autenticación.",
+      "CAB tradicional vs. CAB moderno (peer review + policy-as-code): el primero concentra cuellos de botella humanos; el segundo delega controles repetitivos al pipeline y reserva revisión experta para riesgo residual alto.",
+      "Error típico: convertir el CAB en un trámite burocrático donde los aprobadores firman decenas de tickets sin entender los cambios técnicos."
+    ],
+    "ejemplo": "RFC-2026-118: Rotación de algoritmo de firma JWT (RS256 -> EdDSA) en API Gateway\nTipo: Cambio Normal (Alto Impacto)\nPre-checks: Pruebas de compatibilidad dual-key en staging OK\nRollback: Revertir feature flag 'auth.jwt.alg' (< 30s)\nAprobadores: Lead SRE + AppSec Architect",
+    "entrevista": "En DevSecOps el CAB no debe frenar los despliegues rutinarios cubiertos por CI/CD automatizado, sino gobernar exclusivamente cambios complejos, transversales o de alto riesgo de seguridad."
+  },
+  "Change management": {
+    "que": "Proceso estructurado que gobierna todo el ciclo de vida de las modificaciones en código, configuraciones, infraestructura y políticas de seguridad desde su propuesta hasta su despliegue y verificación en producción. Su objetivo es garantizar trazabilidad completa, control de integridad y minimización de riesgos operativos y de seguridad.",
+    "para": "Evita cambios no autorizados ('configuration drift' o shadow changes), reduce la tasa de fallos por despliegue y provee evidencia auditable de quién solicitó, revisó, probó y aprobó cada modificación. Se aplica de forma continua en repositorios Git, pipelines CI/CD e infraestructura como código (IaC).",
+    "como": "Todo cambio inicia vinculado a un ticket o requerimiento trazable y se implementa en una rama aislada bajo control de versiones. Al abrir una pull request, se ejecutan controles automatizados: linters, pruebas unitarias, SAST, escaneo de dependencias (SCA), análisis IaC y revisión obligatoria de pares (code review). Tras aprobarse y fusionarse, el artefacto inmutable firmado pasa por entornos de staging donde se valida su comportamiento antes de promoverse a producción mediante despliegue controlado (blue/green o canary). Finalmente, el monitoreo post-despliegue confirma la estabilidad o dispara un rollback automático.",
+    "practicas": [
+      "Adoptar GitOps para infraestructura y configuración, prohibiendo modificaciones manuales directas en consolas cloud o servidores SSH en producción.",
+      "Clasificar cambios en estándar (flujo CI/CD autónomo), normales (evaluación de riesgo adicional) y de emergencia (despliegue rápido con revisión ex-post obligatoria en 24-48h).",
+      "Change management vs. Release management: change management controla la autorización, riesgo y trazabilidad del cambio; release management coordina el empaquetado, secuencia y entrega técnica al usuario.",
+      "Trampa común: abusar del canal de 'cambio de emergencia' para eludir revisiones de seguridad y pruebas en entregas comerciales urgentes."
+    ],
+    "ejemplo": "git_commit -> jira_issue_check -> PR_2_approvals -> SAST_SCA_pass -> cosign_image_sign -> staging_smoke_test -> prod_canary_10% -> audit_log_immutable",
+    "entrevista": "Un buen proceso de change management en AppSec reemplaza los bloqueos manuales por trazabilidad de extremo a extremo, revisiones por pares y puertas automatizadas en el pipeline."
+  },
+  "Checklist de revisión de seguridad": {
+    "que": "Lista de verificación técnica y accionable que estandariza los puntos críticos que deben inspeccionarse durante el diseño, desarrollo o revisión de código y arquitectura antes de promover software a producción. Traduce requisitos abstractos de políticas y marcos como OWASP ASVS en comprobaciones concretas y repetibles.",
+    "para": "Reduce la variabilidad y los olvidos humanos durante code reviews, threat modeling o auditorías previas al lanzamiento. Se utiliza en plantillas de Pull Request, revisiones de diseño de nuevas funcionalidades y verificaciones de seguridad por parte de Security Champions y desarrolladores.",
+    "como": "La checklist se organiza por dominios técnicos relevantes para el stack (autenticación, autorización/IDOR, validación de entradas, criptografía, manejo de secretos, logging sin PII y configuración de cabeceras). Durante una revisión, el desarrollador o revisor evalúa cada ítem aplicable frente al diff o diagrama de arquitectura, marcando evidencia de cumplimiento o identificando brechas. Los ítems deterministas se automatizan progresivamente con reglas Semgrep, linters o políticas OPA, dejando en la checklist humana únicamente los controles dependientes de contexto de negocio (como control de acceso horizontal o flujos de pago). Se versiona en el mismo repositorio para evolucionar según nuevos patrones de ataque.",
+    "practicas": [
+      "Mantener las checklists cortas, contextuales por tecnología (ej. API REST vs. frontend SPA) y enfocadas en fallos de lógica que las herramientas SAST no detectan.",
+      "Enlazar cada punto de la checklist con ejemplos concretos de código seguro y vulnerable del propio stack de la empresa.",
+      "Checklist vs. SAST: la checklist guía el criterio humano sobre lógica de negocio, diseño y autorización; el SAST automatiza patrones sintácticos y flujos de datos conocidos.",
+      "Error típico: crear checklists genéricas de 150 preguntas que los desarrolladores marcan automáticamente sin leer ('checkbox fatigue')."
+    ],
+    "ejemplo": "## Security PR Checklist (API Endpoints)\n- [ ] Autorización explícita verificada por objeto/tenant (sin IDOR)\n- [ ] Validación estricta de esquema de entrada y límites de tamaño\n- [ ] Sin secretos, tokens ni PII en logs o mensajes de error\n- [ ] Rate limiting aplicado si el endpoint es público o costoso",
+    "entrevista": "Una checklist de seguridad eficaz no repite lo que ya valida el SAST, sino que concentra la revisión humana en fallos de diseño, control de acceso y lógica de negocio."
+  },
+  "Comité de seguridad": {
+    "que": "Órgano colegiado de gobierno estratégico que reúne a representantes de Seguridad (CISO/AppSec), Ingeniería, Producto, Legal, Cumplimiento y Dirección para alinear decisiones de ciberseguridad con los objetivos del negocio. Actúa como foro de resolución de conflictos entre velocidad de entrega, tolerancia al riesgo y asignación de recursos.",
+    "para": "Evita que la seguridad funcione como un silo desconectado que impone reglas inviables o que cada área tome decisiones de riesgo sin visibilidad ejecutiva. Se convoca periódicamente (mensual o trimestral) para revisar métricas KRI/KPI, aprobar políticas globales, escalar excepciones críticas y priorizar iniciativas transversales.",
+    "como": "El comité opera bajo un estatuto formal con quórum definido, agenda previa y actas auditables de decisiones. En cada sesión se presenta el estado de postura de seguridad mediante indicadores clave (vulnerabilidades críticas vencidas, cobertura de controles SDLC, resultados de auditorías e incidentes recientes). Cuando existe desacuerdo sobre aceptar un riesgo residual grave o bloquear un lanzamiento, el comité evalúa el impacto financiero, regulatorio y reputacional frente al beneficio comercial. Sus resoluciones se traducen en mandatos ejecutivos, ajustes de presupuesto o actualizaciones al registro de riesgos corporativo.",
+    "practicas": [
+      "Incluir líderes de Ingeniería y Producto con poder de decisión real para asegurar que los compromisos de remediación entren en los roadmaps.",
+      "Basar las discusiones en métricas objetivas de riesgo y tendencias, evitando presentaciones puramente tácticas de vulnerabilidades aisladas.",
+      "Comité de seguridad vs. Equipo operativo de AppSec: el comité define gobierno, apetito de riesgo y arbitraje ejecutivo; AppSec diseña e implementa controles técnicos diarios.",
+      "Trampa común: convertir el comité en una reunión informativa unidireccional sin decisiones ni seguimiento de acuerdos."
+    ],
+    "ejemplo": "Agenda Comité Seguridad Q2:\n1. Revisión KRI: 3 servicios Tier-1 con CVE crítico > SLA (14 días)\n2. Decisión: Aprobar excepción temporal 30d para legado TLS 1.1 con WAF compensatorio\n3. Presupuesto: Reasignar 80k EUR a automatización SCA y Secrets Scanning",
+    "entrevista": "El comité de seguridad es el mecanismo de gobierno donde el riesgo técnico se traduce en decisiones compartidas de negocio, arbitrando excepciones críticas y prioridades entre Seguridad e Ingeniería."
+  },
+  "Coordinated disclosure": {
+    "que": "Proceso colaborativo y estructurado mediante el cual un investigador externo o reportero notifica privadamente una vulnerabilidad a la organización responsable, otorgándole una ventana de tiempo acordada para desarrollar, probar y desplegar el parche antes de la publicación técnica del fallo. También se conoce como Coordinated Vulnerability Disclosure (CVD) y sigue estándares como ISO/IEC 29147.",
+    "para": "Minimiza la exposición de los usuarios y clientes a exploits activos ('zero-day') mientras garantiza transparencia pública y reconocimiento legítimo al investigador. Se utiliza siempre que terceros externos descubren vulnerabilidades en productos, APIs o servicios propios.",
+    "como": "El investigador envía el reporte a través del canal oficial definido en `security.txt` o la Vulnerability Disclosure Policy (VDP), idealmente cifrado con PGP o mediante una plataforma de triage. El equipo PSIRT/AppSec acusa recibo dentro del SLA inicial (ej. 48 horas), reproduce el fallo, evalúa su severidad (CVSS + contexto) y confirma el alcance. Se acuerda una ventana de embargo estándar (habitualmente 90 días, acortada si hay explotación activa) con actualizaciones periódicas de progreso al investigador. Una vez desplegado el parche y verificada la mitigación, ambas partes coordinan la publicación simultánea del advisory, CVE y créditos.",
+    "practicas": [
+      "Mantener comunicación proactiva y respetuosa con el investigador durante todo el embargo; el silencio prolongado suele precipitar divulgaciones unilaterales.",
+      "Incluir cláusulas claras de Safe Harbor legal para investigaciones de buena fe dentro del alcance definido.",
+      "Coordinated disclosure vs. Full disclosure: la divulgación coordinada protege a los usuarios dando margen de parcheo; la divulgación completa inmediata expone detalles explotables sin defensa previa.",
+      "Error típico: tratar al investigador legítimo con amenazas legales por reportar un fallo fuera de un programa pago."
+    ],
+    "ejemplo": "Día 0: Reporte recibido vía security@empresa.tld (ID: CVD-2026-09)\nDía 2: Triage y confirmación (CVSS 8.1 SSRF); acuse enviado al investigador\nDía 28: Hotfix desplegado en producción y verificado\nDía 45: Publicación coordinada de Advisory + CVE-2026-XXXX con crédito al autor",
+    "entrevista": "Coordinated disclosure equilibra la seguridad de los usuarios con la transparencia técnica, dando tiempo acotado para remediar antes de hacer público el detalle de la vulnerabilidad."
+  },
+  "Evaluación de riesgo": {
+    "que": "Proceso analítico sistemático (Risk Assessment) para identificar activos valiosos, amenazas plausibles, vulnerabilidades explotables y controles existentes con el fin de estimar la probabilidad e impacto de un evento adverso. Constituye el núcleo técnico de la gestión de riesgos (ISO/IEC 27005, NIST SP 800-30).",
+    "para": "Permite priorizar esfuerzos de ingeniería y presupuesto en los riesgos que realmente amenazan los objetivos críticos del negocio, en lugar de reaccionar con igual urgencia ante cualquier alerta técnica. Se ejecuta antes de lanzar sistemas nuevos, al integrar terceros, tras cambios arquitectónicos significativos o en ciclos periódicos.",
+    "como": "Primero se define el alcance y se inventarían los activos de información, flujos de datos y dependencias críticas. Luego se identifican escenarios de amenaza relevantes (por ejemplo, exfiltración vía SSRF o compromiso de cadena de suministro) combinando threat modeling y datos históricos. Para cada escenario se evalúa la probabilidad de ocurrencia y el impacto financiero, operativo o regulatorio considerando los controles actuales, obteniendo el riesgo inherente y el riesgo residual mediante modelos cualitativos (matrices) o cuantitativos (como FAIR con simulaciones Monte Carlo). El resultado se documenta formalmente para decidir su tratamiento en el Risk Register.",
+    "practicas": [
+      "Distinguir claramente entre riesgo inherente (sin controles) y riesgo residual (con controles actuales verificados) para medir la eficacia real de las defensas.",
+      "Usar escenarios concretos de amenaza en lugar de listas genéricas; 'riesgo de SQLi en módulo de facturación sin WAF' es accionable, 'riesgo de hacking' no.",
+      "Evaluación de riesgo vs. Escaneo de vulnerabilidades: el escaneo lista debilidades técnicas aisladas; la evaluación contextualiza exposición, probabilidad de explotación e impacto al negocio.",
+      "Trampa común: inflar o subestimar subjetivamente puntuaciones cualitativas ('Alto/Medio/Bajo') sin criterios explícitos de calibración."
+    ],
+    "ejemplo": "Escenario: Compromiso de token CI/CD con permisos de despliegue a prod\nProbabilidad: Media (exposición vía dependencia npm no fijada)\nImpacto: Crítico (pérdida de integridad en producción, >500k USD)\nControles actuales: OIDC efímero ausente; token estático en secreto org -> Riesgo Residual: Alto",
+    "entrevista": "Una evaluación de riesgo sólida conecta vulnerabilidades y amenazas técnicas con probabilidad e impacto de negocio para que cada decisión de seguridad esté justificada."
+  },
+  "Gestión de excepciones de seguridad": {
+    "que": "Disciplina de gobierno encargada de controlar, registrar, mitigar y auditar las desviaciones temporales y justificadas respecto a políticas, estándares o controles técnicos de seguridad. Reconoce que el negocio puede requerir operar temporalmente fuera del estándar sin convertir esas excepciones en agujeros permanentes ni invisibles.",
+    "para": "Equilibra la seguridad con la continuidad operativa cuando un parche rompe compatibilidad crítica, un sistema legado no soporta un control moderno o existe un bloqueo comercial urgente. Se utiliza cada vez que un equipo solicita omitir una política (por ejemplo, desplegar con un CVE vencido o mantener un protocolo obsoleto).",
+    "como": "Toda excepción requiere una solicitud formal que documente el control incumplido, el riesgo técnico específico, la justificación de negocio, los controles compensatorios implementados y una fecha de expiración estricta (TTL). Un propietario de negocio (Risk Owner) asume formalmente la responsabilidad del riesgo residual mientras AppSec valida que las medidas compensatorias reducen la exposición a un nivel aceptable dentro del Risk Appetite. Todas las excepciones activas se centralizan en un registro vinculado al Risk Register y al pipeline CI/CD (ej. archivos `.trivyignore` o waivers en Policy-as-Code con fecha límite). Al llegar la expiración, el control vuelve a aplicarse automáticamente salvo renovación excepcional escalada.",
+    "practicas": [
+      "Prohibir excepciones permanentes ('para siempre'): toda excepción debe tener fecha de caducidad máxima (ej. 30, 60 o 90 días) y un plan de salida.",
+      "Exigir siempre controles compensatorios verificables (ej. segmentación de red, regla WAF, monitoreo reforzado) antes de aprobar cualquier dispensa.",
+      "Asegurar que quien aprueba asumir el riesgo sea un responsable de negocio con autoridad, nunca únicamente el equipo que solicita saltarse el control.",
+      "Trampa común: acumular cientos de ignores en el repositorio sin expiración ni revisión, convirtiendo la excepción en la nueva norma."
+    ],
+    "ejemplo": "exception_id: SEC-EXC-2026-041\ncontrol: No high/critical CVEs in container image\ncompensating_control: NetworkPolicy egress-deny + WAF virtual patch #9042\nrisk_owner: VP Engineering\nexpires_at: 2026-12-31",
+    "entrevista": "Gestionar excepciones de seguridad no es permitir saltarse las reglas, sino convertir cada desvío necesario en un riesgo temporal, acotado, compensado y formalmente aceptado."
+  },
+  "Guía de codificación segura": {
+    "que": "Documento técnico vivo de referencia interna que establece estándares, patrones recomendados y antipatrones prohibidos para escribir código seguro en los lenguajes, frameworks y plataformas específicos de la organización. Traduce principios generales (como OWASP Top 10 o CWE) en implementaciones concretas listas para copiar y adaptar.",
+    "para": "Previene la introducción recurrente de vulnerabilidades comunes desde la fase de desarrollo ('shift left') y alinea criterios entre desarrolladores, revisores de código y AppSec. Se utiliza durante el onboarding técnico, el diseño de nuevas features y la resolución de hallazgos SAST.",
+    "como": "El equipo de AppSec junto con Security Champions identifica los stacks principales (ej. Go, TypeScript/Node, Python, Kubernetes) y las clases de fallos más frecuentes en los incidentes e informes internos. Para cada riesgo relevante (inyección SQL, XSS, SSRF, deserialización, manejo de secretos, criptografía), la guía muestra el patrón inseguro, explica por qué falla y provee el patrón seguro usando librerías aprobadas de la empresa ('paved roads'). Se publica en un portal accesible (ej. Backstage o docs-as-code en Git) y se enlaza directamente desde los mensajes de error del linter o SAST en los Pull Requests. Se revisa cada vez que cambian las versiones mayores de frameworks o surgen nuevas técnicas de ataque.",
+    "practicas": [
+      "Proveer snippets específicos del stack real de la empresa (ej. consultas parametrizadas en Prisma o SQLAlchemy) en lugar de teoría genérica.",
+      "Acompañar la guía con librerías internas seguras por defecto ('secure defaults') para que lo fácil coincida con lo seguro.",
+      "Guía de codificación segura vs. Política de seguridad de información: la política dicta el 'qué' obligatorio de alto nivel; la guía explica el 'cómo' técnico a nivel de código.",
+      "Error típico: redactar un PDF extenso y estático que nadie consulta ni actualiza al ritmo de los frameworks."
+    ],
+    "ejemplo": "# Python (SQLAlchemy) - Patrón obligatorio\n# MAL: session.execute(text(f\"SELECT * FROM users WHERE id = {uid}\"))\n# BIEN: uso de parámetros enlazados (bindparams)\nstmt = text(\"SELECT * FROM users WHERE id = :uid\")\nresult = session.execute(stmt, {\"uid\": uid})",
+    "entrevista": "Una guía de codificación segura efectiva reduce vulnerabilidades en origen al ofrecer patrones concretos de nuestro propio stack y enlazarlos directamente con las alertas del pipeline."
+  },
+  "Monitoreo de riesgo": {
+    "que": "Actividad continua de observación, medición y análisis de indicadores, controles y cambios en el entorno tecnológico o de negocio para detectar variaciones en la postura de riesgo en tiempo casi real. Cierra el ciclo de Risk Management asegurando que los riesgos evaluados no empeoren en silencio.",
+    "para": "Identifica de forma temprana la degradación de controles, la aparición de nuevas exposiciones (nuevos CVEs en producción, drift en nube, vencimiento de excepciones) o desviaciones frente al Risk Appetite. Se opera de forma continua mediante tableros ejecutivos, alertas automatizadas y revisiones periódicas.",
+    "como": "El proceso conecta fuentes técnicas heterogéneas —escáneres CSPM, plataformas ASPM, SCA/SBOM en producción, SIEM y sistemas ITSM— hacia un repositorio centralizado de métricas y riesgos. Se definen umbrales de tolerancia y KRIs (por ejemplo, tiempo medio de exposición de vulnerabilidades críticas o porcentaje de repositorios sin branch protection). Cuando una métrica cruza el umbral definido o expira una excepción, el sistema dispara alertas automáticas al propietario del riesgo y actualiza el estado del Risk Register. Periódicamente, los resultados alimentan reevaluaciones formales de riesgo y decisiones del Comité de Seguridad.",
+    "practicas": [
+      "Priorizar la telemetría automatizada (Continuous Control Monitoring) frente a encuestas manuales anuales que caducan al día siguiente.",
+      "Correlacionar hallazgos técnicos con criticidad del activo (Tier-0/Tier-1) y exposición a internet para evitar fatiga por alertas irrelevantes.",
+      "Monitoreo de riesgo vs. Monitoreo de seguridad (SOC): el SOC detecta amenazas e intrusiones activas; el monitoreo de riesgo vigila si nuestra exposición y eficacia de controles superan los umbrales aceptados.",
+      "Trampa común: medir decenas de métricas sin definir umbrales de acción ni responsables cuando un indicador se degrada."
+    ],
+    "ejemplo": "Regla CCM-07: Detección de degradación de postura\ncondicion: asset.tier == 'Tier-1' AND asset.public_facing == true AND kev_cve_age_days > 7\naccion: elevar_kri('critical_exposure') + notificar_slack('#sec-risk-owners') + abrir_ticket_p0()",
+    "entrevista": "El monitoreo de riesgo convierte la gestión de riesgos de una foto anual estática en un circuito continuo de telemetría que alerta en cuanto un control se degrada o el riesgo supera nuestro apetito."
+  },
+  "Phishing simulation": {
+    "que": "Ejercicio controlado de ingeniería social que envía correos, mensajes o enlaces simulados y seguros a empleados de la organización para medir su susceptibilidad al phishing y reforzar comportamientos defensivos. Forma parte de los programas de concientización y pruebas de resiliencia humana.",
+    "para": "Evalúa en condiciones realistas la eficacia del entrenamiento en seguridad, detecta áreas o roles con mayor exposición (finanzas, soporte, desarrollo con acceso privilegiado) y entrena el hábito de reportar correos sospechosos. Se ejecuta periódicamente con dificultad progresiva y vectores alineados a amenazas actuales.",
+    "como": "El equipo de seguridad configura campañas segmentadas utilizando plantillas basadas en pretextos verosímiles (restablecimiento de MFA, facturas, notificaciones de repositorios Git o paquetes internos) con dominios de prueba autorizados y listas de exclusión en los filtros de correo para evitar falsos bloqueos durante la medición. Al enviar la campaña, la plataforma registra métricas clave: tasa de apertura, clic en enlace, envío de credenciales en página simulada y, crucialmente, tasa y tiempo de reporte mediante el botón de phishing del cliente de correo. Quien cae en la simulación recibe retroalimentación educativa inmediata en el momento ('just-in-time training'). Los datos agregados alimentan métricas de riesgo humano sin exposición pública individual.",
+    "practicas": [
+      "Medir e incentivar la tasa de reporte ('report rate') y el tiempo hasta el primer reporte como métricas positivas, no solo la tasa de clics.",
+      "Aplicar retroalimentación constructiva inmediata en lugar de castigos públicos que destruyen la confianza y hacen que los empleados oculten incidentes reales.",
+      "Simular vectores relevantes para ingenieros (ej. falsas alertas de CI/CD, OAuth consent phishing o invitaciones de paquetes) además de correos corporativos genéricos.",
+      "Error típico: usar señuelos engañosos con temas sensibles de recursos humanos (despidos o bonos) que minan la cultura y generan rechazo interno."
+    ],
+    "ejemplo": "Campaña Q3-Dev: 'Alerta de token SSH expirado en GitHub Enterprise'\nPoblación: 240 ingenieros | Reportes al SOC: 62% (mediana 11 min)\nClics: 8.3% | Envío credenciales: 1.6% (4 usuarios -> micro-módulo OAuth/FIDO2)",
+    "entrevista": "Una phishing simulation bien diseñada no busca avergonzar a quien hace clic, sino medir la resiliencia real frente a ingeniería social y acelerar la cultura de reporte temprano."
+  },
+  "Política de seguridad de información": {
+    "que": "Documento normativo de máximo nivel aprobado por la alta dirección que establece los principios, mandatos obligatorios, roles y responsabilidades para proteger la confidencialidad, integridad y disponibilidad de los activos de información. Define qué debe cumplirse en toda la organización sin atarse a tecnologías volátiles.",
+    "para": "Provee autoridad formal al programa de seguridad, alinea expectativas entre todas las áreas y sirve como base contractual y regulatoria frente a auditorías (ISO 27001, SOC 2). Se utiliza para respaldar decisiones de control, gobernar excepciones y establecer deberes claros para empleados, desarrolladores y terceros.",
+    "como": "La política se estructura en un documento marco conciso aprobado por la dirección, del cual cuelgan estándares técnicos, procedimientos operativos y guías específicas (como la guía de codificación segura). Cada cláusula establece un mandato verificable —por ejemplo, clasificación de datos, principio de mínimo privilegio, cifrado en tránsito y reposo, o revisión obligatoria de cambios— junto con su ámbito de aplicación y consecuencias ante incumplimiento. Se publica internamente con acuse de lectura obligatorio durante el onboarding y se revisa al menos anualmente o tras cambios regulatorios o incidentes mayores. Las desviaciones temporales requieren pasar por el proceso formal de excepciones.",
+    "practicas": [
+      "Mantener la política concisa, clara y agnóstica de herramientas concretas, delegando versiones, algoritmos y configuraciones a estándares técnicos subordinados.",
+      "Asegurar que cada requisito de la política tenga un mecanismo real de cumplimiento o verificación; una regla imposible de medir erosiona toda la normativa.",
+      "Política vs. Estándar vs. Procedimiento: la política dice 'qué' y 'por qué' (obligatorio); el estándar fija métricas/requisitos técnicos (ej. TLS 1.3); el procedimiento explica el paso a paso operativo.",
+      "Trampa común: copiar plantillas genéricas de internet que contradicen la arquitectura cloud o DevOps real de la empresa."
+    ],
+    "ejemplo": "POL-SEC-04 (Control de Acceso y Secretos):\n1. Todo acceso a entornos productivos requiere autenticación multifactor resistente a phishing.\n2. Queda prohibido almacenar credenciales en texto claro dentro de código fuente o repositorios.\n3. Excepciones: válidas máximo 90 días con aprobación de Risk Owner y CISO.",
+    "entrevista": "La política de seguridad de información establece los mandatos obligatorios respaldados por la dirección; su eficacia depende de traducirse en estándares técnicos medibles y controles automatizados."
+  },
+  "Presupuesto de seguridad": {
+    "que": "Plan financiero anual o plurianual que asigna capital (CapEx) y gasto operativo (OpEx) a personal, herramientas, auditorías, formación y proyectos destinados a mantener el riesgo cibernético dentro del apetito definido por la organización. Traduce la estrategia de ciberseguridad en prioridades económicas defendibles.",
+    "para": "Permite justificar inversiones preventivas ante CFO y dirección ejecutiva usando retorno sobre mitigación de riesgo (ROSI) y obligaciones de cumplimiento en lugar de miedo. Se elabora en los ciclos de planificación financiera y se ajusta ante cambios estratégicos, expansiones regulatorias o lecciones de incidentes.",
+    "como": "El CISO y los líderes de AppSec/SecOps inventarían los costos recurrentes (licencias SAST/SCA/CSPM, pruebas de penetración externas, programas bug bounty, certificaciones SOC 2/ISO) y las nuevas iniciativas derivadas de brechas del Risk Register o roadmap de producto. Cada partida se vincula con un driver concreto: reducción de riesgo cuantificable, habilitación comercial (cerrar cuentas enterprise) o cumplimiento normativo obligatorio. Se comparan alternativas de 'build vs. buy' considerando el costo total de propiedad (TCO), incluido el tiempo de ingeniería necesario para operar e integrar cada herramienta en el CI/CD. El presupuesto aprobado se monitorea mensualmente frente a KPIs de adopción y reducción de exposición.",
+    "practicas": [
+      "Incluir en el presupuesto el costo de tiempo de ingeniería y mantenimiento (TCO), no únicamente la factura de licencia del proveedor.",
+      "Vincular cada incremento presupuestario con metas de negocio medibles (ej. automatizar cumplimiento para reducir 60% horas de auditoría o acortar MTTR).",
+      "Evitar la compra reactiva de herramientas solapadas ('tool sprawl') sin haber integrado y aprovechado las plataformas existentes en el SDLC.",
+      "Error típico: presentar solicitudes basadas en FUD (miedo, incertidumbre y duda) en lugar de analizar impacto financiero evitado y eficiencia operativa."
+    ],
+    "ejemplo": "Iniciativa: Plataforma ASPM + Secrets Scanning CI/CD\nCosto anual: 45k USD (licencia) + 0.25 FTE operación\nDriver: Reducir falsos positivos 50% y eliminar incidentes de fuga de API keys (costo medio incidente estimado: 180k USD) -> ROSI positivo.",
+    "entrevista": "Un presupuesto de seguridad bien defendido no vende miedo, sino reducción cuantificable de riesgo residual, cumplimiento habilitador de ventas y optimización del TCO en ingeniería."
+  },
+  "Risk appetite": {
+    "que": "Nivel agregado y tipo de riesgo que una organización está dispuesta a aceptar o perseguir de forma consciente para alcanzar sus objetivos estratégicos y de negocio. Se complementa con la tolerancia al riesgo, que fija los márgenes operativos concretos alrededor de ese apetito.",
+    "para": "Brinda criterios objetivos para decidir cuándo se puede lanzar un producto con deuda técnica menor y cuándo es obligatorio bloquear un despliegue hasta remediar. Se define a nivel de dirección ejecutiva o consejo y guía todas las decisiones de Risk Treatment, excepciones y SLAs de vulnerabilidades.",
+    "como": "La alta dirección, asesorada por el CISO, Legal y Producto, define declaraciones cualitativas y umbrales cuantitativos por dominio (disponibilidad, privacidad/datos regulados, integridad financiera, seguridad del producto). Por ejemplo, puede establecer apetito 'cero o mínimo' ante exposición de datos de pago PCI o fallo de autenticación, y apetito 'moderado' en entornos internos de desarrollo sin datos de clientes. Estos niveles se traducen en reglas concretas dentro de AppSec: SLAs máximos de parcheo por severidad, criterios de bloqueo en gates de CI/CD y límites de autoridad para aprobar excepciones. Si un riesgo residual supera el apetito, requiere mitigación inmediata o escalamiento al comité ejecutivo.",
+    "practicas": [
+      "Expresar el risk appetite con umbrales accionables (SLAs, pérdida máxima tolerable, criticidad CVSS/EPSS por tier de activo) en lugar de frases vagas como 'seguridad máxima'.",
+      "Diferenciar el apetito según la criticidad del sistema: exigir el mismo rigor a una landing estática que a un servicio core de pagos desperdicia recursos.",
+      "Risk appetite vs. Risk tolerance: el apetito es el nivel objetivo general que se acepta asumir; la tolerancia es la desviación máxima puntual permitida antes de actuar.",
+      "Trampa común: declarar 'apetito cero para cualquier vulnerabilidad', lo cual paraliza los despliegues o fuerza a ignorar el estándar en la práctica."
+    ],
+    "ejemplo": "Matriz de Apetito AppSec:\n- Datos regulados / Auth (Tier-0): Apetito BAJO -> Bloqueo CI en Critical/High explotables; SLA parcheo 7 días.\n- Herramientas internas sin PII (Tier-3): Apetito MODERADO -> Warning en CI; SLA parcheo 60 días.",
+    "entrevista": "El risk appetite define la frontera operativa entre velocidad de negocio y seguridad, determinando exactamente qué nivel de riesgo residual exige bloqueo inmediato y cuál puede gestionarse con SLAs."
+  },
+  "Risk management": {
+    "que": "Marco integral, continuo y cíclico mediante el cual una organización identifica, analiza, evalúa, trata, monitorea y comunica los riesgos de seguridad de la información que afectan a sus activos, procesos y software. Se apoya en estándares internacionales como ISO/IEC 31000, ISO/IEC 27005 y NIST RMF.",
+    "para": "Asegura que la seguridad sea una función gobernada y proporcional al valor del negocio en lugar de una colección reactiva de parches y prohibiciones. Se aplica de manera transversal desde la concepción de la arquitectura y selección de proveedores hasta la operación en producción y el retiro de sistemas.",
+    "como": "El ciclo comienza estableciendo el contexto organizacional, los requisitos legales y el Risk Appetite. En la fase de evaluación, se identifican activos críticos, amenazas y vulnerabilidades para estimar el riesgo inherente y residual. Con base en esa priorización, los propietarios deciden la estrategia de tratamiento (mitigar, aceptar, transferir o evitar) y ejecutan controles técnicos u organizativos hasta llevar el riesgo residual dentro del apetito. Todo se documenta en el Risk Register y entra en una fase continua de monitoreo, revisión ante cambios del entorno y comunicación transparente hacia el comité de seguridad y auditorías.",
+    "practicas": [
+      "Integrar la gestión de riesgos dentro del SDLC (threat modeling en diseño, priorización contextual en CI/CD) para que no sea un trámite aislado de cumplimiento.",
+      "Asignar siempre un Risk Owner de negocio con autoridad sobre el presupuesto y roadmap del sistema, nunca solo al equipo de seguridad.",
+      "Risk management vs. Vulnerability management: gestionar vulnerabilidades corrige fallos técnicos puntuales; gestionar riesgos evalúa impacto, probabilidad, amenazas y decisiones de negocio integrales.",
+      "Error típico: tratar el Risk Management como un documento estático creado una vez al año para pasar una auditoría."
+    ],
+    "ejemplo": "Ciclo NIST RMF simplificado:\n1. Categorize (Tier-1 API pagos) -> 2. Select Controls (ASVS L2) -> 3. Implement (CI gates + WAF)\n4. Assess (Pentest + SAST) -> 5. Authorize (Risk Owner firma residual) -> 6. Monitor (KRI continuo)",
+    "entrevista": "Risk management es el ciclo continuo que alinea evaluación técnica, controles proporcionales y decisiones de negocio para mantener el riesgo residual bajo control sin frenar la entrega."
+  },
+  "Risk register": {
+    "que": "Repositorio centralizado y estructurado donde se documentan, clasifican y rastrean todos los riesgos de seguridad identificados en la organización a lo largo de su ciclo de vida. Funciona como la fuente única de verdad sobre qué amenazas afectan a qué activos, cuál es su estado actual y quién responde por ellas.",
+    "para": "Proporciona visibilidad ejecutiva y trazabilidad histórica para auditorías, comités de seguridad y priorización de ingeniería. Se actualiza continuamente cada vez que surgen hallazgos de evaluaciones de riesgo, pentests, incidentes, auditorías o solicitudes de excepción.",
+    "como": "Cada entrada del registro incluye un identificador único, descripción del escenario de riesgo, activo o servicio afectado, propietario del riesgo (Risk Owner), puntuación de probabilidad e impacto inherente, controles existentes y riesgo residual calculado. También vincula el plan de tratamiento elegido (mitigar, aceptar, transferir, evitar), tickets asociados en Jira/Linear, fechas objetivo y evidencia de cierre o renovación. En entornos DevSecOps modernos, se sincroniza vía API con herramientas ASPM, escáneres cloud y sistemas de excepciones para reflejar cambios de exposición sin edición manual constante. Se revisa periódicamente en comités para escalar riesgos vencidos.",
+    "practicas": [
+      "Redactar cada riesgo en formato 'Causa -> Evento -> Impacto' para que cualquier lector entienda el problema real sin contexto oculto.",
+      "Evitar que el Risk Register sea un volcado automático de miles de CVEs sin agrupar; debe contener riesgos estratégicos o agregados accionables.",
+      "Mantener historial de cambios y decisiones de aceptación firmadas para demostrar debida diligencia ante reguladores y auditores.",
+      "Trampa común: crear una hoja de cálculo olvidada donde los planes de remediación vencen sin alertas ni responsables."
+    ],
+    "ejemplo": "| ID | Escenario | Owner | Residual | Tratamiento | Estado | Vencimiento |\n|----|-----------|-------|----------|-------------|--------|-------------|\n| RSK-104 | Exposición de secrets en CI logs | Lead Platform | Alto -> Bajo | Mitigar (masking + OIDC) | En curso (PLAT-892) | 2026-12-15 |",
+    "entrevista": "El risk register es la fuente única de verdad que vincula cada riesgo identificado con su impacto residual, estrategia de tratamiento, propietario de negocio y fecha de resolución."
+  },
+  "Risk treatment": {
+    "que": "Fase de la gestión de riesgos en la que se selecciona e implementa la opción más adecuada para modificar o responder a un riesgo evaluado de modo que su nivel residual quede dentro del Risk Appetite. Clásicamente contempla cuatro estrategias: mitigar (reducir), aceptar (retener), transferir (compartir) y evitar (eliminar).",
+    "para": "Convierte el análisis teórico de riesgos en decisiones concretas de ingeniería, arquitectura, contratos o negocio. Se aplica inmediatamente después de cada evaluación de riesgo, hallazgo crítico de seguridad o revisión de proveedores.",
+    "como": "Para cada riesgo que excede el apetito organizacional, el Risk Owner y AppSec evalúan el costo de reducirlo frente al impacto potencial. Si eligen mitigar, implementan controles técnicos o de proceso (parcheo, MFA, WAF, rediseño arquitectónico) hasta reducir probabilidad o impacto. Si deciden evitar, eliminan la fuente del riesgo (por ejemplo, retirar una funcionalidad insegura o no almacenar datos de tarjetas). Si transfieren, comparten el impacto financiero mediante ciberseguros o subcontratación con SLAs contractuales (sin transferir nunca la responsabilidad legal frente al usuario). Si aceptan, documentan formalmente el riesgo residual cuando el costo de mitigación supera el daño esperado o existen restricciones temporales justificadas.",
+    "practicas": [
+      "Combinar estrategias cuando sea necesario: por ejemplo, mitigar la probabilidad con controles técnicos y transferir el impacto residual catastrófico mediante ciberseguro.",
+      "Recordar que transferir un riesgo a un proveedor SaaS o aseguradora nunca exime a la empresa del daño reputacional ni de las obligaciones legales frente a titulares de datos.",
+      "Toda decisión de aceptación formal debe tener aprobación explícita según matriz de autoridad y fecha de reevaluación periódica.",
+      "Error típico: confundir ignorar un riesgo por desconocimiento o pereza con una estrategia válida de aceptación."
+    ],
+    "ejemplo": "Riesgo: Almacenamiento propio de PANs de tarjetas de crédito\n- Evitar: No procesar ni guardar PANs; delegar checkout vía tokenización iframe (Stripe/Adyen).\n- Mitigar (si fuera obligatorio): Tokenización Vault + segmentación PCI-DSS + HSM.\nDecisión: Evitar (reduce alcance PCI en 90%).",
+    "entrevista": "Risk treatment transforma una evaluación en acción eligiendo conscientemente entre mitigar, evitar, transferir o aceptar el riesgo según el apetito y la relación costo-beneficio."
+  },
+  "Security KPI": {
+    "que": "Indicador Clave de Desempeño (Key Performance Indicator) que mide la eficacia operativa, eficiencia y progreso de los controles, procesos e iniciativas del programa de seguridad frente a objetivos establecidos. Evalúa cómo de bien está funcionando la maquinaria de seguridad.",
+    "para": "Permite a los líderes de AppSec e Ingeniería saber si las inversiones y procesos están cumpliendo sus metas (velocidad de parcheo, cobertura de escaneo, adopción de guardrails). Se reporta en tableros operativos semanales o mensuales y en revisiones ejecutivas de desempeño.",
+    "como": "Se seleccionan métricas específicas, medibles y difíciles de manipular que reflejen resultados deseados del SDLC y SecOps, fijando una línea base y una meta clara. Por ejemplo: MTTR (Mean Time to Remediate) de vulnerabilidades críticas, porcentaje de repositorios productivos cubiertos por SAST/SCA/Secret Scanning, o porcentaje de ingenieros que completaron el entrenamiento seguro. Los datos se extraen automáticamente de pipelines CI/CD, herramientas ASPM y sistemas de tickets para calcular tendencias temporales y desgloses por unidad de negocio. Cuando un KPI cae por debajo del objetivo, se diagnostica el cuello de botella operativo (como exceso de falsos positivos o falta de capacidad del equipo).",
+    "practicas": [
+      "Elegir métricas centradas en resultados (ej. MTTR y tasa de recurrencia de fallos) en lugar de métricas de vanidad (ej. 'número de escaneos ejecutados').",
+      "Acompañar cada KPI con contexto para evitar efectos perversos (Goodhart's Law): medir solo 'líneas parcheadas' o 'tickets cerrados' incentiva cierres sin verificación real.",
+      "Security KPI vs. Security KRI: el KPI mide el desempeño y eficiencia de los controles respecto a objetivos; el KRI alerta de forma temprana sobre aumentos en la exposición al riesgo.",
+      "Trampa común: reportar promedios globales que ocultan servicios críticos severamente rezagados."
+    ],
+    "ejemplo": "KPI-APPSEC-01: MTTR Vulnerabilidades Críticas (Tier-1)\nMeta: <= 7 días | Actual Q2: 5.4 días (mejora -38% vs Q1)\nKPI-APPSEC-02: Cobertura Secret Scanning bloqueante en repos activos\nMeta: 100% | Actual Q2: 96% (4 repos legacy pendientes)",
+    "entrevista": "Los Security KPIs miden la eficacia operativa de nuestros controles y procesos de seguridad frente a metas concretas, como reducir el MTTR o alcanzar cobertura total en el pipeline."
+  },
+  "Security KRI": {
+    "que": "Indicador Clave de Riesgo (Key Risk Indicator) que actúa como señal de alerta temprana sobre cambios en el nivel de exposición, probabilidad de amenaza o degradación de controles que podrían superar el Risk Appetite. A diferencia de las métricas de eficiencia, apunta directamente a dónde se acumula el peligro.",
+    "para": "Advierte a la dirección y a los equipos técnicos antes de que una acumulación de debilidades derive en un incidente mayor o incumplimiento regulatorio. Se monitorea continuamente en tableros de gobierno y se revisa de forma prioritaria en el Comité de Seguridad.",
+    "como": "Cada KRI se deriva de un riesgo crítico en el Risk Register y se asocia con umbrales tipo semáforo (verde, ámbar de advertencia y rojo de escalamiento). Ejemplos típicos en AppSec son el número de vulnerabilidades activamente explotadas (CISA KEV) sin parchar en activos expuestos a internet, porcentaje de excepciones vencidas, cuentas privilegiadas sin MFA o aplicaciones críticas sin propietario asignado. La telemetría se recopila automáticamente desde CMDB/ASPM, escáneres de producción y gestores de identidad. Al cruzar el umbral ámbar o rojo, se dispara un protocolo predefinido de mitigación acelerada o escalamiento ejecutivo.",
+    "practicas": [
+      "Definir umbrales cuantitativos y acciones obligatorias de respuesta para cada KRI antes de empezar a medirlo.",
+      "Combinar indicadores rezagados (incidentes ocurridos) con indicadores adelantados (activos críticos sin MFA o deuda de parches KEV) para actuar preventivamente.",
+      "Security KRI vs. Security KPI: si 'porcentaje de parcheo dentro de SLA' es un KPI de rendimiento, 'cantidad de sistemas expuestos con CVE explotable vencido > 14 días' es un KRI de riesgo real.",
+      "Error típico: etiquetar cualquier métrica operativa como KRI, diluyendo la atención ejecutiva sobre los riesgos verdaderamente peligrosos."
+    ],
+    "ejemplo": "KRI-03: Activos expuestos a internet con CVE en catálogo KEV sin mitigar\nUmbral Verde: 0 | Ámbar: 1-2 (<48h) | Rojo: >=1 (>48h) o >=3\nEstado actual: 2 activos (40h) -> Alerta Ámbar enviada a VP Eng y CISO.",
+    "entrevista": "Un Security KRI funciona como alarma temprana del apetito de riesgo: no mide cuánto trabajamos, sino cuánta exposición crítica real se está acumulando antes de sufrir un incidente."
+  },
+  "Security awareness training": {
+    "que": "Programa continuo de formación y cambio cultural diseñado para dotar a todos los colaboradores —y de forma especializada a los equipos técnicos— de los conocimientos y hábitos necesarios para reconocer riesgos y operar de forma segura. En AppSec incluye formación práctica específica para desarrolladores, QA y operadores de plataforma.",
+    "para": "Reduce la probabilidad de errores humanos evitables (manejo inseguro de credenciales, caída en ingeniería social, malas configuraciones) y cumple requisitos obligatorios de marcos como SOC 2, ISO 27001 y PCI-DSS. Se imparte en el onboarding, mediante ciclos anuales y en módulos tácticos tras nuevos tipos de incidentes.",
+    "como": "El programa segmenta a la audiencia por rol en lugar de dar un curso genérico único: personal general recibe higiene básica (gestores de contraseñas, MFA, reporte de phishing, clasificación de datos), mientras que ingenieros reciben laboratorios interactivos de codificación segura sobre fallos reales (IDOR, SSRF, IaC misconfigurations, supply chain). Los contenidos se entregan en cápsulas breves ('micro-learning') y plataformas hands-on con retos de explotación y corrección en su propio lenguaje. Se registra la finalización para cumplimiento normativo y se evalúa su impacto correlacionándolo con tasas de reporte de phishing y reducción de vulnerabilidades recurrentes.",
+    "practicas": [
+      "Separar la formación general de cumplimiento de la capacitación técnica hands-on para desarrolladores; obligar a ingenieros senior a ver videos básicos genera rechazo.",
+      "Usar ejemplos reales de vulnerabilidades internas anonimizadas para demostrar relevancia directa en el producto propio.",
+      "Alinear los módulos de formación con los hallazgos más frecuentes del SAST/pentesting en los últimos dos trimestres.",
+      "Trampa común: medir el éxito únicamente por '100% de asistencia en video anual de 45 minutos' sin evaluar retención ni impacto técnico."
+    ],
+    "ejemplo": "Ruta Ingeniería 2026:\n- Onboarding (Día 15): Lab práctico OWASP API Top 10 (90 min, Python/TS)\n- Trimestral: Micro-reto 15 min sobre hallazgo real del trimestre (ej. validación JWT)\n- Métrica de impacto: -42% de fallos de autorización reportados en PRs.",
+    "entrevista": "El security awareness training efectivo abandona las diapositivas anuales genéricas y ofrece laboratorios breves adaptados al rol y a los fallos reales del stack del equipo."
+  },
+  "Security champions program": {
+    "que": "Red estructurada de desarrolladores, QA o ingenieros de plataforma integrados dentro de los propios squads de producto que actúan como multiplicadores de la cultura y prácticas de AppSec. No son miembros de tiempo completo del equipo de seguridad, sino referentes técnicos capacitados dentro de cada célula de ingeniería.",
+    "para": "Resuelve el cuello de botella clásico de escala cuando hay decenas de desarrolladores por cada especialista de AppSec. Se utiliza para incorporar seguridad desde el diseño temprano (threat modeling, code review, triage inicial de SAST/SCA) sin frenar la velocidad de los squads.",
+    "como": "Cada squad nomina o selecciona voluntariamente a un ingeniero con interés en seguridad y apoyo de su manager para dedicar un porcentaje explícito de su capacidad (ej. 10-15%) al programa. El equipo de AppSec provee formación avanzada continua, mentoría directa, canales dedicados y herramientas priorizadas (guías, templates de threat modeling, acceso a dashboards ASPM). El champion facilita revisiones de diseño de nuevas features, ayuda a sus pares a interpretar alertas del pipeline, escala casos complejos a AppSec y comparte lecciones en sincronizaciones mensuales de la comunidad de champions. La organización reconoce formalmente esta contribución en evaluaciones de desempeño y crecimiento profesional.",
+    "practicas": [
+      "Asegurar respaldo formal de Ingeniería para reservar tiempo real en el sprint; sin capacidad asignada, el rol muere por presión de entregas.",
+      "Ofrecer beneficios tangibles al champion: acceso anticipado a formación, certificaciones, eventos de seguridad y visibilidad en su carrera.",
+      "Security Champion vs. AppSec Engineer: el champion es un desarrollador del squad que aporta contexto de negocio y primera línea preventiva; AppSec provee plataforma, guardrails, consultoría profunda y gobierno.",
+      "Error típico: convertir al champion en 'policía de cumplimiento' o responsable de aprobar burocráticamente tickets ajenos."
+    ],
+    "ejemplo": "Carta del Security Champion (Squad Pagos):\n- Capacidad acordada: 4 horas/semana protegidas en Jira\n- Responsabilidades: Liderar Threat Modeling ligero por épica + triage semanal de alertas Dependabot/Semgrep\n- Escalado: Canal #appsec-champions con SLA respuesta < 4h.",
+    "entrevista": "Un programa de Security Champions escala AppSec de forma sostenible incrustando criterio de seguridad y contexto de producto directamente dentro de cada equipo de desarrollo."
+  },
+  "Security exception process": {
+    "que": "Flujo operativo estandarizado paso a paso —desde la solicitud y análisis técnico hasta la aprobación, implementación en herramientas y expiración automática— para autorizar desviaciones temporales de políticas o gates de seguridad en el SDLC. Es la materialización práctica de la gestión de excepciones.",
+    "para": "Evita bypasses informales por chat o desactivación manual de controles en CI/CD cuando un equipo necesita liberar un cambio que falla una política de seguridad. Se activa ante bloqueos urgentes en pipelines, dependencias sin parche disponible o falsos positivos complejos que requieren investigación.",
+    "como": "El desarrollador inicia el flujo creando un ticket estructurado (o un archivo waiver firmado en repositorio) indicando la regla violada (ej. CVE específico o regla OPA), el servicio afectado, la justificación y los controles compensatorios propuestos. Un ingeniero de AppSec evalúa técnicamente la explotabilidad real y valida si la mitigación compensatoria es suficiente. Según la severidad residual, el flujo enruta la aprobación al nivel de autoridad correcto (Lead de Ingeniería para bajo/medio; VP/CISO para alto/crítico) con un TTL obligatorio. Una vez aprobado, se emite un waiver con fecha de caducidad en el motor de políticas (Conftest/OPA, Trivy, Semgrep) y se agenda una tarea automática de remediación antes del vencimiento.",
+    "practicas": [
+      "Integrar los waivers como código versionado o tokens con expiración explícita que el pipeline invalide automáticamente al cumplirse el TTL.",
+      "Incluir un carril diferenciado para 'falso positivo confirmado' frente a 'riesgo real diferido', evitando contaminar el Risk Register con ruido de herramientas.",
+      "Exigir revisión por pares y prohibir que el solicitante apruebe su propia excepción en el repositorio o sistema de tickets.",
+      "Trampa común: aprobar excepciones sin automatizar su caducidad, dejando la puerta abierta indefinidamente después de que pase la urgencia."
+    ],
+    "ejemplo": "# .security-waivers.yaml (validado por OPA en CI)\nwaivers:\n  - id: SEC-EXC-2026-041\n    cve: CVE-2025-12345\n    package: libxml2\n    reason: \"Función vulnerable XML parser no invocada; WAF activo\"\n    approved_by: ciso@empresa.tld\n    expires: \"2026-12-20\"",
+    "entrevista": "El security exception process convierte cada desvío temporal en un flujo auditable con evaluación técnica, control compensatorio y caducidad automatizada directamente en el pipeline."
+  },
+  "Security governance": {
+    "que": "Sistema de dirección, alineamiento estratégico, toma de decisiones y rendición de cuentas mediante el cual la organización garantiza que su estrategia de ciberseguridad respalda los objetivos del negocio y cumple con leyes, contratos y estándares. Define quién tiene autoridad para decidir, bajo qué políticas y cómo se verifica el cumplimiento.",
+    "para": "Evita iniciativas fragmentadas, duplicidad de controles o conflictos sin resolver entre velocidad comercial y exposición al riesgo. Se aplica de manera continua en toda la empresa conectando el Consejo de Administración y la alta dirección con los comités técnicos y equipos de desarrollo.",
+    "como": "La gobernanza establece la estructura de roles y líneas de defensa: define propietarios de activos y riesgos, constituye el Comité de Seguridad y promulga políticas respaldadas por la dirección. Traduce el Risk Appetite en marcos de control (como NIST CSF, ISO 27001 o SAMM para AppSec) y asigna presupuesto y autoridad para aplicar guardrails o aprobar excepciones. Su brazo de supervisión recopila KPIs, KRIs y resultados de auditorías internas y externas para comprobar que los controles funcionan según lo diseñado. Cuando las métricas revelan desviaciones sistemáticas, la gobernanza ajusta políticas, prioridades o responsabilidades ejecutivas.",
+    "practicas": [
+      "Separar claramente gobernanza (definir dirección, apetito de riesgo, políticas y rendición de cuentas) de gestión operativa (configurar herramientas y responder incidentes).",
+      "Adoptar marcos medibles de madurez AppSec como OWASP SAMM o BSIMM para gobernar la evolución técnica del ciclo de desarrollo.",
+      "Alinear incentivos entre áreas: si Ingeniería solo es evaluada por velocidad y Seguridad por cero incidentes, la gobernanza falla por diseño.",
+      "Error típico: confundir gobernanza con burocracia pesada basada en comités lentos en lugar de políticas claras con automatización verificable."
+    ],
+    "ejemplo": "Estructura de Gobernanza AppSec:\n- Consejo / CEO: Aprueba Risk Appetite corporativo\n- Comité de Seguridad: Revisa KRIs y aprueba excepciones Tier-0\n- AppSec / Platform: Diseña guardrails CI/CD y estándares\n- Audit Interna: Verifica eficacia independiente",
+    "entrevista": "Security governance no consiste en configurar firewalls o escribir reglas SAST, sino en establecer la estructura de autoridad, políticas, métricas y rendición de cuentas que alinea la seguridad con el negocio."
+  },
+  "Supplier security assessment": {
+    "que": "Evaluación técnica y documental específica que analiza la postura de seguridad de un proveedor o suministrador concreto antes de contratarlo o integrarlo y de forma periódica durante la relación comercial. Es el procedimiento práctico de diligencia debida (due diligence) sobre un tercero.",
+    "para": "Verifica con evidencia objetiva si un proveedor SaaS, consultora de desarrollo o infraestructura externa protege adecuadamente los datos, APIs y accesos que se le confiarán. Se ejecuta durante compras (procurement), renovaciones contractuales o cambios de alcance que amplíen los datos compartidos.",
+    "como": "El proceso inicia clasificando al proveedor por nivel de criticidad según el tipo de datos procesados (PII, secretos, código fuente) y el grado de conectividad con sistemas propios (SSO, acceso a red, webhooks). Para proveedores de riesgo bajo basta verificar documentación pública; para críticos se solicitan certificaciones vigentes (SOC 2 Type II, ISO 27001), cuestionarios estandarizados (SIG, CAIQ), resultados recientes de pentesting y detalles de cifrado, MFA y respuesta a incidentes. AppSec revisa la arquitectura de integración (flujos OAuth, scopes mínimos, aislamiento multi-tenant) y documenta brechas encontradas como condiciones previas o cláusulas contractuales (DPA/SLA de notificación de brechas). El dictamen final alimenta el proceso de Vendor Risk Management.",
+    "practicas": [
+      "Pedir informes SOC 2 Type II completos (prestando atención a las 'exceptions' y 'Complementary User Entity Controls') en lugar de aceptar certificados genéricos sin leer el alcance.",
+      "Evaluar la arquitectura técnica de integración (ej. scopes OAuth excesivos o llaves estáticas) además del cuestionario administrativo.",
+      "Aplicar evaluaciones proporcionales por niveles (Tiering) para no frenar herramientas menores de bajo riesgo con cuestionarios de 300 preguntas.",
+      "Trampa común: aprobar al proveedor solo porque completó un cuestionario autodeclarado sin verificar evidencia ni revisar los controles que el cliente debe configurar (CUECs)."
+    ],
+    "ejemplo": "Checklist Evaluación Proveedor SaaS Tier-1 (acceso a código fuente):\n1. SOC 2 Type II sin excepciones críticas en CC6/CC7 (<12 meses)\n2. Soporte obligatorio SAML 2.0/OIDC + SCIM\n3. Cifrado TLS 1.3 + AES-256 (ideal BYOK)\n4. SLA notificación de brecha <= 24h en DPA firmado",
+    "entrevista": "Un supplier security assessment riguroso combina la verificación de certificaciones como SOC 2 Type II con el análisis técnico de la integración real y los controles que debemos configurar de nuestro lado."
+  },
+  "Third-party risk": {
+    "que": "Exposición potencial de seguridad, privacidad, operativa o legal derivada de cualquier dependencia externa fuera del control directo de la organización, abarcando proveedores comerciales, software open-source (OSS), librerías de terceros, APIs externas, integraciones SaaS y socios de negocio. Representa el riesgo total de la cadena de suministro ampliada.",
+    "para": "Visibiliza que la superficie de ataque moderna trasciende el código propio y que un fallo en una dependencia npm, un SDK móvil o un proveedor de autenticación puede comprometer toda la plataforma. Se gestiona transversalmente entre AppSec (supply chain/SCA/SBOM), Legal, Compras y SRE.",
+    "como": "La gestión de third-party risk comienza mapeando todas las dependencias externas en dos planos: técnico (paquetes OSS mediante SBOM, imágenes base de contenedores, GitHub Actions de terceros, APIs y widgets JS) y organizacional (proveedores SaaS, contratistas, infraestructura cloud). Se evalúa qué impacto tendría la indisponibilidad, compromiso o malicia de cada tercero (ej. ataque tipo SolarWinds o Log4Shell). Para mitigar riesgos técnicos se aplican pinneado de versiones por hash, verificación de firmas (SLSA/Sigstore), proxy privado de artefactos y CSP/SRI en navegador; para socios y contratistas se aplican controles de mínimo privilegio y aislamiento. El monitoreo continuo rastrea nuevas vulnerabilidades o adquisiciones corporativas de terceros críticos.",
+    "practicas": [
+      "Incluir dependencias open-source, GitHub Actions de terceros y scripts frontend (Magecart) dentro del alcance real de third-party risk, no solo contratos comerciales.",
+      "Aplicar el principio de mínimo privilegio en integraciones externas: tokens con scopes mínimos, cuentas de servicio dedicadas y expiración corta.",
+      "Third-party risk vs. Vendor risk management: third-party risk es la categoría amplia de riesgo hacia cualquier entidad o componente externo (incluye OSS, partners y cuarta parte); VRM gestiona específicamente la relación con proveedores contratados.",
+      "Error típico: olvidar el riesgo de 'cuarta parte' (subprocesadores de nuestro proveedor, como la nube o librería que él utiliza)."
+    ],
+    "ejemplo": "# Mitigación de third-party risk en CI/CD (GitHub Actions)\n# Fijar SHA completo en lugar de etiqueta mutable @v4\nuses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2\npermissions:\n  contents: read",
+    "entrevista": "Third-party risk abarca toda la superficie externa —desde proveedores comerciales y subprocesadores hasta dependencias open-source y CI/CD— exigiendo aislamiento técnico, verificación de integridad y mínimo privilegio."
+  },
+  "Vendor risk management": {
+    "que": "Programa continuo de negocio y seguridad dedicado a identificar, evaluar, contratar, monitorear y dar de baja (offboarding) a los proveedores comerciales externos que suministran software, infraestructura o servicios a la organización. Gestiona todo el ciclo de vida de la relación con el vendor.",
+    "para": "Reduce el riesgo de brechas de datos, interrupciones operativas y sanciones regulatorias provocadas por proveedores contratados, garantizando que mantengan su postura de seguridad más allá de la firma inicial. Se aplica desde la selección en compras hasta la rescisión del contrato.",
+    "como": "El ciclo de VRM inicia en el onboarding: antes de aprobar una compra, se clasifica al proveedor por criticidad (acceso a datos sensibles, impacto operativo o integración privilegiada) y se ejecuta el Supplier Security Assessment correspondiente. Si existen riesgos aceptables con condiciones, se negocian cláusulas contractuales de seguridad (DPA, derecho a auditar, notificación de incidentes, requisitos de cifrado y ciberseguro). Durante la fase operativa, se realiza monitoreo continuo mediante reevaluaciones anuales, revisión de reportes de cumplimiento renovados, alertas de brechas públicas y control de accesos asignados. Al finalizar la relación, el proceso de offboarding revoca llaves API, tokens SSO/SCIM y certifica la eliminación segura de datos.",
+    "practicas": [
+      "Integrar VRM en el flujo de Compras y Finanzas para bloquear la emisión de órdenes de pago o renovaciones sin visto bueno de seguridad (evita Shadow SaaS).",
+      "Mantener un inventario vivo de proveedores con sus subprocesadores críticos y un plan de contingencia/salida si el vendor sufre un ransomware prolongado.",
+      "Vendor risk management vs. Supplier security assessment: VRM es el programa completo de ciclo de vida (selección, contrato, monitoreo y offboarding); el assessment es la evaluación puntual dentro de ese ciclo.",
+      "Trampa común: evaluar rigurosamente al proveedor antes de firmar y olvidar revocar sus accesos o credenciales cuando termina el contrato."
+    ],
+    "ejemplo": "Flujo VRM Ciclo Completo:\n1. Intake Compras -> Clasificación Tier-1 (acceso PII)\n2. Supplier Assessment (SOC 2 + revisión OAuth) + DPA firmado\n3. Monitoreo anual + revisión subprocesadores\n4. Offboarding: revocar app SSO + rotar API keys + certificado borrado datos",
+    "entrevista": "Vendor risk management gobierna todo el ciclo de vida del proveedor —desde el onboarding y las cláusulas contractuales hasta el monitoreo continuo y la revocación de accesos en el offboarding."
+  }
+}

@@ -1,0 +1,171 @@
+{
+  "SimPy": {
+    "que": "SimPy es una biblioteca de simulación de eventos discretos (DES) para Python basada en funciones generadoras (`yield`). Modela procesos concurrentes (clientes, paquetes, máquinas) que compiten por recursos compartidos como `Resource`, `Store` y `Container` sobre un reloj lógico único.",
+    "para": "Sirve para prototipar y analizar sistemas con colas, contención de recursos y flujos asíncronos sin pagar licencias comerciales ni escribir motores de eventos desde cero. Se usa en ingeniería industrial, planeación de capacidad en microservicios, logística y redes cuando el flujo es expresable en código Python.",
+    "como": "Un objeto `simpy.Environment` mantiene una cola de prioridad (min-heap) ordenada por marca temporal y un reloj lógico (`env.now`). Cada proceso se registra con `env.process(gen())` y suspende su ejecución mediante `yield` sobre eventos como `env.timeout(dt)` o `resource.request()`. El bucle `env.run(until=T)` extrae el siguiente evento del heap, avanza `env.now` directamente a ese instante y reanuda el generador correspondiente con `send()`. Cuando un recurso está saturado, la petición queda en cola FIFO o de prioridad (`PriorityResource`) y se reactiva al ejecutarse `resource.release()` o salir del bloque `with req:`.",
+    "practicas": [
+      "Usa siempre administradores de contexto (`with res.request() as req:`) para garantizar la liberación del recurso incluso ante interrupciones (`process.interrupt()`).",
+      "Separa la lógica del modelo de la recolección de métricas usando observadores o listas de trazas, evitando acoplar E/S de disco dentro de los generadores.",
+      "SimPy vs Arena/AnyLogic: SimPy destaca en integración con NumPy/SciPy, control de versiones Git y barridos paralelos en CI/CD; carece de animación 2D/3D nativa.",
+      "Trampa común: olvidar el `yield` antes de `env.timeout()` o `res.request()`, lo que crea el objeto evento sin suspender el proceso ni consumir tiempo simulado."
+    ],
+    "ejemplo": "import simpy\ndef tarea(env, cpu):\n    with cpu.request() as req:\n        yield req\n        yield env.timeout(5)\nenv = simpy.Environment()\ncpu = simpy.Resource(env, capacity=2)\nfor _ in range(4): env.process(tarea(env, cpu))\nenv.run()",
+    "entrevista": "SimPy implementa simulación de eventos discretos usando generadores de Python como corrutinas cooperativas sobre un heap temporal, permitiéndome modelar colas y contención con código versionable y testable."
+  },
+  "Simulación basada en agentes": {
+    "que": "La simulación basada en agentes (ABM, Agent-Based Modeling) es un paradigma computacional ascendente (bottom-up) donde entidades autónomas (agentes) interactúan entre sí y con un entorno espacial o en red siguiendo reglas locales. El comportamiento global del sistema emerge de esas interacciones descentralizadas sin imponer ecuaciones agregadas.",
+    "para": "Resuelve problemas donde la heterogeneidad individual, la topología de red, el aprendizaje adaptativo o los efectos espaciales invalidan los promedios macroscópicos. Se aplica en epidemiología, tráfico urbano, microeconomía, evacuaciones, mercados energéticos y dinámicas de opinión.",
+    "como": "Cada agente encapsula un estado interno (atributos, memoria, posición) y una función de decisión `step()` ejecutada en cada tick o por eventos discretos. El motor actualiza la población siguiendo un planificador (activación síncrona, aleatoria o secuencial) para evitar sesgos de orden. Durante el paso, el agente percibe su vecindario (grilla 2D, grafo o espacio continuo mediante árboles espaciales como KD-tree) y actualiza estado o envía mensajes. Herramientas como NetLogo, Mesa (Python) o Repast recolectan observables agregados (entropía, clústeres, curvas epidémicas) en cada iteración.",
+    "practicas": [
+      "Evalúa explícitamente el orden de activación (síncrono vs aleatorio vs por prioridad): cambiar de secuencial fijo a aleatorio puede alterar drásticamente los patrones emergentes.",
+      "ABM vs Dinámica de Sistemas: elige ABM cuando importa quién interactúa con quién y la varianza individual; elige Dinámica de Sistemas para flujos agregados con millones de individuos homogéneos.",
+      "Controla la explosión computacional: indexa vecinos con grillas espaciales o grafos dispersos para evitar bucles $O(N^2)$ en cada tick.",
+      "Ejecuta múltiples réplicas con distintas semillas porque la estocasticidad en las reglas locales puede generar bifurcaciones hacia equilibrios opuestos."
+    ],
+    "ejemplo": "class Agente:\n    def __init__(self, estado, vecinos): self.estado, self.vecinos = estado, vecinos\n    def step(self):\n        activos = sum(1 for v in self.vecinos if v.estado == 'I')\n        if self.estado == 'S' and activos >= 2:\n            self.proximo = 'I'\n# En activación síncrona se aplica self.estado = self.proximo tras evaluar a todos",
+    "entrevista": "Uso simulación basada en agentes cuando los promedios agregados ocultan la dinámica real y necesito observar qué comportamientos macroscópicos emergen de reglas locales heterogéneas en red o espacio."
+  },
+  "Simulación continua": {
+    "que": "La simulación continua modela sistemas cuyas variables de estado evolucionan de forma ininterrumpida en función del tiempo mediante ecuaciones diferenciales ordinarias (EDO), parciales (EDP) o algebraico-diferenciales (DAE). Representa tasas de cambio instantáneas más que saltos puntuales entre eventos.",
+    "para": "Sirve para analizar fenómenos físicos, químicos, biológicos o de control automático donde los flujos cambian suavemente, como circuitos eléctricos, reactores, cinemática de vehículos, termodinámica o modelos compartimentales agregados. Se emplea cuando discretizar el fenómeno en entidades individuales sería físicamente impreciso o prohibitivo.",
+    "como": "El sistema se formula como $\\dot{x}(t) = f(x(t), u(t), t)$ con condiciones iniciales $x(t_0) = x_0$. Un integrador numérico aproxima la trayectoria avanzando en pasos $\\Delta t$ mediante esquemas explícitos (Euler, Runge-Kutta RK45), implícitos para sistemas rígidos (BDF, Radau) o adaptativos que ajustan $\\Delta t$ comparando errores locales de orden $p$ y $p+1$. Si existen discontinuidades (por ejemplo, un termostato que conmuta al cruzar un umbral), el solver ejecuta detección de cruces por cero (zero-crossing detection) mediante bisección antes de continuar la integración.",
+    "practicas": [
+      "Identifica si el sistema es rígido (stiff, escalas temporales muy dispares): usar RK45 explícito en un sistema rígido colapsa $\\Delta t$ y dispara el coste; cambia a BDF o `ode15s`.",
+      "Ajusta tanto la tolerancia relativa (`rtol`) como la absoluta (`atol`) al orden de magnitud de tus variables para evitar errores acumulados en variables cercanas a cero.",
+      "Simulación continua vs discreta por eventos: la continua integra derivadas en el tiempo; la discreta salta de evento en evento sin avanzar paso a paso en intervalos inactivos.",
+      "Verifica la conservación de invariantes físicos (masa, energía, probabilidad total $= 1$) como prueba de sanidad del paso de integración."
+    ],
+    "ejemplo": "from scipy.integrate import solve_ivp\n# Decaimiento acoplado: dx/dt = -0.5*x, dy/dt = 0.5*x - 0.2*y\ndef sistema(t, y):\n    return [-0.5 * y[0], 0.5 * y[0] - 0.2 * y[1]]\nsol = solve_ivp(sistema, (0, 20), [100.0, 0.0], method='RK45', rtol=1e-6)",
+    "entrevista": "En simulación continua traduzco la física o dinámica agregada del sistema a ecuaciones diferenciales y elijo integradores explícitos o implícitos según la rigidez y las tolerancias de error requeridas."
+  },
+  "Simulación discreta por eventos": {
+    "que": "La simulación discreta por eventos (DES) representa un sistema como una secuencia cronológica de instantes puntuales (eventos) en los que el estado cambia de forma instantánea. Entre dos eventos consecutivos, todas las variables de estado permanecen constantes.",
+    "para": "Es el estándar para modelar sistemas operativos con contención de recursos, colas, enrutamiento y protocolos: centros de llamadas, líneas de manufactura, puertos logísticos, redes de paquetes y arquitecturas cliente-servidor. Se elige cuando el interés está en latencias, tamaños de cola, utilización y throughput.",
+    "como": "El motor mantiene el reloj lógico $t$, el vector de estado $S$ y la lista de eventos futuros (FEL, Future Event List) ordenada por tiempo de ocurrencia (usualmente un min-heap o calendar queue). En cada ciclo, el algoritmo de avance por próximo evento (Next-Event Time Advance) extrae el evento con menor timestamp $t_{next}$, fija $t = t_{next}$, ejecuta la rutina de transición de estado correspondiente y programa nuevos eventos futuros (por ejemplo, una salida al iniciar un servicio) muestreados de distribuciones probabilísticas. Finalmente actualiza acumuladores ponderados por tiempo como $\\int Q(t)\\,dt$ antes de repetir hasta cumplir la condición de parada.",
+    "practicas": [
+      "Descarta el periodo transitorio (warm-up) o inicializa el sistema en un estado representativo antes de medir promedios estacionarios de colas.",
+      "Usa acumuladores ponderados por duración (`área += Q_actual * (t_nuevo - t_anterior)`) para calcular longitud media de cola en lugar de promediar por número de eventos.",
+      "DES vs paso fijo temporal (time-stepped): DES no desperdicia cómputo en periodos sin actividad y evita colisiones artificiales causadas por redondear timestamps al tamaño del paso.",
+      "Asegura un desempate determinista para eventos simultáneos (prioridades explícitas o orden FIFO de inserción) para no introducir dependencias ocultas del orden del heap."
+    ],
+    "ejemplo": "# Llegada(t=2.1) -> si servidor libre: ocupar y agendar Salida(t=2.1 + S)\n#                  si servidor ocupado: encolar cliente; Q += 1\n# Salida(t=5.4)  -> si Q > 0: desencolar, Q -= 1, agendar Salida(t=5.4 + S)\n#                  si Q == 0: liberar servidor",
+    "entrevista": "La simulación discreta por eventos avanza el reloj saltando directamente entre instantes donde cambia el estado mediante una cola de eventos futuros, evitando iterar sobre intervalos vacíos."
+  },
+  "Simulación numérica": {
+    "que": "La simulación numérica engloba el conjunto de métodos computacionales que aproximan soluciones de modelos matemáticos (ecuaciones diferenciales, integrales, sistemas no lineales o estocásticos) cuando no existe solución analítica cerrada. Reemplaza operadores continuos e infinitos por aritmética finita sobre mallas, pasos discretos o muestras aleatorias.",
+    "para": "Sirve para predecir el comportamiento de sistemas complejos en ingeniería mecánica, fluidodinámica (CFD), electromagnetismo, finanzas cuantitativas y análisis estructural antes de fabricar prototipos físicos. Se usa siempre que la geometría, las no linealidades o la acoplación de variables impiden resolver el modelo a mano.",
+    "como": "El flujo comienza discretizando el dominio espacial o temporal mediante diferencias finitas (FDM), volúmenes finitos (FVM) o elementos finitos (FEM), transformando operadores diferenciales en grandes sistemas algebraicos $A x = b$ o iteraciones temporales. Luego se aplican solvers lineales directos (LU, Cholesky) o iterativos precondicionados (GMRES, Gradiente Conjugado) e integradores temporales o muestreadores Monte Carlo. En cada paso se monitorean residuos, la condición de Courant-Friedrichs-Lewy (CFL) para estabilidad en transporte/ondas y criterios de convergencia de malla.",
+    "practicas": [
+      "Realiza siempre un estudio de independencia de malla y paso temporal: refina la discretización hasta que la métrica de interés varíe por debajo de tu tolerancia.",
+      "Respeta criterios de estabilidad numérica (como $\\text{CFL} = c\\,\\Delta t / \\Delta x \\le 1$) en esquemas explícitos para evitar oscilaciones divergentes.",
+      "Cuida la aritmética de punto flotante (IEEE 754): evita la cancelación catastrófica restando números casi iguales y precondiciona matrices mal condicionadas.",
+      "Valida primero contra un caso analítico simplificado (benchmark) antes de correr geometrías reales complejas."
+    ],
+    "ejemplo": "import numpy as np\n# Ecuación de calor 1D explícita (FTCS): estabilidad requiere alpha*dt/dx**2 <= 0.5\nu = np.zeros(50); u[20:30] = 100.0\nr = 0.4  # alpha * dt / dx^2 <= 0.5\nfor _ in range(100):\n    u[1:-1] = u[1:-1] + r * (u[2:] - 2*u[1:-1] + u[:-2])",
+    "entrevista": "En simulación numérica el reto no es solo implementar la fórmula, sino controlar el error de discretización, el condicionamiento algebraico y la estabilidad tipo CFL mediante estudios de convergencia."
+  },
+  "Simulación": {
+    "que": "La simulación es la ejecución controlada de un modelo a lo largo del tiempo (lógico o real) para observar cómo evoluciona un sistema y estimar sus métricas de desempeño. Actúa como un laboratorio virtual donde se experimenta sin intervenir el sistema físico o productivo.",
+    "para": "Sirve para evaluar escenarios hipotéticos ('what-if'), dimensionar capacidad, detectar cuellos de botella, entrenar operadores o probar algoritmos bajo condiciones extremas o costosas de reproducir en la realidad. Se utiliza cuando la experimentación directa es peligrosa, ilegal, demasiado lenta o económicamente inviable.",
+    "como": "Un estudio de simulación sigue un ciclo iterativo: formulación del problema y objetivos, recolección de datos de entrada y ajuste de distribuciones, construcción del modelo ejecutable, verificación (el código hace lo que dice el diseño) y validación (el modelo representa la realidad). Después se diseñan experimentos configurando horizonte, periodo de calentamiento, número de réplicas y semillas aleatorias. Finalmente se ejecutan las corridas y se analizan estadísticamente los resultados con intervalos de confianza.",
+    "practicas": [
+      "Nunca tomes decisiones con una sola corrida de un modelo estocástico: ejecuta $n$ réplicas independientes y reporta media e intervalo de confianza.",
+      "Empieza por el modelo mínimo viable que responda la pregunta de negocio; agregar detalle innecesario aumenta el tiempo de desarrollo sin mejorar la decisión.",
+      "Simulación vs solución analítica: si una fórmula cerrada (como Erlang-C o Kingman) responde el problema con sus supuestos válidos, úsala primero y deja la simulación para la complejidad restante.",
+      "Documenta los supuestos y el rango de validez del modelo para evitar que se extrapole fuera de su dominio calibrado."
+    ],
+    "ejemplo": "# Ciclo estándar: Pregunta -> Modelo -> Verificación/Validación -> N réplicas -> Decisión\n# Ejemplo: comparar 2 vs 3 cajas en hora pico con 30 réplicas cada escenario\n# Resultado: p95 tiempo de espera baja de 14.2 ± 0.8 min a 3.1 ± 0.3 min",
+    "entrevista": "Simular no es solo programar un modelo, sino ejecutar un proceso estadístico controlado con validación, warm-up y múltiples réplicas para tomar decisiones bajo incertidumbre con respaldo cuantitativo."
+  },
+  "Simulink - MATLAB": {
+    "que": "Simulink es un entorno de diagramas de bloques multidominio integrado en MATLAB para modelado, simulación y diseño basado en modelos (MBD) de sistemas dinámicos continuos, discretos e híbridos. Permite conectar subsistemas físicos, lógicos (Stateflow) y scripts MATLAB en una misma arquitectura.",
+    "para": "Se utiliza ampliamente en ingeniería automotriz, aeroespacial, robótica, electrónica de potencia y control automático para diseñar controladores (PID, LQR, MPC) y ejecutar pruebas MIL/SIL/HIL (Model/Software/Hardware-in-the-Loop). Es la elección habitual cuando se requiere generación automática de código C/C++ certificado hacia sistemas embebidos.",
+    "como": "El ingeniero construye un grafo dirigido de bloques (integradores, ganancias, retardos, tablas de búsqueda, bloques `MATLAB Function`) con tipos de señal y tasas de muestreo definidas. Antes de correr, el motor compila el diagrama en una representación ordenada de ecuaciones diferenciales/algebraicas y detecta lazos algebraicos. Durante la simulación, un solver de paso variable (como `ode45`) o de paso fijo (como `ode4` o `Fixed-step discrete` para tiempo real) evalúa derivadas y salidas en cada instante, mientras `Simulink Coder` puede traducir el grafo a C optimizado.",
+    "practicas": [
+      "Usa solvers de paso fijo únicamente cuando vayas a generar código embebido o correr Hardware-in-the-Loop; para análisis de precisión en escritorio prefiere paso variable con detección de cruces por cero.",
+      "Rompe los lazos algebraicos introduciendo una dinámica real del actuador o un retardo de unidad (`Unit Delay`) bien justificado en lugar de depender de iteraciones implícitas lentas.",
+      "Organiza modelos grandes en Subsystem References y Data Dictionaries (`.sldd`) para facilitar la colaboración en Git y evitar archivos `.slx` monolíticos.",
+      "Simulink vs SimPy: Simulink brilla en sistemas de control continuo/híbrido y generación de código embebido; SimPy es más ágil para colas puras y pipelines de datos en Python."
+    ],
+    "ejemplo": "% Ejecutar un modelo Simulink desde script MATLAB con parámetros inyectados\nset_param('planta_pid/PID', 'P', '1.8', 'I', '0.4');\nsimOut = sim('planta_pid', 'StopTime', '15', 'Solver', 'ode45');\ny = simOut.yout.get('salida').Values.Data;",
+    "entrevista": "Simulink integra modelado gráfico multidominio con solvers híbridos y generación automática de código C/C++, cerrando el ciclo desde el diseño del controlador en MATLAB hasta pruebas Hardware-in-the-Loop."
+  },
+  "Sistema": {
+    "que": "En teoría de simulación, un sistema es un conjunto delimitado de entidades, atributos, relaciones y procesos que interactúan entre sí para cumplir un propósito o exhibir un comportamiento observable a lo largo del tiempo. Todo lo que queda fuera de su frontera definida constituye el entorno o ambiente.",
+    "para": "Definir con precisión qué es el sistema y dónde está su frontera es el primer paso para evitar modelos inabarcables o irrelevantes. Sirve para acotar qué variables son exógenas (entradas del entorno no controladas), cuáles son de decisión y cuáles son endógenas (salidas medidas).",
+    "como": "La caracterización formal descompone el sistema en: entidades (objetos dinámicos o estáticos que fluyen o procesan), atributos (propiedades de cada entidad), actividades y eventos que alteran el estado, y variables de estado que resumen toda la información necesaria para predecir el futuro dado un historial de entradas. Según la naturaleza de sus interacciones con el entorno, se clasifica como abierto o cerrado, determinista o estocástico, y estático o dinámico.",
+    "practicas": [
+      "Traza explícitamente la frontera del sistema antes de escribir una línea de código: incluir demasiados subsistemas encarece el modelo; excluir un cuello de botella aguas abajo invalida los resultados.",
+      "Distingue entre parámetros (constantes de configuración), variables de entrada exógenas y variables de estado internas.",
+      "Sistema vs Modelo: el sistema es la realidad observada (o proyectada) con complejidad infinita; el modelo es una abstracción intencionalmente simplificada para responder una pregunta concreta.",
+      "Identifica las métricas de salida del sistema (KPIs) desde el inicio para no modelar detalles que nunca impactan esos indicadores."
+    ],
+    "ejemplo": "Sistema: Urgencias hospitalarias (frontera: admisión -> alta)\nEntidades: Pacientes, Médicos, Boxes | Estado: Cola de triaje, ocupación\nEntradas exógenas: Tasa de llegada por hora | Salidas: Tiempo puerta-médico p90",
+    "entrevista": "Antes de modelar, delimito el sistema definiendo su frontera, sus entidades, las entradas exógenas del entorno y el conjunto mínimo de variables de estado necesarias para explicar su evolución."
+  },
+  "Telecomunicaciones y redes": {
+    "que": "La simulación en telecomunicaciones y redes modela la transmisión, conmutación, enrutamiento y control de congestión de paquetes o señales sobre topologías físicas e inalámbricas. Permite reproducir pilas de protocolos completas (MAC, IP, TCP/QUIC) y canales de propagación con pérdida, jitter y atenuación.",
+    "para": "Sirve para diseñar nuevos protocolos, dimensionar enlaces y buffers, evaluar políticas de QoS o validar redes 5G/IoT antes de desplegar hardware en campo. Es indispensable porque las interacciones no lineales entre algoritmos de congestión (como TCP Cubic o BBR) y colas en routers raramente admiten fórmulas exactas en topologías reales.",
+    "como": "Simuladores especializados basados en eventos discretos como NS-3 u OMNeT++ (con INET) representan nodos con interfaces de red, buffers FIFO/AQM (RED, CoDel) y colas de transmisión cronometradas por ancho de banda y retardo de propagación. Cada paquete es un objeto con cabeceras que atraviesa capas de protocolo generando eventos de llegada, colisión en capa física (modelos de desvanecimiento Rayleigh/Rician y SINR), retransmisión por timeout y actualización de tablas de enrutamiento (OSPF, BGP). También soportan emulación en tiempo real conectando sockets virtuales (TAP/TUN) con tráfico Linux real.",
+    "practicas": [
+      "Calibra el tamaño de buffer frente al producto ancho de banda por retardo (BDP) para evitar simular inadvertidamente el fenómeno de bufferbloat.",
+      "NS-3 vs Mininet: NS-3 simula física de canales inalámbricos y pilas sintéticas con tiempo determinista; Mininet emula namespaces reales de Linux pero depende de la CPU del host bajo alta carga.",
+      "Incluye tráfico de fondo realista (ráfagas auto-similares o Pareto) en lugar de solo fuentes Poisson constantes cuando evalúes control de congestión.",
+      "Registra trazas PCAP o métricas por flujo (goodput, jitter, ratio de pérdida) separando el transitorio inicial de establecimiento de conexiones TCP."
+    ],
+    "ejemplo": "// NS-3 conceptual: enlace PointToPoint 100Mbps, 10ms, cola DropTail\nPointToPointHelper p2p;\np2p.SetDeviceAttribute(\"DataRate\", StringValue(\"100Mbps\"));\np2p.SetChannelAttribute(\"Delay\", StringValue(\"10ms\"));\np2p.SetQueue(\"ns3::DropTailQueue\", \"MaxSize\", StringValue(\"100p\"));",
+    "entrevista": "En simulación de redes modelo la interacción completa entre capa física, buffers y control de congestión mediante eventos discretos en herramientas como NS-3 u OMNeT++, validando métricas de latencia, jitter y goodput."
+  },
+  "Teoría de colas (M-M-1, M-M-c)": {
+    "que": "La teoría de colas es el marco matemático que analiza líneas de espera formadas cuando clientes o solicitudes compiten por servidores limitados. En notación de Kendall $A/B/c$, M/M/1 y M/M/c denotan llegadas Poisson (tiempos entre llegadas exponenciales, Markovianos), tiempos de servicio exponenciales y $1$ o $c$ servidores paralelos con cola infinita FIFO.",
+    "para": "Sirve para obtener cotas analíticas rápidas de tiempo de espera, longitud de cola, utilización y probabilidad de bloqueo antes o en complemento de una simulación completa. Se aplica en dimensionamiento de hilos/workers, call centers, cajas de cobro, redes de paquetes y validación de motores DES.",
+    "como": "Para un sistema estable, la tasa de llegada $\\lambda$ debe ser estrictamente menor a la capacidad total de servicio $c\\mu$, manteniendo la utilización $\\rho = \\lambda/(c\\mu) < 1$. En M/M/1, las transiciones entre estados $n$ (número de clientes en el sistema) forman una cadena de Markov de nacimiento y muerte con estado estacionario geométrico $P_n = (1-\\rho)\\rho^n$, número medio en el sistema $L = \\rho/(1-\\rho)$ y tiempo medio en el sistema $W = 1/(\\mu - \\lambda)$ ligado por la ley de Little ($L = \\lambda W$). En M/M/c, la probabilidad de que un cliente espere viene dada por la fórmula de Erlang-C, reduciendo exponencialmente el tiempo en cola frente a $c$ colas M/M/1 separadas de capacidad $1/c$.",
+    "practicas": [
+      "Utiliza un modelo M/M/1 o M/M/c analítico como prueba unitaria (oracle) para verificar tu simulador DES antes de introducir distribuciones complejas.",
+      "Recuerda la no linealidad cerca de $\\rho \\to 1$: pasar de 80% a 95% de utilización cuadruplica la longitud media de cola en M/M/1.",
+      "M/M/c vs $c$ colas M/M/1: una sola cola compartida alimentando $c$ servidores (pooling) siempre logra menor espera promedio que $c$ colas independientes cuando no hay afinidad de caché.",
+      "No apliques fórmulas M/M/c ciegamente si los tiempos de servicio tienen alta varianza (cola pesada) o llegadas en ráfagas: usa la aproximación G/G/1 de Kingman o simulación."
+    ],
+    "ejemplo": "# M/M/1: lambda = 8 req/s, mu = 10 req/s -> rho = 0.8\nL = 0.8 / (1 - 0.8)          # 4.0 peticiones promedio en el sistema\nW = 1 / (10 - 8)             # 0.5 s de latencia media total (Ley de Little: L = 8 * 0.5)\nWq = W - (1 / 10)            # 0.4 s esperando en cola",
+    "entrevista": "Uso modelos M/M/1 y M/M/c junto con la Ley de Little como línea base analítica y prueba de verificación, teniendo muy presente que la latencia crece de forma hiperbólica al acercarse la utilización a uno."
+  },
+  "Transiciones de estado": {
+    "que": "Una transición de estado es el cambio instantáneo o diferencial que experimentan las variables de estado de un sistema al ocurrir un evento, cumplirse una condición de guarda o avanzar un paso de integración. Define la dinámica operativa que conecta un estado válido con su sucesor.",
+    "para": "Permite formalizar sin ambigüedades las reglas de evolución de un sistema antes de implementarlo, evitando estados imposibles, condiciones de carrera lógicas o fugas de recursos. Es esencial tanto en motores DES y máquinas de estados finitos (Statecharts) como en modelos de Markov.",
+    "como": "En simulación de eventos discretos, cada tipo de evento tiene asociada una función de transición $\\delta(S, e) \\to S'$ que actualiza el vector de estado $S$, ejecuta acciones de entrada/salida y programa o cancela eventos futuros en la cola de eventos. En sistemas híbridos o máquinas de estados (como Stateflow o DEVS), una transición se dispara por un evento externo o una transición interna al expirar el tiempo de vida del estado, evaluando primero una condición booleana (guarda). En cadenas de Markov, la transición se rige por una matriz estocástica $P_{ij}$ o una matriz de tasas $Q_{ij}$ que determina la probabilidad o intensidad de saltar del estado $i$ al $j$.",
+    "practicas": [
+      "Asegura que cada transición sea atómica respecto al reloj lógico: no leas métricas intermedias mientras la función de transición está a medio actualizar las variables de estado.",
+      "Verifica cobertura total: toda combinación válida de estado y evento debe tener una transición definida o una regla explícita de descarte/error.",
+      "Antes de ejecutar la transición en el estado $S$, actualiza los acumuladores estadísticos ponderados por tiempo usando el intervalo $\\Delta t$ transcurrido desde la última transición.",
+      "Documenta las invariantes de estado (ej. `ocupados + libres == capacidad_total`) y valídalas con `assert` tras cada transición en modo debug."
+    ],
+    "ejemplo": "def on_evento_fin_servicio(estado, fel, t):\n    assert estado['ocupados'] > 0\n    if estado['cola'] > 0:\n        estado['cola'] -= 1\n        fel.push(t + sample_service(), 'FIN_SERVICIO')\n    else:\n        estado['ocupados'] -= 1",
+    "entrevista": "Las transiciones de estado encapsulan la semántica exacta de cómo cada evento transforma el sistema; hacerlas atómicas, con invariantes verificadas y actualización previa de acumuladores evita bugs sutiles en el reloj lógico."
+  },
+  "Verificación, validación y calibración": {
+    "que": "La verificación comprueba que el código del modelo implementa fielmente la especificación conceptual ('construir el modelo bien'), mientras la validación evalúa si el modelo representa con precisión suficiente al sistema real para su propósito ('construir el modelo correcto'). La calibración ajusta parámetros no medibles directamente para alinear las salidas simuladas con datos empíricos.",
+    "para": "Evita tomar decisiones millonarias o críticas basadas en un modelo con bugs silenciosos o supuestos desconectados de la realidad. Es obligatoria antes de entregar cualquier estudio de capacidad, gemelo digital o política operativa.",
+    "como": "La verificación usa pruebas unitarias de transiciones, revisión de trazas paso a paso, tests de casos degenerados (ej. tasa de llegada cero, un servidor infinito) y comparación contra soluciones analíticas como M/M/1. La calibración formula una función de pérdida (RMSE, divergencia KL, test de Kolmogorov-Smirnov) entre métricas simuladas e históricas y optimiza parámetros desconocidos mediante búsqueda en grilla, optimización bayesiana o algoritmos evolutivos usando un conjunto de entrenamiento. La validación enfrenta el modelo calibrado a un conjunto histórico independiente (hold-out) mediante pruebas estadísticas de hipótesis (t-test pareado, intervalos de confianza de diferencias) o validación de Turing con expertos del dominio.",
+    "practicas": [
+      "Nunca calibres y valides con el mismo conjunto de datos históricos: sobreajustarás ruido específico de ese periodo y perderás capacidad predictiva.",
+      "Empieza verificando casos extremos deterministas (sin aleatoriedad) para detectar errores de lógica antes de activar distribuciones estocásticas.",
+      "Verificación vs Validación: un modelo puede pasar al 100% sus pruebas unitarias (verificado) y aun así predecir mal la realidad por omitir una restricción operativa (no validado).",
+      "Evita compensar errores estructurales forzando parámetros físicamente absurdos durante la calibración ('fudge factors')."
+    ],
+    "ejemplo": "# Verificación: comparar media simulada vs analítica M/M/1 (rho=0.7 -> L=2.333)\nassert abs(sim_mean_L - 2.333) < 0.05\n# Validación out-of-sample: error relativo sobre semana no usada en calibración\nerror_val = abs(sim_p95_oct - real_p95_oct) / real_p95_oct\nassert error_val < 0.10",
+    "entrevista": "Distingo estrictamente verificación (el código cumple el diseño y casos límite) de validación (el modelo predice datos reales fuera de muestra tras calibrar parámetros sin sobreajuste)."
+  },
+  "Visualización de resultados": {
+    "que": "La visualización de resultados en simulación es la representación gráfica de series temporales, distribuciones de probabilidad, mapas espaciales y comparativas entre escenarios generados por las réplicas del modelo. Transforma millones de eventos en evidencia comprensible para diagnosticar dinámicas y comunicar incertidumbre.",
+    "para": "Sirve tanto al modelador durante la depuración (detectar periodos transitorios, bloqueos o anomalías) como a los decisores de negocio para comparar riesgos entre alternativas. Es clave para evitar la 'falacia del promedio' mostrando colas de distribución, percentiles y variabilidad entre réplicas.",
+    "como": "A partir de trazas de eventos o snapshots periódicos almacenados en formatos columnares (Parquet, HDF5), el pipeline agrega datos por réplica y ventana temporal usando bibliotecas como Matplotlib, Seaborn, Plotly o Altair. Para métricas transitorias se grafican medias móviles con bandas de confianza (t-Student o percentiles p5-p95) con el fin de identificar el punto de corte del warm-up (método de Welch). Para comparar escenarios se combinan gráficos de violín/ECDF, diagramas de Gantt de utilización de recursos y mapas de calor o animaciones 2D/3D sincronizadas con el reloj simulado.",
+    "practicas": [
+      "Muestra siempre incertidumbre junto al promedio: combina barras o líneas con intervalos de confianza o curvas ECDF para revelar percentiles críticos como p95/p99.",
+      "No confundas animaciones 2D/3D llamativas con validación: la animación ayuda a detectar bugs visuales e intuitivos, pero las decisiones deben apoyarse en gráficos estadísticos de múltiples réplicas.",
+      "Usa el gráfico de promedio móvil de Welch sobre múltiples réplicas para elegir visual y objetivamente el final del periodo de calentamiento.",
+      "Mantén escalas idénticas en ejes al comparar paneles entre escenarios para no exagerar ni ocultar diferencias reales."
+    ],
+    "ejemplo": "import numpy as np, matplotlib.pyplot as plt\n# Graficar trayectoria media y banda p10-p90 de 50 réplicas\nmedia = np.mean(colas, axis=0)\np10, p90 = np.percentile(colas, [10, 90], axis=0)\nplt.plot(t, media, label='Media')\nplt.fill_between(t, p10, p90, alpha=0.25, label='p10-p90')",
+    "entrevista": "En simulación visualizo siempre bandas de confianza, distribuciones completas (ECDF o violines) y gráficos de Welch para mostrar el riesgo real y el estado estacionario, evitando reducir todo a un promedio engañoso."
+  }
+}

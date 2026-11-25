@@ -2,21 +2,25 @@
 titulo: "Memoria a corto/largo plazo"
 categoria:
   - "17. IA — nueva era (sección ampliada)"
+  - "52. Context engineering"
 tags:
   - "mapa-tecnologico"
   - "nivel-conocer"
   - "ia-nueva-era-sección-ampliada"
+  - "context-engineering"
 nivel: conocer
 estrella: false
 relacionado_con:
   - "[[A2A (Agent2Agent)]]"
   - "[[Agent loop]]"
   - "[[Computer use - Browser use]]"
+  - "[[Consolidación de memoria]]"
   - "[[Function - Tool calling]]"
+  - "[[Gestión de memoria del agente]]"
+  - "[[Graph memory]]"
   - "[[Human-in-the-loop]]"
-  - "[[Multi-agente]]"
-  - "[[Planificación]]"
-  - "[[Sandbox de ejecución]]"
+  - "[[Memoria basada en embeddings]]"
+  - "[[Memoria de trabajo]]"
 ---
 
 # Memoria a corto/largo plazo
@@ -25,18 +29,20 @@ relacionado_con:
 
 ## Contexto en el mapa
 
-- [[Function - Tool calling]], ➕ [[Agent loop]], ➕ [[Planificación]], ➕ [[Memoria a corto-largo plazo]], ➕ [[Multi-agente]], ➕ [[A2A (Agent2Agent)]], ➕ [[Human-in-the-loop]], ➕ [[Computer use - Browser use]], ➕ [[Sandbox de ejecución]].
+**Memoria:** [[Memoria episódica]], [[Memoria semántica]], [[Memoria procedimental]], [[Memoria de trabajo]], [[Memoria persistente del agente]], [[Gestión de memoria del agente]], [[Consolidación de memoria]], [[Olvidado controlado]], [[Recuperación de memoria]], [[Memoria basada en embeddings]], [[Graph memory]], [[Memoria grafada]], [[Memoria y privacidad]], [[Memoria a corto-largo plazo]].
 
 ## Relaciones
 
 - [[A2A (Agent2Agent)]]
 - [[Agent loop]]
 - [[Computer use - Browser use]]
+- [[Consolidación de memoria]]
 - [[Function - Tool calling]]
+- [[Gestión de memoria del agente]]
+- [[Graph memory]]
 - [[Human-in-the-loop]]
-- [[Multi-agente]]
-- [[Planificación]]
-- [[Sandbox de ejecución]]
+- [[Memoria basada en embeddings]]
+- [[Memoria de trabajo]]
 
 ## Mis notas
 

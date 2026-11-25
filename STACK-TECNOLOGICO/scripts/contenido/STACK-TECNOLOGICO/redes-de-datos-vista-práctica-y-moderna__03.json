@@ -1,0 +1,379 @@
+{
+  "SameSite": {
+    "que": "SameSite es un atributo de seguridad en la cabecera Set-Cookie (con valores Strict, Lax o None) que controla si el navegador envía una cookie en peticiones iniciadas desde un origen externo (cross-site). Define el límite de confianza del navegador frente a solicitudes originadas en terceros sitios.",
+    "para": "Sirve para mitigar ataques Cross-Site Request Forgery (CSRF) y fugas de información entre sitios (XS-Leaks) evitando que las credenciales de sesión viajen automáticamente en formularios o peticiones ocultas de páginas externas. Se utiliza en cookies de autenticación, sesión o preferencias siempre que la aplicación interactúe con navegadores modernos.",
+    "como": "Cuando un servidor responde con Set-Cookie incluyendo SameSite, el navegador evalúa el dominio del documento de nivel superior (eTLD+1, llamado 'site') frente al dominio destino de cada petición saliente. Con Strict, la cookie solo se envía en navegación same-site; con Lax (predeterminado en navegadores modernos), se omite en subrecursos y POST externos, pero se adjunta en navegaciones de nivel superior seguras como enlaces GET. Con None, la cookie siempre viaja en peticiones cross-site, pero el navegador exige obligatoriamente el atributo Secure sobre HTTPS para aceptarla.",
+    "practicas": [
+      "Usa SameSite=Lax como base para sesiones web estándar y SameSite=Strict en operaciones críticas como banca o paneles administrativos.",
+      "Error típico: olvidar añadir el atributo Secure cuando configuras SameSite=None para flujos OAuth o embeds, lo que hace que el navegador descarte la cookie.",
+      "Trampa común: SameSite evalúa 'site' (esquema + eTLD+1), no 'origin' (subdominio exacto); un subdominio comprometido sigue considerándose same-site.",
+      "SameSite vs tokens anti-CSRF: SameSite protege en navegadores modernos con cero estado en servidor, pero combinarlo con tokens sincronizados (o cabeceras Fetch Metadata) ofrece defensa en profundidad."
+    ],
+    "ejemplo": "Set-Cookie: sid=a9f3c21e; Path=/; HttpOnly; Secure; SameSite=Lax",
+    "entrevista": "SameSite restringe el envío automático de cookies en peticiones cross-site para cortar ataques CSRF de raíz, equilibrando seguridad y usabilidad mediante Lax, Strict o None+Secure."
+  },
+  "Security Groups vs NACL": {
+    "que": "Los Security Groups (SG) y las Network Access Control Lists (NACL) son dos mecanismos de filtrado de tráfico en redes cloud como AWS VPC: el SG actúa como firewall virtual con estado (stateful) a nivel de interfaz de red (ENI) de cada instancia, mientras que la NACL es una lista de reglas sin estado (stateless) aplicada a nivel de subred.",
+    "para": "Se utilizan en conjunto para implementar defensa en profundidad dentro de una VPC. Los Security Groups aíslan cargas de trabajo por rol (frontend, backend, base de datos), mientras que las NACL permiten aplicar bloqueos explícitos (deny) a rangos IP enteros o aislar subredes completas antes de que el tráfico alcance las instancias.",
+    "como": "Cuando un paquete entra a una subred, primero atraviesa la NACL asociada, que evalúa sus reglas en orden numérico creciente (del menor número al mayor) y se detiene en la primera coincidencia. Al ser stateless, la NACL exige reglas explícitas tanto en Inbound como en Outbound (incluidos los puertos efímeros de retorno, como 1024-65535). Si el tráfico pasa la NACL, llega a la ENI donde el Security Group evalúa todas sus reglas Allow en conjunto; al ser stateful, el SG registra la conexión en una tabla de estados y permite automáticamente el tráfico de respuesta sin requerir regla inversa.",
+    "practicas": [
+      "Usa Security Groups referenciando otros Security Groups como origen (en lugar de CIDR fijos) para permitir comunicación dinámica entre microservicios.",
+      "Los SG solo soportan reglas Allow (denegación implícita por defecto); si necesitas bloquear una IP atacante específica, debes usar una regla Deny en la NACL.",
+      "Error típico en NACL: permitir TCP 443 de entrada pero olvidar abrir los puertos efímeros (1024-65535) en salida, rompiendo la respuesta del servidor.",
+      "Mantén la NACL por defecto (Allow All) salvo requisitos de cumplimiento o bloqueos perimetrales, y concentra la microsegmentación en Security Groups."
+    ],
+    "ejemplo": "# Regla NACL stateless típica para servir HTTPS\nInbound:  Rule 100 | TCP 443        | 0.0.0.0/0 | ALLOW\nOutbound: Rule 100 | TCP 1024-65535 | 0.0.0.0/0 | ALLOW\n\n# Regla Security Group stateful (permite retorno automático)\nInbound:  TCP 443 | 0.0.0.0/0 -> permitido (retorno implícito)",
+    "entrevista": "Los Security Groups son firewalls stateful por instancia que solo permiten tráfico y rastrean conexiones, mientras que las NACL son filtros stateless por subred evaluados por prioridad que soportan denegaciones explícitas."
+  },
+  "Service mesh (Istio - Linkerd)": {
+    "que": "Un service mesh es una capa de infraestructura dedicada que gestiona, asegura y observa la comunicación servicio a servicio (tráfico east-west) en entornos de microservicios como Kubernetes, desacoplando la lógica de red del código de la aplicación.",
+    "para": "Resuelve la necesidad de cifrar el tráfico interno con mTLS automático, aplicar políticas de autorización por identidad, realizar enrutamiento avanzado (canary, mirroring) y obtener métricas doradas (latencia, errores, saturación) de forma uniforme sin importar el lenguaje de cada servicio.",
+    "como": "El plano de control (como istiod en Istio o el control plane de Linkerd) distribuye certificados SPIFFE/X.509 y políticas de enrutamiento hacia el plano de datos. En el modelo clásico con sidecar, un proxy ligero (Envoy en Istio, linkerd2-proxy en Rust en Linkerd) se inyecta en cada Pod e intercepta todo el tráfico TCP/HTTP mediante reglas iptables o eBPF. En modos sin sidecar como Istio Ambient Mesh, un proxy de nodo (ztunnel) maneja la capa L4/mTLS y proxies waypoint opcionales procesan L7.",
+    "practicas": [
+      "No adoptes un service mesh el día uno si tu clúster tiene pocos servicios y las NetworkPolicies junto con un Ingress cubren tus necesidades; el overhead de CPU, memoria y latencia es real.",
+      "Istio vs Linkerd: Linkerd prioriza simplicidad operativa y bajo consumo con su proxy en Rust; Istio ofrece mayor riqueza de L7, extensibilidad con Envoy y soporte Ambient sin sidecars.",
+      "Error típico: habilitar mTLS en modo STRICT antes de verificar que todos los clientes del namespace tienen proxy inyectado o exclusiones de puertos configuradas.",
+      "Combina siempre el service mesh (L7/identidad SPIFFE) con NetworkPolicies del CNI (L3/L4) para no depender solo de proxies de aplicación."
+    ],
+    "ejemplo": "apiVersion: security.istio.io/v1\nkind: PeerAuthentication\nmetadata:\n  name: default-strict\n  namespace: payments\nspec:\n  mtls:\n    mode: STRICT",
+    "entrevista": "Un service mesh externaliza la observabilidad, el enrutamiento L7 y el cifrado mTLS entre microservicios hacia proxies gestionados por un plano de control, liberando al código de negocio de gestionar resiliencia de red."
+  },
+  "Sesiones": {
+    "que": "Una sesión es un mecanismo de estado mantenido en el servidor (stateful) que asocia múltiples peticiones HTTP independientes de un mismo usuario mediante un identificador opaco almacenado en el cliente, normalmente dentro de una cookie.",
+    "para": "Como HTTP es un protocolo sin estado por diseño, las sesiones permiten recordar la identidad autenticada, permisos, carrito de compras o contexto de navegación entre solicitudes. Son el estándar cuando se requiere revocación instantánea de acceso desde el servidor o almacenamiento de datos sensibles que no deben viajar al navegador.",
+    "como": "Al autenticarse el usuario, el servidor genera un Session ID criptográficamente aleatorio (mínimo 128 bits de entropía) y guarda los datos asociados en memoria, base de datos o un almacén rápido como Redis con un TTL definido. El servidor envía el ID al cliente mediante Set-Cookie con flags HttpOnly, Secure y SameSite. En cada petición posterior, el navegador adjunta la cookie, el servidor consulta el almacén de sesiones, valida su vigencia y carga el contexto del usuario; al hacer logout, elimina la entrada del almacén.",
+    "practicas": [
+      "Regenera siempre el Session ID tras el login o un cambio de privilegios para prevenir ataques de Session Fixation.",
+      "Almacena las sesiones en un store compartido como Redis cuando escales horizontalmente detrás de un balanceador, evitando depender de sticky sessions.",
+      "Sesiones stateful vs JWT stateless: las sesiones permiten invalidación inmediata en el servidor y reducen el tamaño de cada petición, a costa de una lectura en Redis/DB.",
+      "Usa siempre un generador CSPRNG para el Session ID y nunca incluyas información del usuario codificada dentro de un identificador opaco."
+    ],
+    "ejemplo": "Set-Cookie: session_id=7f8c9a12b4e5d601...; HttpOnly; Secure; SameSite=Lax; Max-Age=3600\n# Lookup en backend (Redis):\nGET session:7f8c9a12b4e5d601 -> {\"userId\": 42, \"role\": \"admin\"}",
+    "entrevista": "Las sesiones mantienen el estado del usuario en el servidor tras un identificador opaco y aleatorio en cookie, ofreciendo revocación inmediata y menor exposición de datos que un token autocontenido."
+  },
+  "Sockets": {
+    "que": "Un socket es una abstracción del sistema operativo (implementada en el kernel y expuesta como descriptor de archivo en POSIX) que representa un extremo de comunicación bidireccional entre dos procesos, ya sea a través de la red o localmente mediante Unix Domain Sockets.",
+    "para": "Sirve como interfaz estándar entre el espacio de usuario (aplicaciones) y la pila de red del kernel (TCP, UDP, IP). Toda aplicación de red, desde un servidor web hasta una base de datos o cliente DNS, crea y opera sobre sockets para enviar y recibir flujos de bytes o datagramas.",
+    "como": "Un socket de red se identifica de forma única mediante la tupla (protocolo, IP local, puerto local, IP remota, puerto remoto). Al llamar a socket(), el kernel reserva una estructura en memoria con búferes de recepción (SO_RCVBUF) y envío (SO_SNDBUF) y devuelve un file descriptor. La aplicación escribe y lee mediante llamadas al sistema (send/recv o read/write), mientras el kernel empaqueta los datos en segmentos TCP o datagramas UDP, gestiona retransmisiones o colas de escucha y notifica disponibilidad mediante mecanismos de multiplexación como epoll (Linux) o kqueue (BSD/macOS).",
+    "practicas": [
+      "Usa I/O no bloqueante con multiplexores como epoll/io_uring para manejar decenas de miles de sockets concurrentes con pocos hilos (patrón C10K/event loop).",
+      "Configura SO_REUSEADDR en servidores TCP para poder reiniciar y enlazar el puerto inmediatamente aunque queden sockets previos en estado TIME_WAIT.",
+      "TCP sockets vs Unix Domain Sockets (UDS): para procesos en la misma máquina (ej. Nginx -> Gunicorn), UDS evita la pila TCP/IP y reduce latencia y overhead.",
+      "Error típico: no cerrar descriptores de socket en rutas de error, provocando fugas de file descriptors hasta agotar el límite ulimit -n."
+    ],
+    "ejemplo": "import socket\ns = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\ns.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\ns.bind((\"0.0.0.0\", 8080))\ns.listen(128)",
+    "entrevista": "Un socket es el descriptor de archivo del kernel que conecta el código en espacio de usuario con la pila de red para intercambiar bytes mediante búferes y llamadas al sistema."
+  },
+  "Split-horizon DNS": {
+    "que": "Split-horizon DNS (o split-view DNS) es una arquitectura donde un servidor DNS devuelve respuestas distintas para un mismo nombre de dominio según el origen de la consulta, la interfaz de red por la que llega o la subred del cliente.",
+    "para": "Permite usar el mismo dominio público (por ejemplo, api.empresa.com) tanto dentro de la red corporativa o VPC como en Internet, dirigiendo a los clientes internos hacia IPs privadas sin atravesar el NAT o Internet público, y a los usuarios externos hacia la IP pública del balanceador o CDN.",
+    "como": "Se implementa manteniendo dos zonas independientes (una zona privada y una pública) o mediante vistas (views) en servidores como BIND, o zonas privadas/públicas en AWS Route 53. Cuando un resolvedor dentro de la VPC consulta api.empresa.com, el resolvedor interno de la VPC prioriza la Private Hosted Zone y responde 10.0.12.50. Cuando un cliente externo realiza la misma consulta a través de Internet, el servidor autoritativo público responde la IP pública 203.0.113.10 o un registro de CloudFront.",
+    "practicas": [
+      "Documenta y automatiza la sincronización entre zonas privadas y públicas para evitar que cambios en un entorno rompan el otro por registros olvidados.",
+      "Trampa común: los clientes con DoH (DNS over HTTPS) activado en el navegador saltan el resolvedor local de la VPC o red corporativa y obtienen la vista pública en lugar de la privada.",
+      "Usa TTL bajos en registros internos si realizas failovers frecuentes entre regiones o balanceadores privados.",
+      "Alternativa moderna: cuando sea posible, emplea un subdominio interno dedicado (ej. *.internal.empresa.com) para reducir la ambigüedad al depurar incidencias."
+    ],
+    "ejemplo": "# Route 53 Private Hosted Zone (desde la VPC)\n$ dig +short api.empresa.com -> 10.20.4.15\n\n# Route 53 Public Hosted Zone (desde Internet)\n$ dig +short api.empresa.com -> 52.94.236.248",
+    "entrevista": "Split-horizon DNS sirve respuestas diferentes para un mismo dominio según la red de origen, manteniendo tráfico interno por IPs privadas y tráfico externo por endpoints públicos."
+  },
+  "Subnets públicas y privadas": {
+    "que": "En una VPC, una subred pública es un segmento de red cuya tabla de rutas tiene una ruta por defecto (0.0.0.0/0) apuntando a un Internet Gateway (IGW), mientras que una subred privada carece de ruta directa hacia el IGW y enruta su tráfico saliente a Internet a través de un NAT Gateway o lo mantiene aislado.",
+    "para": "Permiten aislar los recursos expuestos a Internet (balanceadores ALB/NLB, bastiones, NAT Gateways) de los recursos internos críticos (microservicios, bases de datos, colas), minimizando la superficie de ataque directa desde el exterior.",
+    "como": "Cuando una instancia con IP pública en una subred pública envía un paquete hacia Internet, su Route Table lo dirige al IGW, que realiza NAT 1:1 entre la IP privada de la instancia y su IP pública. En cambio, una instancia en una subred privada solo posee IP privada; su Route Table envía el tráfico 0.0.0.0/0 hacia un NAT Gateway alojado en una subred pública. El NAT Gateway traduce el origen a su propia IP Elástica (SNAT) y reenvía la petición al IGW, bloqueando cualquier conexión entrante no solicitada desde Internet.",
+    "practicas": [
+      "Coloca únicamente Load Balancers, NAT Gateways y proxies de borde en subredes públicas; mantén servidores de aplicación y bases de datos en subredes privadas.",
+      "Distribuye tanto subredes públicas como privadas en al menos dos o tres Zonas de Disponibilidad (AZ) para garantizar alta disponibilidad.",
+      "Error típico: asignar una IP pública a una instancia creyendo que eso la hace accesible, cuando su subred privada no tiene ruta hacia el Internet Gateway.",
+      "Para bases de datos que no requieren salida a Internet, usa subredes aisladas (sin ruta a IGW ni a NAT Gateway) y usa VPC Endpoints para servicios cloud."
+    ],
+    "ejemplo": "# Route Table Subred Pública\n10.0.0.0/16 -> local\n0.0.0.0/0   -> igw-0a1b2c3d\n\n# Route Table Subred Privada\n10.0.0.0/16 -> local\n0.0.0.0/0   -> nat-0e4f5a6b",
+    "entrevista": "La diferencia real entre una subred pública y una privada en una VPC está en su tabla de rutas: la pública apunta 0.0.0.0/0 al Internet Gateway y la privada lo envía a un NAT Gateway o lo bloquea."
+  },
+  "Subnetting": {
+    "que": "El subnetting es la técnica de dividir un bloque de direcciones IP en subredes lógicas más pequeñas tomando prestados bits de la porción de host para ampliar el prefijo de red (máscara de subred).",
+    "para": "Sirve para segmentar dominios de broadcast, optimizar el aprovechamiento de direcciones IPv4 escasas, agrupar equipos por función o zona geográfica y aplicar políticas de enrutamiento y seguridad diferenciadas entre segmentos.",
+    "como": "Una dirección IPv4 de 32 bits se divide mediante una máscara (o notación CIDR /N) en N bits de red y (32 - N) bits de host. Si partes de una red 192.168.1.0/24 (256 direcciones) y necesitas cuatro subredes iguales, tomas 2 bits prestados de la parte de host, obteniendo el prefijo /26 (máscara 255.255.255.192). Cada subred dispone de 2^6 = 64 direcciones totales, de las cuales 62 son utilizables tras restar la dirección de red (todos los bits de host en 0) y la dirección de broadcast (todos los bits de host en 1).",
+    "practicas": [
+      "Calcula rápidamente el tamaño del bloque restando el octeto relevante a 256 (ej. en /26 el último octeto de máscara es 192, salto de 256 - 192 = 64).",
+      "En nubes como AWS, recuerda que se reservan 5 direcciones por subred (red, router VPC, DNS, futuro uso y broadcast), no solo 2.",
+      "Error típico: asignar subredes demasiado pequeñas (como /28) a nodos de Kubernetes o servicios con autoescalado, agotando las IPs disponibles para Pods.",
+      "Prefiere subredes con prefijos alineados y contiguos para facilitar la sumarización de rutas (route aggregation) en routers y tablas BGP."
+    ],
+    "ejemplo": "# Dividir 10.0.0.0/24 en 4 subredes (/26 = 64 IPs c/u, 62 usables):\n10.0.0.0/26   -> Red: 10.0.0.0   | Rango: .1-.62    | Bcast: .63\n10.0.0.64/26  -> Red: 10.0.0.64  | Rango: .65-.126  | Bcast: .127\n10.0.0.128/26 -> Red: 10.0.0.128 | Rango: .129-.190 | Bcast: .191\n10.0.0.192/26 -> Red: 10.0.0.192 | Rango: .193-.254 | Bcast: .255",
+    "entrevista": "El subnetting toma bits de la porción de host para crear redes más pequeñas, reduciendo los dominios de broadcast y permitiendo segmentación y control de tráfico granular."
+  },
+  "Switch": {
+    "que": "Un switch es un dispositivo de red de capa 2 (enlace de datos, modelo OSI) que interconecta múltiples nodos dentro de una misma red local (LAN) reenviando tramas Ethernet selectivamente según su dirección MAC de destino.",
+    "para": "Reemplaza a los antiguos hubs compartidos creando dominios de colisión independientes en cada puerto, lo que permite comunicación full-duplex simultánea a máxima velocidad de línea y segmentación lógica mediante VLANs (802.1Q).",
+    "como": "Al recibir una trama Ethernet por un puerto, el switch inspecciona la MAC de origen y la registra junto al número de puerto y VLAN en su tabla CAM (Content Addressable Memory) con un tiempo de expiración. Luego busca la MAC de destino en esa tabla: si existe, conmuta la trama en hardware (ASIC) únicamente hacia el puerto correspondiente; si no la conoce o es una dirección broadcast (FF:FF:FF:FF:FF:FF), inunda la trama (flooding) por todos los demás puertos de la misma VLAN.",
+    "practicas": [
+      "Switch vs Router: el switch conmuta tramas dentro de una misma red por MAC (L2) y no divide dominios de broadcast por sí solo salvo usando VLANs; el router enruta paquetes entre redes distintas por IP (L3).",
+      "Habilita STP (o RSTP) y PortFast/BPDU Guard en puertos de acceso para evitar bucles de conmutación que colapsan la red mediante tormentas de broadcast.",
+      "Agrupa enlaces troncales entre switches o hacia servidores críticos usando LACP (802.3ad) para sumar ancho de banda y tolerar fallos de enlace.",
+      "Los switches L3 modernos pueden realizar enrutamiento entre VLANs en ASIC a velocidad de cable, evitando cuellos de botella en routers externos."
+    ],
+    "ejemplo": "# Inspección típica de tabla MAC en un switch gestionable:\nVLAN   MAC Address         Type      Port\n10     00:1a:2b:3c:4d:5e   DYNAMIC   Gi0/1\n10     aa:bb:cc:11:22:33   DYNAMIC   Gi0/12",
+    "entrevista": "Un switch aprende direcciones MAC en su tabla CAM para conmutar tramas únicamente al puerto destino por hardware, aislando dominios de colisión y escalando la LAN mediante VLANs."
+  },
+  "TCP": {
+    "que": "TCP (Transmission Control Protocol) es un protocolo de capa de transporte (capa 4) orientado a conexión que garantiza la entrega fiable, ordenada y libre de duplicados de un flujo continuo de bytes entre dos aplicaciones.",
+    "para": "Es el pilar de protocolos donde la pérdida o desorden de datos es inaceptable, como HTTP/1.1, HTTP/2, SSH, TLS, SMTP y conexiones a bases de datos relacionales. Abstrae la naturaleza no fiable de IP para ofrecer al programador un canal estable.",
+    "como": "Antes de transferir datos, cliente y servidor establecen estado mediante el handshake de 3 vías (SYN, SYN-ACK, ACK) negociando números de secuencia iniciales y tamaño máximo de segmento (MSS). Cada byte enviado recibe un número de secuencia y el receptor confirma recepción mediante ACKs acumulativos o selectivos (SACK), retransmitiendo los segmentos perdidos tras agotar un timeout (RTO) o recibir tres ACKs duplicados. Simultáneamente, regula la velocidad mediante control de flujo (ventana rwnd anunciada por el receptor) y control de congestión (cwnd en el emisor con algoritmos como CUBIC o BBR).",
+    "practicas": [
+      "Evita el bloqueo de cabecera de línea (Head-of-Line Blocking) a nivel de conexión usando multiplexing HTTP/2 o migrando a QUIC/HTTP-3 en redes móviles con pérdida de paquetes.",
+      "Reutiliza conexiones TCP mediante connection pooling o Keep-Alive para amortizar el costo del handshake TCP + TLS en cada petición.",
+      "TCP vs UDP: usa TCP cuando necesites fiabilidad estricta y control de congestión integrado; elige UDP si priorizas baja latencia sobre la recuperación de paquetes antiguos.",
+      "En servicios de alto tráfico, ajusta parámetros del kernel como tcp_tw_reuse, somaxconn y el algoritmo de congestión BBR para mejorar el throughput bajo latencia alta."
+    ],
+    "ejemplo": "# Ver conexiones TCP activas y sus estados en Linux:\nss -tanp\nState      Recv-Q Send-Q Local Address:Port  Peer Address:Port\nESTAB      0      0      10.0.1.5:443       198.51.100.8:51422\nTIME-WAIT  0      0      10.0.1.5:443       198.51.100.9:49100",
+    "entrevista": "TCP ofrece un flujo de bytes fiable y ordenado sobre IP mediante handshake de tres vías, números de secuencia con retransmisión, ventana deslizante para control de flujo y algoritmos de control de congestión."
+  },
+  "TIME_WAIT - FIN - RST": {
+    "que": "FIN, RST y TIME_WAIT son banderas y estados clave en el ciclo de cierre de una conexión TCP: FIN solicita una terminación ordenada, RST aborta la conexión de forma abrupta y TIME_WAIT es el periodo de espera tras el cierre completo.",
+    "para": "Permiten liberar recursos de sockets de forma segura y evitar que paquetes retrasados en la red corrompan conexiones futuras que reutilicen la misma tupla IP/puerto. Comprenderlos es vital para diagnosticar caídas de servicios, puertos agotados o errores de 'Connection reset by peer'.",
+    "como": "En un cierre ordenado (4-way teardown), el extremo que inicia la desconexión envía un segmento FIN, el otro responde con ACK y luego envía su propio FIN; quien envió el primer FIN recibe ese último FIN, responde con ACK y entra en estado TIME_WAIT durante 2*MSL (Maximum Segment Lifetime, típicamente 60 segundos en Linux) para asegurar que el ACK final llegó y que paquetes viejos expiren. En contraste, cuando un paquete llega a un puerto cerrado o una aplicación muere abruptamente sin vaciar el buffer, el kernel envía un segmento RST (Reset) que destruye la conexión al instante sin handshake de cierre ni TIME_WAIT.",
+    "practicas": [
+      "El extremo que inicia el cierre activo es quien queda en TIME_WAIT; en microservicios, procura que los clientes cierren o mejor aún, reutilicen conexiones mediante pooling.",
+      "Si ves miles de sockets en CLOSE_WAIT (el paso previo a enviar el segundo FIN), hay un bug en tu aplicación que olvidó llamar a close() sobre el socket.",
+      "Picos de paquetes RST suelen indicar procesos caídos, firewalls stateful expirando conexiones inactivas o timeouts desalineados entre un Load Balancer y el backend.",
+      "Evita activar tcp_tw_recycle (eliminado en kernels modernos) porque rompe conexiones detrás de NAT; usa pooling o tcp_tw_reuse si es necesario."
+    ],
+    "ejemplo": "# Cierre ordenado (FIN) vs Cierre abrupto (RST):\nCliente -> FIN, ACK -> Servidor   (Cliente pasa a FIN_WAIT_1)\nCliente <- ACK      <- Servidor   (Servidor pasa a CLOSE_WAIT)\nCliente <- FIN, ACK <- Servidor   (Servidor pasa a LAST_ACK)\nCliente -> ACK      -> Servidor   (Cliente entra en TIME_WAIT 60s)",
+    "entrevista": "FIN gestiona el cierre ordenado bidireccional, RST aborta la conexión de inmediato ante fallos y TIME_WAIT retiene la tupla 2*MSL en quien cerró primero para que paquetes tardíos no contaminen nuevas conexiones."
+  },
+  "TTL y caché DNS": {
+    "que": "El TTL (Time To Live) en DNS es un valor numérico en segundos incluido en cada registro de zona que indica cuánto tiempo puede almacenar en caché la respuesta un resolvedor recursivo o cliente antes de volver a consultar al servidor autoritativo.",
+    "para": "Reduce drásticamente la latencia de resolución para el usuario final y protege a los servidores DNS autoritativos de colapsar bajo millones de consultas repetidas. También controla la velocidad de propagación al migrar IPs o ejecutar failovers.",
+    "como": "Cuando un resolvedor recursivo (como 1.1.1.1 o el de tu ISP) obtiene un registro A con TTL=300, lo guarda en su caché local con un temporizador descendente. Todas las consultas siguientes dentro de esos 300 segundos se responden al instante sin salir hacia los servidores TLD o autoritativos. Una vez el contador llega a 0, la entrada se invalida y el resolvedor realiza una nueva resolución completa; además, existen caché negativas (regidas por el campo MINIMUM del registro SOA) para respuestas NXDOMAIN.",
+    "practicas": [
+      "Antes de una migración planificada de servidores, baja el TTL a 60 segundos con al menos 24-48 horas de antelación (el valor del TTL antiguo) para acelerar el corte.",
+      "Error típico: asumir que cambiar un registro con TTL=60 actualiza a todo el mundo en 60 segundos; algunos clientes, JVMs o proxies ignoran el TTL o cachean más tiempo.",
+      "Equilibrio recomendado: usa TTLs altos (3600-86400s) para registros estáticos como MX o NS, y bajos (60-300s) para registros detrás de DNS failover o autoescalado.",
+      "Ten presente el Negative Caching: un error tipográfico consultado antes de crear el registro puede quedar cacheado como inexistente según el TTL del SOA."
+    ],
+    "ejemplo": "; Registro A con TTL de 300 segundos (5 minutos)\napi.ejemplo.com.   300   IN   A   198.51.100.42\n\n; Consulta mostrando TTL restante decreciente en caché\n$ dig +noall +answer api.ejemplo.com\napi.ejemplo.com.   247   IN   A   198.51.100.42",
+    "entrevista": "El TTL define cuántos segundos puede cachearse un registro DNS antes de expirar; equilibrar latencia y agilidad ante failovers exige ajustarlo antes de cualquier migración."
+  },
+  "Tailscale": {
+    "que": "Tailscale es una plataforma de red privada virtual en malla (mesh VPN) basada en WireGuard y principios Zero Trust que conecta dispositivos, servidores y contenedores directamente entre sí sin necesidad de concentradores VPN centrales ni abrir puertos públicos.",
+    "para": "Resuelve el acceso remoto seguro a infraestructura privada, la interconexión multicloud y el reemplazo de VPNs corporativas tradicionales lentas, integrando autenticación con proveedores de identidad (SSO/OIDC) y listas de control de acceso centralizadas.",
+    "como": "Cada nodo ejecuta un cliente en espacio de usuario o kernel que establece un túnel cifrado con WireGuard. El plano de control de Tailscale (Coordination Server) gestiona únicamente el intercambio de claves públicas, direcciones IP privadas en el rango CGNAT 100.64.0.0/10 y políticas ACL en JSON, sin tocar el tráfico de datos. Para establecer conexiones directas peer-to-peer detrás de routers NAT y firewalls, utiliza técnicas de NAT traversal (STUN/ICE) y, solo cuando ambos extremos están bloqueados por NAT simétricos, reenvía el tráfico cifrado extremo a extremo mediante servidores relay DERP.",
+    "practicas": [
+      "Define ACLs estrictas por etiquetas (tags) y grupos de identidad en el policy file en lugar de dejar el acceso abierto por defecto entre todos los nodos.",
+      "Usa Subnet Routers para exponer subredes legacy o servicios gestionados (como RDS) sin instalar agentes en cada recurso.",
+      "Habilita MagicDNS para resolver nodos por nombre legible y Tailscale SSH para reemplazar la gestión manual de claves SSH mediante identidad SSO.",
+      "Tailscale vs WireGuard puro: Tailscale automatiza distribución de claves, NAT traversal, SSO y ACLs a costa de depender de un plano de control (autoalojable con Headscale)."
+    ],
+    "ejemplo": "{\n  \"acls\": [\n    {\"action\": \"accept\", \"src\": [\"group:backend\"], \"dst\": [\"tag:db:5432\"]}\n  ]\n}",
+    "entrevista": "Tailscale construye una VPN mesh peer-to-peer sobre WireGuard automatizando intercambio de claves, SSO, ACLs y NAT traversal, evitando el cuello de botella de los concentradores VPN clásicos."
+  },
+  "Transit Gateway": {
+    "que": "AWS Transit Gateway (TGW) es un router regional virtual gestionado que actúa como hub central para interconectar múltiples VPCs y redes on-premises mediante una topología hub-and-spoke.",
+    "para": "Resuelve la explosión cuadrática de conexiones N*(N-1)/2 que ocurre al escalar VPC Peering en organizaciones con decenas o cientos de VPCs, permitiendo enrutamiento transitivo, segmentación por dominios (producción, staging, compartidos) e inspección centralizada de tráfico.",
+    "como": "Cada VPC, conexión VPN Site-to-Site o Direct Connect se conecta al Transit Gateway mediante un 'attachment'. El TGW mantiene sus propias tablas de rutas independientes: cuando un paquete sale de la VPC A hacia una IP de la VPC B, la Route Table de la VPC A lo envía al TGW attachment; el TGW consulta la tabla de rutas asociada a ese attachment, aplica propagación dinámica o rutas estáticas, y reenvía el paquete hacia el attachment de la VPC B (o hacia un firewall centralizado si se configura inspección).",
+    "practicas": [
+      "Usa múltiples tablas de rutas dentro del Transit Gateway para aislar entornos (ej. evitar que desarrollo alcance producción aunque ambos compartan conectividad hacia servicios comunes).",
+      "Transit Gateway vs VPC Peering: elige Peering entre 2 o 3 VPCs de alto tráfico por menor latencia y costo por GB; pasa a TGW cuando superes unas 5-10 VPCs o necesites tránsito y firewall central.",
+      "Activa el 'Appliance Mode' en los attachments donde residan firewalls stateful para evitar enrutamiento asimétrico entre Zonas de Disponibilidad.",
+      "Ten en cuenta el costo adicional por hora por cada attachment y por cada GB procesado frente al tráfico dentro de una misma región."
+    ],
+    "ejemplo": "# Flujo lógico de tablas de ruta en TGW (hub-and-spoke):\nVPC-Prod (10.1.0.0/16) -> Route: 10.0.0.0/8 -> TGW\nTGW Route Table Prod   -> Propagated: 10.2.0.0/16 (Shared-VPC)\n                       -> Blackhole:  10.3.0.0/16 (Dev-VPC)",
+    "entrevista": "Transit Gateway reemplaza la malla de VPC Peering por un hub regional de enrutamiento transitivo con tablas independientes, simplificando la conectividad a gran escala e inspección centralizada."
+  },
+  "UDP": {
+    "que": "UDP (User Datagram Protocol) es un protocolo de capa de transporte (capa 4) sin conexión y ligero que envía mensajes independientes llamados datagramas directamente sobre IP, sin garantías de entrega, orden ni control de congestión.",
+    "para": "Se utiliza cuando la velocidad y la baja latencia son más importantes que recuperar un paquete perdido o cuando el protocolo de aplicación implementa su propia fiabilidad. Es la base de DNS, streaming de audio/vídeo en tiempo real (WebRTC/RTP), juegos multijugador, syslog y protocolos modernos como QUIC (HTTP/3) y WireGuard.",
+    "como": "La cabecera UDP ocupa apenas 8 bytes (puerto origen, puerto destino, longitud y checksum opcional en IPv4/obligatorio en IPv6). A diferencia de TCP, no ejecuta handshake previo ni mantiene estado de conexión en el kernel: el proceso llama a sendto() y el sistema encapsula los bytes en un datagrama IP inmediatamente. Si un datagrama se pierde o llega desordenado en la red, UDP no reintenta ni reordena; la aplicación receptora lee cada paquete íntegro con recvfrom() preservando los límites del mensaje.",
+    "practicas": [
+      "Mantén el tamaño de tus datagramas UDP por debajo de la MTU efectiva (~1200-1400 bytes) para evitar la fragmentación IP, ya que perder un solo fragmento invalida todo el datagrama.",
+      "Si construyes fiabilidad sobre UDP, implementa control de congestión explícito (o usa QUIC) para no saturar la red y provocar colapso por congestión.",
+      "Recuerda que UDP es vulnerable a ataques de amplificación y spoofing de IP origen (como DNS o NTP amplification) al no haber handshake de 3 vías.",
+      "UDP vs TCP: UDP preserva límites de mensaje (datagramas) y evita Head-of-Line Blocking; TCP entrega un flujo continuo de bytes sin fronteras pero fiable."
+    ],
+    "ejemplo": "# Escuchar datagramas UDP en el puerto 5000 con netcat:\nnc -u -l -p 5000\n\n# Cabecera UDP (8 bytes):\n[ Src Port (16b) | Dst Port (16b) | Length (16b) | Checksum (16b) ]",
+    "entrevista": "UDP es un protocolo de transporte sin conexión de 8 bytes de cabecera que prioriza mínima latencia y ausencia de Head-of-Line Blocking, delegando fiabilidad y congestión a la capa de aplicación como hace QUIC."
+  },
+  "VLAN - 802.1Q": {
+    "que": "Una VLAN (Virtual LAN) bajo el estándar IEEE 802.1Q es una técnica de capa 2 que segmenta un switch físico (o conjunto de switches) en múltiples redes virtuales lógicas independientes, aislando sus dominios de broadcast.",
+    "para": "Permite separar tráfico de distintos departamentos, servidores, telefonía VoIP o redes de invitados compartiendo la misma infraestructura física de cableado y switches, mejorando seguridad, rendimiento y flexibilidad sin desplegar hardware duplicado.",
+    "como": "IEEE 802.1Q inserta una etiqueta (tag) de 4 bytes dentro de la cabecera de la trama Ethernet entre la MAC de origen y el EtherType, donde 12 bits identifican el VLAN ID (1 a 4094). Los puertos de acceso conectados a equipos finales envían y reciben tramas sin etiqueta asignándoles la VLAN del puerto. Los puertos troncales (trunks) que interconectan switches o servidores con múltiples redes mantienen la etiqueta 802.1Q para transportar simultáneamente tráfico de distintas VLANs; la comunicación entre VLANs distintas requiere obligatoriamente un router o switch L3.",
+    "practicas": [
+      "Cambia la VLAN nativa (tráfico sin etiquetar en trunks, por defecto VLAN 1) a una VLAN sin uso para mitigar ataques de VLAN hopping.",
+      "Asigna cada VLAN a una subred IP única 1:1 para mantener una correspondencia limpia entre capa 2 y capa 3.",
+      "Deshabilita la negociación automática de trunks (DTP) y fija manualmente puertos como access o trunk según corresponda.",
+      "VLAN vs VXLAN: 802.1Q escala hasta ~4094 redes en dominios L2 locales, mientras que VXLAN encapsula L2 sobre UDP para crear millones de segmentos sobre redes L3 en centros de datos y cloud."
+    ],
+    "ejemplo": "# Trama Ethernet 802.1Q:\n[Dst MAC][Src MAC][TPID: 0x8100 | PCP | DEI | VID (12 bits)][EtherType][Payload][FCS]\n\n# Crear subinterfaz VLAN 20 en Linux:\nip link add link eth0 name eth0.20 type vlan id 20",
+    "entrevista": "IEEE 802.1Q etiqueta tramas Ethernet con un VLAN ID de 12 bits para aislar dominios de broadcast en capa 2 sobre una misma infraestructura física, exigiendo enrutamiento L3 para comunicarse entre ellas."
+  },
+  "VLSM": {
+    "que": "VLSM (Variable Length Subnet Masking) es una extensión del subnetting que permite dividir una red en subredes de distintos tamaños dentro del mismo bloque de direcciones IP, ajustando la longitud de la máscara a la necesidad real de cada segmento.",
+    "para": "Elimina el enorme desperdicio de direcciones IPv4 que producía el subnetting de tamaño fijo (FLSM). Es esencial al diseñar redes corporativas, backbones con enlaces punto a punto (/30 o /31) junto a subredes de usuarios (/24) o grandes clústeres.",
+    "como": "Para aplicar VLSM sobre un bloque dado (por ejemplo, 192.168.10.0/24), primero se ordenan los requerimientos de mayor a menor número de hosts. Se asigna el bloque más grande primero en el primer rango disponible alineado (por ejemplo, /25 para 100 hosts: .0-.127), luego el siguiente más grande en el espacio contiguo restante (/26 para 50 hosts: .128-.191), y finalmente bloques muy pequeños como enlaces entre routers (/30 de 4 IPs o /31 según RFC 3021 para punto a punto) en el espacio sobrante.",
+    "practicas": [
+      "Asigna siempre las subredes de mayor tamaño primero y en orden descendente; empezar por las pequeñas fragmenta el espacio y bloquea asignaciones alineadas posteriores.",
+      "Usa /31 (RFC 3021) en enlaces punto a punto entre routers modernos para ahorrar el 50% de IPs frente a un /30 tradicional.",
+      "VLSM vs CIDR: VLSM divide un bloque interno hacia abajo según tamaño de subred, mientras que CIDR permite tanto dividir como agregar (supernetting) múltiples bloques contiguos hacia arriba en tablas BGP.",
+      "Deja un pequeño margen de crecimiento al dimensionar cada subred, porque ampliar una subred en producción rodeada de bloques ya asignados obliga a renumerar."
+    ],
+    "ejemplo": "# Bloque base: 10.0.0.0/24 asignado con VLSM\nSubred A (100 hosts) -> 10.0.0.0/25   (126 usables)\nSubred B (50 hosts)  -> 10.0.0.128/26 (62 usables)\nSubred C (20 hosts)  -> 10.0.0.192/27 (30 usables)\nEnlace P2P (2 hosts) -> 10.0.0.224/30 (2 usables)",
+    "entrevista": "VLSM optimiza el espacio IPv4 asignando máscaras de distinto tamaño dentro de una misma red principal, comenzando siempre por la subred de mayor demanda para evitar fragmentación."
+  },
+  "VPC Peering": {
+    "que": "VPC Peering es una conexión de red directa uno a uno entre dos VPCs (en la misma cuenta o distintas, e incluso entre regiones) que permite que el tráfico fluya entre ellas de forma privada usando sus IPs internas como si estuvieran en la misma red.",
+    "para": "Se emplea cuando dos VPCs necesitan intercambiar gran volumen de datos de baja latencia (por ejemplo, un servicio de analítica accediendo a una base de datos en otra VPC) sin atravesar Internet, gateways VPN ni dispositivos que introduzcan cuellos de botella.",
+    "como": "Al solicitar y aceptar una conexión de peering, la infraestructura del proveedor cloud establece rutas internas directas sin punto único de fallo. Para que el tráfico circule, los administradores deben añadir rutas explícitas en las Route Tables de ambas VPCs apuntando el CIDR remoto hacia el ID de peering (pcx-...) y permitir el tráfico en los Security Groups. Por diseño, VPC Peering exige que los rangos CIDR de ambas VPCs no se solapen y no soporta enrutamiento transitivo (si A conecta con B y B con C, A no puede alcanzar a C a través de B).",
+    "practicas": [
+      "Planifica cuidadosamente los CIDR de todas tus VPCs desde el inicio para evitar solapamientos que impidan crear peering más adelante.",
+      "Si despliegas arquitectura en la misma región, VPC Peering no tiene cargo por enlace por hora y ofrece latencia mínima, aunque sí cobra por transferencia de datos entre AZs o regiones.",
+      "VPC Peering vs Transit Gateway: usa Peering para conexiones puntuales de alto ancho de banda entre pocas VPCs; migra a Transit Gateway si necesitas topología hub-and-spoke o tránsito entre múltiples redes.",
+      "En peering dentro de la misma región, puedes referenciar Security Groups de la VPC peer en lugar de hardcodear rangos IP."
+    ],
+    "ejemplo": "# Route Table VPC-A (10.1.0.0/16) hacia VPC-B (10.2.0.0/16)\nDestination    Target\n10.1.0.0/16    local\n10.2.0.0/16    pcx-089abc123def",
+    "entrevista": "VPC Peering crea un enlace privado directo y no transitivo entre dos VPCs sin solapamiento de CIDRs, ideal para baja latencia y alto tráfico entre pares concretos de redes."
+  },
+  "VPN": {
+    "que": "Una VPN (Virtual Private Network) es una tecnología que crea un túnel cifrado y autenticado sobre una red pública o no confiable (como Internet) para extender lógicamente una red privada y proteger la confidencialidad e integridad del tráfico.",
+    "para": "Se utiliza en dos escenarios principales: acceso remoto (Client-to-Site) para que empleados o desarrolladores alcancen recursos internos, y conexión entre sedes o nubes (Site-to-Site) para unir centros de datos on-premises con VPCs en la nube.",
+    "como": "Una VPN encapsula paquetes IP originales dentro de un nuevo paquete (IP-in-IP, UDP o TCP) tras cifrar la carga útil y verificar la autenticidad de los extremos. Protocolos clásicos como IPsec negocian claves mediante IKEv2 y cifran a nivel de kernel con ESP, mientras OpenVPN opera sobre TLS/TCP o UDP, y WireGuard emplea un túnel UDP minimalista con criptografía moderna. En el extremo receptor (VPN Gateway), el paquete se descifra, se desencapsula y se enruta hacia la red privada según las tablas de rutas y ACLs.",
+    "practicas": [
+      "Evita el protocolo legacy PPTP o L2TP sin IPsec fuerte; prioriza WireGuard o IPsec con IKEv2.",
+      "Define split-tunneling cuidadosamente: enviar solo el tráfico corporativo por la VPN ahorra ancho de banda del concentrador, mientras que full-tunneling protege en redes Wi-Fi públicas hostiles.",
+      "VPN tradicional vs Zero Trust (ZTNA): las VPN clásicas suelen otorgar acceso amplio a toda la subred tras autenticar en el perímetro; Zero Trust evalúa identidad, dispositivo y autoriza por aplicación específica.",
+      "En túneles sobre TCP (como OpenVPN sobre TCP 443), vigila el problema de 'TCP-over-TCP meltdown' cuando hay pérdida de paquetes en la red subyacente."
+    ],
+    "ejemplo": "# Flujo de encapsulación VPN (Site-to-Site IPsec / WireGuard):\n[Paquete original: 10.1.0.5 -> 10.2.0.8]\n       |\n       v (Cifrado + Encapsulación)\n[IP Ext: 198.51.100.1 -> 203.0.113.2 | UDP/ESP | Payload cifrado]",
+    "entrevista": "Una VPN encapsula y cifra tráfico privado dentro de túneles sobre redes públicas para conectar sedes o usuarios remotos, aunque hoy evoluciona hacia modelos mesh y Zero Trust por aplicación."
+  },
+  "VRRP - HSRP": {
+    "que": "VRRP (Virtual Router Redundancy Protocol, estándar RFC abierto) y HSRP (Hot Standby Router Protocol, propietario de Cisco) son protocolos de redundancia de primer salto (FHRP) que proporcionan una puerta de enlace predeterminada (default gateway) de alta disponibilidad para los hosts de una subred.",
+    "para": "Resuelven el punto único de fallo del default gateway: si el router físico que da salida a una subred cae, los hosts no necesitan reconfigurar su puerta de enlace ni esperar a que expiren cachés ARP prolongadas; otro router asume su IP y MAC virtual de forma transparente.",
+    "como": "Dos o más routers en la misma subred forman un grupo de redundancia compartiendo una IP virtual (VIP) y una MAC virtual bien conocida. Mediante mensajes periódicos multicast (Hello en HSRP o Advertisement en VRRP), el router con mayor prioridad actúa como Active/Master y responde a las solicitudes ARP de la VIP. Si el Standby/Backup deja de recibir anuncios tras el temporizador de espera (hold/dead interval), se promociona automáticamente a maestro y envía un ARP gratuito (Gratuitous ARP) para actualizar las tablas CAM de los switches locales.",
+    "practicas": [
+      "Habilita preemption con un pequeño retardo (preempt delay) si quieres que el router principal recupere el rol tras reiniciarse solo cuando su enrutamiento BGP/OSPF haya convergido.",
+      "Configura tracking de interfaces uplink (WAN) para decrementar la prioridad si el router pierde salida a Internet aunque su puerto LAN siga activo.",
+      "VRRP vs HSRP: prefiere VRRP (RFC 5798/9568) en entornos multivendor o Linux (keepalived) por ser estándar abierto y permitir usar la IP real de una interfaz como VIP.",
+      "Protege los mensajes VRRP/HSRP o aíslalos para evitar que un atacante en la LAN anuncie prioridad 255 y secuestre todo el tráfico saliente (MITM)."
+    ],
+    "ejemplo": "# Configuración típica de Keepalived (VRRP en Linux)\nvrrp_instance VI_1 {\n  state MASTER\n  interface eth0\n  virtual_router_id 51\n  priority 110\n  virtual_ipaddress { 10.0.1.1/24 }\n}",
+    "entrevista": "VRRP y HSRP eliminan el punto único de fallo del default gateway haciendo que varios routers compartan una IP y MAC virtual con conmutación automática ante caídas mediante heartbeats multicast."
+  },
+  "VXLAN - overlay": {
+    "que": "VXLAN (Virtual Extensible LAN, RFC 7348) es un protocolo de red overlay que encapsula tramas Ethernet de capa 2 dentro de datagramas UDP de capa 3, permitiendo extender segmentos L2 virtuales sobre infraestructuras puramente enrutadas.",
+    "para": "Supera el límite de 4094 VLANs de 802.1Q (ampliándolo a 16 millones de segmentos mediante un VNI de 24 bits) y permite que máquinas virtuales o Pods de Kubernetes distribuidos en distintos racks o subredes L3 se comuniquen como si compartieran un mismo switch L2.",
+    "como": "En cada hipervisor o nodo Kubernetes reside un VTEP (VXLAN Tunnel Endpoint) que actúa como puerta de enlace de la red overlay. Cuando un contenedor envía una trama L2 hacia otro en un nodo distinto, el VTEP origen añade una cabecera VXLAN de 8 bytes con el VNI (VXLAN Network Identifier), la envuelve en UDP (puerto estándar 4789) e IP del nodo destino (underlay) y la envía por la red física. El VTEP receptor desencapsula el paquete, lee el VNI y entrega la trama L2 al contenedor correspondiente.",
+    "practicas": [
+      "Ajusta siempre la MTU del tráfico interno (overlay) restando al menos 50 bytes de sobrecarga de las cabeceras VXLAN+UDP+IP (por ejemplo, MTU 1450 si el underlay es 1500), o habilita Jumbo Frames (MTU 9000) en el underlay.",
+      "VXLAN overlay vs BGP/enrutamiento nativo o eBPF: VXLAN funciona en casi cualquier red sin tocar routers físicos, pero añade sobrecarga de CPU y encapsulación frente a enrutamiento L3 directo o Cilium con eBPF.",
+      "Usa el plano de control EVPN-BGP sobre VXLAN en centros de datos modernos para evitar inundaciones multicast al descubrir direcciones MAC remotas.",
+      "Comprueba en firewalls intermedios que el puerto UDP 4789 (o el puerto custom como 8472 en Flannel) esté permitido entre nodos."
+    ],
+    "ejemplo": "# Estructura de paquete VXLAN:\n[Eth Ext][IP Ext (Underlay)][UDP 4789][VXLAN (VNI 24b)][Eth Int (Overlay)][IP Int][Payload]\n\n# Crear interfaz VXLAN en Linux:\nip link add vxlan0 type vxlan id 100 dstport 4789 dev eth0",
+    "entrevista": "VXLAN construye redes L2 virtuales sobre infraestructuras L3 encapsulando tramas Ethernet en UDP con un VNI de 24 bits, escalando hasta 16 millones de segmentos en entornos cloud y Kubernetes."
+  },
+  "WebSockets": {
+    "que": "WebSocket (RFC 6455) es un protocolo de comunicación full-duplex y persistente sobre una única conexión TCP que permite el intercambio bidireccional de mensajes en tiempo real entre cliente y servidor.",
+    "para": "Elimina la ineficiencia del polling HTTP o long-polling en aplicaciones que requieren latencia mínima y envío de datos iniciado por el servidor (server push), como chats, editores colaborativos, tableros financieros, notificaciones en vivo o juegos web.",
+    "como": "La conexión comienza como una petición HTTP/1.1 GET estándar con las cabeceras Upgrade: websocket y Connection: Upgrade, junto con una clave aleatoria Sec-WebSocket-Key. Si el servidor acepta, responde con el código HTTP 101 Switching Protocols y la firma Sec-WebSocket-Accept; a partir de ese instante, la conexión TCP subyacente deja de hablar HTTP y pasa a intercambiar tramas ligeras de WebSocket (con pocos bytes de cabecera, soporte texto UTF-8 o binario, y mensajes Ping/Pong de keepalive). Sobre TLS utiliza el esquema wss://.",
+    "practicas": [
+      "Usa siempre wss:// (WebSocket sobre TLS) en producción, no solo por confidencialidad sino porque los proxies corporativos suelen corromper o cortar conexiones ws:// en claro.",
+      "Valida la cabecera Origin en el servidor durante el handshake HTTP Upgrade para evitar ataques Cross-Site WebSocket Hijacking (CSWSH) cuando la autenticación usa cookies.",
+      "WebSockets vs Server-Sent Events (SSE): si solo necesitas streaming unidireccional del servidor al cliente (ej. respuestas de IA o feeds), SSE es más simple, funciona nativamente sobre HTTP/2 y reconecta automáticamente.",
+      "Implementa heartbeats (Ping/Pong) y reconexión con backoff exponencial en el cliente, además de un pub/sub (como Redis) detrás de múltiples réplicas del backend."
+    ],
+    "ejemplo": "GET /chat HTTP/1.1\nHost: ws.ejemplo.com\nUpgrade: websocket\nConnection: Upgrade\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\nSec-WebSocket-Version: 13\n# Respuesta: HTTP/1.1 101 Switching Protocols",
+    "entrevista": "WebSocket actualiza una conexión HTTP mediante el código 101 Switching Protocols a un canal TCP full-duplex de tramas ligeras, ideal para comunicación bidireccional de baja latencia en tiempo real."
+  },
+  "WireGuard": {
+    "que": "WireGuard es un protocolo VPN moderno de capa 3 diseñado para ser extremadamente simple, rápido y auditable, ejecutándose directamente dentro del kernel de Linux (y con implementaciones en espacio de usuario para otros sistemas) mediante criptografía de última generación.",
+    "para": "Sustituye a túneles complejos y pesados como OpenVPN o IPsec en VPNs corporativas, interconexión de servidores cloud, redes mesh (como Tailscale) y cifrado nodo-a-nodo en CNI de Kubernetes (como Cilium o Calico).",
+    "como": "WireGuard opera sobre UDP y asocia cada interfaz virtual (por ejemplo, wg0) a un par de claves Curve25519 y una lista de pares (peers) identificados únicamente por su clave pública y sus IPs permitidas (Cryptokey Routing). Cuando llega un paquete para la subred de un peer, el kernel cifra y autentica el payload con ChaCha20-Poly1305, consulta el último endpoint UDP conocido del peer y lo envía sin mantener handshakes pesados de sesión continua. Al ser silencioso, descarta sin responder cualquier paquete no autenticado (resistente a escaneos) y soporta roaming transparente si el cliente cambia de IP.",
+    "practicas": [
+      "Usa WireGuard frente a OpenVPN o IPsec siempre que puedas por su base de código mínima (~4000 líneas), mayor throughput en kernel y reconexión instantánea en movilidad.",
+      "Configura PersistentKeepalive (ej. 25 segundos) en clientes detrás de NAT para mantener abierto el mapeo UDP y seguir recibiendo paquetes entrantes.",
+      "Atención al diseño stateless de identidad: WireGuard no gestiona usuarios ni asignación dinámica de IPs por sí solo; combínalo con automatización o herramientas como Tailscale/Netbird si gestionas flotas grandes.",
+      "Ajusta la MTU de la interfaz wg0 (típicamente 1420 bytes sobre IPv4) para descontar la cabecera WireGuard+UDP+IP."
+    ],
+    "ejemplo": "[Interface]\nPrivateKey = <clave_privada>\nAddress = 10.10.0.1/24\nListenPort = 51820\n\n[Peer]\nPublicKey = <clave_publica_remota>\nAllowedIPs = 10.10.0.2/32\nEndpoint = 203.0.113.10:51820",
+    "entrevista": "WireGuard es una VPN de capa 3 en kernel sobre UDP que usa Cryptokey Routing y primitivas modernas (Curve25519, ChaCha20-Poly1305) para ofrecer máximo rendimiento, simplicidad y roaming sin estado."
+  },
+  "Zero Trust": {
+    "que": "Zero Trust es un modelo de arquitectura de seguridad basado en el principio de 'nunca confiar, verificar siempre', que elimina el concepto de perímetro interno confiable y exige autenticación, autorización y cifrado continuos para cada petición, sin importar si proviene de dentro o fuera de la red corporativa.",
+    "para": "Protege entornos modernos distribuidos (multicloud, microservicios, trabajo remoto) donde las brechas internas y el movimiento lateral anulan la seguridad basada en firewalls perimetrales o VPNs de acceso amplio.",
+    "como": "Cada solicitud de acceso a un recurso pasa por un Policy Enforcement Point (PEP, como un proxy inverso, Identity-Aware Proxy o sidecar de service mesh) que consulta a un Policy Decision Point (PDP). El PDP evalúa en tiempo real múltiples señales: identidad criptográfica del usuario o carga de trabajo (OIDC, certificados SPIFFE/mTLS), postura y salud del dispositivo, contexto de riesgo y políticas de mínimo privilegio. Solo tras verificar todas las condiciones se establece una sesión cifrada de alcance estrictamente limitado a ese servicio específico.",
+    "practicas": [
+      "Aplica el principio de mínimo privilegio de forma granular: autoriza acceso a nivel de aplicación o ruta L7 en lugar de abrir subredes enteras por IP.",
+      "Exige mTLS entre microservicios internos (vía service mesh o Cilium) asumiendo que la red del clúster podría estar comprometida.",
+      "Zero Trust vs VPN tradicional: Zero Trust autentica identidad y dispositivo por cada aplicación (ZTNA), evitando que un equipo comprometido escanee toda la red interna.",
+      "Implementa rotación automática de certificados de vida corta en lugar de secretos estáticos de larga duración."
+    ],
+    "ejemplo": "# Política conceptual Zero Trust (ej. Envoy/Istio AuthorizationPolicy)\nspec:\n  action: ALLOW\n  rules:\n  - from: [{source: {principals: [\"cluster.local/ns/api/sa/gateway\"]}}]\n    to:   [{operation: {methods: [\"POST\"], paths: [\"/v1/charge\"]}}]",
+    "entrevista": "Zero Trust sustituye la confianza implícita por ubicación de red por verificación explícita de identidad, postura del dispositivo y mínimo privilegio cifrado en cada petición."
+  },
+  "bind - listen - accept - connect": {
+    "que": "Son las cuatro llamadas al sistema (syscalls) fundamentales de la API de sockets BSD/POSIX que orquestan el establecimiento de conexiones cliente-servidor orientadas a conexión (principalmente TCP) entre procesos y el kernel.",
+    "para": "Definen el ciclo de vida exacto por el cual un servidor reclama un puerto y acepta clientes entrantes (bind -> listen -> accept), mientras un cliente inicia el handshake de tres vías hacia un servidor remoto (connect).",
+    "como": "En el servidor, bind() asocia el descriptor del socket a una IP local y puerto específicos; luego listen(fd, backlog) cambia el socket a estado pasivo (LISTEN) y crea dos colas en el kernel: la cola SYN (conexiones a medio handshake) y la cola accept (conexiones con 3-way handshake completado). En el cliente, connect() dispara el segmento SYN y bloquea (o devuelve EINPROGRESS si es no bloqueante) hasta completar el SYN-ACK/ACK. Finalmente, el servidor llama a accept(), que extrae una conexión ya establecida de la cola accept y devuelve un NUEVO file descriptor dedicado a ese cliente, dejando el socket original escuchando.",
+    "practicas": [
+      "Comprende la diferencia de file descriptors: listen() mantiene un socket pasivo maestro; accept() devuelve un descriptor nuevo por cada cliente conectado.",
+      "Ajusta el parámetro backlog de listen() junto con net.core.somaxconn en el kernel para evitar que ráfagas de tráfico descarten conexiones en espera de accept().",
+      "Usa SO_REUSEADDR antes de bind() para evitar el error 'Address already in use' al reiniciar servidores, y SO_REUSEPORT para balancear múltiples procesos escuchando el mismo puerto.",
+      "Error típico en clientes: olvidar configurar un timeout en connect(), quedando hilos bloqueados durante minutos si hay un firewall descartando paquetes SYN en silencio."
+    ],
+    "ejemplo": "// Flujo en servidor TCP (pseudocódigo C/POSIX)\nint srv = socket(AF_INET, SOCK_STREAM, 0);\nbind(srv, &addr, sizeof(addr));     // Asocia IP:puerto\nlisten(srv, 1024);                 // Cola de conexiones listas\nint client_fd = accept(srv, ...);  // Nuevo fd por cliente\n// Cliente: connect(cli, &srv_addr, sizeof(srv_addr));",
+    "entrevista": "En la API de sockets, el servidor usa bind para fijar IP/puerto, listen para abrir las colas del handshake en el kernel y accept para obtener un descriptor nuevo por cliente, mientras el cliente inicia el 3-way handshake con connect."
+  },
+  "dig - nslookup": {
+    "que": "dig (Domain Information Groper) y nslookup son herramientas de línea de comandos para consultar servidores DNS, inspeccionar registros y diagnosticar fallos de resolución de nombres o propagación.",
+    "para": "Sirven para verificar qué registros A, AAAA, CNAME, MX, TXT o NS devuelve un servidor DNS concreto, comprobar el TTL restante en caché, auditar delegaciones desde los servidores raíz y aislar si un fallo proviene del resolvedor local o del autoritativo.",
+    "como": "dig construye y envía una consulta DNS directa al servidor especificado (por ejemplo @1.1.1.1 o el configurado en /etc/resolv.conf) y muestra la respuesta completa estructurada por secciones: HEADER (códigos como NOERROR, NXDOMAIN, SERVFAIL), QUESTION, ANSWER, AUTHORITY y ADDITIONAL, además del tiempo de consulta. Con la opción +trace, dig simula el camino recursivo desde los root servers pasando por los TLD hasta el autoritativo. nslookup ofrece una interfaz más simple e interactiva disponible por defecto incluso en Windows, aunque con salida menos detallada.",
+    "practicas": [
+      "Prefiere dig sobre nslookup en Linux/macOS: expone banderas exactas (AD para DNSSEC, AA para autoritativo), TTL real y secciones completas para depuración rigurosa.",
+      "Usa siempre `@servidor` (ej. `dig @8.8.8.8 dominio`) para comparar tu resolvedor local contra un resolvedor público o consultar directamente el servidor autoritativo.",
+      "Utiliza `dig +trace ejemplo.com` cuando sospeches un problema de delegación NS o registros pegados (glue records) rotos entre el registrador y tu proveedor DNS.",
+      "Error típico: olvidar que nslookup/dig consultan DNS directamente ignorando /etc/hosts o mDNS, a diferencia de `getent hosts` o `curl` que siguen la configuración NSS del sistema."
+    ],
+    "ejemplo": "# Consultar registro MX en servidor específico de forma concisa\ndig @1.1.1.1 ejemplo.com MX +noall +answer\n\n# Trazar delegación completa desde los servidores raíz\ndig +trace api.ejemplo.com A",
+    "entrevista": "dig es la herramienta estándar de diagnóstico DNS para inspeccionar registros, TTLs, códigos de estado y trazas desde raíz (+trace), superando en detalle y precisión a nslookup."
+  },
+  "eBPF - Cilium": {
+    "que": "eBPF (Extended Berkeley Packet Filter) es una tecnología del kernel de Linux que permite ejecutar programas verificados y compilados a bytecode en puntos de enganche (hooks) del kernel de forma segura sin modificar su código fuente; Cilium es un CNI y plataforma de red/seguridad para Kubernetes construida nativamente sobre eBPF.",
+    "para": "Resuelve los cuellos de botella de rendimiento y escalabilidad de iptables en clústeres Kubernetes grandes, ofreciendo enrutamiento rápido, balanceo de carga reemplazando a kube-proxy, NetworkPolicies en capas L3/L4/L7, observabilidad profunda (Hubble) y encriptación transparente.",
+    "como": "En el plano de red clásico, un paquete que entra a un Pod atraviesa múltiples saltos por el stack de red del host, pares veth y largas listas secuenciales O(N) de reglas iptables. Cilium inserta programas eBPF directamente en hooks como XDP (en el driver de la tarjeta de red), TC (Traffic Control) y sockets (sockops). Esto permite hacer búsqueda de rutas y mapeo de Services en mapas hash O(1) en memoria del kernel, saltarse partes del stack TCP/IP entre Pods locales y aplicar políticas basadas en identidad de etiquetas Kubernetes o verbos HTTP sin recorrer cadenas iptables.",
+    "practicas": [
+      "Despliega Cilium en modo kube-proxy replacement cuando operes clústeres con miles de Services, eliminando la latencia O(N) de sincronizar iptables.",
+      "Usa Cilium Hubble para obtener flujos de red en tiempo real, ver qué NetworkPolicy bloqueó un paquete (DROP) y métricas DNS/HTTP sin inyectar sidecars pesados.",
+      "eBPF vs sidecar service mesh: Cilium gestiona L3/L4, WireGuard/IPsec y políticas L7 básicas en kernel con mínimo overhead; para lógicas L7 muy complejas por petición, se combina con Envoy por nodo.",
+      "Verifica que la versión del kernel de tus nodos Linux sea compatible con las capacidades eBPF que habilites (ej. kernels >= 5.10 para muchas funciones avanzadas)."
+    ],
+    "ejemplo": "# Ver servicios balanceados en mapas eBPF desde un agente Cilium:\ncilium service list\n# Observar tráfico y paquetes descartados en tiempo real con Hubble:\nhubble observe --verdict DROPPED -n production",
+    "entrevista": "Cilium aprovecha programas eBPF en hooks del kernel (XDP/TC/sockets) con mapas hash O(1) para reemplazar iptables y kube-proxy, logrando networking, observabilidad y seguridad L3-L7 a velocidad de kernel."
+  },
+  "kube-proxy": {
+    "que": "kube-proxy es un componente de red que se ejecuta en cada nodo de Kubernetes (normalmente como DaemonSet) encargado de implementar la abstracción virtual de los objetos Service (ClusterIP, NodePort y parte de LoadBalancer) para encaminar el tráfico hacia los Pods backend.",
+    "para": "Permite que los Pods y clientes externos hablen con una IP virtual estable (ClusterIP) sin preocuparse por las IPs efímeras de los Pods que nacen, mueren o escalan dinámicamente detrás del Service.",
+    "como": "kube-proxy vigila continuamente el API Server de Kubernetes observando cambios en Services y EndpointSlices. En su modo clásico iptables (y más recientemente nftables), traduce cada Service en reglas de NAT (DNAT) dentro del kernel: cuando un paquete apunta a una ClusterIP virtual, las reglas eligen aleatoriamente (con igual probabilidad) uno de los Pods saludables y reescriben la IP destino a la del Pod elegido. En modo IPVS, utiliza tablas hash dentro del kernel Linux ofreciendo balanceo O(1) y algoritmos como round-robin o least-connections.",
+    "practicas": [
+      "Nota importante: kube-proxy NO es un proxy de aplicación en espacio de usuario hoy en día; programa reglas NAT en el kernel para que el propio kernel reenvíe los paquetes.",
+      "En clústeres medianos o grandes, migra del modo iptables al backend nftables (disponible en versiones recientes) o reemplaza kube-proxy directamente por Cilium eBPF para evitar latencia de actualización O(N).",
+      "Configura externalTrafficPolicy: Local en Services tipo NodePort/LoadBalancer si necesitas preservar la IP real del cliente y evitar un salto de red extra entre nodos.",
+      "Depura errores de conectividad hacia un Service revisando primero si existen EndpointSlices poblados (`kubectl get endpointslices`) antes de culpar a kube-proxy."
+    ],
+    "ejemplo": "# Inspeccionar reglas NAT generadas por kube-proxy para un Service:\niptables-save | grep KUBE-SVC\n# Verificar modo configurado de kube-proxy:\nkubectl -n kube-system get cm kube-proxy -o yaml | grep mode:",
+    "entrevista": "kube-proxy traduce Services y EndpointSlices en reglas de NAT en el kernel (iptables, nftables o IPVS) en cada nodo para balancear tráfico hacia Pods dinámicos, aunque CNIs eBPF como Cilium ya pueden reemplazarlo."
+  },
+  "mTLS": {
+    "que": "mTLS (Mutual TLS) es una extensión del protocolo TLS en la que tanto el cliente como el servidor presentan y verifican sus respectivos certificados digitales X.509 antes de establecer la conexión cifrada.",
+    "para": "Garantiza autenticación fuerte bidireccional a nivel de transporte. Mientras TLS estándar solo autentica al servidor (como en la web pública), mTLS es esencial en arquitecturas Zero Trust, comunicación entre microservicios (service mesh), APIs B2B/bancarias y dispositivos IoT para asegurar que solo clientes autorizados puedan conectarse.",
+    "como": "Durante el handshake TLS, tras enviar el servidor su certificado (ServerHello + Certificate), incluye además un mensaje CertificateRequest solicitando credenciales al cliente. El cliente responde enviando su propia cadena de certificados junto con un mensaje CertificateVerify firmado con su clave privada sobre el historial del handshake para probar posesión de la clave. Ambos extremos validan la cadena contra las Autoridades de Certificación (CA) de confianza y extraen la identidad (por ejemplo, el SAN o SPIFFE ID) antes de intercambiar datos cifrados.",
+    "practicas": [
+      "Automatiza la emisión y rotación de certificados con vida corta (horas o días) usando herramientas como cert-manager, Vault o el plano de control de un service mesh.",
+      "Valida no solo que el certificado esté firmado por la CA correcta, sino también la identidad específica del sujeto (SAN / SPIFFE URI) para evitar que cualquier servicio válido acceda a todos los demás.",
+      "mTLS vs API Keys/Bearer Tokens: mTLS autentica en capa de transporte mediante criptografía asimétrica antes de procesar HTTP, evitando el riesgo de reutilización de tokens filtrados en cabeceras.",
+      "Si terminas TLS en un Load Balancer o Ingress (TLS termination), ten en cuenta que mTLS requiere configuración explícita (passthrough o reenvío de cabeceras validadas) para no perder la identidad del cliente."
+    ],
+    "ejemplo": "# Probar una conexión mTLS presentando certificado y clave de cliente:\ncurl --cacert ca.crt \\\n     --cert client.crt \\\n     --key client.key \\\n     https://pagos.internal:8443/v1/status",
+    "entrevista": "mTLS añade autenticación mutua al handshake TLS exigiendo que cliente y servidor validen sus certificados X.509 contra una CA de confianza, formando la base criptográfica de Zero Trust entre servicios."
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "Coordenadas polares, cilíndricas y esféricas": {
+    "que": "Sistemas de coordenadas curvilíneos ortogonales en 2D y 3D que representan puntos mediante distancias radiales y ángulos en lugar de desplazamientos cartesianos (x, y, z). Las polares usan (r, theta) en el plano, las cilíndricas añaden la altura z formando (r, theta, z), y las esféricas emplean radio espacial y dos ángulos (rho, theta, phi).",
+    "para": "Simplifican ecuaciones, dominios de integración y condiciones de frontera cuando existe simetría circular, axial o radial, como en discos, tuberías, campos gravitatorios o radiación de antenas. En ingeniería de software se aplican en cámaras orbitales 3D, mapeo de entornos HDRI (equirectangular), robótica y simulaciones electromagnéticas o acústicas.",
+    "como": "Cada sistema define una transformación diferenciable T hacia coordenadas cartesianas: en polares x = r*cos(theta), y = r*sin(theta); en cilíndricas se conserva z; en esféricas (convención física ISO: phi colatitud desde +z y theta azimutal) x = rho*sin(phi)*cos(theta), y = rho*sin(phi)*sin(theta), z = rho*cos(phi). Al cambiar variables en integrales múltiples, el diferencial espacial se escala por el determinante jacobiano |det(J)|: r en polares y cilíndricas, y rho^2 * sin(phi) en esféricas. En el origen (r = 0 o rho = 0) y sobre el eje polar (phi = 0 o pi), el jacobiano se anula y los ángulos pierden unicidad (singularidad de coordenadas).",
+    "practicas": [
+      "Verifica siempre la convención angular antes de programar o integrar: en física/ISO theta es el azimut y phi la colatitud en [0, pi], mientras muchos textos matemáticos invierten los símbolos.",
+      "Nunca omitas el factor jacobiano (r o rho^2 * sin(phi)) dentro del integrando al transformar dx dy dz; olvidarlo rompe la conservación de área o volumen.",
+      "Usa atan2(y, x) en lugar de atan(y / x) al convertir de cartesianas a coordenadas angulares para obtener el cuadrante exacto sin divisiones por cero en x = 0.",
+      "Evita parametrizar orientaciones 3D con ángulos esféricos o de Euler cerca de los polos por riesgo de bloqueo de cardán (gimbal lock); emplea cuaterniones para rotaciones."
+    ],
+    "ejemplo": "import numpy as np\n\ndef cartesian_to_spherical(x, y, z):\n    rho = np.sqrt(x**2 + y**2 + z**2)\n    theta = np.arctan2(y, x)\n    phi = np.arccos(np.clip(z / rho, -1.0, 1.0)) if rho > 0 else 0.0\n    jacobian = (rho**2) * np.sin(phi)  # dV = rho^2 * sin(phi) drho dphi dtheta\n    return rho, theta, phi, jacobian",
+    "entrevista": "Cambiar a coordenadas polares, cilíndricas o esféricas alinea los límites con la simetría geométrica del problema, multiplicando siempre el integrando por el jacobiano (r o rho^2 sin(phi)) para preservar la medida diferencial."
+  },
+  "Cálculo multivariable": {
+    "que": "Rama del análisis matemático que extiende el cálculo diferencial e integral a funciones de múltiples variables de entrada y/o salida (f: R^n -> R^m), abarcando campos escalares (m = 1) y campos vectoriales (m > 1). Estudia límites direccionales, continuidad, diferenciabilidad total mediante transformaciones lineales e integración sobre dominios de dimensión superior.",
+    "para": "Modela sistemas complejos donde múltiples magnitudes interactúan acopladas, como funciones de pérdida con millones de parámetros en redes neuronales, campos de velocidad y presión en fluidos o deformaciones en gráficos 3D. Constituye el soporte formal para la optimización numérica, la diferenciación automática (backpropagation) y el análisis vectorial.",
+    "como": "Una función f: R^n -> R^m es diferenciable en a si admite una aproximación afín f(a + h) = f(a) + J_f(a) * h + o(||h||), donde J_f(a) es la matriz jacobiana de tamaño m x n formada por todas las derivadas parciales de primer orden. Para campos escalares de clase C^2, las derivadas de segundo orden forman la matriz hessiana H, que captura la curvatura local. La regla de la cadena generalizada se expresa como multiplicación matricial de jacobianos (J_{g o f}(a) = J_g(f(a)) * J_f(a)), mecanismo sobre el cual opera el modo inverso (VJP) en frameworks de autodiff.",
+    "practicas": [
+      "Diferenciabilidad vs. existencia de parciales: que existan todas las derivadas parciales en un punto no garantiza siquiera continuidad; exige parciales continuas (clase C^1) para asegurar diferenciabilidad total.",
+      "Aprovecha el teorema de Schwarz (Clairaut): si las segundas parciales son continuas, f_xy = f_yx y la matriz hessiana es simétrica, lo que reduce el cómputo casi a la mitad.",
+      "Para grafos computacionales R^n -> R con n >> 1, usa diferenciación automática en modo inverso (retropropagación) para obtener el gradiente completo en una sola pasada en lugar de construir jacobianos explícitos.",
+      "No concluyas que existe un límite en R^n probando solo los ejes coordenados; basta hallar dos trayectorias (como y = mx o y = kx^2) con límites distintos para refutar su existencia."
+    ],
+    "ejemplo": "import numpy as np\n\n# f(x, y) = x^2 * y + sin(y): gradiente y hessiana simétrica en (x, y)\ndef grad_f(x, y):\n    return np.array([2 * x * y, x**2 + np.cos(y)])\n\ndef hess_f(x, y):\n    return np.array([[2 * y, 2 * x], [2 * x, -np.sin(y)]])",
+    "entrevista": "En varias variables la derivada se convierte en la matriz jacobiana que aproxima localmente la función de forma lineal, y la regla de la cadena se reduce a multiplicar jacobianos."
+  },
+  "Derivadas parciales y gradiente": {
+    "que": "La derivada parcial ∂f/∂x_i mide la razón de cambio instantánea de una función multivariable respecto a una única variable manteniendo fijas las restantes. El gradiente ∇f de un campo escalar f: R^n -> R es el vector compuesto por todas sus derivadas parciales de primer orden: (∂f/∂x_1, ..., ∂f/∂x_n).",
+    "para": "Determina en qué dirección y con qué intensidad crece o decrece una función en un espacio multidimensional. Es la piedra angular del descenso por gradiente en machine learning, el cálculo de vectores normales a superficies implícitas (SDF) en gráficos por computadora y los filtros de detección de bordes (Sobel) en visión artificial.",
+    "como": "Cada derivada parcial ∂f/∂x_i se calcula aplicando las reglas de derivación de una variable mientras se tratan las demás coordenadas como constantes. Si f es diferenciable en p, la derivada direccional en la dirección de un vector unitario u equivale al producto escalar D_u f(p) = ∇f(p) · u = ||∇f(p)|| * cos(alpha). Por la desigualdad de Cauchy-Schwarz, esa proyección es máxima cuando u coincide con la dirección de ∇f(p), probando que el gradiente apunta hacia el ascenso más pronunciado y es perpendicular a las curvas o superficies de nivel f(x) = c.",
+    "practicas": [
+      "Normaliza siempre el vector dirección (u = v / ||v||) antes de calcular la derivada direccional ∇f · u; un vector no unitario distorsiona la tasa de cambio.",
+      "Recuerda en descenso por gradiente que -∇f indica la dirección de descenso local más rápido, pero su norma no determina la distancia al mínimo, exigiendo ajustar la tasa de aprendizaje.",
+      "Distingue gradiente (∇f, vector definido exclusivamente para campos escalares R^n -> R) de jacobiana (J_F, matriz para campos vectoriales R^n -> R^m).",
+      "Valida gradientes analíticos o kernels custom en tests unitarios comparándolos contra diferencias finitas centradas (f(x+h) - f(x-h)) / (2h) con h ~ 1e-5."
+    ],
+    "ejemplo": "import numpy as np\n\ndef numerical_gradient(f, x, h=1e-5):\n    grad = np.zeros_like(x, dtype=float)\n    for i in range(len(x)):\n        step = np.zeros_like(x, dtype=float)\n        step[i] = h\n        grad[i] = (f(x + step) - f(x - step)) / (2.0 * h)\n    return grad",
+    "entrevista": "El gradiente reúne las derivadas parciales en un vector ortogonal a las curvas de nivel que señala el máximo crecimiento de la función, motivo por el cual avanzar en dirección -∇f minimiza funciones de error."
+  },
+  "Integrales de línea y de superficie": {
+    "que": "Generalizaciones de la integral definida donde el dominio de integración es una curva suave en R^2 o R^3 (integral de línea) o una superficie curva en R^3 (integral de superficie). Existen en forma escalar (para medir masa, longitud o área con densidad) y en forma vectorial (trabajo o circulación en una trayectoria, y flujo atravesando una superficie orientada).",
+    "para": "Cuantifican el trabajo mecánico realizado por un campo de fuerzas, la circulación de vórtices en un fluido, el flujo eléctrico o térmico a través de mallas 3D y la radiancia en la ecuación de renderizado (ray tracing). En geometría computacional se usan para integrar propiedades físicas sobre aristas o caras triangulares.",
+    "como": "Ambas se resuelven parametrizando la geometría para reducirlas a integrales ordinarias o dobles. Para una curva r(t) con t en [a, b], la integral escalar integra f(r(t)) * ||r'(t)|| dt y la vectorial integra F(r(t)) · r'(t) dt. Para una superficie r(u, v) sobre D, el producto vectorial fundamental r_u x r_v define el vector normal elemental; la integral escalar usa su norma ||r_u x r_v|| du dv y la integral de flujo vectorial calcula ∬_D F(r(u, v)) · (r_u x r_v) du dv.",
+    "practicas": [
+      "Fija explícitamente la orientación (sentido de recorrido en curvas; normal hacia afuera o según regla de la mano derecha en superficies) antes de evaluar integrales vectoriales, pues invertirla cambia el signo.",
+      "Comprueba si el campo vectorial F es conservativo (∇ x F = 0 en dominio simplemente conexo) antes de parametrizar una curva: si existe potencial f con F = ∇f, la integral vale f(B) - f(A).",
+      "Integral escalar vs. vectorial: las escalares (con ds o dS) son independientes de la orientación del recorrido, mientras que trabajo y flujo dependen del signo de la orientación.",
+      "Garantiza parametrizaciones regulares (r'(t) != 0 y r_u x r_v != 0 casi en todo punto) para evitar colapsos de medida o coberturas duplicadas."
+    ],
+    "ejemplo": "import numpy as np\n\nt = np.linspace(0, 2 * np.pi, 1000)\nr_x, r_y = np.cos(t), np.sin(t)\ndr_x, dr_y = -np.sin(t), np.cos(t)\n# Trabajo del campo rotacional F(x, y) = (-y, x) sobre la circunferencia unitaria\nwork = np.trapezoid((-r_y) * dr_x + r_x * dr_y, t)  # ~ 2*pi",
+    "entrevista": "Las integrales de línea y superficie parametrizan curvas o superficies para proyectar campos sobre el diferencial geométrico (ds = ||r'|| dt o dS = r_u x r_v du dv), midiendo magnitudes físicas como trabajo o flujo."
+  },
+  "Integrales múltiples": {
+    "que": "Extensión de la integral de Riemann a funciones escalares de varias variables sobre regiones multidimensionales: integrales dobles sobre áreas D en R^2 e integrales triples sobre sólidos E en R^3. Geométricamente calculan volúmenes bajo hipersuperficies, masa de cuerpos con densidad heterogénea y momentos físicos.",
+    "para": "Permiten calcular probabilidades marginales y constantes de normalización en estadística multivariable, centros de masa e inercia en motores de física rígida, y cargas totales en física computacional. En simulación numérica (FEM) y gráficos (PBR) constituyen la base para acumular cantidades continuas sobre celdas o dominios multidimensionales.",
+    "como": "Mediante el Teorema de Fubini, si f es integrable sobre una región acotada, la integral múltiple se descompone en integrales iteradas unidimensionales (por ejemplo ∫_a^b ∫_{g1(x)}^{g2(x)} f(x, y) dy dx), evaluadas de adentro hacia afuera. Si la geometría o el integrando resulta intratable en cartesianas, se aplica un cambio de variables T(u, v) multiplicando por el valor absoluto del determinante jacobiano. En dimensiones altas (d > 3), la cuadratura en malla escala exponencialmente O(N^d) (maldición de la dimensionalidad), por lo que se sustituye por integración Monte Carlo con error O(1/sqrt(M)).",
+    "practicas": [
+      "Traza o plantea primero las desigualdades de la región de integración; los límites de la integral más externa deben ser siempre constantes numéricas.",
+      "Cambia el orden de integración (de dy dx a dx dy) cuando la antiderivada interna carezca de forma cerrada elemental (como exp(y^2) o sin(x)/x).",
+      "Explota la simetría antes de integrar: sobre un dominio simétrico respecto a una variable, cualquier integrando impar en esa variable se anula directamente a cero.",
+      "Abandona las cuadraturas deterministas (Simpson/Gauss) por encima de 3 o 4 dimensiones y usa Monte Carlo con importance sampling."
+    ],
+    "ejemplo": "from scipy import integrate\n\n# Integral doble de f(x, y) = x * y sobre el triángulo 0 <= x <= 1, 0 <= y <= x\nres, err = integrate.dblquad(\n    lambda y, x: x * y,  # orden en dblquad: (interna y, externa x)\n    0, 1,\n    lambda x: 0,\n    lambda x: x\n)  # exacto = 0.125",
+    "entrevista": "Las integrales múltiples acumulan funciones sobre regiones 2D o 3D reduciéndolas a integrales iteradas mediante el teorema de Fubini y escalando el elemento diferencial con el jacobiano al cambiar de coordenadas."
+  },
+  "Optimización con restricciones": {
+    "que": "Disciplina matemática y computacional dedicada a encontrar los extremos de una función objetivo multivariable f(x) sujetos a que la solución pertenezca a una región factible definida por ecuaciones de igualdad (g_i(x) = 0) y/o desigualdad (h_j(x) <= 0). Comprende el método de multiplicadores de Lagrange y su extensión general, las condiciones de Karush-Kuhn-Tucker (KKT).",
+    "para": "Resuelve problemas reales de asignación limitada de recursos: maximizar márgenes en máquinas de vectores de soporte (SVM), optimizar portafolios financieros bajo límites de riesgo, planificar trayectorias robóticas evitando colisiones o regularizar parámetros de modelos. Es el núcleo operativo de la programación lineal, cuadrática y convexa.",
+    "como": "Con restricciones de igualdad g(x) = 0, un extremo restringido ocurre donde las curvas de nivel de f son tangentes a la superficie de restricción, exigiendo colinealidad de gradientes: ∇f(x) = λ ∇g(x) (estacionariedad del Lagrangiano L(x, λ) = f(x) - λ g(x)). Al incorporar desigualdades h_j(x) <= 0, las condiciones KKT añaden factibilidad primal y dual (μ_j >= 0) junto con holgura complementaria (μ_j * h_j(x) = 0), indicando que cada restricción o bien está activa en la frontera (h_j = 0) o tiene multiplicador nulo (μ_j = 0). En software se resuelve mediante métodos de punto interior, SLSQP, gradiente proyectado o Lagrangiano aumentado.",
+    "practicas": [
+      "Lagrange vs. KKT: aplica multiplicadores de Lagrange solo con restricciones de igualdad suave; si existen cotas o desigualdades (x >= 0), emplea KKT o analiza interior y frontera por separado.",
+      "Verifica las condiciones de cualificación de restricciones (como independencia lineal de gradientes activos, LICQ), pues Lagrange falla en cúspides o puntos donde ∇g(x) = 0.",
+      "Recuerda que ∇L = 0 es solo una condición necesaria de primer orden; clasifica los candidatos evaluando f o analizando la hessiana bordada restringida al espacio tangente.",
+      "Formula el modelo de forma convexa cuando sea posible: bajo convexidad y condición de Slater, satisfacer KKT garantiza el óptimo global."
+    ],
+    "ejemplo": "from scipy.optimize import minimize\n\n# Minimizar x^2 + y^2 sujeto a x + y = 1 y x >= 0.6\nres = minimize(\n    lambda v: v[0]**2 + v[1]**2,\n    x0=[0.8, 0.2],\n    constraints=[{\"type\": \"eq\", \"fun\": lambda v: v[0] + v[1] - 1}],\n    bounds=[(0.6, None), (None, None)]\n)  # óptimo en (0.6, 0.4)",
+    "entrevista": "En optimización con restricciones el óptimo no exige ∇f = 0, sino que ∇f sea combinación lineal de los gradientes de las restricciones activas bajo el marco de Lagrange o KKT con holgura complementaria."
+  },
+  "Teorema de Green, Stokes y Gauss": {
+    "que": "Trilogía de teoremas fundamentales del cálculo vectorial que extienden el Teorema Fundamental del Cálculo a 2D y 3D, igualando la integral de un operador diferencial (rotacional o divergencia) en el interior de una región con la integral del campo original sobre su frontera. Green vincula un área plana con su curva límite; Stokes relaciona una superficie 3D con su contorno; y Gauss (Divergencia) conecta un volumen sólido con su superficie cerrada.",
+    "para": "Simplifican integrales sobre geometrías complejas intercambiando interior por frontera y fundamentan las leyes de conservación en física e ingeniería: ecuaciones de Maxwell, conservación de masa/momento en dinámica de fluidos (CFD por volúmenes finitos) y cálculo exacto de volúmenes en mallas poligonales 3D.",
+    "como": "Todos derivan del teorema generalizado de Stokes (∫_Ω dω = ∫_{∂Ω} ω): 1) Green establece ∮_C (P dx + Q dy) = ∬_D (∂Q/∂x - ∂P/∂y) dA en el plano con orientación antihoraria; 2) Stokes generaliza esto a superficies 3D suaves mediante ∮_{∂S} F · dr = ∬_S (∇ x F) · dS siguiendo la regla de la mano derecha; 3) Gauss iguala el flujo neto saliente a través de una superficie cerrada con la integral de fuentes y sumideros en el volumen interior: ∯_{∂V} F · dS = ∭_V (∇ · F) dV.",
+    "practicas": [
+      "Comprueba las hipótesis de suavidad y topología antes de aplicarlos: el campo F debe ser C^1 en todo el interior sin singularidades (como 1/r^2 en el origen) y la frontera debe estar cerrada y orientada coherentemente.",
+      "Green vs. Stokes: Green es exactamente el caso particular de Stokes sobre el plano xy (z = 0), donde solo sobrevive la componente k del rotacional.",
+      "Aprovecha el teorema de Gauss en gráficos 3D para calcular el volumen de una malla cerrada triangulada sumando (1/6) * det(v0, v1, v2) por cada triángulo orientado hacia afuera.",
+      "No confundas flujo (producto escalar con la normal dS, vinculado a divergencia y Gauss) con circulación (producto escalar con la tangente dr, vinculada a rotacional y Stokes/Green)."
+    ],
+    "ejemplo": "import numpy as np\n\n# Volumen exacto de una malla cerrada 3D por Teorema de Gauss: V = (1/3) ∯ r · dS\ndef mesh_volume(vertices, faces):\n    vol = 0.0\n    for i0, i1, i2 in faces:\n        v0, v1, v2 = vertices[i0], vertices[i1], vertices[i2]\n        vol += np.dot(v0, np.cross(v1, v2)) / 6.0\n    return vol",
+    "entrevista": "Green, Stokes y Gauss generalizan el teorema fundamental del cálculo: integrar el rotacional o la divergencia en el interior de un dominio equivale a medir la circulación o el flujo del campo sobre su frontera."
+  }
+}

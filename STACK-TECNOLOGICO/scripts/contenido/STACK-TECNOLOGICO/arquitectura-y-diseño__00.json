@@ -1,0 +1,392 @@
+{
+  "12 Factor App": {
+    "que": "Es una metodología de diseño para aplicaciones SaaS modernas publicada originalmente por ingenieros de Heroku en 2011. Define doce principios arquitectónicos y operativos que estandarizan cómo se empaqueta, configura, ejecuta y escala un servicio web en entornos efímeros y en la nube.",
+    "para": "Sirve para eliminar discrepancias entre entornos de desarrollo, staging y producción, facilitando el despliegue continuo y la portabilidad entre proveedores cloud. Se utiliza como referencia base al diseñar microservicios, contenedores Docker y cargas de trabajo en Kubernetes.",
+    "como": "La aplicación separa estrictamente el código inmutable de su configuración mediante variables de entorno (Factor III) y declara dependencias de forma explícita en manifiestos aislados como package.json o go.mod (Factor II). Los procesos se ejecutan sin estado local (stateless) y comparten datos persistentes solo mediante servicios adjuntos como PostgreSQL o Redis (Factor VI). Los logs se emiten como flujos continuos hacia stdout/stderr sin gestionar archivos en disco (Factor XI) y la paridad dev/prod se mantiene usando los mismos motores de respaldo.",
+    "practicas": [
+      "Externar toda configuración sensible (URLs de BD, claves API) en variables de entorno o gestores de secretos, nunca en archivos versionados en Git.",
+      "Diseñar procesos stateless y con arranque rápido y cierre elegante (SIGTERM) para tolerar reinicios automáticos del orquestador (Factor IX).",
+      "Error típico: guardar sesiones de usuario o archivos subidos en el sistema de archivos local del contenedor, lo que rompe el escalado horizontal.",
+      "En 2026 suele ampliarse con los factores 'Beyond the Twelve-Factor App' de VMware: telemetría estructurada, API-first y autenticación centralizada."
+    ],
+    "ejemplo": "# Factor II & III: configuración por entorno y arranque por puerto dinámico\nDATABASE_URL=postgres://user:pass@db.internal:5432/app\nPORT=8080\nLOG_LEVEL=info\n\n# Factor VIII & IX: ejecución de proceso stateless escuchando SIGTERM\nexec node dist/server.js",
+    "entrevista": "La metodología 12-Factor App desacopla el código inmutable de la configuración, el estado y el entorno operativo para que cualquier instancia pueda escalarse, reemplazarse o desplegarse en la nube sin efectos secundarios."
+  },
+  "Abstract Factory": {
+    "que": "Es un patrón de diseño creacional (GoF) que provee una interfaz para crear familias completas de objetos relacionados o dependientes sin especificar sus clases concretas. Actúa como una fábrica de fábricas que garantiza la compatibilidad entre los productos instanciados.",
+    "para": "Sirve para aislar al código cliente de las implementaciones concretas cuando un sistema debe soportar múltiples variantes consistentes de un conjunto de componentes, como temas de interfaz gráfica, drivers de bases de datos o proveedores cloud.",
+    "como": "Se define una interfaz AbstractFactory con métodos de creación para cada tipo de producto abstracto (por ejemplo, createButton() y createCheckbox()). Cada variante del sistema implementa una ConcreteFactory (WinFactory, MacFactory) que instancia las implementaciones concretas compatibles entre sí. El cliente recibe la fábrica por inyección de dependencias al iniciar y trabaja exclusivamente contra las interfaces abstractas de fábrica y producto.",
+    "practicas": [
+      "Usarlo cuando existan familias de productos que deban combinarse obligatoriamente de forma coherente, evitando mezclas incompatibles.",
+      "Abstract Factory vs Factory Method: Factory Method crea un único producto mediante herencia o sobrescritura; Abstract Factory crea familias completas mediante composición.",
+      "Trampa común: añadir un nuevo tipo de producto obliga a modificar la interfaz base y todas las fábricas concretas existentes.",
+      "Combinarlo con inyección de dependencias para seleccionar la fábrica concreta en tiempo de arranque según configuración."
+    ],
+    "ejemplo": "interface UIFactory {\n  createButton(): Button;\n  createInput(): Input;\n}\nclass DarkUIFactory implements UIFactory {\n  createButton() { return new DarkButton(); }\n  createInput() { return new DarkInput(); }\n}\n// Cliente agnóstico: const ui: UIFactory = loadThemeFactory();",
+    "entrevista": "Abstract Factory encapsula la creación de familias completas de objetos compatibles entre sí para desacoplar al cliente de las clases concretas y facilitar el intercambio de variantes."
+  },
+  "Active Record vs Data Mapper": {
+    "que": "Son dos patrones arquitectónicos de persistencia descritos por Martin Fowler para vincular objetos de dominio con bases de datos relacionales. En Active Record el objeto envuelve una fila e incluye métodos SQL propios (save, delete), mientras que en Data Mapper una capa separada transfiere datos entre entidades puras y tablas.",
+    "para": "Sirven para decidir cuánto acoplamiento tolera el modelo de negocio respecto al esquema de base de datos. Active Record agiliza aplicaciones CRUD simples; Data Mapper se usa en dominios complejos con reglas de negocio ricas o DDD donde la entidad debe ser agnóstica a la persistencia.",
+    "como": "En Active Record (p. ej. Rails ActiveRecord, Eloquent), la clase hereda de un modelo base que inspecciona columnas por convención o reflexión y ejecuta INSERT/UPDATE directamente desde la instancia. En Data Mapper (p. ej. Hibernate/JPA, Doctrine, TypeORM en modo Repository), un EntityManager o Mapper mantiene metadatos de mapeo, rastrea cambios en un Unit of Work y persiste las entidades puras (POCO/POJO) mediante repositorios dedicados.",
+    "practicas": [
+      "Preferir Active Record en microservicios CRUD o prototipos donde la estructura de objetos coincide 1:1 con las tablas.",
+      "Preferir Data Mapper cuando el modelo de dominio tenga lógica compleja, agregados DDD o requiera pruebas unitarias sin base de datos.",
+      "Error típico en Active Record: inflar los modelos con validaciones HTTP, lógica de negocio transversal y consultas SQL ad hoc ('Fat Models').",
+      "Trampa en Data Mapper: sobreingeniería innecesaria en servicios triviales o problemas N+1 por carga perezosa (lazy loading) mal configurada."
+    ],
+    "ejemplo": "// Active Record: la entidad conoce la BD\nconst user = await User.findById(1);\nuser.email = 'a@b.com';\nawait user.save();\n\n// Data Mapper: repositorio separado\nconst user = await userRepo.findById(1);\nuser.changeEmail('a@b.com');\nawait userRepo.save(user);",
+    "entrevista": "Active Record acopla la entidad a la tabla para maximizar la velocidad en CRUDs, mientras que Data Mapper separa dominio y persistencia para proteger modelos complejos y facilitar el testing."
+  },
+  "Adapter": {
+    "que": "Es un patrón de diseño estructural (GoF) que convierte la interfaz de una clase o servicio existente en otra interfaz esperada por el cliente. Permite que componentes con contratos incompatibles colaboren sin modificar su código fuente original.",
+    "para": "Sirve para integrar librerías de terceros, SDKs externos, sistemas legados o pasarelas de pago detrás de un puerto uniforme de nuestra aplicación. Evita que cambios en APIs externas se propaguen por toda la base de código.",
+    "como": "El cliente depende de una interfaz Target definida por el dominio. Se crea una clase Adapter que implementa Target y mantiene internamente una referencia al objeto incompatible (Adaptee) por composición (Object Adapter) o herencia múltiple (Class Adapter). Cuando el cliente invoca el método estándar en el Adapter, este traduce parámetros, adapta tipos o códigos de error y delega la llamada al método específico del Adaptee.",
+    "practicas": [
+      "Preferir Object Adapter (basado en composición) frente a Class Adapter (basado en herencia) para no acoplarse a una subclase rígida.",
+      "Adapter vs Facade: Adapter hace compatible una interfaz existente con otra esperada; Facade crea una interfaz nueva y simplificada sobre un subsistema complejo.",
+      "Adapter vs Decorator: Adapter cambia la interfaz del objeto envuelto; Decorator mantiene la misma interfaz y añade comportamiento.",
+      "En arquitectura hexagonal, los adaptadores secundarios implementan los puertos de salida para conectar con bases de datos o APIs externas."
+    ],
+    "ejemplo": "interface PaymentGateway { charge(cents: number): Promise<void>; }\n\nclass StripeAdapter implements PaymentGateway {\n  constructor(private stripe: StripeSDK) {}\n  async charge(cents: number) {\n    await this.stripe.paymentIntents.create({ amount: cents, currency: 'usd' });\n  }\n}",
+    "entrevista": "El patrón Adapter envuelve un componente con una interfaz incompatible para traducir sus llamadas al contrato que espera nuestro dominio, aislando el sistema frente a dependencias externas."
+  },
+  "Alta disponibilidad": {
+    "que": "Es una cualidad arquitectónica que garantiza que un sistema permanezca operativo y accesible durante un porcentaje muy alto del tiempo acordado (medido en 'nueves', como 99.9% o 99.99%), minimizando el impacto de fallos de hardware, software o red.",
+    "para": "Sirve para cumplir Acuerdos de Nivel de Servicio (SLA) en sistemas críticos donde cada minuto de caída implica pérdida de ingresos, datos o confianza del usuario. Se diseña eliminando puntos únicos de fallo (SPOF) mediante redundancia y recuperación automática.",
+    "como": "El tráfico entrante pasa por balanceadores de carga redundantes con health checks activos que retiran nodos degradados del pool. Los servicios stateless se replican en múltiples zonas de disponibilidad (AZ) y las bases de datos emplean replicación síncrona o semi-síncrona con failover automático (p. ej. Raft/Paxos o Patroni para PostgreSQL). Cuando un nodo cae, el tráfico se redirige en segundos mediante DNS, BGP Anycast o VIP flotantes mientras las métricas miden MTBF y MTTR.",
+    "practicas": [
+      "Eliminar todo Single Point of Failure (SPOF) desde el DNS y balanceadores hasta la capa de datos y las dependencias externas.",
+      "Alta disponibilidad vs Tolerancia a fallos: la alta disponibilidad tolera interrupciones breves durante el failover; la tolerancia a fallos busca cero pérdida y cero interrupción.",
+      "Practicar Chaos Engineering y pruebas periódicas de failover en producción o preproducción; una réplica no probada no garantiza disponibilidad.",
+      "Calcular la disponibilidad real en serie (multiplicando disponibilidades de dependencias críticas) y aplicar circuit breakers para degradación elegante."
+    ],
+    "ejemplo": "# Disponibilidad objetivo vs tiempo máximo de caída anual\n# 99.9%   (3 nueves) -> 8.76 horas/año\n# 99.95%             -> 4.38 horas/año\n# 99.99%  (4 nueves) -> 52.56 minutos/año\n# 99.999% (5 nueves) -> 5.26 minutos/año",
+    "entrevista": "La alta disponibilidad elimina puntos únicos de fallo mediante redundancia multi-zona, health checks y failover automatizado para maximizar el uptime y mantener el MTTR dentro del SLA."
+  },
+  "Arquitectura REST": {
+    "que": "Es un estilo arquitectónico para sistemas distribuidos hipermedia definido por Roy Fielding en el año 2000 sobre seis restricciones formales, incluyendo interfaz uniforme, comunicación sin estado (stateless) y capacidad de cacheo.",
+    "para": "Sirve para construir APIs web escalables, desacopladas y cacheables que permiten la evolución independiente de clientes y servidores a través de protocolos estándar como HTTP. Es el estándar predominante para APIs públicas, backends web y comunicación síncrona entre servicios.",
+    "como": "Los datos se modelan como recursos identificados unívocamente por URIs y se manipulan mediante representaciones (JSON, HAL) usando la semántica estándar de métodos HTTP (GET seguro e idempotente, PUT/DELETE idempotentes, POST no idempotente). Cada petición contiene toda la información de autenticación y contexto (stateless), mientras las cabeceras Cache-Control, ETag y códigos de estado (200, 201, 404, 409, 422) gobiernan el flujo entre cliente, proxies intermedios y servidor.",
+    "practicas": [
+      "Respetar la idempotencia de GET, PUT y DELETE, y usar cabeceras como Idempotency-Key en operaciones POST críticas (pagos).",
+      "Evitar confundir 'JSON sobre HTTP' con REST maduro: aprovechar códigos de estado semánticos, cacheo HTTP (ETag) y paginación consistente.",
+      "REST vs GraphQL vs gRPC: REST destaca en cacheo HTTP e interoperabilidad pública; GraphQL en consultas flexibles; gRPC en baja latencia interna.",
+      "Versionar de forma explícita y compatible hacia atrás (URI /v1/ o negociación de contenido) y usar sustantivos plurales en recursos."
+    ],
+    "ejemplo": "POST /v1/orders HTTP/1.1\nHost: api.example.com\nAuthorization: Bearer <jwt>\nIdempotency-Key: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d\nContent-Type: application/json\n\n{\"sku\": \"BK-101\", \"qty\": 2}",
+    "entrevista": "REST aprovecha la semántica uniforme de HTTP, la ausencia de estado en servidor y el cacheo estándar para desacoplar clientes y servidores con alta escalabilidad."
+  },
+  "Arquitectura en capas": {
+    "que": "Es un patrón arquitectónico clásico que organiza el software horizontalmente en niveles lógicos superpuestos (típicamente Presentación, Aplicación/Negocio, Persistencia y Datos), donde cada nivel cumple una responsabilidad técnica específica.",
+    "para": "Sirve para estructurar aplicaciones de complejidad baja o media de forma predecible, separando el código de interfaz, la lógica de negocio y el acceso a base de datos. Facilita la incorporación rápida de desarrolladores gracias a su familiaridad universal.",
+    "como": "Las peticiones entran por la capa de Presentación (controladores REST o vistas), invocan servicios en la capa de Negocio/Dominio, que a su vez delegan consultas en la capa de Persistencia (DAOs o repositorios) hasta llegar a la base de datos. En una arquitectura en capas estricta (closed layers), una capa solo puede comunicarse con la inmediatamente inferior para evitar saltos que generen acoplamiento transversal.",
+    "practicas": [
+      "Mantener las capas cerradas para cambios de negocio, evitando que los controladores consulten directamente la base de datos.",
+      "Vigilar el antipatrón 'architecture sinkhole' (agujero negro), donde las capas intermedias solo reenvían DTOs sin aportar lógica real.",
+      "Arquitectura en capas vs Hexagonal: en capas tradicionales el dominio depende de la capa de datos; en Hexagonal la persistencia depende del dominio.",
+      "Buena opción para CRUDs y equipos pequeños, pero tiende a acoplar el negocio al modelo relacional si el dominio crece."
+    ],
+    "ejemplo": "src/\n├── presentation/  # Controllers, DTOs HTTP\n├── business/      # Services, reglas de negocio\n├── persistence/   # Repositories, entidades ORM\n└── database/      # Migraciones y conexión SQL",
+    "entrevista": "La arquitectura en capas separa el sistema por responsabilidades técnicas horizontales, aunque su acoplamiento descendente hacia la base de datos la hace menos flexible que la arquitectura hexagonal en dominios complejos."
+  },
+  "Arquitectura hexagonal - Puertos y Adaptadores": {
+    "que": "Es un patrón arquitectónico propuesto por Alistair Cockburn que coloca el núcleo de dominio y aplicación en el centro, completamente aislado de tecnologías externas mediante interfaces explícitas llamadas Puertos y componentes periféricos llamados Adaptadores.",
+    "para": "Sirve para proteger las reglas de negocio frente a cambios en frameworks, bases de datos, colas de mensajes o interfaces de usuario, permitiendo además probar el núcleo de forma rápida y determinista sin infraestructura real.",
+    "como": "El núcleo define Puertos de Entrada (casos de uso expuestos como interfaces) y Puertos de Salida (interfaces de repositorios o clientes externos). Los Adaptadores Primarios o 'driving' (controladores HTTP, consumidores Kafka, CLI) invocan los puertos de entrada. Los Adaptadores Secundarios o 'driven' (implementaciones SQL, Redis, APIs REST) implementan los puertos de salida aplicando el principio de inversión de dependencias.",
+    "practicas": [
+      "Mantener el paquete del dominio libre de anotaciones de frameworks (Spring, JPA, Express) para preservar la independencia tecnológica.",
+      "Distinguir claramente adaptadores primarios (quien inicia la acción) de secundarios (a quien el dominio solicita servicios).",
+      "Error típico: exponer entidades JPA o modelos HTTP a través de los puertos, filtrando detalles de infraestructura al núcleo.",
+      "Hexagonal vs Clean Architecture: ambas usan inversión de dependencias hacia el centro; Hexagonal enfatiza la simetría entre entradas y salidas mediante puertos y adaptadores."
+    ],
+    "ejemplo": "// Puerto de salida definido en el dominio\nexport interface OrderRepository { save(order: Order): Promise<void>; }\n// Adaptador secundario en infraestructura\nexport class PostgresOrderRepo implements OrderRepository {\n  async save(order: Order) { /* INSERT INTO orders ... */ }\n}",
+    "entrevista": "La arquitectura hexagonal aísla el dominio detrás de puertos abstractos para que la infraestructura se conecte mediante adaptadores intercambiables, invirtiendo el flujo de dependencias tradicional."
+  },
+  "Builder": {
+    "que": "Es un patrón de diseño creacional (GoF) que separa la construcción paso a paso de un objeto complejo de su representación final, permitiendo utilizar el mismo proceso constructivo para obtener distintas configuraciones.",
+    "para": "Sirve para evitar constructores telescópicos con decenas de parámetros opcionales o nulos, y para garantizar que un objeto inmutable se instancie únicamente cuando todas sus partes obligatorias y validaciones se han completado.",
+    "como": "Una clase Builder acumula el estado de configuración mediante métodos encadenables (interfaz fluida) como withTimeout() o addHeader(). Opcionalmente, un Director orquesta el orden de los pasos para construir variantes estándar reutilizables. Al invocar build(), el constructor valida las invariantes del conjunto y devuelve la instancia final inmutable del producto.",
+    "practicas": [
+      "Validar invariantes obligatorias dentro del método build() antes de retornar el objeto para evitar estados inconsistentes.",
+      "Usarlo para construir objetos inmutables complejos (peticiones HTTP, consultas SQL, objetos de prueba Test Data Builder).",
+      "Builder vs Factory: las fábricas crean el objeto en una única llamada atómica; Builder lo ensambla en múltiples pasos configurables.",
+      "Evitar usarlo en objetos simples donde un constructor pequeño o un objeto de opciones literal del lenguaje sea más idiomático."
+    ],
+    "ejemplo": "const req = new HttpRequestBuilder()\n  .url('https://api.example.com/users')\n  .method('POST')\n  .header('Authorization', 'Bearer token')\n  .timeoutMs(3000)\n  .build();",
+    "entrevista": "Builder descompone la creación de objetos complejos e inmutables en pasos fluidos y validados, eliminando constructores telescópicos ilegibles."
+  },
+  "CAP theorem": {
+    "que": "El teorema de CAP (Brewer, 2000; demostrado por Gilbert y Lynch, 2002) establece que un almacén de datos distribuido en red no puede garantizar simultáneamente Consistencia linealizable (C), Disponibilidad total (A) y Tolerancia a particiones de red (P).",
+    "para": "Sirve para guiar el diseño y selección de bases de datos distribuidas y sistemas de consenso al decidir cómo debe comportarse un clúster cuando ocurre una caída o división de la red entre nodos.",
+    "como": "Dado que las particiones de red (P) son inevitables en sistemas distribuidos reales, ante una partición el sistema debe elegir entre CP o AP. Un sistema CP (como ZooKeeper, etcd o Spanner bajo consenso) rechaza escrituras o lecturas en la minoría aislada para no devolver datos obsoletos, sacrificando disponibilidad. Un sistema AP (como Cassandra o Dynamo en modo eventual) acepta operaciones en ambos lados de la partición y reconcilia conflictos después, sacrificando consistencia estricta.",
+    "practicas": [
+      "Recordar que CAP solo aplica durante una partición de red; en operación normal un sistema puede ofrecer tanto C como A.",
+      "Aplicar el modelo PACELC como extensión moderna: si hay partición (P) elige A o C; si no hay partición (Else), elige entre latencia (L) y consistencia (C).",
+      "Error típico: pensar que un sistema CP nunca cae o que 'Consistencia' en CAP equivale a la C de ACID (CAP habla de linealizabilidad).",
+      "Elegir CP para saldos bancarios, inventarios críticos o locks distribuidos; elegir AP para catálogos, feeds sociales o carritos."
+    ],
+    "ejemplo": "# Clasificación práctica (modelo simplificado CAP / PACELC)\n# etcd / ZooKeeper / CockroachDB -> CP (PC/EC)\n# Cassandra / DynamoDB (default) -> AP (PA/EL)\n# MongoDB (w:majority, r:majority) -> CP configurable",
+    "entrevista": "Dado que las particiones de red son inevitables, el teorema CAP nos obliga a elegir en momentos de fallo entre rechazar peticiones para mantener consistencia estricta (CP) o seguir respondiendo con posible divergencia (AP)."
+  },
+  "CQRS": {
+    "que": "Command Query Responsibility Segregation es un patrón arquitectónico que separa los modelos y rutas de ejecución para las operaciones de escritura (Commands, que mutan estado) de las operaciones de lectura (Queries, que solo devuelven datos).",
+    "para": "Sirve para escalar, optimizar y modelar de forma independiente lecturas y escrituras cuando tienen requisitos asimétricos de rendimiento, seguridad o complejidad. Es común en sistemas con mucho tráfico de consulta, vistas desnormalizadas complejas o junto con Event Sourcing.",
+    "como": "Los Commands llegan a un modelo de escritura rico en reglas e invariantes (p. ej. agregados DDD) que valida y persiste cambios en un almacén transaccional normalizado. Tras confirmar la escritura, se emiten eventos o proyecciones asíncronas que actualizan uno o varios modelos de lectura desnormalizados (p. ej. Elasticsearch, Redis o vistas SQL planas). Las Queries consultan directamente esas vistas optimizadas sin pasar por el modelo de dominio ni hacer joins costosos.",
+    "practicas": [
+      "No acoplarlo obligatoriamente a Event Sourcing o bases de datos separadas; se puede empezar separando modelos lógicos sobre la misma BD.",
+      "Gestionar explícitamente la consistencia eventual en la UI cuando el modelo de lectura tarda milisegundos en proyectarse tras un comando.",
+      "CQRS vs CRUD: CRUD usa un único modelo para leer y escribir; CQRS divide ambos flujos cuando el modelo único se vuelve un cuello de botella.",
+      "Asegurar que los handlers de proyección sean idempotentes para tolerar reintentos de eventos."
+    ],
+    "ejemplo": "// Lado Command (escritura con invariantes)\nawait commandBus.dispatch(new PlaceOrderCommand(orderId, items));\n\n// Lado Query (lectura plana desde proyección)\nconst summary = await queryBus.ask(new GetOrderSummaryQuery(orderId));",
+    "entrevista": "CQRS separa el modelo de escritura orientado a invariantes del modelo de lectura optimizado para consultas, permitiendo escalar y evolucionar ambos lados de forma independiente."
+  },
+  "Chain of Responsibility": {
+    "que": "Es un patrón de diseño de comportamiento (GoF) que permite pasar una petición a lo largo de una cadena secuencial de manejadores (handlers), donde cada eslabón decide si procesa la petición, la transforma o la reenvía al siguiente.",
+    "para": "Sirve para desacoplar al emisor de una petición de sus receptores y componer tuberías dinámicas de validación, autorización, logging o filtrado sin condicionales monolíticos anidados.",
+    "como": "Cada eslabón implementa una interfaz Handler con un método handle(request) y una referencia next al siguiente manejador. Al recibir una petición, el primer handler ejecuta su lógica: puede abortar el flujo (p. ej. devolver 401 si falla el token), enriquecer el contexto y llamar a next.handle(request), o envolver la ejecución antes y después de delegar, como ocurre en los pipelines de middlewares HTTP.",
+    "practicas": [
+      "Definir un manejador final o comportamiento por defecto claro para evitar que una petición recorra toda la cadena sin procesarse silenciosamente.",
+      "Garantizar el orden de registro de los eslabones (ej. rate limiting y autenticación antes que autorización y lógica de negocio).",
+      "Chain of Responsibility vs Decorator: Decorator envuelve un objeto para ampliar su comportamiento y siempre ejecuta todo; Chain permite cortar el flujo en cualquier eslabón.",
+      "Evitar cadenas excesivamente largas que dificulten depurar qué eslabón modificó o detuvo la petición."
+    ],
+    "ejemplo": "abstract class Handler {\n  protected next?: Handler;\n  setNext(h: Handler): Handler { this.next = h; return h; }\n  handle(req: Req) { return this.next ? this.next.handle(req) : true; }\n}\n// auth.setNext(rateLimit).setNext(validator);",
+    "entrevista": "Chain of Responsibility encadena manejadores independientes para procesar o cortocircuitar una petición secuencialmente, eliminando acoplamientos rígidos y condicionales extensos."
+  },
+  "Clean Architecture": {
+    "que": "Es un modelo arquitectónico sistematizado por Robert C. Martin que organiza el software en círculos concéntricos (Entidades, Casos de Uso, Adaptadores de Interfaz y Frameworks), regido por la Regla de Dependencia.",
+    "para": "Sirve para construir sistemas longevos, mantenibles y altamente testeables cuya lógica de negocio y casos de uso no dependen de la base de datos, el framework web, la interfaz de usuario ni librerías externas.",
+    "como": "La Regla de Dependencia dicta que todas las dependencias en código fuente deben apuntar estrictamente hacia el centro: las capas externas conocen a las internas, nunca al revés. El círculo interno contiene Entidades (reglas de empresa) y Casos de Uso (reglas de aplicación). Cuando un Caso de Uso necesita persistir datos o notificar hacia afuera, define una interfaz (Output Boundary) que implementan los Adaptadores en la capa externa mediante Inversión de Dependencias, cruzando límites con DTOs simples.",
+    "practicas": [
+      "Verificar con reglas de arquitectura automatizadas (ArchUnit, dependency-cruiser) que el dominio nunca importe paquetes de infraestructura.",
+      "No compartir las mismas clases como Entidad de Dominio, Entidad de BD y DTO de respuesta API; mapear en los límites de capa.",
+      "Clean vs Onion vs Hexagonal: comparten el núcleo independiente e inversión de dependencias; Clean estandariza Entidades + Casos de Uso como capas explícitas.",
+      "Evitar aplicar todas las capas y mapeos ceremoniales en microservicios triviales donde el costo de indirección supere el beneficio."
+    ],
+    "ejemplo": "// Capa Use Case (interior) define interfaz; capa Infrastructure (exterior) implementa\n// UseCase -> interface UserGateway { find(id: Id): User; }\n// PostgresUserGateway implements UserGateway { ... }\n// Regla: Domain <- UseCases <- InterfaceAdapters <- Frameworks",
+    "entrevista": "Clean Architecture aplica la Regla de Dependencia hacia el centro para mantener entidades y casos de uso agnósticos a frameworks y bases de datos, facilitando pruebas y evolución."
+  },
+  "Command": {
+    "que": "Es un patrón de diseño de comportamiento (GoF) que encapsula una solicitud o acción como un objeto autónomo, conteniendo el receptor, el método a invocar y todos sus argumentos.",
+    "para": "Sirve para parametrizar objetos con operaciones, encolar tareas asíncronas, registrar historiales auditables y soportar mecanismos de deshacer/rehacer (undo/redo) o reintentos ante fallos.",
+    "como": "Se define una interfaz Command con un método execute() (y opcionalmente undo()). El emisor o Invoker (un botón de UI, un scheduler o un Command Bus) recibe instancias de ConcreteCommand sin conocer al Receiver que ejecuta el trabajo real. Al invocar execute(), el comando delega en el Receiver con los parámetros capturados y puede apilarse en una pila de historial para revertirse o serializarse hacia una cola de trabajos.",
+    "practicas": [
+      "Hacer que los comandos serializables sean inmutables e incluyan metadatos (commandId, timestamp, actor) para trazabilidad y reintentos.",
+      "Command vs Strategy: Strategy encapsula cómo hacer un algoritmo intercambiable; Command encapsula qué acción ejecutar junto con sus datos y contexto.",
+      "Si se implementa undo(), guardar el estado previo necesario (a menudo combinado con el patrón Memento) o definir acciones compensatorias.",
+      "Evitar comandos gigantes que mezclen múltiples responsabilidades; mantener un comando por intención de usuario o caso de uso."
+    ],
+    "ejemplo": "interface Command { execute(): void; undo(): void; }\nclass AddTextCommand implements Command {\n  constructor(private doc: Doc, private text: string) {}\n  execute() { this.doc.append(this.text); }\n  undo() { this.doc.removeLast(this.text.length); }\n}",
+    "entrevista": "El patrón Command reifica una petición como un objeto independiente para desacoplar quien solicita la acción de quien la ejecuta, habilitando colas, auditoría y operaciones undo/redo."
+  },
+  "Composite": {
+    "que": "Es un patrón de diseño estructural (GoF) que compone objetos en estructuras de árbol jerárquicas para representar relaciones parte-todo, permitiendo que el cliente trate de manera uniforme tanto a objetos individuales (hojas) como a composiciones (contenedores).",
+    "para": "Sirve para modelar jerarquías recursivas como sistemas de archivos, árboles de componentes UI, menús anidados, expresiones matemáticas o estructuras organizacionales sin llenar el código cliente de comprobaciones de tipo.",
+    "como": "Se define una interfaz común Component con las operaciones compartidas (por ejemplo, render() o getSize()). Las clases Leaf representan nodos terminales e implementan la operación directamente, mientras las clases Composite almacenan una colección de hijos Component e implementan la operación delegándola recursivamente sobre cada hijo y agregando los resultados.",
+    "practicas": [
+      "Mantener en la interfaz Component solo las operaciones comunes; decidir cuidadosamente si add/remove viven en Composite (seguridad de tipos) o en Component (transparencia).",
+      "Prevenir ciclos en tiempo de inserción si el grafo no está garantizado como árbol estricto para evitar recursión infinita.",
+      "Composite vs Decorator: Decorator envuelve un único hijo para añadir responsabilidades; Composite agrupa múltiples hijos formando un árbol.",
+      "Cachear resultados agregados en nodos Composite cuando el árbol sea profundo y las lecturas superen ampliamente a las mutaciones."
+    ],
+    "ejemplo": "interface Node { size(): number; }\nclass FileLeaf implements Node { constructor(private bytes: number) {} size() { return this.bytes; } }\nclass Folder implements Node {\n  constructor(private children: Node[] = []) {}\n  size() { return this.children.reduce((acc, c) => acc + c.size(), 0); }\n}",
+    "entrevista": "Composite unifica hojas y contenedores bajo una misma interfaz recursiva para operar sobre estructuras jerárquicas en árbol sin distinguir entre elementos simples y compuestos."
+  },
+  "Composition over inheritance": {
+    "que": "Es un principio de diseño orientado a objetos que recomienda construir comportamientos complejos ensamblando objetos pequeños que colaboran mediante interfaces (relación 'tiene-un') en lugar de heredar de clases base extensas (relación 'es-un').",
+    "para": "Sirve para evitar jerarquías de herencia rígidas y frágiles donde un cambio en la superclase rompe subclases inesperadamente o fuerza a heredar métodos innecesarios. Aumenta la flexibilidad al permitir cambiar comportamientos en tiempo de ejecución.",
+    "como": "En lugar de crear subclases combinatorias (ej. BufferedEncryptedCompressedStream), una clase mantiene referencias privadas a colaboradores inyectados que implementan interfaces pequeñas (Compressor, Encryptor) y delega el trabajo en ellos. Esto habilita patrones como Strategy, Decorator y Adapter, donde cada pieza se prueba de forma aislada y se combina dinámicamente sin acoplarse a una cadena de superclases.",
+    "practicas": [
+      "Usar herencia únicamente cuando exista una relación semántica genuina 'es-un' y se cumpla el principio de sustitución de Liskov (LSP).",
+      "Evitar el problema de la 'clase base frágil' manteniendo las clases cerradas a herencia inesperada (final/sealed) cuando no estén diseñadas explícitamente para extenderse.",
+      "Preferir interfaces pequeñas y delegación explícita o traits/mixins controlados frente a árboles de herencia profundos (>2-3 niveles).",
+      "No confundir composición con duplicación: extraer colaboradores compartidos evita copiar métodos entre subclases dispares."
+    ],
+    "ejemplo": "// En vez de heredar de LoggerAndMailerService:\nclass OrderProcessor {\n  constructor(\n    private readonly notifier: Notifier,\n    private readonly taxCalc: TaxCalculator\n  ) {}\n}",
+    "entrevista": "Priorizar la composición sobre la herencia evita jerarquías rígidas y acopladas a implementaciones padre, permitiendo combinar y sustituir comportamientos dinámicamente mediante interfaces."
+  },
+  "Consistencia eventual": {
+    "que": "Es un modelo de consistencia débil para sistemas distribuidos que garantiza que, si dejan de producirse nuevas actualizaciones sobre un dato, todas las réplicas convergerán eventualmente hacia el mismo valor.",
+    "para": "Sirve para lograr alta disponibilidad y baja latencia en sistemas replicados y distribuidos geográficamente, aceptando que durante una ventana breve de tiempo distintos nodos puedan servir versiones ligeramente desfasadas de un dato.",
+    "como": "Una escritura se confirma en uno o un quórum parcial de nodos (ej. W < N en Dynamo/Cassandra) o se publica en un bus de eventos asíncrono. La propagación al resto de réplicas ocurre en segundo plano mediante colas, protocolos gossip, anti-entropía (árboles de Merkle) o read-repair. Los conflictos concurrentes se resuelven con marcas de tiempo (Last-Write-Wins), Vector Clocks o tipos libres de conflictos (CRDTs).",
+    "practicas": [
+      "Diseñar la experiencia de usuario para tolerar el desfase (ej. respuestas optimistas, estados 'Procesando...' o read-your-own-writes por sesión).",
+      "Evitar Last-Write-Wins (LWW) basado en relojes locales (NTP) para datos críticos donde el reloj desincronizado pueda perder escrituras.",
+      "Consistencia eventual vs Consistencia fuerte: la fuerte garantiza ver siempre la última escritura confirmada a costa de mayor latencia y menor disponibilidad ante particiones.",
+      "Implementar procesos de reconciliación y monitoreo del replication lag como métrica SLI clave."
+    ],
+    "ejemplo": "# Modelo de quórum ajustable (N=3 réplicas)\n# Consistencia fuerte si R + W > N (ej. W=2, R=2)\n# Consistencia eventual baja latencia si W=1, R=1 -> R+W <= N",
+    "entrevista": "La consistencia eventual prioriza disponibilidad y baja latencia permitiendo desfase temporal entre réplicas, garantizando su convergencia mediante propagación asíncrona y resolución de conflictos."
+  },
+  "Controller": {
+    "que": "Es el componente de entrada en patrones como MVC o arquitecturas web en capas encargado de recibir las peticiones externas del cliente, validar el formato de entrada, delegar la ejecución a la capa de aplicación/servicio y construir la respuesta.",
+    "para": "Sirve para desacoplar el protocolo de transporte (HTTP, gRPC, WebSockets, CLI) de la lógica de negocio del sistema. Mantiene las reglas de dominio libres de detalles como cabeceras, cookies o códigos de estado HTTP.",
+    "como": "Un enrutador (router) empareja la ruta y el verbo HTTP (ej. POST /orders) con un método del Controller tras pasar por los middlewares. El Controller deserializa el payload en un DTO de entrada, verifica validaciones sintácticas de esquema, invoca al Service o UseCase correspondiente y mapea el resultado o excepción de dominio al código HTTP adecuado (201, 400, 404, 409) y al DTO de salida.",
+    "practicas": [
+      "Mantener los controladores delgados ('Thin Controllers'): cero consultas SQL, cero cálculos de negocio y cero lógica de transacciones dentro del controlador.",
+      "Traducir excepciones de dominio a respuestas de protocolo de forma centralizada (Exception Handlers / Filters) y no con try/catch repetidos.",
+      "Controller vs Service: el Controller traduce el protocolo externo; el Service orquesta casos de uso y transacciones.",
+      "Usar DTOs dedicados en el controlador en lugar de exponer directamente las entidades de base de datos (previene Mass Assignment)."
+    ],
+    "ejemplo": "@Post('/orders')\nasync create(@Body() dto: CreateOrderDto, @Req() req: AuthReq) {\n  const id = await this.orderService.placeOrder(req.userId, dto);\n  return { statusCode: 201, data: { orderId: id } };\n}",
+    "entrevista": "Un Controller debe ser una capa delgada que únicamente adapta la petición del protocolo de transporte, valida su estructura y delega la lógica real a servicios o casos de uso."
+  },
+  "DAO": {
+    "que": "Data Access Object es un patrón estructural de persistencia que encapsula toda la lógica de acceso a una fuente de datos concreta (SQL, NoSQL, archivos) detrás de una interfaz orientada a operaciones de almacenamiento.",
+    "para": "Sirve para aislar la lógica de negocio de los detalles específicos de drivers JDBC/ODBC, dialectos SQL o APIs de bases de datos. Permite cambiar consultas u optimizar el motor de datos sin alterar las capas superiores.",
+    "como": "Se define una interfaz DAO centrada en operaciones CRUD o consultas específicas sobre registros o tablas (insert, findByEmail, updateStatus). Una clase concreta (p. ej. JdbcUserDao) gestiona conexiones, prepared statements, parámetros y mapeo de ResultSet a objetos de transferencia o entidades. A diferencia de un Repository orientado al dominio, el DAO suele reflejar directamente la estructura de las tablas o almacenes.",
+    "practicas": [
+      "Usar siempre consultas parametrizadas (Prepared Statements) dentro del DAO para prevenir inyección SQL.",
+      "DAO vs Repository: DAO es una abstracción de bajo nivel centrada en tablas/persistencia; Repository modela una colección en memoria de agregados de dominio.",
+      "No filtrar objetos propios del driver (ResultSet, Cursor, SqlException) fuera del DAO; traducirlos a tipos y errores propios.",
+      "Evitar abrir y cerrar transacciones de negocio dentro de métodos individuales del DAO cuando múltiples operaciones deben ser atómicas (usar Unit of Work)."
+    ],
+    "ejemplo": "interface UserDao {\n  findById(id: number): Promise<UserRecord | null>;\n  insert(record: UserRecord): Promise<void>;\n}\nclass PostgresUserDao implements UserDao {\n  async findById(id: number) { return this.db.oneOrNone('SELECT * FROM users WHERE id=$1', [id]); }\n}",
+    "entrevista": "El patrón DAO abstrae las operaciones CRUD y consultas específicas contra un motor de almacenamiento para desacoplar las capas superiores del driver y dialecto de base de datos."
+  },
+  "DDD": {
+    "que": "Domain-Driven Design es un enfoque de diseño y arquitectura de software propuesto por Eric Evans que centra el desarrollo en la complejidad del negocio mediante un Lenguaje Ubicuo compartido entre expertos del dominio y desarrolladores.",
+    "para": "Sirve para abordar sistemas con reglas de negocio complejas y cambiantes evitando modelos anémicos y confusiones semánticas entre equipos. Guía tanto el diseño táctico del código como la partición estratégica de sistemas en módulos o microservicios.",
+    "como": "En el diseño estratégico se divide el sistema en Bounded Contexts con fronteras lingüísticas claras mapeadas mediante Context Maps (Shared Kernel, Anti-Corruption Layer, Published Language). En el diseño táctico dentro de cada contexto, la lógica reside en Entities (con identidad), Value Objects (inmutables por valor), Aggregates (límites de consistencia transaccional con un Aggregate Root), Domain Events, Repositories y Domain Services.",
+    "practicas": [
+      "Definir límites de microservicios y módulos por Bounded Contexts y no por entidades técnicas compartidas (ej. 'Cliente' en Ventas vs 'Cliente' en Soporte).",
+      "Mantener Agregados pequeños que referencien a otros agregados únicamente por ID para evitar bloqueos y transacciones distribuidas.",
+      "Usar una Anti-Corruption Layer (ACL) al integrar sistemas legados o externos para no contaminar el Lenguaje Ubicuo propio.",
+      "No aplicar DDD táctico completo en subdominios genéricos o CRUDs simples; reservarlo para el Core Domain."
+    ],
+    "ejemplo": "// Value Object inmutable + Aggregate Root protegiendo invariantes\nclass Order {\n  addItem(sku: Sku, qty: Quantity) {\n    if (this.status !== 'DRAFT') throw new DomainError('Order locked');\n    this.items.push(new OrderLine(sku, qty));\n  }\n}",
+    "entrevista": "DDD alinea la arquitectura con el negocio dividiendo el sistema en Bounded Contexts independientes con un Lenguaje Ubicuo y protegiendo las invariantes dentro de Agregados."
+  },
+  "DTO": {
+    "que": "Data Transfer Object es un objeto simple y plano sin lógica de negocio diseñado exclusivamente para transportar datos serializados entre procesos, capas arquitectónicas o a través de la red.",
+    "para": "Sirve para definir contratos estables de entrada y salida en APIs o límites de aplicación, reducir el número de llamadas remotas agrupando múltiples campos y evitar exponer la estructura interna de las entidades de dominio o base de datos.",
+    "como": "Al entrar una petición, un deserializador (JSON/Protobuf) puebla un DTO de entrada con solo los campos permitidos por ese caso de uso y ejecuta validaciones de formato. Un Mapper convierte el DTO en entidades o comandos internos. Al responder, un DTO de salida proyecta únicamente los atributos públicos necesarios, ocultando campos sensibles (ej. passwordHash) y evitando referencias circulares durante la serialización.",
+    "practicas": [
+      "Declarar los DTOs como estructuras inmutables (records en Java/C#, interfaces/readonly en TypeScript) sin lógica de negocio ni acceso a BD.",
+      "Separar DTOs de entrada (CreateUserRequest) y de salida (UserResponse) en lugar de reutilizar un único DTO genérico para todo.",
+      "Error típico: devolver directamente entidades JPA/ORM en controladores REST, causando fugas de datos sensibles, problemas de lazy loading y acoplamiento de API al esquema SQL.",
+      "Usar DTOs específicos por caso de uso para mitigar vulnerabilidades de Mass Assignment."
+    ],
+    "ejemplo": "// DTO de entrada validado y DTO de salida sin datos sensibles\nexport interface RegisterUserRequest { readonly email: string; readonly name: string; }\nexport interface UserPublicResponse { readonly id: string; readonly name: string; }",
+    "entrevista": "Un DTO actúa como contrato inmutable y desacoplado en los límites del sistema para transportar exactamente los datos requeridos, protegiendo las entidades internas y la estabilidad de la API."
+  },
+  "Decorator": {
+    "que": "Es un patrón de diseño estructural (GoF) que permite añadir responsabilidades o comportamientos adicionales a un objeto de forma dinámica envolviéndolo dentro de objetos contenedores que implementan su misma interfaz.",
+    "para": "Sirve para extender funcionalidades de forma combinable (como logging, caché, compresión, reintentos o cifrado) sin recurrir a la explosión combinatoria de subclases por herencia ni modificar la clase original.",
+    "como": "Tanto el componente base como los decoradores implementan una misma interfaz Component. El decorador guarda una referencia al objeto Component envuelto (componente base u otro decorador), delega la llamada en él y ejecuta comportamiento extra antes, después o alrededor del resultado. Al apilar varios decoradores, la llamada atraviesa las capas envolventes en cadena respetando el principio Abierto/Cerrado.",
+    "practicas": [
+      "Mantener el contrato de la interfaz estricto y transparente: el cliente no debe necesitar saber si habla con el objeto real o con uno decorado.",
+      "Decorator vs Proxy: ambos implementan la misma interfaz y envuelven al objeto, pero Decorator añade funcionalidad acumulable y Proxy controla el acceso o ciclo de vida.",
+      "Cuidar el orden de apilamiento (ej. cachear antes de medir latencia o comprimir antes de cifrar) ya que altera el resultado y rendimiento.",
+      "Evitar apilar demasiados decoradores si complica depurar trazas de error; documentar la composición en el contenedor DI."
+    ],
+    "ejemplo": "class CachedRepo implements UserRepo {\n  constructor(private inner: UserRepo, private cache: Cache) {}\n  async get(id: string) {\n    return (await this.cache.get(id)) ?? this.inner.get(id);\n  }\n}",
+    "entrevista": "Decorator envuelve dinámicamente un objeto manteniendo su interfaz para apilar responsabilidades ortogonales como caché o logging sin multiplicar subclases."
+  },
+  "Dependency Injection": {
+    "que": "Es una técnica que materializa el principio de Inversión de Control (IoC), donde un objeto recibe sus colaboradores externos desde el exterior en lugar de instanciarlos internamente mediante operadores como new.",
+    "para": "Sirve para lograr bajo acoplamiento y alta testabilidad, permitiendo sustituir implementaciones reales (bases de datos, pasarelas de pago, relojes del sistema) por dobles de prueba (mocks/fakes) o variantes distintas sin modificar el código consumidor.",
+    "como": "Las clases declaran las interfaces de sus dependencias en su constructor (Constructor Injection), propiedades o setters. Un ensamblador (Manual/Pure DI o un contenedor IoC como Spring, NestJS o Microsoft.Extensions.DI) construye el grafo de objetos en el Composition Root, resuelve ciclos de vida (Singleton, Scoped por petición, Transient) e inyecta las instancias concretas correspondientes.",
+    "practicas": [
+      "Preferir Constructor Injection frente a Field/Setter Injection porque garantiza dependencias obligatorias, inmutabilidad (readonly/final) y hace visible el acoplamiento.",
+      "DI vs Service Locator: el Service Locator oculta las dependencias dentro de llamadas globales y dificulta el testing; DI las declara explícitamente.",
+      "Centralizar el cableado en el Composition Root (punto de entrada de la aplicación) y evitar pasar el contenedor DI como dependencia.",
+      "Señal de alarma: si una clase necesita más de 4-5 dependencias en su constructor, probablemente viola el Principio de Responsabilidad Única."
+    ],
+    "ejemplo": "class BillingService {\n  // Dependencia inyectada por constructor contra abstracción\n  constructor(private readonly gateway: PaymentGateway) {}\n  charge(amount: number) { return this.gateway.pay(amount); }\n}\nconst service = new BillingService(new FakeGateway()); // Test unitario",
+    "entrevista": "La inyección de dependencias externaliza la creación de colaboradores hacia el Composition Root contra interfaces, logrando bajo acoplamiento y pruebas unitarias aisladas."
+  },
+  "Escalabilidad horizontal - vertical": {
+    "que": "Son las dos estrategias fundamentales para aumentar la capacidad de procesamiento o almacenamiento de un sistema: el escalado vertical (scale up) amplía los recursos de un mismo nodo (CPU, RAM, NVMe), mientras el horizontal (scale out) añade más nodos en paralelo.",
+    "para": "Sirven para absorber crecimiento de tráfico, volumen de datos o complejidad de cómputo manteniendo la latencia y disponibilidad dentro de los objetivos del sistema.",
+    "como": "El escalado vertical actualiza la máquina hacia hardware superior sin exigir cambios en el código, pero topa con límites físicos, costos exponenciales y tiempo de inactividad al redimensionar. El escalado horizontal distribuye la carga entre N instancias mediante balanceadores de carga (L4/L7) para servicios stateless, o mediante sharding/particionamiento y réplicas de lectura en bases de datos, usando autoescalado basado en CPU, RPS o profundidad de cola.",
+    "practicas": [
+      "Combinar ambos: usar escalado vertical para simplificar bases de datos transaccionales hasta un punto razonable, y horizontal en la capa de aplicación stateless.",
+      "Para escalar horizontalmente sin fricción, externalizar sesiones (Redis), archivos (S3) y tareas programadas (locks distribuidos).",
+      "Error típico: escalar horizontalmente servidores web mientras todos golpean una única base de datos primaria saturada, trasladando el cuello de botella.",
+      "En bases de datos relacionales, escalar lecturas con Read Replicas antes de asumir la complejidad operativa del Sharding."
+    ],
+    "ejemplo": "# Escalado horizontal declarativo en Kubernetes (HPA)\nminReplicas: 3\nmaxReplicas: 20\nmetrics:\n  - type: Resource\n    resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }",
+    "entrevista": "El escalado vertical añade potencia a un único nodo con simplicidad pero techo físico; el horizontal añade nodos en paralelo para escalar casi sin límite y mejorar resiliencia, exigiendo diseño stateless."
+  },
+  "Event Sourcing": {
+    "que": "Es un patrón de persistencia en el que el estado actual de una entidad o agregado no se guarda sobrescribiendo filas, sino almacenando la secuencia inmutable y cronológica de todos los eventos de dominio que ocurrieron sobre él.",
+    "para": "Sirve para conservar un historial de auditoría completo e inalterable, habilitar consultas temporales ('¿qué saldo había el martes a las 15:00?'), depurar errores reproduciendo eventos pasados y alimentar proyecciones múltiples en sistemas financieros, logísticos o colaborativos.",
+    "como": "Cuando llega un comando válido, el agregado valida sus invariantes y genera uno o más Domain Events (p. ej. FundsDeposited) que se añaden al final de un Event Store (append-only) con control de concurrencia optimista mediante número de versión esperada. Para reconstruir el estado actual en memoria, el sistema lee el stream de eventos del agregado y los aplica secuencialmente (fold/reduce), usando Snapshots periódicos si el stream supera cientos o miles de eventos.",
+    "practicas": [
+      "Implementar Snapshots periódicos en streams largos para que la hidratación del agregado no degrade la latencia.",
+      "Planificar desde el día uno la evolución de esquemas de eventos (upcasting o versionado), ya que los eventos pasados en el store son inmutables.",
+      "Event Sourcing vs Event-Driven Architecture: Event Sourcing es un patrón de almacenamiento interno de un servicio; Event-Driven es un estilo de comunicación entre servicios.",
+      "No usarlo por defecto en todo el sistema; reservarlo para agregados donde el historial y la trazabilidad aporten valor real de negocio."
+    ],
+    "ejemplo": "// Reconstrucción (rehidratación) de saldo desde Event Store\nconst events = await eventStore.readStream(`account-${id}`);\nconst state = events.reduce((acc, ev) => applyEvent(acc, ev), initialState);\n// Nueva escritura optimista: append(stream, [newEv], expectedVersion);",
+    "entrevista": "Event Sourcing persiste cada cambio como una secuencia inmutable de hechos pasados en lugar del estado mutado, garantizando auditoría total y reconstrucción temporal mediante replay y snapshots."
+  },
+  "Event-driven": {
+    "que": "La arquitectura dirigida por eventos (EDA) es un paradigma distribuido donde los servicios se comunican de forma asíncrona produciendo, detectando y consumiendo eventos inmutables que notifican hechos relevantes ocurridos en el sistema.",
+    "para": "Sirve para desacoplar temporal y lógicamente a productores y consumidores, absorber picos de tráfico mediante buffers intermedios y permitir que nuevos suscriptores reaccionen a hechos del negocio sin modificar los servicios emisores.",
+    "como": "Un productor persiste un cambio de estado y publica un evento (usando el patrón Transactional Outbox para garantizar atomicidad) hacia un broker o plataforma de streaming como Kafka, RabbitMQ o SNS/SQS. Los consumidores interesados se suscriben a tópicos o colas y procesan cada mensaje de forma independiente. Si un consumidor falla, el mensaje se reintenta con backoff y pasa eventualmente a una Dead-Letter Queue (DLQ).",
+    "practicas": [
+      "Diseñar todo consumidor como idempotente (tracking de eventId o claves únicas), asumiendo entrega 'at-least-once' y posibles duplicados.",
+      "Resolver el problema de escritura dual (BD + Broker) usando el patrón Transactional Outbox + CDC (Debezium) o polling.",
+      "Distinguir Event Notification (aviso ligero con ID), Event-Carried State Transfer (incluye payload completo) y Event Sourcing.",
+      "Invertir en trazabilidad distribuida (OpenTelemetry traceparent en cabeceras del mensaje) porque el flujo ya no es una pila de llamadas lineal."
+    ],
+    "ejemplo": "// Patrón Outbox: misma transacción BD para negocio y evento\nBEGIN;\n  INSERT INTO orders (id, total) VALUES ('o1', 120);\n  INSERT INTO outbox (event_id, type, payload) VALUES ('e1', 'OrderCreated', '{...}');\nCOMMIT;",
+    "entrevista": "La arquitectura dirigida por eventos desacopla servicios mediante publicación y consumo asíncrono sobre brokers, exigiendo consumidores idempotentes, Outbox transaccional y observabilidad distribuida."
+  },
+  "Facade": {
+    "que": "Es un patrón de diseño estructural (GoF) que proporciona una interfaz unificada y simplificada de alto nivel sobre un conjunto complejo de clases, librerías o subsistemas internos.",
+    "para": "Sirve para reducir la curva de uso y el acoplamiento de los clientes frente a subsistemas con decenas de dependencias y pasos de inicialización ordenados, como motores multimedia, SDKs complejos o flujos heredados.",
+    "como": "Se crea una clase Facade que encapsula las instancias del subsistema complejo (codificadores, validadores, conectores) y expone unos pocos métodos orientados a intención (ej. convertVideo(file, format)). Al llamarlos, la Facade coordina la secuencia interna de llamadas entre los módulos subyacentes sin ocultar necesariamente el acceso directo a ellos para casos avanzados.",
+    "practicas": [
+      "Mantener la Facade como un coordinador delgado y no convertirla en un 'God Object' que acumule toda la lógica del dominio.",
+      "Facade vs Adapter: Facade simplifica una interfaz compleja creando una nueva más cómoda; Adapter traduce una interfaz para cumplir un contrato existente.",
+      "Facade vs Mediator: Facade simplifica el uso de un subsistema unidireccionalmente desde fuera; Mediator centraliza la comunicación bidireccional entre pares.",
+      "Útil para envolver sistemas legados paso a paso antes de refactorizarlos (Strangler Fig)."
+    ],
+    "ejemplo": "class VideoConverterFacade {\n  convert(file: string, target: 'mp4' | 'webm') {\n    const raw = new Demuxer().read(file);\n    const codec = CodecFactory.for(target);\n    return new BitrateReader().transcode(raw, codec);\n  }\n}",
+    "entrevista": "Facade expone una puerta de entrada simple y cohesiva frente a un subsistema complejo, reduciendo el acoplamiento de los clientes con los detalles de orquestación internos."
+  },
+  "Factory Method": {
+    "que": "Es un patrón de diseño creacional (GoF) que define una interfaz o método abstracto para crear un objeto en una superclase, pero delega en las subclases la decisión de qué clase concreta instanciar.",
+    "para": "Sirve para eliminar dependencias directas hacia constructores concretos cuando un flujo de código es reutilizable, pero el tipo exacto del objeto que produce varía según contexto, configuración o extensión futura.",
+    "como": "Una clase Creator contiene lógica de negocio común que invoca un método fábrica abstracto (ej. createTransport()). Cada subclase (RoadLogistics, SeaLogistics) sobrescribe createTransport() devolviendo una implementación concreta (Truck, Ship) que cumple con la interfaz común Transport. Así el código del Creator opera sobre el producto abstracto sin acoplarse a sus implementaciones.",
+    "practicas": [
+      "Preferir Factory Method sobre una función 'Simple Factory' con switch gigantes cuando se espere extender productos sin modificar código existente (OCP).",
+      "Factory Method vs Abstract Factory: Factory Method usa herencia/sobrescritura para crear un tipo de producto; Abstract Factory usa composición para crear familias enteras.",
+      "En lenguajes modernos con funciones de primera clase (TS, Go, Python), a menudo se implementa inyectando una función fábrica en lugar de crear jerarquías de herencia.",
+      "Mantener los métodos fábrica enfocados en la instanciación sin efectos secundarios ocultos en red o BD."
+    ],
+    "ejemplo": "abstract class Notifier {\n  abstract createChannel(): Channel;\n  send(msg: string) { this.createChannel().deliver(msg); }\n}\nclass EmailNotifier extends Notifier {\n  createChannel() { return new SmtpChannel(); }\n}",
+    "entrevista": "Factory Method delega la instanciación concreta a subclases o factorías inyectadas bajo una interfaz común de producto, cumpliendo el principio Abierto/Cerrado."
+  },
+  "Flyweight": {
+    "que": "Es un patrón de diseño estructural (GoF) orientado a optimizar el consumo de memoria compartiendo el estado común e inmutable entre un gran número de objetos similares en lugar de duplicarlo en cada instancia.",
+    "para": "Sirve cuando una aplicación debe mantener decenas de miles o millones de objetos en RAM —como árboles en un videojuego, glifos de texto en un editor o partículas de mapa— que de otro modo agotarían la memoria o saturarían el recolector de basura.",
+    "como": "Se divide el estado del objeto en estado intrínseco (inmutable y compartible, como la textura y malla de un árbol) y estado extrínseco (único por instancia, como coordenadas X/Y). Una FlyweightFactory cachea y reutiliza los objetos Flyweight con estado intrínseco en un pool, mientras el código cliente almacena solo los datos extrínsecos ligeros y los pasa como argumento al operar sobre el Flyweight compartido.",
+    "practicas": [
+      "Garantizar estrictamente la inmutabilidad del estado intrínseco compartido; mutarlo corrompería simultáneamente a todos los clientes que lo referencian.",
+      "Medir consumo real con un profiler antes de aplicarlo: añade complejidad al separar estado extrínseco y puede costar CPU extra si requiere lookups frecuentes.",
+      "Flyweight vs Singleton: Singleton fuerza una única instancia global de una clase; Flyweight permite múltiples instancias inmutables únicas por clave en un caché pool.",
+      "Asegurar seguridad en concurrencia (thread-safety) en el caché de la FlyweightFactory."
+    ],
+    "ejemplo": "class GlyphFactory {\n  private pool = new Map<string, Glyph>();\n  get(char: string, font: string) {\n    const key = `${char}:${font}`;\n    return this.pool.get(key) ?? this.pool.set(key, new Glyph(char, font)).get(key)!;\n  }\n} // Posición (x, y) se pasa externamente al dibujar: glyph.draw(x, y);",
+    "entrevista": "Flyweight reduce drásticamente el uso de memoria separando el estado intrínseco inmutable —compartido mediante un pool— del estado extrínseco único que el cliente pasa al invocar."
+  },
+  "GRASP": {
+    "que": "General Responsibility Assignment Software Patterns es un conjunto de nueve principios heurísticos formalizados por Craig Larman para decidir cómo asignar responsabilidades y colaboraciones entre clases en el diseño orientado a objetos.",
+    "para": "Sirve como guía práctica previa a los patrones GoF para responder preguntas cotidianas de diseño: qué clase debe crear un objeto, cuál debe manejar una petición o dónde colocar un cálculo para lograr alta cohesión y bajo acoplamiento.",
+    "como": "Los nueve principios operan como reglas de asignación: Information Expert asigna la responsabilidad a la clase que posee los datos necesarios; Creator decide quién instancia objetos relacionados; Controller recibe eventos del sistema; Low Coupling y High Cohesion evalúan la calidad estructural; Polymorphism, Pure Fabrication, Indirection y Protected Variations resuelven puntos de extensión y protegen frente a cambios externos.",
+    "practicas": [
+      "Aplicar Information Expert antes de crear clases 'Manager' o 'Helper' artificiales; si ninguna entidad encaja naturalmente, usar Pure Fabrication (ej. Repository).",
+      "GRASP vs SOLID: SOLID define propiedades estructurales y principios de dependencias; GRASP da heurísticas concretas sobre quién asume cada responsabilidad.",
+      "Usar Protected Variations (interfaces alrededor de puntos inestables como APIs de pago o formatos de archivo) para aislar cambios probables.",
+      "Equilibrar High Cohesion y Low Coupling: llevar la separación al extremo genera clases diminutas fragmentadas difíciles de seguir."
+    ],
+    "ejemplo": "# Los 9 principios GRASP:\n# 1. Information Expert  2. Creator         3. Controller\n# 4. Low Coupling        5. High Cohesion   6. Polymorphism\n# 7. Pure Fabrication    8. Indirection     9. Protected Variations",
+    "entrevista": "GRASP ofrece heurísticas claras —como Information Expert, Creator y Protected Variations— para asignar responsabilidades entre clases maximizando la cohesión y minimizando el acoplamiento."
+  }
+}

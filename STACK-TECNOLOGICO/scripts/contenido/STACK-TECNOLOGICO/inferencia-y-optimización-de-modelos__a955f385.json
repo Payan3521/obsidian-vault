@@ -1,0 +1,236 @@
+{
+  "Servidor de inferencia": {
+    "que": "Sistema o servicio dedicado a cargar modelos entrenados en memoria (CPU o VRAM), exponer una API de red (REST/gRPC, frecuentemente compatible con OpenAI) y ejecutar predicciones bajo demanda. A diferencia de un servidor web convencional, gestiona colas de peticiones, agrupación de tensores (batching), caché de estados intermedios y planificación sobre aceleradores de hardware.",
+    "para": "Desacopla la lógica de negocio del cómputo pesado de machine learning y permite escalar los modelos de forma independiente en producción. Se utiliza cuando ejecutar inferencia dentro de scripts o workers web tradicionales falla por falta de concurrencia, latencia inestable, necesidad de streaming (SSE) o desaprovechamiento de GPUs costosas.",
+    "como": "Al arrancar, el servidor lee los pesos desde disco (safetensors, ONNX, GGUF) y los aloja en VRAM, compilando opcionalmente grafos o capturando CUDA Graphs. Un frontend de red recibe las solicitudes, valida parámetros o tokeniza entradas y las deposita en una cola gestionada por un planificador (scheduler). Este planificador agrupa solicitudes compatibles mediante batching dinámico o continuo y lanza los kernels en GPU o TPU. En modelos generativos, devuelve los tokens progresivamente por Server-Sent Events (SSE) mientras actualiza el KV cache y exporta métricas de telemetría.",
+    "practicas": [
+      "Elegir servidores especializados en LLMs (vLLM, SGLang, TGI) frente a servidores multimodelo generales (Triton) según el tipo de carga en producción.",
+      "Configurar health checks separados (/health para proceso vivo y /ready tras cargar pesos en VRAM) antes de abrir tráfico desde el balanceador.",
+      "Acotar concurrencia máxima y longitudes de contexto (max_model_len) para evitar fallos Out Of Memory (OOM) bajo picos de demanda.",
+      "Servidor de inferencia dedicado vs. modelo embebido en la API web: embeber el modelo bloquea workers HTTP y multiplica el consumo de VRAM por cada réplica de la aplicación."
+    ],
+    "ejemplo": "curl -N http://localhost:8000/v1/chat/completions \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"Qwen/Qwen2.5-7B-Instruct\",\"messages\":[{\"role\":\"user\",\"content\":\"Hola\"}],\"stream\":true}'",
+    "entrevista": "Un servidor de inferencia convierte pesos estáticos en un servicio predecible y elástico mediante planificación de batches, gestión explícita de VRAM y aislamiento respecto a la capa de aplicación."
+  },
+  "Sparse models": {
+    "que": "Modelos de aprendizaje automático en los que gran parte de sus pesos son cero (dispersión estructural o no estructurada) o solo un subconjunto reducido de parámetros se activa para cada entrada (activación condicional). Su exponente principal en modelos modernos es la arquitectura Mixture of Experts (MoE), donde la capacidad total supera ampliamente al cómputo ejecutado por token.",
+    "para": "Permiten escalar el conocimiento y la capacidad de representación de un modelo sin incrementar en la misma proporción los FLOPs ni la latencia por token. Se usan para desplegar modelos con decenas o cientos de miles de millones de parámetros totales manteniendo el coste de cómputo de un modelo denso mucho más pequeño.",
+    "como": "En un modelo MoE, cada capa feedforward se sustituye por varios expertos paralelos acompañados de una pequeña red router (gating network). Para cada token, el router calcula puntuaciones sobre los expertos y activa únicamente los Top-K elegidos (por ejemplo, 2 de 8 o 8 de 64), de modo que solo las matrices de esos expertos participan en la multiplicación matricial. En dispersión de pesos (como 2:4 structured sparsity en GPUs Ampere o posteriores), los ceros se empaquetan con índices de posición para que los Tensor Cores omitan multiplicaciones nulas a nivel hardware.",
+    "practicas": [
+      "Utilizar dispersión estructurada (como 2:4) cuando el hardware la acelera nativamente; la dispersión no estructurada rara vez mejora la latencia en GPU por accesos irregulares a memoria.",
+      "Dimensionar la VRAM según los parámetros totales del modelo disperso y no solo por los parámetros activos, ya que todos los expertos deben residir en memoria.",
+      "Combinar Expert Parallelism con Tensor Parallelism al servir modelos MoE grandes para distribuir expertos entre GPUs minimizando latencia.",
+      "Sparse models vs. modelos densos pequeños: los modelos dispersos retienen mayor capacidad factual y multilingüe con FLOPs equivalentes, a cambio de mayor huella de memoria y tráfico de comunicación all-to-all."
+    ],
+    "ejemplo": "# Modelo MoE típico (ej. 8 expertos, Top-2 activos):\n# Parámetros totales en VRAM: ~47B (todos los expertos + atención)\n# Parámetros activos por token: ~13B (cómputo equivalente a un modelo denso 13B)",
+    "entrevista": "Los sparse models desacoplan la capacidad total almacenada en pesos del cómputo ejecutado por token, aunque siguen exigiendo VRAM y comunicación de red dimensionadas para toda la arquitectura."
+  },
+  "Speculative decoding": {
+    "que": "Técnica de aceleración de inferencia autorregresiva para LLMs que propone múltiples tokens candidatos mediante un mecanismo ligero (un modelo borrador o cabezas especulativas) y los verifica en paralelo en un único pase del modelo objetivo grande. Cuando emplea muestreo por rechazo modificado, preserva exactamente la distribución matemática de salida del modelo original.",
+    "para": "Reduce la latencia entre tokens (ITL) y acelera la generación en escenarios limitados por ancho de banda de memoria (memory-bandwidth bound), como peticiones de un solo usuario o batches pequeños. Brilla en generación de código, JSON estructurado, resúmenes extractivos o edición de texto donde varios tokens consecutivos son altamente predecibles.",
+    "como": "Un modelo borrador pequeño (draft model) —o cabezales auxiliares como EAGLE o Medusa— genera autorregresivamente k tokens candidatos con sus probabilidades. A continuación, el modelo objetivo (target) evalúa la secuencia completa de esos k tokens en una sola pasada hacia adelante en paralelo (de forma similar a un prefill corto), obteniendo los logits reales para cada posición. Un algoritmo de verificación acepta el prefijo continuo de tokens válidos; ante el primer rechazo, remuestrea ese token desde una distribución ajustada y descarta los candidatos posteriores. El KV cache se recorta al último token aceptado y comienza la siguiente ronda especulativa.",
+    "practicas": [
+      "Usar un draft model de la misma familia y con exactamente el mismo vocabulario/tokenizador que el target model para maximizar la tasa de aceptación.",
+      "Desactivar o reducir la especulación bajo alta concurrencia (batches grandes), donde el hardware pasa a estar limitado por cómputo (compute-bound) y verificar tokens extra reduce el throughput total.",
+      "Evaluar variantes sin modelo draft independiente (n-gram / prompt lookup decoding o EAGLE) cuando mantener dos modelos en VRAM complique el despliegue.",
+      "Speculative decoding vs. cuantización: la cuantización aproxima pesos alterando levemente la calidad, mientras que speculative decoding mantiene intacta la distribución estadística del modelo objetivo."
+    ],
+    "ejemplo": "vllm serve meta-llama/Llama-3.1-70B-Instruct \\\n  --speculative-model meta-llama/Llama-3.2-1B-Instruct \\\n  --num-speculative-tokens 5",
+    "entrevista": "El speculative decoding convierte pasos autorregresivos limitados por ancho de banda de memoria en una verificación paralela, acelerando la generación sin degradar la distribución del modelo objetivo."
+  },
+  "Stop sequences": {
+    "que": "Cadenas de texto o secuencias específicas de IDs de tokens declaradas en la petición de inferencia que indican al motor que aborte la generación inmediatamente cuando aparezcan en la salida. Funcionan como condiciones de parada explícitas adicionales al token nativo de fin de secuencia (EOS).",
+    "para": "Evitan que un LLM continúe generando texto superfluo, invente turnos adicionales de usuario/asistente o corrompa formatos estructurados. Se emplean para contener costes y latencia, implementar bucles de agentes tipo ReAct (detenerse al emitir Observation:) y delimitar bloques de código o respuestas en plantillas de chat.",
+    "como": "En cada iteración del bucle autorregresivo, el servidor decodifica el nuevo token a texto (o mantiene una ventana de sufijos recientes) y comprueba si coincide con alguna de las secuencias de la lista stop. Dado que una stop sequence puede partirse entre varios subtokens BPE, el servidor retiene temporalmente en un búfer los tokens que forman un prefijo parcial de parada antes de enviarlos por streaming. En cuanto se completa una coincidencia, detiene la generación con finish_reason: \"stop\", recorta la cadena de parada de la salida entregada al cliente y libera los recursos del KV cache.",
+    "practicas": [
+      "Incluir los tokens o marcas de turno de la plantilla conversacional (como <|eot_id|> o \\nUser:) cuando se invocan modelos base o formatos agénticos personalizados.",
+      "Prever pequeños micro-retrasos en streaming SSE cuando la salida parcial coincide con el inicio de una stop sequence mientras el motor verifica si se completa.",
+      "Combinar siempre stop sequences con un max_tokens razonable como límite de seguridad ante salidas que no emitan el delimitador esperado.",
+      "Stop sequences vs. structured outputs (gramáticas/JSON Schema): las stop sequences solo detienen la generación al final, mientras que la decodificación restringida enmascara logits en cada paso para garantizar la sintaxis."
+    ],
+    "ejemplo": "{\n  \"model\": \"llama-3.1-8b-instruct\",\n  \"prompt\": \"Thought: Consultar clima.\\nAction: get_weather\\n\",\n  \"stop\": [\"Observation:\", \"\\nUser:\"],\n  \"max_tokens\": 200\n}",
+    "entrevista": "Las stop sequences actúan como delimitadores deterministas del bucle de decodificación para cortar la generación justo al borde del protocolo o formato esperado."
+  },
+  "TPU": {
+    "que": "Tensor Processing Unit: acelerador ASIC diseñado por Google específicamente para cargas de álgebra lineal densa en deep learning, construido alrededor de matrices sistólicas (systolic arrays) y memoria HBM de alto ancho de banda. Se programa de forma nativa mediante compilación estática con XLA desde frameworks como JAX, PyTorch/XLA o TensorFlow.",
+    "para": "Sirve para entrenar modelos fundacionales a gran escala en pods interconectados y ejecutar inferencia masiva con latencia estable en Google Cloud. Destaca en cargas donde dominan grandes multiplicaciones matriciales con formas de tensor regulares o agrupadas por buckets.",
+    "como": "A diferencia de una GPU orientada a miles de hilos paralelos independientes, cada TensorCore de una TPU integra una Matrix Multiply Unit (MXU) con una matriz sistólica (por ejemplo, de 128x128 o 256x256 elementos) que pasa activaciones y pesos entre celdas vecinas reduciendo lecturas repetidas a memoria. El compilador XLA toma el grafo de operaciones (HLO), fusiona operadores para mantener los datos en registros/SRAM internos y programa comunicaciones directas chip a chip por la red toroidal dedicada (ICI) sin intervenir la CPU host. En serving de LLMs (como JetStream o vLLM sobre TPU), las secuencias se rellenan a tamaños fijos (bucketing) para reutilizar ejecutables XLA ya compilados.",
+    "practicas": [
+      "Aplicar bucketing o padding a longitudes de secuencia y tamaños de batch para evitar recompilaciones lentas de XLA ante cada nueva forma de tensor.",
+      "Aprovechar tipos nativos bfloat16 y cuantización int8/fp8 soportada por la MXU para maximizar el rendimiento por chip.",
+      "Analizar perfiles en XProf/TensorBoard para determinar si el cuello de botella está en la MXU, el ancho de banda HBM o las barreras colectivas entre chips del pod.",
+      "TPU vs. GPU: las TPUs sobresalen en escalado homogéneo dentro de pods con ICI y eficiencia energética bajo XLA/JAX, mientras que las GPUs ofrecen mayor versatilidad para kernels dinámicos y un ecosistema CUDA más amplio."
+    ],
+    "ejemplo": "import jax\nimport jax.numpy as jnp\n\nprint(jax.devices())  # Lista de dispositivos TPU disponibles\nx = jnp.ones((2048, 2048), dtype=jnp.bfloat16)\ny = jax.jit(lambda m: m @ m.T)(x).block_until_ready()",
+    "entrevista": "La TPU intercambia flexibilidad de propósito general por matrices sistólicas, compilación estática XLA e interconexión toroidal directa para maximizar FLOPs matriciales por vatio."
+  },
+  "TTFT": {
+    "que": "Acrónimo de Time To First Token, métrica de latencia que cuantifica el tiempo transcurrido desde que el cliente envía una petición de inferencia hasta que recibe el primer token generado. Constituye el indicador estándar de respuesta inicial en APIs de streaming y sistemas interactivos.",
+    "para": "Sirve para establecer objetivos de nivel de servicio (SLOs) en asistentes en tiempo real, copilotos de código e interfaces conversacionales donde una espera inicial prolongada rompe la fluidez. Ayuda a aislar problemas de cola y fase de prefill respecto a la velocidad posterior de generación token a token.",
+    "como": "El TTFT engloba el tiempo de transporte de red, el tiempo de espera en la cola del servidor (queueing delay), la tokenización y toda la fase de prefill. Durante el prefill, el modelo procesa en paralelo todos los tokens del prompt para calcular los vectores Key y Value iniciales del KV cache y obtener los logits del primer token de salida. Técnicas como Automatic Prefix Caching (reutilización de bloques KV de prefijos repetidos) y chunked prefill (división de prompts largos en fragmentos) reducen drásticamente tanto la media como la cola p99 del TTFT.",
+    "practicas": [
+      "Reportar TTFT en percentiles (p50, p95, p99) segmentados por longitud de prompt, ya que un prompt de 32K tokens tiene un coste de prefill radicalmente distinto a uno de 500.",
+      "Habilitar prefix caching cuando las peticiones comparten system prompts extensos, documentos RAG o historiales de conversación.",
+      "Activar chunked prefill para impedir que un prompt largo acapare la GPU y dispare el TTFT de peticiones cortas concurrentes.",
+      "TTFT vs. TPOT (Time Per Output Token): el TTFT está dominado por cómputo paralelo (compute-bound) sobre la entrada, mientras el TPOT está limitado por ancho de banda de memoria (memory-bound)."
+    ],
+    "ejemplo": "import time\ninicio = time.perf_counter()\nfor evento in stream:\n    if evento.choices[0].delta.content:\n        ttft_ms = (time.perf_counter() - inicio) * 1000\n        break",
+    "entrevista": "El TTFT mide la suma de cola más fase de prefill; optimizarlo en producción pasa por usar prefix caching, chunked prefill y desagregar prefill de decode en cargas con contextos largos."
+  },
+  "Temperatura y sampling": {
+    "que": "Mecanismo probabilístico de selección de tokens durante la decodificación de un LLM, donde el parámetro temperature (T > 0) reescala los logits antes de aplicar la función softmax para controlar la entropía de la distribución. Con T = 0 (decodificación greedy), se elige siempre de forma determinista el token de mayor probabilidad.",
+    "para": "Permite ajustar el equilibrio entre precisión determinista y diversidad creativa según el caso de uso. Se utilizan temperaturas bajas (0.0–0.2) para generación de código, SQL, extracción estructurada o llamadas a herramientas, y temperaturas medias o altas (0.6–1.0) para redacción creativa o conversación variada.",
+    "como": "En cada paso de decodificación, la cabeza lineal del modelo produce un vector de logits z sobre el vocabulario completo. Al aplicar temperatura, cada logit se divide por T antes del softmax: p_i = exp(z_i / T) / sum(exp(z_j / T)). Valores T < 1 acentúan las diferencias entre logits, concentrando casi toda la masa de probabilidad en los tokens líderes; valores T > 1 aplanan la distribución dando más peso a candidatos secundarios. Tras el reescalado y filtros opcionales (top-k, top-p), se muestrea aleatoriamente un índice de la distribución resultante.",
+    "practicas": [
+      "Fijar temperature=0 y una semilla (seed) cuando se necesite máxima consistencia en evaluación o extracción, asumiendo que pequeñas diferencias de coma flotante en GPU aún pueden causar variaciones marginales.",
+      "Combinar temperaturas moderadas con top_p o min_p antes que elevar temperature por encima de 1.2, lo cual suele degradar la coherencia sintáctica.",
+      "No confundir temperature con beam search: el sampling elige tokens estocásticamente paso a paso, mientras beam search busca secuencias completas de máxima verosimilitud acumulada.",
+      "Temperatura vs. penalizaciones de repetición (presence/frequency penalty): la temperatura transforma globalmente todo el espectro de probabilidades, mientras las penalizaciones actúan selectivamente sobre tokens ya emitidos."
+    ],
+    "ejemplo": "import torch\nlogits = torch.tensor([2.5, 1.2, -0.5])\ntemperature = 0.7\nprobs = torch.softmax(logits / temperature, dim=-1)\ntoken_id = torch.multinomial(probs, num_samples=1)",
+    "entrevista": "La temperatura divide los logits antes del softmax para modular la entropía de la distribución de salida: concentra probabilidad en el mejor token cuando tiende a cero y aplana la curva cuando crece."
+  },
+  "Tensor parallelism": {
+    "que": "Técnica de paralelismo intra-capa (popularizada por Megatron-LM) que particiona las matrices de pesos y activaciones de cada capa neuronal entre múltiples GPUs dentro de un mismo servidor. Cada GPU ejecuta una fracción de las multiplicaciones matriciales y sincroniza sus resultados parciales en cada capa.",
+    "para": "Permite cargar modelos cuyos pesos superan la VRAM de una única GPU y reduce la latencia de inferencia por token al agregar el cómputo y el ancho de banda de memoria de varias GPUs para una misma petición. Es la técnica principal para desplegar LLMs grandes (70B o más) en nodos multi-GPU.",
+    "como": "En bloques MLP y capas de atención, las proyecciones lineales se dividen de forma emparejada: primero por columnas (column-parallel) y luego por filas (row-parallel) entre N GPUs. En la proyección por columnas, cada GPU recibe el tensor de entrada completo y produce su porción de activaciones de salida sin comunicarse; en la siguiente capa dividida por filas, cada GPU multiplica su porción y ejecuta una operación colectiva AllReduce (mediante NCCL sobre NVLink) para sumar los resultados parciales en un tensor unificado. En atención, las cabezas de consulta y clave/valor se reparten equitativamente entre las N GPUs.",
+    "practicas": [
+      "Restringir Tensor Parallelism (TP) a GPUs conectadas por enlaces intra-nodo de muy baja latencia (NVLink/NVSwitch); extender TP entre nodos por red degrada seriamente la latencia por los AllReduce por capa.",
+      "Seleccionar un tamaño de TP que sea potencia de 2 y divisor exacto del número de cabezas KV (num_key_value_heads) para evitar replicación redundante.",
+      "Preferir Data Parallelism (réplicas independientes) en lugar de TP cuando el modelo quepa cómodo en una sola GPU y el objetivo sea maximizar el throughput agregado.",
+      "Tensor Parallelism vs. Pipeline Parallelism (PP): TP reduce la latencia por token con alta comunicación por capa; PP reparte capas completas entre GPUs reduciendo tráfico de red pero sin acelerar una petición aislada."
+    ],
+    "ejemplo": "vllm serve meta-llama/Llama-3.1-70B-Instruct \\\n  --tensor-parallel-size 4 \\\n  --gpu-memory-utilization 0.90",
+    "entrevista": "El tensor parallelism parte cada matriz por columnas y filas entre GPUs conectadas por NVLink para sumar VRAM y ancho de banda, a costa de una sincronización AllReduce en cada bloque."
+  },
+  "TensorFlow": {
+    "que": "Framework open source de computación numérica y aprendizaje profundo creado por Google, basado en grafos de flujo de datos diferenciables y compilación acelerada para CPU, GPU y TPU. Su ecosistema moderno combina ejecución imperativa (eager) con compilación de grafos estáticos mediante tf.function y XLA, además de runtimes dedicados como TensorFlow Serving y LiteRT/TFLite.",
+    "para": "Se emplea en el entrenamiento y despliegue productivo de modelos de visión, series temporales, sistemas de recomendación a escala (TF Recommenders) e inferencia en dispositivos móviles o navegadores. Aunque PyTorch y JAX dominan la investigación en LLMs, TensorFlow mantiene presencia sólida en pipelines empresariales TFX y cargas edge consolidadas.",
+    "como": "Durante el desarrollo, las operaciones sobre tf.Tensor se ejecutan de manera inmediata (eager execution) facilitando la depuración. Al decorar funciones con @tf.function, AutoGraph convierte el flujo Python en un grafo estático (tf.Graph) donde el runtime optimiza memoria, fusiona operadores y puede delegar la generación de código máquina a XLA (jit_compile=True). Para servir en producción, el modelo se serializa como SavedModel —un directorio autocontenido con pesos, grafo y firmas de entrada/salida— que TensorFlow Serving o convertidores a TFLite/ONNX ejecutan sin requerir código Python.",
+    "practicas": [
+      "Exportar siempre en formato SavedModel definiendo input_signature explícitas en @tf.function para evitar recompilaciones (re-tracing) en tiempo de ejecución.",
+      "Usar dimensiones dinámicas (None) en firmas variables o agrupar entradas por tamaños para evitar crear múltiples grafos en caché por cada forma distinta.",
+      "Construir pipelines de entrada con tf.data y .prefetch(tf.data.AUTOTUNE) para solapar E/S en CPU con cómputo en aceleradores.",
+      "TensorFlow vs. PyTorch: TensorFlow priorizó desde el inicio el despliegue desacoplado vía grafos estáticos y SavedModel, mientras PyTorch lidera la adopción en LLMs por su ergonomía dinámica y torch.compile."
+    ],
+    "ejemplo": "import tensorflow as tf\n\n@tf.function(jit_compile=True)\ndef predict(x):\n    return tf.nn.softmax(x, axis=-1)\n\nprint(predict(tf.constant([[1.2, 0.5, -0.3]])))",
+    "entrevista": "La propuesta productiva de TensorFlow radica en encapsular lógica y pesos en grafos compilables (@tf.function + XLA) exportables como SavedModel independientes de Python."
+  },
+  "Time to first token": {
+    "que": "Latencia total medida desde el instante en que un cliente inicia una petición de inferencia generativa hasta la llegada del primer token de respuesta útil. Es la definición completa de la métrica TTFT y representa el tiempo de espera percibido antes de que comience el flujo de texto.",
+    "para": "Define la sensación de inmediatez en chatbots, copilotos de programación, agentes de voz y flujos donde múltiples llamadas a modelos se encadenan en secuencia. Se utiliza para dimensionar la capacidad de cómputo de prefill, ajustar límites de contexto y diseñar estrategias de caché de prompts.",
+    "como": "Cuando una solicitud llega al servidor, aguarda en cola hasta que el planificador le asigna capacidad en GPU. A continuación se ejecuta la fase de prefill: todos los N tokens del prompt se procesan en paralelo a través de las capas de atención y MLP para poblar el KV cache y calcular la distribución de probabilidad del token N+1. Al muestrear y emitir ese primer token por streaming (SSE), concluye el intervalo de Time to first token. Debido al procesamiento paralelo del prompt completo, esta métrica escala directamente con la cantidad de tokens de entrada no cacheados y suele estar limitada por capacidad de cómputo (FLOPs).",
+    "practicas": [
+      "Usar respuestas en streaming siempre que sea posible en interfaces humanas para exponer el Time to first token en lugar de bloquear hasta completar toda la respuesta.",
+      "Reducir tokens repetidos en cada llamada mediante prefix caching en system prompts, plantillas few-shot o contextos RAG compartidos.",
+      "Evaluar arquitecturas con desagregación prefill-decode bajo tráfico mixto para impedir que prompts muy largos degraden la latencia del resto de usuarios.",
+      "Time to first token vs. Latencia End-to-End (E2E): un buen Time to first token garantiza arranque rápido, pero la latencia total depende además del número de tokens generados y del ritmo de decodificación."
+    ],
+    "ejemplo": "# Descomposición práctica de Time to first token:\n# TTFT = latencia_red + espera_en_cola + prefill(tokens_sin_cache)\n# Ejemplo: 15 ms red + 25 ms cola + 110 ms prefill (4K tokens) = 150 ms",
+    "entrevista": "El Time to first token refleja el tiempo de cola más el procesamiento paralelo del prompt durante el prefill, marcando directamente la percepción de velocidad inicial en streaming."
+  },
+  "Tokens por segundo": {
+    "que": "Métrica de velocidad de generación y capacidad de procesamiento en modelos de lenguaje que contabiliza cuántos tokens se producen o procesan cada segundo (tok/s). Puede expresarse por petición individual (ritmo de salida percibido por un usuario) o de forma agregada en todo el servidor (rendimiento total del hardware).",
+    "para": "Sirve para verificar si la respuesta supera la velocidad de lectura humana (~5–10 tok/s) o los presupuestos de tiempo de agentes automatizados, y para calcular la rentabilidad económica (coste por millón de tokens). Permite comparar objetivamente motores de serving, GPUs, niveles de cuantización y configuraciones de paralelismo.",
+    "como": "Para una secuencia individual, los tokens por segundo equivalen a 1 / TPOT (o 1 / ITL), valor acotado físicamente por el tiempo requerido para transferir todos los pesos del modelo y su KV cache desde la VRAM hacia las unidades de cómputo en cada paso autorregresivo. En un servidor multiusuario con continuous batching, los pesos leídos de VRAM se reutilizan simultáneamente entre B secuencias activas en el mismo paso matricial, haciendo que los tokens por segundo agregados escalen casi linealmente con el tamaño del batch hasta saturar los Tensor Cores o agotar la VRAM disponible para el KV cache.",
+    "practicas": [
+      "Medir por separado tok/s por usuario (experiencia de latencia) y tok/s totales del sistema (eficiencia de coste), ya que incrementar el batch sube el total pero suele reducir la velocidad individual.",
+      "Aplicar cuantización de pesos (FP8, AWQ, GPTQ) para disminuir los bytes leídos por token desde VRAM y elevar así los tokens por segundo en decode.",
+      "Diferenciar en benchmarks entre prefill tok/s (procesamiento paralelo de entrada) y decode tok/s (generación autorregresiva), pues sus magnitudes difieren drásticamente.",
+      "Tokens por segundo vs. Requests por segundo (RPS): RPS varía mucho según la longitud de las respuestas, mientras que tok/s mide la carga real sostenida por el acelerador."
+    ],
+    "ejemplo": "# Lectura típica de métricas en benchmark:\n# Velocidad por usuario: 150 tokens en 2.0 s -> 75 tok/s (13.3 ms por token)\n# Servidor con batch efectivo 32: 32 * 42 tok/s -> 1,344 tok/s agregados",
+    "entrevista": "Los tokens por segundo deben interpretarse en dos dimensiones: por sesión miden el límite de ancho de banda de memoria, y agregados reflejan qué tan bien el batching continuo amortiza la lectura de pesos."
+  },
+  "Top-p y top-k": {
+    "que": "Técnicas de truncamiento aplicadas durante el muestreo estocástico de LLMs para acotar los tokens candidatos tras calcular sus probabilidades. Top-k conserva únicamente los k tokens más probables, mientras que top-p (nucleus sampling) conserva el subconjunto mínimo de tokens líderes cuya probabilidad acumulada alcanza el umbral p.",
+    "para": "Eliminan la cola larga de tokens improbables que podrían seleccionarse al usar temperatura positiva, reduciendo errores gramaticales o saltos incoherentes sin sacrificar diversidad natural. Son los controles estándar junto con temperature en chatbots, asistentes de redacción y generación controlada.",
+    "como": "Después de dividir los logits por la temperatura y aplicar softmax, las probabilidades del vocabulario se ordenan de forma descendente. Con top-k, el sampler trunca la lista a las k primeras posiciones, pone a cero el resto y renormaliza para que sumen 1. Con top-p (por ejemplo, 0.9), suma las probabilidades ordenadas hasta superar p y descarta las restantes; esto adapta dinámicamente el tamaño de la ventana según la certeza del modelo (1 o 2 opciones cuando la continuación es obvia, decenas cuando hay ambigüedad creativa). Si ambos están activos, se aplican en cascada antes del muestreo multinomial.",
+    "practicas": [
+      "Priorizar top_p (0.85–0.95) frente a un top_k rígido en tareas generales, pues top_p se adapta automáticamente a distribuciones muy picudas o muy planas.",
+      "Evitar ajustar top_p o top_k cuando temperature=0 (greedy decoding), ya que solo se escoge el token de máxima probabilidad.",
+      "Considerar min_p como alternativa o complemento cuando se usan temperaturas altas, filtrando tokens por debajo de una fracción relativa respecto al mejor candidato.",
+      "Top-k vs. Top-p: top-k impone un límite fijo de cantidad (demasiado permisivo si un token tiene 98% de probabilidad o muy restrictivo en alta incertidumbre), mientras top-p ajusta el conjunto por masa de probabilidad."
+    ],
+    "ejemplo": "salida = model.generate(\n    **inputs,\n    do_sample=True,\n    temperature=0.7,\n    top_p=0.9,\n    top_k=50\n)",
+    "entrevista": "Top-k recorta el vocabulario a un número fijo de candidatos y top-p a una masa acumulada de probabilidad, logrando que este último adapte el abanico de opciones a la incertidumbre de cada paso."
+  },
+  "TorchServe": {
+    "que": "Servidor de inferencia open source especializado en modelos de PyTorch (creado por AWS y Meta), que empaqueta pesos, definiciones y código de pre/postprocesamiento en artefactos .mar (Model Archive). Expone APIs HTTP/REST y gRPC diferenciadas para predicción, administración dinámica de modelos y métricas Prometheus.",
+    "para": "Permite pasar modelos tradicionales de PyTorch (visión artificial, clasificación tabular, embeddings, detección de objetos) a producción con gestión de múltiples workers, batching dinámico y versionado sin construir un servidor propio. En 2026 sigue vigente para cargas PyTorch clásicas, aunque en LLMs ha sido reemplazado mayoritariamente por motores dedicados como vLLM.",
+    "como": "Su arquitectura separa un frontend Java basado en Netty —responsable de aceptar conexiones HTTP/gRPC, encolar peticiones y formar batches dentro de una ventana temporal— de procesos backend en Python que ejecutan la inferencia comunicándose por sockets internos. Los modelos se empaquetan mediante torch-model-archiver en un archivo .mar junto a un handler Python que implementa initialize, preprocess, inference y postprocess. La Management API permite registrar, escalar el número de workers o retirar versiones de modelos en caliente sin reiniciar el proceso principal.",
+    "practicas": [
+      "Optimizar el handler con torch.inference_mode(), TorchScript o torch.compile y evitar copias innecesarias entre CPU y GPU durante pre/postprocesamiento.",
+      "Calibrar batch_size y max_batch_delay por modelo según el compromiso deseado entre throughput y latencia p99.",
+      "Aislar en red interna el puerto de la Management API (8081 por defecto), ya que permite cargar o descargar modelos arbitrarios en ejecución.",
+      "TorchServe vs. Triton / vLLM: TorchServe es directo para modelos PyTorch clásicos con lógica Python personalizada, mientras Triton supera su rendimiento en multimodelo C++ y vLLM domina en LLMs gracias a PagedAttention."
+    ],
+    "ejemplo": "torch-model-archiver --model-name detector --version 1.0 \\\n  --model-file model.py --serialized-file weights.pt \\\n  --handler object_detector --export-path model_store\ntorchserve --start --model-store model_store --models detector=detector.mar",
+    "entrevista": "TorchServe combina un frontend Netty para colas y batching con workers Python empaquetados en archivos .mar, resultando práctico en visión y ML clásico sobre PyTorch aunque superado por vLLM en LLMs."
+  },
+  "Transformers": {
+    "que": "En el contexto de runtimes y ecosistema de inferencia, designa principalmente la librería estándar de Python transformers de Hugging Face, que provee una interfaz unificada para descargar, tokenizar, cargar y ejecutar arquitecturas basadas en Transformer (LLMs, encoders, visión y multimodales) sobre PyTorch, JAX o TensorFlow. También alude a la familia de arquitecturas basadas en autoatención sobre la que operan estos runtimes.",
+    "para": "Actúa como capa de interoperabilidad universal para prototipar modelos, estandarizar formatos de pesos (safetensors, config.json) y ejecutar inferencia o ajuste fino sin reimplementar cada red. Además de servir tráfico de concurrencia baja o media directamente, define las implementaciones de referencia consumidas por motores de producción como vLLM, SGLang o TGI.",
+    "como": "Al instanciar clases AutoModel* y AutoTokenizer, la librería lee config.json (local o desde Hugging Face Hub), construye la arquitectura correspondiente, carga los tensores en CPU o GPU (con reparto automático vía accelerate o cuantización integrada) y codifica texto con tokenizadores rápidos escritos en Rust (tokenizers). En inferencia, model.generate() ejecuta el bucle autorregresivo gestionando el KV cache (DynamicCache o StaticCache), kernels eficientes de atención (SDPA o FlashAttention-2) y procesadores de logits configurables para muestreo y condiciones de parada.",
+    "practicas": [
+      "Especificar torch_dtype=torch.bfloat16 (o float16) y attn_implementation=\"flash_attention_2\" o \"sdpa\" para no sufrir sobrecoste cuadrático de memoria en atención.",
+      "Envolver la ejecución en torch.inference_mode() y usar StaticCache con torch.compile cuando se ejecute inferencia directa desde la librería.",
+      "Fijar hashes de revisión explícitos (revision) al cargar modelos remotos para garantizar despliegues reproducibles y seguros.",
+      "Transformers vs. vLLM: transformers prioriza compatibilidad inmediata con miles de modelos e investigación, mientras vLLM reimplementa las arquitecturas con PagedAttention y continuous batching para alta concurrencia."
+    ],
+    "ejemplo": "from transformers import AutoModelForCausalLM, AutoTokenizer\nimport torch\n\ntok = AutoTokenizer.from_pretrained(\"Qwen/Qwen2.5-3B-Instruct\")\nmodel = AutoModelForCausalLM.from_pretrained(\"Qwen/Qwen2.5-3B-Instruct\", torch_dtype=torch.bfloat16, device_map=\"auto\")\nids = model.generate(**tok(\"Resume qué es CUDA:\", return_tensors=\"pt\").to(model.device), max_new_tokens=64)",
+    "entrevista": "Hugging Face Transformers estandariza la carga, tokenización y ejecución de modelos basados en autoatención; es la base de interoperabilidad del ecosistema, aunque en serving de alta concurrencia suele ceder la ejecución a motores como vLLM."
+  },
+  "Triton Inference Server": {
+    "que": "Servidor de inferencia de grado industrial desarrollado por NVIDIA (open source) diseñado para ejecutar simultáneamente modelos de múltiples frameworks (TensorRT, TensorRT-LLM, ONNX Runtime, PyTorch, vLLM, Python/C++ backends) sobre GPUs y CPUs. Ofrece APIs estandarizadas HTTP/REST y gRPC con streaming, métricas Prometheus y composición de pipelines.",
+    "para": "Resuelve despliegues heterogéneos en producción donde conviven distintos modelos y etapas —por ejemplo, preprocesamiento, detección visual en TensorRT, embeddings en ONNX y generación con LLMs— optimizando el aprovechamiento de GPU mediante concurrencia controlada y batching dinámico.",
+    "como": "Triton gestiona un repositorio de modelos donde cada directorio contiene carpetas versionadas y un archivo declarativo config.pbtxt con tipos de tensores, política de batching e instancias por GPU. Las peticiones recibidas por el núcleo en C++ pasan a un planificador específico (Dynamic Batcher para modelos sin estado o Sequence Batcher para sesiones con estado). Permite ejecutar múltiples instancias concurrentes sobre la misma GPU mediante CUDA streams independientes y encadenar varios modelos en un grafo DAG (Ensemble o Business Logic Scripting) transfiriendo tensores en memoria sin llamadas de red externas.",
+    "practicas": [
+      "Exportar modelos de visión o encoders a TensorRT u ONNX Runtime antes de servirlos en Triton para aprovechar optimización de grafos en C++ sin cuellos de botella de Python.",
+      "Configurar múltiples instancias en instance_group solo cuando una única instancia no sature la GPU y exista margen suficiente de VRAM.",
+      "Utilizar System/CUDA Shared Memory en clientes colocados o Ensembles cuando se mueven tensores pesados (imágenes, audio) para evitar serialización HTTP/gRPC.",
+      "Triton vs. vLLM standalone: Triton destaca en arquitecturas multimodelo y pipelines C++/TensorRT complejos, mientras vLLM standalone resulta mucho más ágil de operar si la carga se limita a LLMs con API OpenAI."
+    ],
+    "ejemplo": "name: \"embeddings_onnx\"\nbackend: \"onnxruntime\"\nmax_batch_size: 64\ndynamic_batching {\n  preferred_batch_size: [16, 32]\n  max_queue_delay_microseconds: 2000\n}\ninstance_group [{ count: 1 kind: KIND_GPU }]",
+    "entrevista": "Triton Inference Server unifica el serving multi-framework en C++ mediante config.pbtxt, dynamic batching, múltiples instancias por GPU y pipelines Ensemble sin saltos de red intermedios."
+  },
+  "VRAM": {
+    "que": "Video Random Access Memory: memoria de altísima velocidad integrada en la GPU (GDDR6X en tarjetas de consumo o HBM3/HBM3e en aceleradores de servidor) donde se almacenan pesos del modelo, activaciones temporales, buffers de trabajo y el KV cache durante la inferencia. Su capacidad total y su ancho de banda definen los límites físicos del despliegue.",
+    "para": "Determina qué modelos caben en un nodo, qué precisión numérica es viable, cuál es la longitud máxima de contexto y cuántas peticiones concurrentes pueden atenderse sin errores CUDA Out Of Memory (OOM). Es la variable central en el dimensionamiento de infraestructura de inferencia.",
+    "como": "Durante la ejecución de un LLM, la VRAM se reparte entre memoria estática de pesos (parámetros multiplicados por bytes de precisión, más metadatos de cuantización), memoria transitoria de activaciones y workspaces de librerías como cuBLAS/NCCL, y memoria dinámica del KV cache, que crece proporcionalmente con las capas, cabezas KV, tamaño de batch y longitud total de secuencia. Motores modernos como vLLM reservan un porcentaje alto de la VRAM libre al arrancar (ej. 90%) y lo administran en páginas fijas para impedir fragmentación.",
+    "practicas": [
+      "Calcular el presupuesto antes de desplegar: 70B parámetros en BF16 ocupan ~140 GB solo en pesos; cuantizados a 4 bits (AWQ/GPTQ) bajan a ~35–40 GB dejando espacio para KV cache.",
+      "Diferenciar capacidad (GB, determina qué modelo y cuánta concurrencia caben) de ancho de banda (TB/s, determina la velocidad máxima de tokens por segundo en decode).",
+      "Evitar el offloading automático de capas a RAM del host en servicios de baja latencia, pues el bus PCIe introduce órdenes de magnitud más retraso que la HBM.",
+      "VRAM dedicada vs. memoria unificada (Apple Silicon / Grace Hopper): las GPUs discretas requieren copiar datos por PCIe hacia VRAM antes de operar, mientras las arquitecturas unificadas comparten el pool físico."
+    ],
+    "ejemplo": "# Estimación para modelo 8B en BF16 (2 bytes/param):\n# Pesos: 8e9 * 2 B = 16 GB\n# KV cache (GQA 8 cabezas KV, 32 capas, 128 dim, BF16): ~131 KB por token\n# 32K tokens concurrentes en contexto ≈ 4.2 GB + ~2 GB de activaciones/buffers",
+    "entrevista": "En inferencia, la capacidad de VRAM acota el tamaño de modelo y concurrencia de KV cache admisibles, mientras su ancho de banda dicta directamente los tokens por segundo en decodificación."
+  },
+  "Warm start": {
+    "que": "Estado operativo en el que una instancia de inferencia ya tiene arrancado su runtime, cargados los pesos del modelo en VRAM, inicializadas sus cachés y compilados los kernels JIT o CUDA Graphs antes de recibir tráfico de usuarios. Es lo opuesto al cold start, donde la primera solicitud soporta toda la latencia de inicialización.",
+    "para": "Evita picos extremos de latencia (desde varios segundos hasta minutos en LLMs grandes) que provocarían timeouts y violaciones de SLA al escalar réplicas automáticamente. Es esencial en plataformas serverless, autoscaling en Kubernetes (HPA/KEDA) y servicios síncronos con tráfico variable.",
+    "como": "Durante el arranque de la réplica, el servidor descarga o lee los pesos desde almacenamiento rápido (NVMe local, caché compartida o memoria del host), los asigna en GPU y ejecuta una o varias peticiones sintéticas de calentamiento (warmup). Estas pasadas previas disparan la compilación diferida de grafos (XLA, torch.compile, Triton kernels), la captura de CUDA Graphs para los tamaños de batch objetivo y la inicialización de asignadores de memoria. Solo al completarse esta secuencia, la sonda de disponibilidad (/ready) devuelve éxito para que el balanceador incorpore el pod al pool activo.",
+    "practicas": [
+      "Ejecutar peticiones de warmup cubriendo los tamaños de batch o longitudes clave antes de marcar el servicio como listo cuando se usen compiladores JIT como XLA o torch.compile.",
+      "Separar liveness (/health) de readiness (/ready) para que el balanceador no envíe tráfico ni Kubernetes reinicie prematuramente pods que tardan en cargar decenas de gigabytes.",
+      "Mantener un suelo mínimo de réplicas calientes (minReplicas >= 1) o emplear snapshots de memoria GPU en entornos serverless cuando los picos sean bruscos.",
+      "Warm start vs. Cold start: un cold start paga descarga de pesos, inicialización CUDA y compilación de grafos en la ruta crítica del usuario; un warm start responde directamente a velocidad de régimen."
+    ],
+    "ejemplo": "readinessProbe:\n  httpGet:\n    path: /health\n    port: 8000\n  initialDelaySeconds: 60\n  periodSeconds: 10",
+    "entrevista": "El warm start asegura que carga de pesos en VRAM, compilación JIT/XLA y captura de CUDA Graphs ocurran antes de abrir el readiness probe al tráfico productivo."
+  },
+  "vLLM": {
+    "que": "Motor y servidor de inferencia de código abierto para LLMs y modelos multimodales de alto rendimiento, reconocido por introducir PagedAttention para maximizar el aprovechamiento de VRAM y el throughput en GPU y TPU. Incluye de serie un servidor HTTP compatible con la API de OpenAI (/v1/chat/completions, /v1/completions y /v1/embeddings).",
+    "para": "Resuelve el desperdicio de memoria por fragmentación del KV cache y la baja utilización de GPU provocada por el batching estático ante respuestas de longitud variable. Es el estándar de referencia en 2026 para autoalojar modelos abiertos en producción con alta concurrencia.",
+    "como": "vLLM reemplaza los búferes contiguos de KV cache por PagedAttention, dividiendo la memoria de atención de cada secuencia en bloques fijos no contiguos mapeados mediante tablas de bloques análogas a la paginación virtual de un sistema operativo. Gracias a esta gestión sin fragmentación, su planificador aplica continuous batching a nivel de iteración: inserta nuevas peticiones y libera bloques de secuencias finalizadas en cada paso de decodificación. Además incorpora Automatic Prefix Caching (compartición de bloques KV entre prompts con prefijos iguales), chunked prefill, cuantización (FP8, AWQ, GPTQ), speculative decoding y Tensor/Pipeline Parallelism.",
+    "practicas": [
+      "Ajustar --gpu-memory-utilization (típicamente 0.85–0.92) y --max-model-len según las necesidades reales para maximizar el pool de KV cache sin causar OOM si conviven otros procesos.",
+      "Habilitar --enable-prefix-caching y --enable-chunked-prefill en cargas con system prompts extensos o documentos RAG recurrentes.",
+      "Usar pesos en safetensors y formatos cuantizados con kernels optimizados (como FP8 o Marlin para INT4) para maximizar tokens por segundo.",
+      "vLLM vs. llama.cpp / Ollama: llama.cpp y Ollama destacan en inferencia local y CPU/Apple Silicon para un usuario, mientras vLLM está diseñado para servir decenas o cientos de peticiones concurrentes sobre GPUs de servidor."
+    ],
+    "ejemplo": "vllm serve Qwen/Qwen2.5-14B-Instruct \\\n  --tensor-parallel-size 2 \\\n  --enable-prefix-caching \\\n  --max-model-len 16384 \\\n  --port 8000",
+    "entrevista": "vLLM transformó el serving de LLMs aplicando paginación de memoria virtual al KV cache (PagedAttention) para habilitar continuous batching y prefix caching a máxima densidad de GPU."
+  }
+}

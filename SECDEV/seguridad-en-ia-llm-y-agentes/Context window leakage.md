@@ -2,23 +2,25 @@
 titulo: "Context window leakage"
 categoria:
   - "Seguridad en IA, LLM y agentes"
+  - "Seguridad en IA avanzada (agentes, contexto y voz)"
 tags:
   - "secdev"
   - "nivel-conocer"
   - "seguridad-en-ia-llm-y-agentes"
+  - "seguridad-en-ia-avanzada-agentes-contexto-y-voz"
 nivel: conocer
 estrella: false
 relacionado_con:
   - "[[AI supply chain]]"
   - "[[Agent security]]"
+  - "[[Alucinación como vector]]"
+  - "[[Citas falsas]]"
+  - "[[Confianza de fuentes]]"
   - "[[Content filtering]]"
-  - "[[Embedding security]]"
-  - "[[Function calling security]]"
-  - "[[Guardrails (LLM)]]"
-  - "[[Herramientas para agentes]]"
-  - "[[MCP security]]"
-  - "[[Model provenance]]"
-  - "[[Model signing]]"
+  - "[[Context collision]]"
+  - "[[Context compaction leakage]]"
+  - "[[Context leakage]]"
+  - "[[Context poisoning]]"
 ---
 
 # Context window leakage
@@ -27,20 +29,20 @@ relacionado_con:
 
 ## Contexto en el mapa
 
-**Agentes y herramientas:** [[Agent security]], [[Function calling security]], [[MCP security]], [[Herramientas para agentes]], [[Validación de salida del modelo]], [[Guardrails (LLM)]], [[Content filtering]], [[Red teaming LLM]], [[AI supply chain]], [[Model provenance]], [[Model signing]], [[Vector database security]], [[Embedding security]], [[Context window leakage]], [[PII en prompts]].
+**Contexto y confianza:** [[Context poisoning]], [[Envenenamiento de contexto]], [[Context collision]], [[Context leakage]], [[Fuga de contexto]], [[Prompt caching leakage]], [[Fuga en caché de prompts]], [[Context compaction leakage]], [[Fuga al comprimir contexto]], [[Fuga de contexto entre agentes]], [[Límite de confianza del contexto]], [[Datos no confiables en contexto]], [[Confianza de fuentes]], [[Etiquetado de confianza]], [[Validación de fuentes]], [[Groundedness security]], [[Verificación de citas]], [[Citas falsas]], [[Alucinación como vector]], [[Context window leakage]].
 
 ## Relaciones
 
 - [[AI supply chain]]
 - [[Agent security]]
+- [[Alucinación como vector]]
+- [[Citas falsas]]
+- [[Confianza de fuentes]]
 - [[Content filtering]]
-- [[Embedding security]]
-- [[Function calling security]]
-- [[Guardrails (LLM)]]
-- [[Herramientas para agentes]]
-- [[MCP security]]
-- [[Model provenance]]
-- [[Model signing]]
+- [[Context collision]]
+- [[Context compaction leakage]]
+- [[Context leakage]]
+- [[Context poisoning]]
 
 ## Cómo se aplica
 

@@ -1,0 +1,392 @@
+{
+  "Codificación segura": {
+    "que": "Práctica de ingeniería de software orientada a escribir código fuente libre de defectos explotables mediante el uso disciplinado de primitivas seguras, validación de entradas y manejo estricto de errores y memoria. Constituye la primera línea de defensa técnica frente a clases completas de vulnerabilidades como inyecciones, desbordamientos de búfer y fallos de control de acceso.",
+    "para": "Reduce la densidad de vulnerabilidades introducidas durante la implementación antes de que alcancen entornos de pruebas o producción, donde corregirlas resulta órdenes de magnitud más costoso. Se aplica de forma continua en cada commit, pull request y refactorización sobre cualquier lenguaje o framework.",
+    "como": "Se apoya en estándares específicos por lenguaje (como CERT C/C++, OWASP Secure Coding Practices o las guías de CWE) integrados en el flujo del desarrollador mediante linters de seguridad en el IDE y reglas SAST personalizadas (por ejemplo, Semgrep o CodeQL). El flujo sustituye APIs peligrosas (como concatenación SQL, deserialización nativa o strcpy) por consultas parametrizadas, tipos seguros y codificación contextual de salidas. Además, exige configurar compiladores y runtimes con banderas de endurecimiento como ASLR, DEP/NX, stack canaries o análisis de ownership en lenguajes memory-safe.",
+    "practicas": [
+      "Validar todas las entradas no confiables en el límite de confianza usando listas blancas de formato, tipo y rango, y nunca depender únicamente de la validación en el frontend.",
+      "Preferir abstracciones seguras por diseño (consultas preparadas, ORM parametrizados, auto-escaping en motores de plantillas) en lugar de sanitización manual ad hoc.",
+      "Error típico: confiar en listas negras o expresiones regulares frágiles para bloquear payloads maliciosos, fácilmente evadidas mediante codificaciones alternativas.",
+      "Codificación segura vs Revisión de código de seguridad: la codificación segura es preventiva en el momento de escribir código; la revisión es detectiva antes o después de integrarlo."
+    ],
+    "ejemplo": "# Inseguro: concatenación directa\ncursor.execute(f\"SELECT * FROM users WHERE email = '{email}'\")\n\n# Seguro: consulta parametrizada (previene SQLi)\ncursor.execute(\"SELECT id, role FROM users WHERE email = %s\", (email,))",
+    "entrevista": "La codificación segura elimina clases enteras de vulnerabilidades desde el origen al reemplazar primitivas ambiguas por APIs seguras, validación estricta en los límites de confianza y endurecimiento del compilador."
+  },
+  "Compliance as code": {
+    "que": "Enfoque que traduce requisitos normativos, estándares de seguridad y políticas corporativas (como PCI-DSS, ISO 27001, SOC 2 o HIPAA) en reglas ejecutables, versionadas y verificables automáticamente en los pipelines de CI/CD y en la infraestructura. Convierte controles manuales basados en documentos y capturas de pantalla en aserciones deterministas evaluadas por máquinas.",
+    "para": "Resuelve la brecha entre la velocidad de los despliegues continuos y la lentitud de las auditorías tradicionales, evitando que el cumplimiento normativo sea un cuello de botella puntual previo a producción. Se utiliza cuando una organización debe demostrar cumplimiento continuo en entornos cloud, contenedores y pipelines automatizados.",
+    "como": "Las cláusulas de un marco regulatorio se descomponen en controles técnicos concretos y se codifican en motores de políticas como Open Policy Agent (Rego), Kyverno, InSpec o AWS Config Rules. Cada cambio en código, manifiestos Kubernetes o Terraform dispara la evaluación automática de estas políticas antes del despliegue y de forma periódica en runtime. Los resultados generan evidencia criptográfica o registros estructurados inmutables (por ejemplo, formato OSCAL o logs firmados) que alimentan paneles de auditoría sin intervención manual.",
+    "practicas": [
+      "Mapear explícitamente cada regla automatizada con el identificador del control normativo que satisface para facilitar la trazabilidad ante auditores.",
+      "Ejecutar las mismas políticas tanto en pre-commit/CI (preventivo) como en admisión de clúster y auditoría periódica (detectivo) para detectar drift.",
+      "Error típico: confundir cumplimiento automático con seguridad real; pasar un check de Compliance as Code no garantiza ausencia de fallos lógicos o vulnerabilidades de diseño.",
+      "Security as Code vs Compliance as Code: Security as Code automatiza controles de defensa y mitigación de riesgo, mientras Compliance as Code verifica y genera evidencia auditable frente a marcos normativos."
+    ],
+    "ejemplo": "package kubernetes.compliance.pci\n\ndeny[msg] {\n  input.request.kind.kind == \"Pod\"\n  container := input.request.object.spec.containers[_]\n  not container.securityContext.runAsNonRoot\n  msg := \"PCI-DSS 2.2: el contenedor debe ejecutarse sin privilegios de root\"\n}",
+    "entrevista": "Compliance as Code convierte requisitos regulatorios en políticas versionadas y verificables en CI/CD y runtime, generando evidencia continua de auditoría sin frenar la entrega de software."
+  },
+  "Continuous security": {
+    "que": "Modelo operativo en el que la verificación, monitorización y respuesta de seguridad se ejecutan de forma ininterrumpida a lo largo de todo el ciclo de vida del software, desde el repositorio hasta la ejecución en producción. Sustituye las evaluaciones periódicas puntuales (como auditorías anuales o pentests previos al lanzamiento) por retroalimentación constante basada en eventos.",
+    "para": "Soluciona la pérdida de visibilidad entre lanzamientos frecuentes y la aparición constante de nuevas CVE en dependencias ya desplegadas sin cambios en el código propio. Resulta imprescindible en arquitecturas dinámicas con despliegues diarios, microservicios e infraestructura efímera.",
+    "como": "Integra controles automatizados en tres bucles continuos: en el repositorio y CI/CD mediante análisis estático (SAST), escaneo de secretos y composición de software (SCA); en el registro y despliegue mediante re-escaneo continuo de imágenes y validación de políticas; y en producción mediante telemetría de runtime (RASP, eBPF, SIEM/SOAR) y gestión continua de exposición. Cuando emerge una nueva vulnerabilidad o anomalía, los feeds de inteligencia cruzan el inventario activo (SBOM y activos cloud) y disparan alertas o bloqueos automáticos.",
+    "practicas": [
+      "Re-escanear artefactos e imágenes en el registro de forma periódica (no solo durante el build) porque nuevas CVE afectan a artefactos inmutables ya construidos.",
+      "Unificar la telemetría de build y runtime bajo un identificador común de servicio para priorizar hallazgos según exposición real.",
+      "Trampa frecuente: generar miles de alertas continuas sin deduplicación ni contexto de alcanzabilidad, provocando fatiga de alertas en los equipos.",
+      "Shift-left vs Continuous security: Shift-left mueve controles hacia etapas tempranas; Continuous security abarca todo el ciclo sin puntos ciegos, uniendo shift-left y shift-right."
+    ],
+    "ejemplo": "# GitHub Actions: escaneo programado diario de imágenes ya publicadas\non:\n  schedule:\n    - cron: '0 3 * * *'\njobs:\n  rescan-prod-images:\n    runs-on: ubuntu-latest\n    steps:\n      - run: trivy image --severity CRITICAL --exit-code 1 ghcr.io/org/api:prod",
+    "entrevista": "Continuous security elimina la falsa sensación de seguridad de las auditorías puntuales manteniendo evaluación constante sobre código, artefactos en reposo y cargas en producción."
+  },
+  "Cultura de seguridad": {
+    "que": "Conjunto de valores, hábitos compartidos y normas organizacionales donde la seguridad se asume como responsabilidad colectiva de ingeniería, producto y operaciones, y no como tarea exclusiva de un departamento aislado. Se manifiesta en decisiones cotidianas de diseño, transparencia al reportar incidentes y priorización equilibrada frente a nuevas funcionalidades.",
+    "para": "Resuelve la fricción crónica entre los equipos que construyen software y los equipos de seguridad percibidos como bloqueadores, reduciendo comportamientos de evasión como el shadow IT o el salto de controles. Es necesaria en cualquier organización que busque escalar la seguridad sin multiplicar linealmente el tamaño del equipo de AppSec.",
+    "como": "Se construye mediante seguridad psicológica (postmortems sin culpables ante incidentes o vulnerabilidades), formación práctica contextualizada al stack real de los desarrolladores y eliminación de fricción en las herramientas de seguridad. Se operacionaliza a través de programas de Security Champions, flujos de autoservicio aprobados (golden paths), reconocimiento explícito en evaluaciones de desempeño y visibilidad ejecutiva del riesgo mediante métricas accionables.",
+    "practicas": [
+      "Fomentar postmortems blameless centrados en fallos sistémicos y controles faltantes en lugar de señalar al desarrollador que introdujo el bug.",
+      "Ofrecer guías predeterminadas seguras (paved roads) para que hacer lo correcto sea el camino de menor esfuerzo para el equipo de producto.",
+      "Error típico: medir la cultura únicamente con cursos anuales obligatorios de cumplimiento que no cambian la práctica diaria en el IDE ni en las revisiones.",
+      "Cultura punitiva vs Cultura generativa: castigar errores oculta incidentes temprano; recompensar la detección temprana reduce el tiempo de exposición."
+    ],
+    "ejemplo": "Caso operativo: un desarrollador descubre una clave API histórica en un repositorio antiguo; bajo una cultura blameless la reporta de inmediato en el canal de seguridad, se rota en 15 minutos con playbook automatizado y se añade un pre-commit hook para todo el equipo sin penalización individual.",
+    "entrevista": "Una cultura de seguridad sólida hace que la opción segura sea la más fácil para el desarrollador y convierte el reporte temprano de fallos en un hábito premiado en lugar de un riesgo personal."
+  },
+  "Definition of Done de seguridad": {
+    "que": "Extensión explícita de la Definition of Done (DoD) ágil que enumera los criterios verificables de seguridad que toda historia de usuario, pull request o incremento de producto debe cumplir antes de considerarse terminado. Transforma requisitos de seguridad implícitos en condiciones binarias de aceptación de entrega.",
+    "para": "Evita que las tareas de endurecimiento, pruebas de seguridad o corrección de hallazgos críticos se pospongan indefinidamente bajo presión de entrega como deuda técnica invisible. Se aplica al cierre de cada tarea de desarrollo, sprint o release dentro de metodologías ágiles y DevSecOps.",
+    "como": "Se acuerda transversalmente entre AppSec, ingeniería y Product Management y se integra en las plantillas de pull request y pipelines de CI. Incluye comprobaciones automatizadas (SAST sin hallazgos críticos nuevos, cero secretos detectados, escaneo SCA aprobado, pruebas de autorización unitarias/integración) y verificaciones humanas cuando aplica (threat model actualizado si cambia la superficie de ataque). Un ticket no puede pasar a estado Done ni desplegarse si incumple cualquiera de sus cláusulas o carece de una excepción formal aprobada con fecha de caducidad.",
+    "practicas": [
+      "Mantener la DoD de seguridad concisa, realista y automatizable en su mayoría para evitar que los equipos la ignoren por burocracia.",
+      "Diferenciar criterios por nivel de cambio: un cambio en autenticación exige threat model y pruebas de control de acceso; un ajuste visual solo checks automáticos base.",
+      "Error típico: redactar cláusulas vagas como 'el código debe ser seguro' en lugar de condiciones objetivas y medibles.",
+      "Security Acceptance Criteria vs DoD de seguridad: los acceptance criteria son específicos de una historia de usuario; la DoD aplica de manera uniforme a todo incremento del equipo."
+    ],
+    "ejemplo": "## Checklist DoD de Seguridad (PR)\n- [x] Sin secretos expuestos (gitleaks pass)\n- [x] SAST y SCA sin hallazgos Critical/High nuevos\n- [x] Pruebas negativas de autorización (IDOR/RBAC) añadidas\n- [ ] Threat model actualizado (N/A si no cambia superficie)",
+    "entrevista": "La Definition of Done de seguridad impide acumular riesgo silencioso en nombre de la velocidad al exigir evidencia objetiva de seguridad antes de dar por completado cualquier incremento."
+  },
+  "Despliegue seguro": {
+    "que": "Fase del ciclo de vida encargada de promover artefactos verificados desde el entorno de construcción hasta producción garantizando su integridad, confidencialidad de secretos, aislamiento de red y configuración endurecida. Asegura que exactamente lo probado y aprobado sea lo que entra en ejecución.",
+    "para": "Mitiga el riesgo de manipulación de artefactos entre build y producción, filtración de credenciales en variables de entorno, exposiciones accidentales por configuraciones permisivas y caídas por despliegues inseguros. Se aplica en cada pipeline de CD, provisión de infraestructura y promoción entre entornos.",
+    "como": "Comienza verificando firmas criptográficas y procedencia SLSA del artefacto antes de admitirlo en el entorno destino (por ejemplo, mediante Admission Controllers en Kubernetes). Utiliza pipelines con identidades efímeras basadas en OIDC en lugar de credenciales estáticas de larga duración, inyecta secretos dinámicamente desde un gestor (Vault, AWS Secrets Manager) en tiempo de ejecución y aplica despliegues progresivos (canary o blue/green) con rollback automático si aumentan errores 4xx/5xx o alertas de seguridad. Toda la infraestructura se despliega mediante IaC validado previamente y artefactos inmutables sin acceso SSH interactivo.",
+    "practicas": [
+      "Separar estrictamente los entornos y credenciales de desarrollo, staging y producción, impidiendo que cuentas de CI de pruebas desplieguen en producción.",
+      "Adoptar infraestructura inmutable: prohibir modificaciones manuales en caliente sobre servidores en producción y reconstruir desde cero ante cada cambio.",
+      "Trampa frecuente: almacenar secretos en archivos `.env` dentro de imágenes de contenedor o en logs visibles del pipeline de despliegue.",
+      "Despliegue tradicional vs Despliegue seguro por pull (GitOps): en GitOps el agente dentro del clúster extrae cambios firmados, reduciendo la superficie de exposición de credenciales del CI."
+    ],
+    "ejemplo": "# GitHub Actions con OIDC hacia AWS sin claves estáticas\npermissions:\n  id-token: write\n  contents: read\nsteps:\n  - uses: aws-actions/configure-aws-credentials@v4\n    with:\n      role-to-assume: arn:aws:iam::123456789012:role/cd-prod-deploy\n      aws-region: eu-west-1",
+    "entrevista": "El despliegue seguro garantiza que solo artefactos verificados e íntegros lleguen a producción, usando identidades efímeras, secretos dinámicos e infraestructura inmutable."
+  },
+  "DevSecOps": {
+    "que": "Modelo cultural, operativo y de ingeniería que integra de forma nativa las prácticas y controles de seguridad dentro de los flujos de trabajo de desarrollo (Dev) y operaciones (Ops). Replantea la seguridad como responsabilidad compartida automatizada a lo largo de todo el pipeline de entrega.",
+    "para": "Elimina el cuello de botella clásico en el que un equipo de seguridad externo audita el software al final del desarrollo, generando retrasos masivos o lanzamientos con vulnerabilidades conocidas. Se adopta en organizaciones con entregas continuas que necesitan mantener tanto velocidad de negocio como postura de seguridad verificable.",
+    "como": "Opera combinando automatización en pipelines (SAST, DAST, SCA, IaC scanning, firma de artefactos), infraestructura como código endurecida, observabilidad compartida en producción y colaboración estrecha entre AppSec, SRE y desarrolladores. El equipo de seguridad deja de actuar como aprobador manual de cada cambio para diseñar guardrails automatizados, librerías seguras reutilizables y modelos de amenaza tempranos. Las métricas de retroalimentación fluyen directamente a los tableros del equipo de producto para priorizar remediaciones.",
+    "practicas": [
+      "Automatizar controles de bajo falso positivo como gates bloqueantes y enviar los hallazgos ambiguos como contexto informativo para no frenar a ingeniería.",
+      "Proveer plataformas internas y plantillas seguras (paved paths) antes de exigir cumplimiento estricto a los equipos.",
+      "Error típico: renombrar al equipo tradicional de seguridad o comprar escáneres de CI sin cambiar los procesos, incentivos ni colaboración con desarrollo.",
+      "AppSec clásico vs DevSecOps: AppSec clásico suele centrarse en revisiones periódicas por especialistas; DevSecOps escala la seguridad integrándola en las herramientas y rutinas del desarrollador."
+    ],
+    "ejemplo": "Flujo DevSecOps: Commit (pre-commit secrets) -> PR (SAST + SCA + IaC scan) -> Build (SBOM + firma Cosign) -> CD (verificación de firma en admission controller) -> Producción (runtime eBPF + alertas a Slack del equipo dueño).",
+    "entrevista": "DevSecOps no consiste en meter herramientas de seguridad en Jenkins, sino en hacer que seguridad forme parte del flujo diario de Dev y Ops mediante guardrails automatizados y responsabilidad compartida."
+  },
+  "Diseño seguro": {
+    "que": "Fase del SDLC dedicada a definir la arquitectura, los límites de confianza, el modelo de amenazas y los mecanismos de defensa de un sistema antes de escribir código. Busca garantizar propiedades estructurales de confidencialidad, integridad, disponibilidad y trazabilidad desde los planos técnicos.",
+    "para": "Previene fallos arquitectónicos profundos (como ausencia de aislamiento multitenant, confianza implícita en microservicios internos o flujos de autenticación rotos) que no pueden detectarse ni arreglarse con parches simples de código. Se realiza al concebir nuevos sistemas, rediseñar componentes críticos o incorporar integraciones externas.",
+    "como": "Parte de los requisitos de seguridad para construir diagramas de flujo de datos (DFD) identificando activos, actores, puntos de entrada y trust boundaries. Sobre ese modelo se aplica un análisis estructurado de amenazas (STRIDE, PASTA o Attack Trees) para enumerar vectores de ataque y seleccionar contramedidas arquitectónicas (Zero Trust entre servicios, mínimo privilegio en IAM, segregación de datos, cifrado en tránsito/reposo y rate limiting). Los compromisos y controles elegidos quedan documentados en Architecture Decision Records (ADR) revisados antes de iniciar la implementación.",
+    "practicas": [
+      "Aplicar defensa en profundidad y separación de privilegios para que la caída de una capa no exponga el sistema completo.",
+      "Documentar explícitamente cada supuesto de confianza en un ADR; los supuestos no escritos suelen romperse al evolucionar la arquitectura.",
+      "Error típico: asumir que un tráfico dentro de la VPC o red interna es confiable y prescindir de autenticación y autorización servicio a servicio (mTLS/JWT).",
+      "Diseño seguro vs Codificación segura: el diseño seguro evita errores estructurales (como un flujo de recuperación de contraseña sin verificación); la codificación segura evita fallos de implementación (como SQLi)."
+    ],
+    "ejemplo": "Trust Boundary en DFD:\n[Cliente Web] --(HTTPS + OAuth2/PKCE)--> [API Gateway (WAF + Rate Limit)] ==(mTLS + JWT scope)==> [Servicio Pagos (IAM mínimo privilegio)] --> [DB cifrada KMS]",
+    "entrevista": "El diseño seguro ataca las vulnerabilidades estructurales antes de picar código, definiendo límites de confianza, modelado de amenazas y controles arquitectónicos de mínimo privilegio."
+  },
+  "Firma de artefactos": {
+    "que": "Mecanismo criptográfico que asocia una firma digital verificable a los binarios, paquetes, contenedores o manifiestos producidos por un sistema de build. Demuestra de forma matemática quién generó el artefacto y que su contenido no ha sido alterado desde su emisión.",
+    "para": "Protege la cadena de suministro contra ataques de manipulación en registros de contenedores, repositorios de paquetes o durante la transferencia hacia producción. Se utiliza antes de publicar releases y como requisito previo para desplegar cargas en entornos productivos.",
+    "como": "Durante la fase final del CI, tras calcular el digest criptográfico del artefacto (por ejemplo, SHA-256 de una imagen OCI), una herramienta de firma como Sigstore Cosign, Notary v2 o GPG genera una firma con clave privada (o firma keyless efímera ligada a identidad OIDC del pipeline y registrada en un transparency log como Rekor). La firma se almacena junto al artefacto en el registro OCI o como archivo `.sig`. En el despliegue, un verificador (Kyverno, Policy Controller) valida la firma contra la clave pública o identidad OIDC confiable antes de permitir la ejecución.",
+    "practicas": [
+      "Firmar siempre el digest inmutable (`@sha256:...`) del artefacto y nunca confiar solo en etiquetas mutables como `:latest`.",
+      "Usar firma sin claves persistentes (keyless con OIDC + log de transparencia) o KMS hardware (HSM) para evitar el robo o caducidad descontrolada de claves privadas en CI.",
+      "Trampa frecuente: firmar el artefacto en la máquina local del desarrollador o tras pasar por un paso editable posterior al test.",
+      "Checksum (SHA-256) vs Firma digital: el hash detecta corrupción accidental si se publica en el mismo sitio vulnerable; la firma autentica al emisor con criptografía asimétrica."
+    ],
+    "ejemplo": "# Firma keyless con Cosign ligada a GitHub Actions OIDC y verificación\ncosign sign --yes ghcr.io/org/app@sha256:4f8b...e1a2\ncosign verify --certificate-identity-regexp \"https://github.com/org/repo/.*\" \\\n  --certificate-oidc-issuer \"https://token.actions.githubusercontent.com\" \\\n  ghcr.io/org/app@sha256:4f8b...e1a2",
+    "entrevista": "Firmar artefactos por digest vincula criptográficamente el binario desplegado con el pipeline autorizado que lo construyó, bloqueando imágenes alteradas o no autorizadas en producción."
+  },
+  "Firma de commits": {
+    "que": "Mecanismo mediante el cual un desarrollador o sistema automatizado firma criptográficamente los metadatos y el árbol de cambios de cada commit o tag en Git usando GPG, SSH o X.509 (gitsign). Vincula el historial de código fuente a una clave criptográfica verificada.",
+    "para": "Evita la suplantación de identidad en repositorios Git, ya que por defecto Git permite configurar libremente cualquier nombre y correo en `user.name` y `user.email`. Se aplica en repositorios sensibles, proyectos open source y ramas protegidas que disparan despliegues productivos.",
+    "como": "Al ejecutar `git commit -S`, Git invoca al agente GPG, `ssh-keygen` o `gitsign`, generando una firma sobre el objeto commit (árbol de archivos, commits padre, autor, fecha y mensaje) que queda incrustada en la cabecera `gpgsig` del propio commit. Al hacer push a plataformas como GitHub o GitLab, el servidor compara la firma con las claves públicas registradas por el usuario verificado y marca el commit como `Verified`. Las reglas de protección de ramas pueden rechazar merges o pushes que contengan commits sin firma válida.",
+    "practicas": [
+      "Habilitar `Require signed commits` en las ramas principales (`main`, `release/*`) para que la verificación sea obligatoria y no meramente decorativa.",
+      "Preferir firma con llaves SSH (Git 2.34+) respaldadas por hardware (FIDO2/YubiKey) o Sigstore gitsign para reducir la fricción operativa de gestionar claves GPG.",
+      "Error típico: habilitar firma solo en commits de desarrolladores pero firmar commits de merge o bots de CI sin proteger sus tokens o llaves de firma.",
+      "Firma de commits vs Firma de artefactos: la firma de commits autentica el origen humano del código fuente; la de artefactos autentica el resultado compilado en el pipeline."
+    ],
+    "ejemplo": "git config --global gpg.format ssh\ngit config --global user.signingkey ~/.ssh/id_ed25519_signing.pub\ngit config --global commit.gpgsign true\ngit commit -S -m \"feat: enforce mTLS on internal gRPC\"",
+    "entrevista": "Firmar commits evita la suplantación trivial de autores en Git al exigir prueba criptográfica de que los cambios en ramas protegidas provienen de identidades verificadas."
+  },
+  "Gestión de dependencias": {
+    "que": "Proceso continuo de inventario, evaluación de riesgo, actualización controlada y gobernanza de las librerías, paquetes e imágenes base de terceros de los que depende una aplicación. Reconoce que la mayor parte del código en ejecución proviene de ecosistemas externos.",
+    "para": "Reduce la exposición a vulnerabilidades conocidas (CVE en código open source), paquetes abandonados, conflictos de licencias incompatibles y ataques a la cadena de suministro como typosquatting o dependency confusion. Se ejecuta continuamente desde la selección de una librería hasta su retiro.",
+    "como": "Se fundamenta en fijar versiones exactas con hash de integridad en lockfiles (`package-lock.json`, `poetry.lock`, `go.sum`) y canalizar las descargas a través de repositorios proxy internos privados que cachean y filtran paquetes. Herramientas SCA (Dependabot, Renovate, Snyk, Trivy, OWASP Dependency-Track) comparan las dependencias directas y transitivas contra bases de vulnerabilidades (NVD, OSV, GitHub Advisory), analizan su alcanzabilidad y abren pull requests automáticos de actualización. Complementariamente, soluciones como OpenSSF Scorecard evalúan la salud y mantenimiento de cada paquete antes de adoptarlo.",
+    "practicas": [
+      "Fijar dependencias con lockfiles y verificar checksums en CI (`npm ci`, `pip --require-hashes`) para garantizar builds reproducibles e inmunes a mutaciones silenciosas.",
+      "Configurar scopes privados y proxies internos con prioridad sobre registros públicos para mitigar ataques de dependency confusion.",
+      "Error típico: actualizar a ciegas o bloquear builds por cualquier CVE transitiva sin evaluar si la función vulnerable es realmente alcanzable (reachability).",
+      "Dependencia directa vs transitiva: la mayoría del riesgo proviene de dependencias transitivas profundas que los desarrolladores desconocen que están usando."
+    ],
+    "ejemplo": "# Renovate: agrupar actualizaciones de parche automáticas tras pasar CI\n{\n  \"extends\": [\"config:recommended\"],\n  \"vulnerabilityAlerts\": { \"enabled\": true },\n  \"packageRules\": [\n    { \"matchUpdateTypes\": [\"patch\"], \"automerge\": true }\n  ]\n}",
+    "entrevista": "Gestionar dependencias implica fijar integridad con lockfiles, aislar registros contra dependency confusion y priorizar actualizaciones según alcanzabilidad real de las vulnerabilidades."
+  },
+  "Integridad de software": {
+    "que": "Propiedad de seguridad que garantiza que el código fuente, las dependencias, los scripts de compilación y los artefactos binarios permanecen intactos, auténticos y sin alteraciones no autorizadas desde su creación hasta su ejecución. Abarca tanto la detección de corrupción accidental como la prevención de manipulación maliciosa (tampering).",
+    "para": "Resuelve el riesgo de compromisos silenciosos en la cadena de suministro (estilo SolarWinds o Codecov) donde un atacante inyecta código malicioso en el repositorio, en el entorno de build o en la distribución sin romper la funcionalidad aparente. Es crítica en software distribuido, pipelines de entrega y cargas reguladas.",
+    "como": "Se implementa encadenando controles criptográficos en cada eslabón: commits firmados y revisión por pares en el repositorio, verificación de hashes en lockfiles durante la descarga de dependencias, compilación en runners efímeros y aislados, generación de procedencia SLSA y firma digital del artefacto resultante. En el extremo consumidor, el sistema operativo o plataforma verifica firmas, hashes SHA-256/512 o políticas de integridad en tiempo de carga (como dm-verity, IMA o admission controllers en Kubernetes) antes de ejecutar el código.",
+    "practicas": [
+      "Establecer una cadena de custodia verificable de extremo a extremo: si el entorno de build puede ser modificado por un PR sin revisión, la firma final pierde valor.",
+      "Utilizar runners efímeros por ejecución para evitar que un build comprometido contamine compilaciones posteriores mediante caché o disco compartido.",
+      "Error típico: verificar integridad mediante hashes descargados desde el mismo servidor HTTP comprometido donde reside el binario.",
+      "Integridad vs Autenticidad: un hash verifica que los bits no cambiaron; una firma vinculada a identidad demuestra además quién aprobó esos bits."
+    ],
+    "ejemplo": "# Verificación estricta de integridad antes de ejecutar script o binario\necho \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  installer.tar.gz\" | sha256sum -c -\ncosign verify-blob --signature installer.tar.gz.sig --certificate installer.tar.gz.pem installer.tar.gz",
+    "entrevista": "La integridad de software exige asegurar cada eslabón del origen al runtime —commits firmados, builds aislados, procedencia y verificación de firma— para que ningún actor altere el código sin ser detectado."
+  },
+  "Operación segura": {
+    "que": "Fase del ciclo de vida enfocada en mantener la confidencialidad, integridad y disponibilidad del software mientras se ejecuta en producción mediante monitorización continua, respuesta a incidentes, gestión de secretos y endurecimiento continuo. Cierra el ciclo alimentando aprendizajes reales de ataque hacia las fases tempranas.",
+    "para": "Aborda las amenazas que solo se materializan o descubren en producción: ataques activos de día cero, abuso de lógica de negocio, movimiento lateral, deriva de configuración y degradación de postura ante nuevas vulnerabilidades. Es continua desde el primer despliegue hasta el retiro del sistema.",
+    "como": "Combina telemetría de seguridad centralizada (logs estructurados sin datos sensibles, trazas de autenticación, eventos de red y syscalls con eBPF/Falco) enviada en tiempo real a un SIEM/SOAR con detección de anomalías y correlación de alertas. Incluye rotación automatizada de certificados y credenciales, ejecución de playbooks de contención (aislamiento de pods, revocación de sesiones/tokens, bloqueo en WAF), ejercicios de chaos security o purple teaming y gestión ágil de parches de emergencia. Los hallazgos de producción generan tickets en el security backlog para corregir causas raíz en el código.",
+    "practicas": [
+      "Registrar eventos de seguridad relevantes (autenticación fallida, cambios de privilegios, errores de autorización) con timestamp sincronizado e integridad de logs, excluyendo contraseñas y tokens.",
+      "Probar periódicamente los playbooks de respuesta a incidentes mediante simulacros (tabletop o game days) antes de sufrir un incidente real.",
+      "Error típico: almacenar logs solo localmente en el contenedor o instancia efímera, perdiendo la evidencia forense justo cuando se reinicia el servicio atacado.",
+      "Shift-left vs Operación segura (Shift-right): validar antes del deploy previene defectos conocidos, pero solo la operación segura detecta abuso en tiempo real y amenazas emergentes."
+    ],
+    "ejemplo": "# Regla Falco en producción: detectar shell interactiva dentro de un contenedor\n- rule: Terminal shell in container\n  desc: Alertar si se ejecuta una shell dentro de un contenedor en producción\n  condition: spawned_process and container and shell_procs\n  output: \"Shell detectada en contenedor (user=%user.name pod=%k8s.pod.name cmd=%proc.cmdline)\"\n  priority: WARNING",
+    "entrevista": "La operación segura convierte la producción en un entorno observable y resiliente capaz de detectar anomalías en tiempo real, contener incidentes con playbooks probados y retroalimentar al desarrollo."
+  },
+  "Patch management": {
+    "que": "Proceso disciplinado y continuo para identificar, evaluar, probar, priorizar y aplicar actualizaciones de seguridad sobre software propio, dependencias de terceros, sistemas operativos, contenedores y componentes de infraestructura. Su objetivo es cerrar la ventana de exposición entre la publicación de una vulnerabilidad y su remediación efectiva.",
+    "para": "Mitiga el riesgo de explotación masiva de vulnerabilidades conocidas (N-day), que representan la gran mayoría de compromisos reales en entornos corporativos. Se ejecuta de forma rutinaria mediante ciclos programados y de forma acelerada mediante flujos de emergencia ante amenazas activamente explotadas.",
+    "como": "Parte de un inventario actualizado de activos y SBOM para cruzar continuamente versiones instaladas contra avisos de seguridad y catálogos como CISA KEV o feeds EPSS. Los parches se priorizan combinando severidad técnica (CVSS), probabilidad de explotación (EPSS), exposición en red y criticidad del activo, asignándoles SLA estrictos. En arquitecturas cloud-native, en lugar de parchear servidores en vivo, el pipeline reconstruye imágenes base endurecidas, ejecuta pruebas de regresión automáticas y despliega reemplazos inmutables mediante rolling updates.",
+    "practicas": [
+      "Priorizar por riesgo real (exposición + explotación activa en KEV/EPSS) en lugar de perseguir únicamente la puntuación CVSS base.",
+      "Preferir reconstrucción inmutable de imágenes y contenedores frente al parcheo manual en caliente (`apt upgrade` por SSH) que genera deriva entre instancias.",
+      "Error típico: definir SLA irreales (como parchear todo en 24 horas) sin excepciones ni pruebas automatizadas, lo que lleva al equipo a ignorar el proceso o romper producción.",
+      "Patch management vs Vulnerability management: vulnerability management abarca todo el ciclo de descubrimiento, análisis, mitigación o aceptación; patch management es la ejecución específica de aplicar actualizaciones."
+    ],
+    "ejemplo": "# SLA típico de remediación por criticidad y explotación activa\nKEV / Explotación activa en perímetro : 24-48 horas (parche o mitigación WAF)\nCrítica (CVSS >= 9.0, alcanzable)      : 7 días\nAlta                                   : 30 días\nMedia                                  : 90 días",
+    "entrevista": "Un buen patch management prioriza según exposición y explotación real (KEV/EPSS) y automatiza la reconstrucción inmutable de artefactos para cerrar ventanas de exposición sin romper producción."
+  },
+  "Pruebas de seguridad": {
+    "que": "Fase de verificación dinámica, estática e interactiva orientada a demostrar empíricamente si la aplicación implementada cumple los controles definidos y resiste técnicas reales de ataque. Combina herramientas automatizadas en pipeline con evaluación manual especializada.",
+    "para": "Detecta fallos que escapan al análisis teórico y a las pruebas funcionales tradicionales, especialmente vulnerabilidades de integración, configuración de runtime, lógica de negocio y control de acceso. Se ejecuta continuamente en CI/CD, antes de lanzamientos mayores y de forma periódica sobre aplicaciones activas.",
+    "como": "Orquesta múltiples técnicas complementarias según la madurez del artefacto: SAST sobre código fuente y SCA sobre dependencias en etapas de PR; DAST (como OWASP ZAP o Nuclei) contra instancias desplegadas en staging para probar cabeceras, TLS, inyecciones y flujos HTTP; IAST o fuzzing (AFL++, go-fuzz) para explorar rutas de ejecución con entradas anómalas; y pruebas de penetración manuales enfocadas en lógica de negocio (escalada de privilegios, fraude, condiciones de carrera). Además incorpora pruebas de seguridad unitarias e integración escritas por los propios desarrolladores para verificar invariantes de autorización.",
+    "practicas": [
+      "Escribir pruebas automatizadas de regresión de seguridad para cada vulnerabilidad encontrada (especialmente IDOR y bypass de autenticación) para evitar reintroducirlas.",
+      "Combinar SAST, DAST y pentesting manual porque ninguna técnica por sí sola cubre todo el espectro (SAST no ve configuración runtime; DAST no ve código muerto o lógica profunda sin autenticación).",
+      "Error típico: lanzar un escáner DAST genérico sin credenciales válidas, probando solo la pantalla de login mientras el 95% de la aplicación queda sin evaluar.",
+      "Pruebas funcionales negativas vs Pentesting: las pruebas unitarias de seguridad validan reglas conocidas continuamente; el pentesting busca cadenas creativas de explotación."
+    ],
+    "ejemplo": "# Test automatizado de seguridad (pytest) verificando prevención de IDOR\ndef test_user_cannot_read_other_users_invoice(client, auth_user_a, invoice_user_b):\n    resp = client.get(f\"/api/invoices/{invoice_user_b.id}\", headers=auth_user_a)\n    assert resp.status_code == 403",
+    "entrevista": "Las pruebas de seguridad eficaces combinan SAST/SCA en cada commit, DAST autenticado y fuzzing en staging, y tests unitarios de autorización junto a pentesting dirigido a lógica de negocio."
+  },
+  "Requisitos de seguridad": {
+    "que": "Especificaciones verificables de confidencialidad, integridad, disponibilidad, autenticación, autorización, auditoría y privacidad que un sistema debe satisfacer desde su concepción. Traducen necesidades de negocio, riesgos identificados y obligaciones legales en criterios de ingeniería concretos.",
+    "para": "Evita que la seguridad sea improvisada al final del proyecto como parches incompatibles con la arquitectura o disputas de alcance entre negocio y desarrollo. Se definen al inicio de cada proyecto, épica o cambio funcional relevante.",
+    "como": "Se derivan sistemáticamente de tres fuentes: el perfil de riesgo y clasificación de datos del sistema, marcos de referencia estándar como OWASP ASVS (Application Security Verification Standard) según el nivel de aseguramiento requerido (L1, L2 o L3), y requisitos regulatorios o contractuales (GDPR, PCI-DSS). Cada requisito se redacta de forma atómica y comprobable, incluyendo tanto casos positivos (qué debe ocurrir, p. ej. MFA obligatorio para administradores) como abuso/casos negativos (qué debe impedirse, p. ej. bloqueo tras N intentos fallidos). Luego se vinculan directamente a pruebas de aceptación y arquitectura.",
+    "practicas": [
+      "Basarse en catálogos estándar como OWASP ASVS en lugar de redactar listas improvisadas desde cero que omiten controles críticos.",
+      "Redactar cada requisito de forma medible y verificable (por ejemplo, tiempo máximo de expiración de token, algoritmo mínimo permitido) evitando adjetivos vagos como 'robusto' o 'seguro'.",
+      "Error típico: capturar solo requisitos funcionales ('el usuario inicia sesión') olvidando los no funcionales de seguridad ('las sesiones expiran tras 15 min de inactividad y rotan identificador al autenticarse').",
+      "Requisitos de seguridad vs Security acceptance criteria: los requisitos son globales al sistema o plataforma; los acceptance criteria aterrizan esos requisitos en una historia de usuario puntual."
+    ],
+    "ejemplo": "REQ-SEC-AUTH-04 (basado en OWASP ASVS 2.2.1):\n- El endpoint /auth/login debe aplicar rate limiting por IP y cuenta (máx. 5 fallos / 15 min).\n- Los eventos fallidos deben emitirse al log de auditoría sin registrar la contraseña enviada.",
+    "entrevista": "Los requisitos de seguridad traducen el riesgo y estándares como OWASP ASVS en especificaciones verificables desde el inicio del proyecto, evitando rediseños costosos antes de salir a producción."
+  },
+  "Retiro seguro de software": {
+    "que": "Fase final del ciclo de vida encargada de desmantelar ordenadamente una aplicación, servicio, API o infraestructura obsoleta asegurando la eliminación o migración íntegra de datos, revocación de credenciales y cierre de superficie de ataque. Impide que sistemas zombi sigan expuestos sin mantenimiento ni parches.",
+    "para": "Mitiga uno de los vectores de brecha más comunes en organizaciones maduras: aplicaciones legadas olvidadas en subdominios antiguos, bases de datos huérfanas con copias sin cifrar o cuentas de servicio activas de proyectos cancelados. Se ejecuta cuando un sistema es reemplazado, fusionado o llega a su fin de vida (EOL).",
+    "como": "Sigue una lista de verificación ejecutada antes y después del apagado: primero notifica a consumidores, migra tráfico y verifica mediante telemetría que no existen dependencias activas ocultas. Después respalda los datos sujetos a retención legal en almacenamiento cifrado con políticas de ciclo de vida, realiza borrado seguro o destrucción criptográfica (crypto-shredding destruyendo las claves KMS) del resto de datos, revoca certificados TLS, claves API, roles IAM y registros DNS (previniendo subdomain takeover), archiva el repositorio en modo solo lectura y actualiza el inventario CMDB marcando el activo como decomisionado.",
+    "practicas": [
+      "Eliminar primero los registros DNS CNAME/A antes o inmediatamente junto al apagado del recurso cloud para evitar ataques de subdomain takeover.",
+      "Usar destrucción criptográfica (eliminar las claves de cifrado dedicadas) para garantizar el borrado efectivo incluso en copias distribuidas o snapshots antiguos.",
+      "Error típico: apagar únicamente la máquina virtual o detener el servicio web dejando activos buckets S3 públicos, usuarios IAM con permisos amplios o webhooks apuntando al exterior.",
+      "Archivado vs Retiro seguro: archivar solo congela el código; el retiro seguro destruye superficie de ataque, credenciales, rutas de red y datos innecesarios."
+    ],
+    "ejemplo": "Checklist de Decomisionado:\n1. Verificar 0 peticiones en logs durante 14 días tras migración\n2. Exportar auditoría legal -> destruir clave KMS de DB (crypto-shredding)\n3. Eliminar registros DNS antes de borrar Load Balancer/S3\n4. Revocar roles IAM, secretos en Vault y webhooks OAuth",
+    "entrevista": "El retiro seguro evita activos zombi y fugas tardías eliminando registros DNS, revocando identidades, aplicando crypto-shredding sobre datos obsoletos y dando de baja el activo en el inventario."
+  },
+  "Revisión de código de seguridad": {
+    "que": "Inspección sistemática del código fuente —combinando análisis humano especializado y análisis estático asistido— destinada a detectar vulnerabilidades de diseño local, fallos de lógica de negocio, condiciones de carrera e implementación incorrecta de controles de seguridad antes de su integración.",
+    "para": "Localiza errores sutiles dependientes del contexto del negocio que los escáneres automáticos SAST no comprenden, como verificaciones de autorización ausentes en un endpoint específico o uso inseguro de una librería criptográfica propia. Se realiza en pull requests críticos y en auditorías focalizadas sobre módulos de alto riesgo.",
+    "como": "Combina filtrado automatizado previo (linters, SAST para descartar problemas sintácticos triviales) con una revisión humana guiada por listas de verificación y contexto de riesgo. El revisor identifica los puntos de entrada de datos no confiables (sources), rastrea su flujo hacia operaciones sensibles (sinks) y verifica autenticación, autorización por objeto y función, manejo de errores, concurrencia y primitivas criptográficas. Las observaciones se documentan directamente sobre las líneas del diff con explicaciones de explotabilidad y propuestas concretas de remediación.",
+    "practicas": [
+      "Priorizar la revisión humana en áreas de alto impacto: autenticación, gestión de sesiones, control de acceso, manejo de pagos, parsing de archivos complejos y llamadas a sistema.",
+      "Exigir revisiones de código enfocadas y pequeñas (PR acotados); revisar diffs de miles de líneas reduce drásticamente la tasa de detección de fallos.",
+      "Trampa frecuente: delegar el 100% de la revisión a una herramienta SAST, que es ciega ante errores de autorización horizontal (IDOR) o flujos multi-paso rotos.",
+      "Code review funcional vs Revisión de código de seguridad: la revisión funcional pregunta '¿hace lo que pide el ticket?'; la de seguridad pregunta '¿qué puede forzar un atacante que haga?'."
+    ],
+    "ejemplo": "// Diff bajo revisión: falla verificación de pertenencia (IDOR)\nfunc GetOrder(w http.ResponseWriter, r *http.Request) {\n  orderID := chi.URLParam(r, \"id\")\n  // Falta validar order.OwnerID == currentUser.ID antes de responder\n  order, _ := db.FindOrder(orderID)\n  json.NewEncoder(w).Encode(order)\n}",
+    "entrevista": "La revisión de código de seguridad complementa al SAST con criterio humano sobre flujos de confianza, autorización y lógica de negocio donde las herramientas automáticas son ciegas."
+  },
+  "SDLC seguro": {
+    "que": "Marco metodológico integral que incorpora actividades, controles, roles y artefactos de seguridad en cada etapa del ciclo de vida de desarrollo de software, desde la concepción hasta el retiro. Convierte la seguridad en una propiedad estructurada y repetible del proceso de ingeniería.",
+    "para": "Resuelve la fragilidad de aplicar medidas de seguridad aisladas o reactivas solo al detectar incidentes o antes de salir a producción, reduciendo drásticamente el coste y tiempo de remediación. Se adopta a nivel organizacional mediante marcos como NIST SSDF, OWASP SAMM o BSIMM.",
+    "como": "Estructura controles por fase: requisitos (OWASP ASVS y clasificación de datos), diseño (threat modeling y design reviews), implementación (codificación segura y SAST en IDE), verificación (revisión de código, SCA, DAST, pentesting), despliegue (firma de artefactos, IaC scanning, gates), operación (observabilidad, gestión de parches, respuesta a incidentes) y retiro. Cada transición entre fases cuenta con artefactos verificables y responsabilidades claras entre producto, ingeniería y AppSec, retroalimentando métricas continuas para madurar el proceso.",
+    "practicas": [
+      "Adaptar el nivel de rigor del SDLC seguro a la criticidad de la aplicación (tiering) en lugar de imponer los mismos trámites pesados a un prototipo interno y a un core bancario.",
+      "Medir la madurez con marcos como OWASP SAMM o NIST SSDF para construir mejoras progresivas en vez de intentar implantar todas las prácticas el primer día.",
+      "Error típico: diseñar un SDLC seguro únicamente en papel con documentos largos que nadie consulta en la práctica diaria de desarrollo.",
+      "SDLC tradicional + pentest final vs SDLC seguro: detectar una falla arquitectónica en producción cuesta decenas de veces más que corregirla en fase de diseño."
+    ],
+    "ejemplo": "Mapeo NIST SSDF por fase:\n- PO (Prepare): roles, guardrails y requisitos\n- PS (Protect Software): firma de commits, repos protegidos, integridad\n- PW (Produce Well-Secured): threat modeling, SAST, compilación endurecida\n- RV (Respond to Vulnerabilities): monitoreo CVE, RCA y parcheo",
+    "entrevista": "Un SDLC seguro embebe controles proporcionales al riesgo en cada fase —de requisitos a retiro— apoyándose en marcos como NIST SSDF u OWASP SAMM para hacer la seguridad repetible y medible."
+  },
+  "SLSA provenance": {
+    "que": "Atestación criptográfica estandarizada bajo el marco SLSA (Supply-chain Levels for Software Artifacts) que describe de manera verificable cómo, dónde, a partir de qué código fuente y mediante qué proceso de compilación se generó un artefacto de software. Actúa como certificado de origen inmutable del proceso de build.",
+    "para": "Combate ataques en la cadena de suministro donde un atacante sustituye artefactos en el registro, altera scripts en el servidor de CI o construye binarios desde ramas no autorizadas. Se usa al publicar paquetes, contenedores o binarios y al verificar qué artefactos pueden entrar en producción.",
+    "como": "Un generador confiable fuera del control directo del usuario (por ejemplo, `slsa-github-generator` ejecutándose en un workflow aislado) captura los metadatos reales de la compilación: URI y commit exacto del repositorio fuente, builder ID, parámetros de invocación y digest SHA-256 del artefacto producido. Estos datos se serializan en un documento JSON bajo el formato in-toto Statement con predicateType SLSA Provenance y se firman criptográficamente (habitualmente con Sigstore/Cosign). Un verificador en despliegue valida la firma, confirma que el builder pertenece a la plataforma autorizada y comprueba que la fuente coincide con el repositorio y rama esperados.",
+    "practicas": [
+      "Generar la provenance desde el propio plano de control del builder (isolated runner) y nunca desde un script editable por el código que se está compilando (requisito para SLSA Level 3).",
+      "Validar no solo que la firma sea válida, sino las políticas de contenido de la provenance: repositorio origen permitido, rama protegida y builder confiable.",
+      "Trampa frecuente: confundir SBOM con SLSA provenance; el SBOM dice qué componentes contiene el artefacto, la provenance demuestra dónde y cómo fue construido.",
+      "SLSA Level 1 vs Level 3: el nivel 1 solo exige generar provenance; el nivel 3 exige plataforma aislada y provenance infalsificable por el código fuente."
+    ],
+    "ejemplo": "{\n  \"_type\": \"https://in-toto.io/Statement/v1\",\n  \"subject\": [{\"name\": \"ghcr.io/org/app\", \"digest\": {\"sha256\": \"9a2f...\"}}],\n  \"predicateType\": \"https://slsa.dev/provenance/v1\",\n  \"predicate\": {\n    \"buildDefinition\": {\"buildType\": \"https://slsa.dev/github-actions-workflow/v1\"},\n    \"runDetails\": {\"builder\": {\"id\": \"https://github.com/slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@refs/tags/v2.0.0\"}}\n  }\n}",
+    "entrevista": "SLSA provenance es la atestación firmada e infalsificable que prueba que un artefacto salió exactamente del repositorio, commit y builder aislado autorizados, y no de un entorno comprometido."
+  },
+  "Secure by default": {
+    "que": "Principio de ingeniería según el cual la configuración inicial, fuera de caja, de un software, servicio o infraestructura debe ser la más restrictiva y segura posible sin requerir intervención ni endurecimiento manual por parte del usuario o administrador. Cualquier relajación de controles exige una acción explícita y consciente.",
+    "para": "Previene brechas masivas causadas por errores humanos de instalación, contraseñas predeterminadas, puertos administrativos expuestos o buckets de almacenamiento abiertos por defecto. Es esencial en productos distribuibles, plataformas internas, APIs y plantillas de infraestructura cloud.",
+    "como": "Se materializa estableciendo valores predeterminados conservadores en código, esquemas de configuración y módulos IaC: denegación por defecto en políticas de acceso (`deny all`), cifrado obligatorio en reposo y tránsito (TLS 1.2/1.3), cookies con `HttpOnly`, `Secure` y `SameSite`, deshabilitación de cuentas genéricas y bloqueo de tráfico público salvo apertura explícita. Cuando un desarrollador o administrador necesita abrir acceso o debilitar una política, la configuración le obliga a declararlo explícitamente y puede requerir aprobación adicional o expiración temporal.",
+    "practicas": [
+      "Aplicar fail-closed en decisiones de autenticación y autorización: si falla el servicio de políticas o falta configuración, denegar acceso en lugar de permitirlo.",
+      "Distribuir módulos base de Terraform/Helm endurecidos para que la opción predeterminada al desplegar ya sea segura.",
+      "Error típico: habilitar modos debug, CORS `*` o permisos amplios por defecto para facilitar las pruebas iniciales y olvidar desactivarlos en producción.",
+      "Secure by design vs Secure by default: Secure by design impide fallos mediante la arquitectura; Secure by default garantiza que la configuración inicial sin tocar nada ya sea segura."
+    ],
+    "ejemplo": "# Módulo Terraform de S3: seguro por defecto sin que el consumidor lo pida\nresource \"aws_s3_bucket_public_access_block\" \"this\" {\n  bucket                  = aws_s3_bucket.this.id\n  block_public_acls       = true\n  block_public_policy     = true\n  ignore_public_acls      = true\n  restrict_public_buckets = true\n}",
+    "entrevista": "Secure by default asegura que un sistema recién instalado o desplegado opere en su estado más seguro sin depender de que el operador recuerde activar controles manualmente."
+  },
+  "Secure by design": {
+    "que": "Estrategia de ingeniería en la que la seguridad determina las decisiones fundamentales de arquitectura y diseño desde el inicio, haciendo que clases enteras de vulnerabilidades sean estructuralmente imposibles o muy difíciles de introducir. Trata la seguridad como atributo estructural del producto, no como capa añadida al final.",
+    "para": "Evita soluciones paliativas frágiles (como depender solo de un WAF frente a inyecciones o parches constantes sobre una arquitectura acoplada sin aislamiento). Se aplica al diseñar productos, plataformas, APIs y modelos de datos desde la fase conceptual.",
+    "como": "Emplea principios de diseño seguro integrados en la arquitectura: aislamiento de dominios mediante límites de confianza estrictos, mínimo privilegio en identidades y bases de datos, adopción de lenguajes memory-safe o primitivas seguras obligatorias (como bibliotecas que impiden construir SQL concatenado por tipo de dato), y arquitectura Zero Trust con verificación explícita en cada salto. Además, reduce la superficie de ataque eliminando funcionalidades innecesarias y separando componentes altamente expuestos (parsers no confiables) en sandboxes sin privilegios.",
+    "practicas": [
+      "Encapsular primitivas críticas (criptografía, consultas SQL, validación de tokens) en librerías internas seguras que hagan difícil usarlas mal.",
+      "Aislar el procesamiento de entradas complejas y no confiables (PDFs, imágenes, archivos comprimidos) en procesos o contenedores efímeros sin acceso a red ni secretos.",
+      "Error típico: añadir un proxy de seguridad o WAF delante de una aplicación con controles rotos llamándolo arquitectura segura.",
+      "Secure by design vs Defensa en profundidad: Secure by design elimina la causa raíz en la arquitectura; defensa en profundidad añade múltiples capas independientes por si falla una."
+    ],
+    "ejemplo": "// Diseño de tipo seguro en Go/Rust/Java: imposibilita pasar un string crudo como SQL\ntype SafeQuery struct { sql string; args []any }\nfunc NewSafeQuery(literal stringLiteralOnly, args ...any) SafeQuery\n// El compilador rechaza variables dinámicas en el primer argumento.",
+    "entrevista": "Secure by design construye la arquitectura y sus abstracciones de modo que el desarrollador tenga que esforzarse para escribir código inseguro, eliminando familias completas de fallos por diseño."
+  },
+  "Security acceptance criteria": {
+    "que": "Condiciones concretas, específicas y verificables de seguridad añadidas a una historia de usuario o ticket de funcionalidad para definir el comportamiento esperado ante uso legítimo y abuso malicioso. Aterrizan requisitos globales de seguridad en tareas individuales del backlog.",
+    "para": "Elimina la ambigüedad en el desarrollo y las pruebas funcionales, evitando que un desarrollador implemente solo el camino feliz dejando expuestos controles de acceso, límites de entrada o manejo de errores. Se redactan durante el refinamiento del backlog antes de empezar a codificar la historia.",
+    "como": "Durante la planificación o grooming, el Product Owner junto a un Security Champion o ingeniero traduce amenazas relevantes de la historia en criterios de aceptación usando formatos estructurados (como Given-When-Then) enfocados en escenarios negativos y de abuso. Cada criterio especifica qué entrada rechazar, qué código HTTP devolver, qué permisos comprobar o qué evento auditar. Posteriormente, QA y desarrollo convierten cada criterio en pruebas automatizadas de integración o unitarias en el mismo PR que implementa la funcionalidad.",
+    "practicas": [
+      "Incluir siempre al menos un escenario de abuso (abuse case) por cada historia que manipule datos sensibles, permisos, archivos o pagos.",
+      "Formular criterios observables mediante pruebas automáticas para que puedan verificarse en CI en cada cambio futuro.",
+      "Error típico: copiar criterios genéricos idénticos en todas las historias en lugar de pensar en el riesgo concreto de esa funcionalidad.",
+      "Security acceptance criteria vs Security gate: los criterios guían y validan la lógica de una historia específica; el gate aplica controles técnicos transversales en el pipeline."
+    ],
+    "ejemplo": "Historia: Descargar factura en PDF\nCriterio de aceptación de seguridad:\n- Given un usuario autenticado A sin rol ADMIN\n- When solicita GET /api/invoices/{id_de_usuario_B}\n- Then la API responde HTTP 403 sin revelar si el ID existe y registra el intento en el log de auditoría.",
+    "entrevista": "Los security acceptance criteria traducen amenazas concretas de una historia de usuario en pruebas negativas verificables antes de escribir código, cerrando brechas de autorización y lógica desde el sprint."
+  },
+  "Security as code": {
+    "que": "Paradigma que define, versiona, prueba y despliega políticas de seguridad, configuraciones de endurecimiento, reglas de detección y controles de acceso mediante código declarativo almacenado en sistemas de control de versiones. Trata los controles de seguridad con la misma disciplina de ingeniería que el código de producto.",
+    "para": "Elimina la configuración manual propensa a errores humanos (click-ops en consolas cloud), la falta de trazabilidad sobre quién cambió una regla de firewall y la imposibilidad de replicar controles entre entornos. Se utiliza en infraestructura cloud, pipelines CI/CD, políticas IAM, WAF y motores de detección.",
+    "como": "Las reglas de seguridad se escriben en lenguajes declarativos o DSL como Rego (OPA), HCL (Terraform), YAML (Kyverno, Sigma, Semgrep) o JSON (políticas IAM). Todo cambio pasa por pull request, revisión por pares, pruebas unitarias sobre las propias políticas (por ejemplo, `opa test`) y despliegue automatizado hacia el plano de control o los agentes de detección. Al quedar versionado en Git, el estado de seguridad es reproducible, auditable históricamente y fácilmente reversible ante regresiones.",
+    "practicas": [
+      "Escribir pruebas unitarias positivas y negativas para cada política antes de aplicarla en producción, evitando bloqueos masivos por reglas mal formuladas.",
+      "Centralizar módulos y políticas reutilizables en un repositorio versionado para que todos los equipos hereden mejoras de forma controlada.",
+      "Error típico: generar políticas como código pero permitir que administradores editen manualmente reglas en la consola cloud provocando drift no auditado.",
+      "Security as code vs Seguridad manual: Security as code escala a cientos de servicios y cuentas manteniendo consistencia determinista y rollback instantáneo."
+    ],
+    "ejemplo": "# Prueba unitaria de política OPA (opa test)\npackage authz_test\nimport data.authz\n\ntest_deny_anonymous_admin_access {\n  not authz.allow with input as {\"user\": {\"role\": \"guest\"}, \"path\": \"/admin\"}\n}",
+    "entrevista": "Security as code lleva los controles de seguridad al ciclo Git —versionados, revisados por PR, testeados unitariamente y desplegados sin click-ops— para garantizar consistencia y trazabilidad."
+  },
+  "Security backlog": {
+    "que": "Registro estructurado, priorizado y visible de todas las tareas, deudas técnicas de seguridad, vulnerabilidades abiertas, mejoras arquitectónicas y controles pendientes relacionados con un producto o plataforma. Integra el trabajo de seguridad en el mismo flujo de planificación que las funcionalidades de negocio.",
+    "para": "Evita que los hallazgos de pentests, escáneres SCA/SAST y resultados de threat modeling queden enterrados en archivos PDF o correos electrónicos olvidados sin dueño ni fecha. Se gestiona de forma continua en herramientas como Jira, Linear o GitHub Issues.",
+    "como": "Centraliza entradas provenientes de múltiples fuentes: vulnerabilidades confirmadas de pipelines y bug bounty, hallazgos de diseño, tareas de actualización de frameworks obsoletos y épicas de endurecimiento. Cada ítem incluye contexto de explotabilidad, activo afectado, severidad ajustada al riesgo de negocio, criterio de cierre verificable y un SLA objetivo. Durante la planificación de cada sprint, ingeniería y producto asignan una cuota fija de capacidad o priorizan ítems críticos junto al backlog funcional para garantizar reducción sostenida de riesgo.",
+    "practicas": [
+      "Consolidar y deduplicar hallazgos antes de crear tickets para no inundar al equipo con cincuenta issues por una misma librería vulnerable.",
+      "Reservar un porcentaje estable de capacidad por sprint (por ejemplo, 10-20%) o acuerdos de SLA claros para evitar que las features desplacen indefinidamente la remediación.",
+      "Error típico: mantener un backlog separado en una herramienta privada de AppSec que los desarrolladores nunca abren ni planifican.",
+      "Security backlog vs Vulnerability tracker: el vulnerability tracker lista fallos detectados en crudo; el security backlog prioriza trabajo accionable de remediación y mejora preventiva."
+    ],
+    "ejemplo": "Ticket SEC-412 en Backlog de Producto:\n- Origen: Threat Model v2 + DAST\n- Riesgo: Alto (exposición de endpoints internos sin rate limit)\n- Criterio de cierre: Implementar token bucket (100 req/min) + test de carga verificando HTTP 429\n- SLA: Sprint actual (vence 2026-12-10)",
+    "entrevista": "Un security backlog unificado con el backlog de producto transforma hallazgos dispersos de seguridad en trabajo priorizado por riesgo con dueño, criterio de cierre y capacidad asignada en cada sprint."
+  },
+  "Security champions": {
+    "que": "Programa organizacional que designa y capacita a desarrolladores, QA o SRE dentro de cada equipo de producto para que actúen como referentes locales y multiplicadores de buenas prácticas de seguridad. Funcionan como puente bidireccional entre los equipos de ingeniería y el equipo central de AppSec.",
+    "para": "Resuelve el problema de escalabilidad cuando un pequeño equipo de AppSec debe dar soporte a decenas de squads de desarrollo sin conocer en profundidad el dominio de cada aplicación. Se implementa en organizaciones medianas o grandes en crecimiento DevSecOps.",
+    "como": "Cada equipo selecciona voluntariamente a un integrante con interés técnico al que se le asigna tiempo protegido dentro de su jornada laboral y formación continua en threat modeling, revisión de código segura y uso de herramientas del pipeline. El Security Champion participa en las primeras fases de diseño de su squad, ayuda a triar hallazgos de SAST/SCA antes de escalar a AppSec y comparte novedades o patrones de ataque en reuniones regulares del gremio de champions. AppSec les provee playbooks, canales directos de consulta y soporte en casos complejos.",
+    "practicas": [
+      "Reclutar voluntarios motivados con tiempo explícitamente protegido (por ejemplo, 10-15% de su sprint) y no imponer el rol como carga extra sin reducir otras tareas.",
+      "Reconocer formalmente la labor del champion en su plan de carrera y evaluaciones para evitar rotación y desgaste.",
+      "Trampa frecuente: convertir al Security Champion en un auditor o policía interno de su propio equipo, destruyendo la confianza colaborativa con sus compañeros.",
+      "Security Champion vs AppSec Engineer: el champion sigue siendo desarrollador del squad con foco preventivo local; AppSec diseña la estrategia, plataforma, herramientas y gestiona escalados críticos."
+    ],
+    "ejemplo": "Responsabilidades semanales de un Security Champion:\n1. Revisar PRs con impacto en auth/pagos/datos sensibles\n2. Liderar sesiones ligeras de threat modeling (30 min) para nuevas épicas\n3. Triar falsos positivos de SAST/SCA de su servicio\n4. Asistir a la sincronización quincenal del gremio AppSec",
+    "entrevista": "El programa de Security Champions escala la capacidad de AppSec incrustando conocimiento preventivo dentro de cada squad sin convertir al champion en un bloqueador ni en personal de auditoría."
+  },
+  "Security design review": {
+    "que": "Evaluación técnica estructurada de la arquitectura propuesta para un nuevo sistema, funcionalidad mayor o integración antes de su implementación completa. Examina decisiones de autenticación, autorización, flujo de datos, criptografía, aislamiento y resiliencia ante abuso.",
+    "para": "Identifica errores arquitectónicos y brechas de diseño en el momento más barato para corregirlos, evitando retrabajos masivos o lanzamientos bloqueados en etapas finales. Se dispara ante cambios que alteran superficies de exposición, incorporan datos sensibles o modifican modelos de confianza.",
+    "como": "El equipo solicitante completa una plantilla ligera de diseño (arquitectura, diagramas de flujo de datos, clasificación de datos, nuevos endpoints y dependencias) antes del kickoff de desarrollo. Un ingeniero de AppSec o Security Champion facilita una sesión colaborativa de 45-60 minutos aplicando threat modeling (frecuentemente STRIDE) sobre los componentes críticos y límites de confianza. Como salida formal se emiten recomendaciones concretas clasificadas por prioridad, controles obligatorios previos al lanzamiento y tickets registrados en el backlog del equipo.",
+    "practicas": [
+      "Definir disparadores claros (triggers) para solicitar la revisión —como nuevo proveedor externo, cambio en login, manejo de PII/pagos o exposición pública— en lugar de revisar cada cambio trivial.",
+      "Integrar la plantilla de diseño dentro del proceso existente de RFC o ADR de ingeniería para evitar duplicar documentación.",
+      "Error típico: realizar la design review cuando el 90% del código ya está escrito y las fechas de lanzamiento son inamovibles.",
+      "Threat Modeling vs Security Design Review: el threat modeling es la técnica de análisis de amenazas; la design review es el hito formal de gobernanza que valida decisiones arquitectónicas completas."
+    ],
+    "ejemplo": "Triggers automáticos de Security Design Review:\n- ¿Expone un nuevo endpoint público o webhook?\n- ¿Almacena o procesa PII, secretos o datos financieros?\n- ¿Introduce un nuevo flujo de autenticación, SSO o roles?\n-> Si cualquiera es Sí: abrir plantilla SDR en RFC antes de empezar sprint.",
+    "entrevista": "La security design review actúa antes de escribir código sobre cambios que alteran límites de confianza o datos sensibles, detectando fallos arquitectónicos con una fracción del coste de corregirlos en producción."
+  },
+  "Security gate": {
+    "que": "Punto de control automatizado o híbrido en el pipeline de CI/CD o en el flujo de promoción que evalúa políticas de seguridad predefinidas sobre código, dependencias, infraestructura o artefactos y decide si el cambio puede avanzar o debe detenerse. Actúa como barrera objetiva de calidad de seguridad.",
+    "para": "Impide que vulnerabilidades críticas conocidas, secretos expuestos, imágenes sin firmar o configuraciones peligrosas alcancen entornos productivos de forma inadvertida. Se ubica en etapas estratégicas como validación de pull requests, publicación de artefactos y admisión de despliegue.",
+    "como": "El pipeline ejecuta herramientas deterministas (gitleaks, Semgrep, Trivy, Checkov, Cosign verify) que producen salidas estructuradas (SARIF o JSON). Un motor de decisión o script del gate evalúa esos resultados frente a umbrales configurados por criticidad y nivel de riesgo de la aplicación (por ejemplo, bloquear ante secretos confirmados o CVE críticas con fix disponible). Si falla, marca el check como fallido, bloquea el merge o deploy y publica comentarios accionables; las excepciones requieren un flujo documentado con aprobación y fecha de expiración.",
+    "practicas": [
+      "Bloquear únicamente con reglas de alta precisión y bajo falso positivo (secretos verificados, vulnerabilidades críticas con parche, falta de firma) para mantener la confianza de ingeniería.",
+      "Implementar un mecanismo ágil de break-glass o excepción temporal con expiración automática para emergencias reales en producción.",
+      "Trampa frecuente: activar modos bloqueantes con reglas ruidosas el primer día, lo que provoca que los equipos desactiven el gate o busquen atajos fuera del pipeline.",
+      "Security gate informativo (warn) vs bloqueante (fail): iniciar en modo observabilidad para calibrar falsos positivos antes de activar el bloqueo."
+    ],
+    "ejemplo": "# Paso de gate en CI usando Trivy sobre imagen construida\n- name: Security Gate - Vulnerabilidades Críticas con Fix\n  run: |\n    trivy image --exit-code 1 --severity CRITICAL --ignore-unfixed \\\n      --format table $IMAGE_DIGEST",
+    "entrevista": "Un security gate eficaz bloquea automáticamente fallos de alta confianza como secretos o CVE críticas corregibles, manteniendo excepciones auditadas y evitando ruido que destruya la confianza del equipo."
+  },
+  "Security metrics": {
+    "que": "Conjunto de indicadores cuantitativos y cualitativos que miden la postura de seguridad del software, la eficacia de los controles preventivos/detectivos y la eficiencia operativa de los equipos al gestionar el riesgo. Permiten pasar de percepciones subjetivas a decisiones basadas en datos.",
+    "para": "Resuelve la falta de visibilidad sobre si las inversiones en AppSec realmente reducen el riesgo, dónde existen cuellos de botella en la remediación y qué equipos necesitan soporte o formación adicional. Se utilizan para seguimiento operativo de squads, priorización del roadmap y reporte ejecutivo.",
+    "como": "Se recopilan datos continuos desde repositorios, pipelines CI/CD, gestores de vulnerabilidades, backlogs y telemetría de producción, normalizándolos por aplicación y equipo dueño. Se combinan métricas de resultado (MTTR de vulnerabilidades críticas, densidad de defectos de seguridad por cada 1000 líneas o por lanzamiento, tasa de recurrencia de CWE) con métricas de cobertura y adopción (porcentaje de repositorios críticos con SAST/SCA/firma activos, cobertura de threat modeling, porcentaje de excepciones vencidas). Los indicadores se visualizan en tableros segmentados evitando vanidad numérica.",
+    "practicas": [
+      "Preferir métricas accionables (MTTR por severidad, SLA compliance rate, tiempo de exposición de CVE explotables) frente a métricas de vanidad como 'número total de escaneos ejecutados'.",
+      "Evitar usar recuentos crudos de vulnerabilidades para castigar equipos, ya que incentiva apagar escáneres o no reportar hallazgos.",
+      "Error típico: agregar todas las severidades en un único gráfico sin distinguir exposición a internet ni disponibilidad de parche.",
+      "Leading indicators vs Lagging indicators: cobertura de repositorios protegidos o porcentaje de desarrolladores entrenados predicen mejora futura; incidentes y MTTR miden resultados históricos."
+    ],
+    "ejemplo": "KPIs clave de AppSec:\n- Cobertura de controles: % repos Tier-1 con SAST + SCA + Secret Scan + Firma (objetivo: 100%)\n- MTTR Críticas: mediana de días desde detección hasta deploy parcheado (objetivo: <= 7d)\n- Cumplimiento SLA: % vulnerabilidades cerradas dentro de plazo",
+    "entrevista": "Las mejores security metrics equilibran indicadores preventivos de cobertura con resultados como el MTTR real en producción, evitando métricas de vanidad o incentivos perversos sobre los equipos."
+  },
+  "Security roadmap": {
+    "que": "Plan estratégico pluritrimestral que secuencia las iniciativas técnicas, organizativas y de automatización necesarias para llevar un programa de AppSec/DevSecOps desde su madurez actual hasta el nivel objetivo alineado con el negocio. Define hitos, dependencias, recursos y métricas de éxito por horizonte temporal.",
+    "para": "Evita la compra impulsiva de herramientas sin adopción real y la dispersión de esfuerzos ante múltiples frentes (cadena de suministro, nube, código, cumplimiento). Se diseña anualmente y se revisa cada trimestre conforme cambian las amenazas y prioridades de la empresa.",
+    "como": "Comienza con una evaluación base de madurez (por ejemplo, OWASP SAMM o NIST SSDF) y un inventario de brechas frente al apetito de riesgo y requisitos regulatorios del negocio. Las iniciativas se agrupan por horizontes: quick wins de alto impacto y baja fricción en Q1 (detección de secretos, inventario de repositorios, MFA obligatorio), automatización central e integración en CI/CD en Q2-Q3 (SAST/SCA con gates calibrados, Security Champions, paved paths) y capacidades avanzadas en Q4+ (firma SLSA, threat modeling escalable, runtime eBPF). Cada hito se vincula a entregables medibles y responsables.",
+    "practicas": [
+      "Secuenciar primero la visibilidad y el inventario antes de intentar imponer políticas bloqueantes a ciegas.",
+      "Alinear cada fase del roadmap con objetivos del negocio (por ejemplo, desbloquear certificaciones para clientes enterprise o acelerar auditorías) para asegurar patrocinio ejecutivo.",
+      "Trampa frecuente: construir un roadmap centrado exclusivamente en desplegar herramientas comerciales sin asignar esfuerzo a habilitación, procesos ni eliminación de falsos positivos.",
+      "Roadmap táctico vs estratégico: el táctico cierra brechas urgentes de auditoría o incidentes; el estratégico construye capacidades duraderas como paved paths y arquitectura segura."
+    ],
+    "ejemplo": "Roadmap AppSec 4 Trimestres:\n- Q1 (Visibilidad): Inventario de repos + Secret Scanning + clasificación de apps (Tier 1-3)\n- Q2 (Prevención CI): SCA/SAST calibrados + programa piloto Security Champions\n- Q3 (Supply Chain): SBOM automático + firma Cosign + admission control en K8s\n- Q4 (Madurez): SLSA L3 en Tier-1 + MTTR automatizado en dashboard ejecutivo",
+    "entrevista": "Un security roadmap prioriza primero visibilidad e higiene de alto impacto antes de pasar a gates bloqueantes y madurez avanzada, siempre atado a objetivos de negocio y métricas verificables."
+  }
+}

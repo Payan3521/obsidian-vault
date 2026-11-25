@@ -1,0 +1,392 @@
+{
+  "0-RTT": {
+    "que": "0-RTT (Zero Round-Trip Time) es un modo de reanudación de sesión en TLS 1.3 y QUIC que permite al cliente enviar datos de aplicación junto con el primer paquete del handshake, sin esperar una ida y vuelta previa de negociación. Reduce la latencia inicial de conexión a cero RTT adicionales respecto al intercambio mínimo de red.",
+    "para": "Sirve para acelerar conexiones recurrentes hacia un mismo servidor, especialmente en redes móviles de alta latencia, APIs con tráfico frecuente y carga de recursos web tras reconexiones. Se utiliza cuando cada milisegundo de Time to First Byte importa y la primera petición es segura frente a repeticiones.",
+    "como": "En una primera conexión completa (1-RTT), el servidor entrega al cliente un boleto de sesión (NewSessionTicket) vinculado a una Pre-Shared Key (PSK) de reanudación. En la siguiente visita, el cliente incluye en el ClientHello la extensión early_data cifrada con claves derivadas de esa PSK, junto con el primer payload HTTP (por ejemplo, un GET). El servidor valida la identidad de la PSK y procesa los datos tempranos de inmediato antes de completar el intercambio criptográfico final. Debido a que un atacante en red podría interceptar y reenviar ese primer paquete antes de que el servidor genere entropía fresca, 0-RTT carece de protección anti-replay nativa.",
+    "practicas": [
+      "Permitir 0-RTT exclusivamente para métodos idempotentes y de solo lectura (GET, HEAD), nunca para operaciones que mutan estado como POST de pagos o transferencias.",
+      "Implementar ventanas temporales estrictas y caches de anti-replay (registro de tickets/nonces vistos por nodo) en el balanceador o servidor edge.",
+      "Error típico: habilitar early_data en Nginx o Cloudflare sin validar si el backend usa rutas GET con efectos secundarios (por ejemplo, logout o confirmación por token en URL).",
+      "0-RTT vs 1-RTT: 0-RTT ahorra un viaje completo de red en reanudaciones pero sacrifica forward secrecy en el primer paquete y exige defensa contra ataques de repetición."
+    ],
+    "ejemplo": "server {\n  listen 443 ssl http2;\n  ssl_protocols TLSv1.3;\n  ssl_early_data on;\n  location / {\n    proxy_set_header Early-Data $ssl_early_data;\n    proxy_pass http://backend;\n  }\n}",
+    "entrevista": "0-RTT elimina la latencia de reanudación en TLS 1.3 y QUIC enviando datos junto al ClientHello mediante una PSK previa, pero como es vulnerable a ataques de replay solo debe aceptarse en peticiones estrictamente idempotentes."
+  },
+  "ARP spoofing": {
+    "que": "ARP spoofing (o ARP cache poisoning) es un ataque de capa 2 en redes locales Ethernet/IPv4 donde un atacante envía mensajes ARP falsificados para asociar su propia dirección MAC con la IP de otro equipo legítimo, habitualmente el default gateway o un servidor interno.",
+    "para": "Se emplea como vector para ejecutar ataques Man-in-the-Middle (MITM), interceptar tráfico en claro, realizar análisis de red, secuestrar sesiones o provocar denegación de servicio redirigiendo paquetes hacia un destino inexistente (blackholing) dentro de la misma subred.",
+    "como": "Como ARP es un protocolo sin estado y sin autenticación, cualquier host en el dominio de broadcast acepta respuestas ARP incluso sin haber enviado una petición previa. El atacante transmite periódicamente tramas ARP Reply no solicitadas (o Gratuitous ARP) indicando al host víctima que la IP del router corresponde a la MAC del atacante, y simultáneamente al router que la IP de la víctima corresponde también a la MAC del atacante. Ambos dispositivos sobrescriben sus tablas ARP (`arp -a` / `ip neigh`). Con IP forwarding activado en el equipo atacante, todo el tráfico bidireccional fluye a través de él antes de salir hacia su destino real.",
+    "practicas": [
+      "Habilitar Dynamic ARP Inspection (DAI) junto con DHCP Snooping en switches gestionados para descartar tramas ARP con pares IP-MAC no registrados.",
+      "Aislar segmentos sensibles mediante VLANs y Private VLANs para reducir el tamaño del dominio de broadcast.",
+      "Trampa común: confiar en el cifrado de capa de transporte interno como opcional en LAN; usar HTTPS/TLS y SSH impide leer el tráfico aunque el atacante envenene ARP.",
+      "ARP spoofing vs DNS spoofing: ARP spoofing opera en capa 2 dentro de la misma subred local, mientras que DNS spoofing falsifica resoluciones de nombres y puede ocurrir a través de múltiples saltos."
+    ],
+    "ejemplo": "# Inspeccionar tabla de vecinos en Linux buscando MACs duplicadas\nip neigh show\n# Ejemplo anómalo (dos IPs críticas con la misma MAC):\n# 192.168.1.1 dev eth0 lladdr aa:bb:cc:dd:ee:ff REACHABLE\n# 192.168.1.50 dev eth0 lladdr aa:bb:cc:dd:ee:ff REACHABLE",
+    "entrevista": "El ARP spoofing explota la falta de autenticación y estado en ARP para envenenar tablas IP-MAC en una LAN y posicionarse como MITM; en infraestructura moderna se mitiga con DHCP Snooping más Dynamic ARP Inspection en el switch y cifrado extremo a extremo con TLS."
+  },
+  "ARP": {
+    "que": "ARP (Address Resolution Protocol, RFC 826) es el protocolo encargado de traducir una dirección lógica IPv4 (capa 3) a su correspondiente dirección física MAC de 48 bits (capa 2) dentro de una red local Ethernet.",
+    "para": "Es indispensable para que un dispositivo pueda encapsular un paquete IP dentro de una trama Ethernet y entregarlo al siguiente salto, ya sea otro host en la misma subred o el default gateway hacia redes externas.",
+    "como": "Cuando un host necesita enviar un paquete a una IP en su misma subred (o a su puerta de enlace si la IP es remota), consulta primero su tabla caché ARP local (`ip neigh`). Si no existe entrada válida, emite una trama Ethernet de broadcast (`ff:ff:ff:ff:ff:ff`) con un paquete ARP Request preguntando \"Who has X.X.X.X? Tell Y.Y.Y.Y\". Todos los nodos del dominio de broadcast reciben la trama, pero solo el propietario de esa IP responde con un ARP Reply unicast indicando su dirección MAC. El emisor almacena la pareja IP-MAC en caché durante un TTL limitado (típicamente de segundos a minutos) para evitar broadcast repetitivos.",
+    "practicas": [
+      "Dimensionar las subredes de forma razonable (por ejemplo `/24` o `/23`) para evitar tormentas de broadcast ARP en redes con miles de dispositivos.",
+      "Usar Gratuitous ARP (anuncio voluntario de IP-MAC) en clústeres de alta disponibilidad con VRRP/Keepalived para actualizar inmediatamente las tablas de los switches tras un failover.",
+      "Error típico: intentar resolver por ARP la MAC de un servidor en Internet; ARP solo resuelve la IP del siguiente salto en el segmento local (normalmente el router).",
+      "ARP vs NDP (IPv6): en IPv6 ARP desaparece y es reemplazado por Neighbor Discovery Protocol (NDP) sobre ICMPv6 usando mensajes multicast solicitados."
+    ],
+    "ejemplo": "# Ver caché ARP y resolver manualmente tráfico con arping\nip -4 neigh show\narping -I eth0 -c 3 192.168.1.1\n# Trama conceptual:\n# Broadcast ff:ff:ff:ff:ff:ff -> Who has 192.168.1.1? Tell 192.168.1.25",
+    "entrevista": "ARP resuelve direcciones IPv4 a direcciones MAC dentro del dominio de broadcast local mediante una petición broadcast y una respuesta unicast, cacheando el mapeo para permitir el encapsulamiento en capa 2."
+  },
+  "AS - Peering": {
+    "que": "Un Sistema Autónomo (AS, Autonomous System) es una red o conjunto de redes IP bajo una administración técnica única y con una política de enrutamiento unificada, identificada por un número ASN. El peering es la interconexión directa entre dos AS para intercambiar tráfico entre sus respectivos clientes y rutas sin pagar tránsito a un tercero.",
+    "para": "Permite que proveedores de Internet (ISP), operadores cloud, CDNs y grandes empresas reduzcan latencia, eviten cuellos de botella de proveedores intermedios y disminuyan costes de ancho de banda al intercambiar tráfico directamente en puntos neutros.",
+    "como": "Cada organización elegible solicita un ASN público y bloques IP a su Registro Regional de Internet (RIR, como ARIN, RIPE o LACNIC). Dos AS establecen sesiones eBGP entre sus routers de borde para anunciar únicamente sus propios prefijos y los de sus clientes (nunca las rutas de terceros proveedores, a diferencia del tránsito). El peering público ocurre conectando los routers a un switch compartido en un Internet Exchange Point (IXP) y a menudo mediante Route Servers para escalar cientos de acuerdos. El peering privado (PNI, Private Network Interconnect) utiliza enlaces físicos punto a punto dedicados cuando el volumen de tráfico es masivo.",
+    "practicas": [
+      "Definir filtros estrictos de prefijos (usando IRR y validación RPKI) en toda sesión de peering para evitar fugas de rutas (route leaks).",
+      "Mantener actualizada la entrada en PeeringDB con ubicación de IXPs, política de peering (Open, Selective, Restrictive) y prefijos máximos esperados.",
+      "Error típico: olvidar configurar `max-prefix` en sesiones BGP de peering; si un peer anuncia por error toda la tabla de Internet, puede saturar la memoria TCAM del router.",
+      "Peering vs Transit: en el peering ambas partes intercambian solo su tráfico propio/de clientes generalmente sin coste (settlement-free), mientras que el tránsito es un servicio de pago que da acceso al resto de Internet."
+    ],
+    "ejemplo": "# Consulta de información pública de un ASN en PeeringDB / WHOIS\nwhois -h whois.radb.net AS13335\n# Relación BGP típica:\n# Peering: AS_A <-> AS_B (solo rutas propias y de clientes)\n# Transit: AS_A -> Upstream_ISP (ruta por defecto o full table de Internet)",
+    "entrevista": "Un Sistema Autónomo identifica una red independiente con un ASN y política de enrutamiento propia, mientras que el peering es su interconexión directa con otro AS (vía IXP o enlaces privados) para intercambiar tráfico propio sin costes de tránsito y con menor latencia."
+  },
+  "Access Point": {
+    "que": "Un Access Point (AP) es un dispositivo de red que actúa como puente entre una red cableada Ethernet y dispositivos inalámbricos mediante el estándar IEEE 802.11 (Wi-Fi), operando principalmente en capa 1 (radiofrecuencia) y capa 2 (enlace).",
+    "para": "Sirve para extender la conectividad de una LAN cableada a clientes móviles sin cables en oficinas, campus o almacenes, permitiendo segmentar redes corporativas y de invitados mediante múltiples SSIDs mapeados a distintas VLANs.",
+    "como": "El AP transmite tramas Beacon anunciando sus SSIDs, tasas soportadas y capacidades de seguridad (WPA2/WPA3-Enterprise). Tras el proceso de autenticación y asociación, el AP recibe tramas 802.11 por radio en bandas de 2.4 GHz, 5 GHz o 6 GHz (Wi-Fi 6E/7), las desencapsula y las reenvía como tramas Ethernet 802.3 hacia el switch de acceso (habitualmente alimentado por PoE). En despliegues empresariales, múltiples APs son gestionados por un controlador (WLC o cloud controller) mediante protocolos como CAPWAP para coordinar canales, potencia de transmisión y roaming rápido (802.11r/k/v). Cada SSID suele etiquetarse con un ID de VLAN (802.1Q) en el puerto trunk del switch.",
+    "practicas": [
+      "Planificar canales no solapados (en 2.4 GHz solo canales 1, 6 y 11; en 5 GHz evitar canales DFS si hay radares cercanos) y ajustar la potencia a la baja para favorecer el roaming.",
+      "Separar SSID corporativo (con WPA3/WPA2-Enterprise vía RADIUS 802.1X) del SSID de invitados en VLANs aisladas sin acceso a la red interna.",
+      "Error típico: poner los APs al 100% de potencia creyendo que mejora la cobertura; los clientes oyen al AP desde lejos pero no tienen potencia para responder (asimetria) y quedan pegados a un AP lejano (sticky client).",
+      "Access Point vs Router Wi-Fi doméstico: un AP empresarial solo conmuta capa 2 hacia la red cableada y delega NAT, DHCP y firewall en el router/firewall central."
+    ],
+    "ejemplo": "# Configuración de puerto de switch hacia un AP multi-SSID\ninterface GigabitEthernet1/0/10\n  switchport mode trunk\n  switchport trunk native vlan 10\n  switchport trunk allowed vlan 10,20,30\n  power inline auto",
+    "entrevista": "Un Access Point puentea tráfico inalámbrico 802.11 hacia Ethernet 802.3 en capa 2, permitiendo mapear distintos SSIDs a VLANs separadas y coordinar roaming y radiofrecuencia en despliegues multi-AP."
+  },
+  "Anycast": {
+    "que": "Anycast es un esquema de direccionamiento y enrutamiento donde una misma dirección o prefijo IP se anuncia simultáneamente desde múltiples ubicaciones geográficas distintas mediante BGP, de modo que cada paquete se entrega al nodo topológicamente más cercano según las tablas de enrutamiento.",
+    "para": "Se utiliza para ofrecer altísima disponibilidad, baja latencia y absorción distribuida de ataques DDoS en servicios críticos sin estado o de conexión corta, como servidores DNS raíz y públicos (1.1.1.1, 8.8.8.8), CDNs y balanceadores edge globales.",
+    "como": "Cada punto de presencia (PoP) en el mundo anuncia el mismo prefijo IP (por ejemplo, un `/24` IPv4 o `/48` IPv6) desde sus routers de borde hacia sus proveedores de tránsito e IXPs usando el mismo ASN. Los routers de Internet calculan la ruta más corta en la tabla BGP (menor AS-PATH y métricas IGP locales) y dirigen a cada usuario hacia el PoP más cercano en términos de red. Si un centro de datos cae, retira sus anuncios BGP (o falla la sesión BGP) y el tráfico converge automáticamente hacia el siguiente PoP disponible sin cambiar la IP del cliente. Para tráfico TCP de larga duración, los PoPs mantienen estado local y dependen de que las rutas BGP no oscilen en mitad de una sesión.",
+    "practicas": [
+      "Usar Anycast de forma nativa para UDP/DNS y HTTP/HTTPS terminando TCP en el PoP más cercano (edge proxy) antes de encaminar hacia el origen.",
+      "Monitorizar la estabilidad BGP y usar ECMP (Equal-Cost Multi-Path) junto con balanceadores consistentes en cada PoP para evitar que flujos TCP cambien de nodo ante cambios menores de ruta.",
+      "Error típico: asumir que \"más cerca en BGP\" equivale siempre a menor distancia geográfica; acuerdos de peering o políticas de tránsito pueden enviar tráfico de un país a otro continente.",
+      "Anycast vs GeoDNS: Anycast enruta a nivel de red/IP sin depender de caches DNS de clientes ni TTLs, mientras que GeoDNS devuelve distintas IPs unicast por región."
+    ],
+    "ejemplo": "# Verificación de nodo Anycast alcanzado mediante consulta CHAOS TXT en DNS\ndig @1.1.1.1 id.server CH TXT +short\n# Desde Madrid devuelve p.ej. \"MAD\"; desde Bogotá \"BOG\", usando la misma IP 1.1.1.1",
+    "entrevista": "Anycast anuncia el mismo prefijo IP por BGP desde múltiples PoPs globales para que Internet enrute automáticamente a cada usuario hacia el nodo topológicamente más cercano, aportando baja latencia, resiliencia ante caídas y mitigación distribuida de DDoS."
+  },
+  "BGP hijacking": {
+    "que": "El BGP hijacking (secuestro de rutas BGP) ocurre cuando un Sistema Autónomo anuncia ilegítimamente por BGP un prefijo IP perteneciente a otra organización (o un subprefijo más específico), desviando hacia su red el tráfico destinado a la víctima.",
+    "para": "Conocer este ataque y su prevención es crítico para proteger la disponibilidad, integridad y confidencialidad del tráfico de Internet frente a desvío malicioso (intercepción, suplantación de emisión de certificados ACME) o errores operativos graves de configuración (route leaks).",
+    "como": "Como BGP históricamente confiaba en la palabra de cada peer, un operador malicioso o mal configurado puede anunciar exactamente el bloque `/24` de la víctima con un AS-PATH más corto, o aprovechar la regla de Longest Prefix Match anunciando dos subprefijos `/25` que cubren un `/24` legítimo (sub-prefix hijacking), ganando prioridad en todos los routers del mundo aunque el AS-PATH sea más largo. También existe el AS-PATH spoofing, donde el atacante falsifica el AS de origen al final de la ruta anunciada. El tráfico capturado puede descartarse (blackholing), inspeccionarse y reinyectarse hacia la víctima para pasar desapercibido (MITM en ruta), o usarse para superar validaciones HTTP-01 de autoridades certificadoras.",
+    "practicas": [
+      "Publicar registros ROA (Route Origin Authorization) en el RIR mediante RPKI para declarar criptográficamente qué ASN está autorizado a anunciar cada prefijo.",
+      "Configurar los routers de borde propios para validar RPKI (ROV, Route Origin Validation) y descartar rutas con estado `Invalid`, además de filtrar prefijos de clientes según registros IRR.",
+      "Error típico: anunciar bloques grandes (como `/20`) sin crear ROAs específicos o sin monitorización BGP externa (BGPStream, ThousandEyes, Cloudflare Radar) para detectar anuncios no autorizados en segundos.",
+      "BGP hijacking vs Route Leak: el hijacking suele implicar anunciar como propio un prefijo ajeno (cambio de origen o prefijo más específico), mientras que un route leak es propagar rutas aprendidas de un proveedor hacia otro peer violando relaciones comerciales."
+    ],
+    "ejemplo": "# Estado de validación RPKI conceptual para un prefijo\n# ROA autorizado: 203.0.113.0/24 -> AS64500 (maxLength /24)\n# Anuncio válido:   203.0.113.0/24 desde AS64500 -> RPKI Valid\n# Secuestro:        203.0.113.0/24 desde AS64999 -> RPKI Invalid (descartado por ROV)",
+    "entrevista": "El BGP hijacking desvía tráfico de Internet anunciando prefijos ajenos o subprefijos más específicos aprovechando la confianza histórica de BGP y el Longest Prefix Match; la defensa estándar actual es firmar ROAs con RPKI y aplicar Route Origin Validation para descartar anuncios inválidos."
+  },
+  "BGP": {
+    "que": "BGP (Border Gateway Protocol, versión 4, RFC 4271) es el protocolo de enrutamiento exterior (EGP) que sostiene el funcionamiento global de Internet, intercambiando información de alcanzabilidad de prefijos IP entre Sistemas Autónomos.",
+    "para": "Sirve para determinar por qué caminos viajan los paquetes entre redes independientes (ISPs, clouds, centros de datos), permitiendo aplicar políticas comerciales, redundancia multi-homing y balanceo de tráfico a escala planetaria.",
+    "como": "BGP es un protocolo path-vector que opera sobre TCP puerto 179 para garantizar entrega fiable de actualizaciones incrementales en lugar de inundar la red periódicamente. Tras establecer una vecindad explícita (`OPEN`, `KEEPALIVE`), los routers intercambian mensajes `UPDATE` con prefijos NLRI y atributos de ruta como `AS_PATH` (lista de AS atravesados para evitar bucles), `NEXT_HOP`, `LOCAL_PREF` (prioridad de salida dentro del AS) y `MED`. Existen dos modalidades: eBGP (entre distintos AS, típicamente en bordes) e iBGP (dentro de un mismo AS, usando malla completa, Route Reflectors o confederaciones). La selección de la mejor ruta sigue un algoritmo determinista de desempate en cascada donde prefijo más específico, Weight/Local-Pref y menor AS_PATH dominan sobre la latencia física.",
+    "practicas": [
+      "Implementar autenticación de sesión (TCP MD5 o TCP-AO), TTL Security (`gtsm`) y límites `max-prefix` en todas las sesiones eBGP.",
+      "En iBGP de gran tamaño, desplegar pares redundantes de Route Reflectors para evitar la malla completa O(n^2) y usar BGP Communities para automatizar políticas de ingeniería de tráfico.",
+      "Error típico: redistribuir toda la tabla BGP completa (más de 950.000 prefijos IPv4) dentro de un IGP como OSPF, colapsando los routers internos.",
+      "BGP vs OSPF: OSPF es un protocolo link-state rápido que elige la ruta de menor coste métrico dentro de un dominio único, mientras que BGP es path-vector orientado a políticas entre organizaciones."
+    ],
+    "ejemplo": "router bgp 65001\n  bgp router-id 198.51.100.1\n  neighbor 198.51.100.2 remote-as 65002\n  neighbor 198.51.100.2 maximum-prefix 1000\n  address-family ipv4 unicast\n    network 203.0.113.0 mask 255.255.255.0\n    neighbor 198.51.100.2 route-map FILTER-OUT out",
+    "entrevista": "BGP es el protocolo path-vector sobre TCP/179 que interconecta Sistemas Autónomos en Internet, eligiendo rutas por atributos y políticas comerciales (como LOCAL_PREF y AS_PATH) en lugar de solo velocidad física del enlace."
+  },
+  "Bridge": {
+    "que": "Un bridge (puente de red) es un dispositivo o interfaz virtual de capa 2 (enlace de datos) que conecta dos o más segmentos de red locales, aprendiendo direcciones MAC y reenviando tramas de forma selectiva entre ellos dentro de un mismo dominio de broadcast.",
+    "para": "Históricamente redujo colisiones separando dominios de colisión Ethernet; en la actualidad su uso principal es en virtualización y contenedores (Linux Bridge `br0`, `docker0`, Open vSwitch) para unir interfaces virtuales (`veth`, TAP) de VMs y contenedores a la NIC física del host.",
+    "como": "Al arrancar, la tabla CAM/MAC del bridge está vacía. Cuando recibe una trama por un puerto, registra la dirección MAC origen junto con ese puerto de entrada (MAC learning). Luego consulta la MAC destino: si conoce el puerto destino y es distinto al de entrada, reenvía la trama únicamente por ese puerto; si está en el mismo puerto, la filtra; si la MAC es desconocida o de broadcast/multicast, la inunda por todos los demás puertos (flooding). Si existen rutas redundantes entre bridges, requiere Spanning Tree Protocol (STP) para bloquear enlaces y evitar tormentas de broadcast.",
+    "practicas": [
+      "En servidores Linux con KVM o contenedores, activar STP o verificar la topología si se conectan bridges a múltiples uplinks físicos para evitar bucles de capa 2.",
+      "Preferir VLAN-aware bridges (`ip link add br0 type bridge vlan_filtering 1`) en lugar de crear decenas de bridges separados por cada VLAN.",
+      "Error típico: olvidar que un bridge extiende el mismo dominio de broadcast; unir dos subredes L3 con un bridge sin separarlas por router mezcla tráfico ARP y DHCP.",
+      "Bridge vs Switch vs Router: un switch moderno es esencialmente un bridge multipuerto acelerado por hardware ASIC, mientras que un router separa dominios de broadcast y encamina en capa 3 por IP."
+    ],
+    "ejemplo": "# Crear un Linux bridge y conectar una interfaz veth\nip link add name br0 type bridge\nip link set dev br0 up\nip link set dev veth-app master br0\nbridge fdb show br br0",
+    "entrevista": "Un bridge conecta segmentos en capa 2 aprendiendo direcciones MAC por puerto para filtrar tráfico local y reducir dominios de colisión, siendo hoy fundamental en Linux como switch virtual para conectar contenedores y máquinas virtuales."
+  },
+  "Broadcast - Multicast": {
+    "que": "Broadcast es la transmisión de un paquete a todos los nodos de un dominio de red local simultáneamente, mientras que Multicast es el envío eficiente de un único flujo de paquetes a un grupo selectivo de receptores interesados sin duplicar tráfico por cada destino.",
+    "para": "Broadcast sustenta mecanismos básicos locales como ARP o descubrimiento DHCP; Multicast se utiliza para distribuir datos en tiempo real de uno a muchos (IPTV, feeds financieros de baja latencia, descubrimiento mDNS/VXLAN BUM o actualización de routers OSPF) ahorrando ancho de banda.",
+    "como": "En IPv4, el broadcast limitado usa `255.255.255.255` y el broadcast dirigido apunta a la última dirección de la subred (con MAC destino `ff:ff:ff:ff:ff:ff`); los routers bloquean el broadcast para contener el ruido dentro de cada subred, y en IPv6 el concepto de broadcast se elimina por completo. Multicast utiliza el rango `224.0.0.0/4` en IPv4 (`ff00::/8` en IPv6): los receptores anuncian su interés mediante IGMP (IPv4) o MLD (IPv6) al router local, los switches aplican IGMP Snooping para no inundar puertos sin suscriptores y los routers propagan árboles de distribución entre subredes con protocolos como PIM.",
+    "practicas": [
+      "Habilitar IGMP Snooping en switches cuando exista tráfico multicast (por ejemplo VXLAN o streaming) para evitar que se degrade comportándose como broadcast.",
+      "Mantener subredes acotadas y nunca reenviar directed-broadcast en routers de borde para prevenir ataques de amplificación (como Smurf).",
+      "Error típico: asumir que Multicast funciona nativamente en nubes públicas (AWS VPC, GCP, Azure); los proveedores cloud bloquean multicast/broadcast L2 y requieren soluciones overlay o servicios pub/sub L7.",
+      "Unicast vs Broadcast vs Multicast: Unicast envía 1-a-1, Broadcast 1-a-todos en el segmento local y Multicast 1-a-grupo-suscrito."
+    ],
+    "ejemplo": "# Ver grupos multicast suscritos en Linux\nip maddr show dev eth0\n# Ejemplos conocidos:\n# 224.0.0.5  -> Todos los routers OSPF\n# 224.0.0.251 -> mDNS (multicast DNS local)",
+    "entrevista": "Broadcast envía a toda la subred local y es detenido por los routers (eliminado en IPv6), mientras que Multicast entrega un único flujo solo a los receptores suscritos vía IGMP/MLD y PIM para ahorrar ancho de banda en envíos uno-a-muchos."
+  },
+  "CDN": {
+    "que": "Una CDN (Content Delivery Network) es una red globalmente distribuida de servidores proxy inversos situados en puntos de presencia (PoPs) cercanos a los usuarios finales (el edge) que almacenan en caché y entregan contenido estático y aceleran tráfico dinámico.",
+    "para": "Resuelve el problema de la latencia física por distancia al servidor origen, reduce drásticamente la carga y costes de egreso del backend y absorbe picos masivos de tráfico o ataques DDoS volumétricos antes de que alcancen la infraestructura principal.",
+    "como": "El dominio del sitio apunta vía DNS (CNAME/ALIAS o registro A Anycast) a la CDN. Cuando un usuario solicita un recurso, la CDN termina la conexión TCP y TLS en el PoP más cercano (ahorrando RTTs de handshake hasta el origen) y revisa su caché local según la clave de caché (URL, método, cabeceras como `Vary`). Si hay Cache Hit, responde inmediatamente desde RAM/NVMe del PoP; si hay Cache Miss, consulta el servidor origen (a menudo mediante rutas privadas optimizadas o conexiones persistentes Keep-Alive y técnicas de Origin Shield/Request Collapsing), guarda la copia respetando cabeceras `Cache-Control` / `ETag` y la sirve al usuario.",
+    "practicas": [
+      "Usar versionado por hash en activos estáticos (`app.a1b2c3.js`) combinado con `Cache-Control: public, max-age=31536000, immutable` para maximizar el hit ratio sin riesgo de servir versiones obsoletas.",
+      "Configurar `Surrogate-Control` o `CDN-Cache-Control` por separado de `Cache-Control` cuando se quiera cachear más tiempo en la CDN que en el navegador del usuario.",
+      "Error típico: incluir cookies de sesión o `Vary: Cookie` en respuestas estáticas o públicas, destruyendo la tasa de aciertos en caché y exponiendo datos si se cachea contenido privado.",
+      "CDN vs Reverse Proxy local: un reverse proxy (Nginx/HAProxy) vive junto a tus servidores; una CDN distribuye cientos de proxies inversos globalmente con Anycast, scrubbing DDoS y edge compute."
+    ],
+    "ejemplo": "HTTP/2 200 OK\nContent-Type: application/javascript\nCache-Control: public, max-age=31536000, immutable\nETag: \"9f86d081884c7d659a2feaa0c55ad015\"\nX-Cache: HIT from edge-mad-02",
+    "entrevista": "Una CDN acerca proxies inversos al usuario mediante Anycast o GeoDNS para terminar TLS en el edge, servir contenido cacheado con mínima latencia y proteger el origen absorbiendo tráfico y picos DDoS."
+  },
+  "CIDR - Subnetting": {
+    "que": "El subnetting con CIDR es la técnica de particionar un bloque de direcciones IP en subredes más pequeñas de tamaño ajustado (mediante máscaras de longitud variable o VLSM) para organizar redes físicas, VLANs o VPCs en la nube.",
+    "para": "Sirve para asignar exactamente las direcciones necesarias a cada segmento (evitando desperdiciar IPs), aislar dominios de broadcast, aplicar controles de firewall por zona y estructurar rutas resumibles en tablas de enrutamiento.",
+    "como": "Dado un bloque base (ej. `10.0.0.0/22` con 1024 IPs), se toman prestados `k` bits de la porción de host para crear `2^k` subredes iguales, aumentando el prefijo a `/(22+k)`. En cada subred IPv4 de prefijo `/N`, hay `2^(32-N)` direcciones totales: la primera es la dirección de red (todos los bits de host en 0), la última es el broadcast (todos en 1) y las restantes `2^(32-N) - 2` son utilizables para hosts (excepto `/31` en enlaces punto a punto según RFC 3021 y `/32` para rutas de host). Con VLSM se asignan prefijos distintos dentro del mismo bloque padre sin solapamiento, siempre alineando cada subred a múltiplos exactos de su tamaño.",
+    "practicas": [
+      "Al diseñar VPCs en cloud (AWS/GCP/Azure), recordar que el proveedor reserva direcciones adicionales en cada subred (por ejemplo, AWS reserva 5 IPs por subred: red, router VPC, DNS, futuro y broadcast).",
+      "Planificar rangos CIDR sin solapamiento entre entornos (prod, staging, on-premise, VPN) desde el inicio para no bloquear futuros VPC Peerings o Transit Gateways.",
+      "Error típico: calcular subredes que se solapan (ej. asignar `10.0.1.0/24` y `10.0.0.0/23` en la misma VPC) o quedarse sin IPs en subredes de Kubernetes/EKS donde cada Pod consume una IP de la VPC.",
+      "Subnetting fijo vs VLSM: el subnetting clásico divide todas las subredes del mismo tamaño; VLSM permite `/24` para pods, `/27` para balanceadores y `/28` para bases de datos en el mismo bloque."
+    ],
+    "ejemplo": "# Bloque padre: 192.168.10.0/24 (256 IPs)\n# Subred A (/25): 192.168.10.0   - 192.168.10.127 (126 hosts útiles)\n# Subred B (/26): 192.168.10.128 - 192.168.10.191 (62 hosts útiles)\n# Subred C (/27): 192.168.10.192 - 192.168.10.223 (30 hosts útiles)\n# Disponible:     192.168.10.224/27",
+    "entrevista": "El subnetting CIDR divide bloques IP en subredes de tamaño variable (VLSM) alineadas a potencias de dos, optimizando el uso de direcciones y el aislamiento por segmentos mientras se reservan direcciones de red, broadcast y las propias del proveedor cloud."
+  },
+  "CIDR": {
+    "que": "CIDR (Classless Inter-Domain Routing, RFC 4632) es el sistema de direccionamiento y notación IP que sustituyó a las antiguas clases rígidas (A, B y C), representando un bloque de red mediante una IP base seguida de la longitud de su prefijo en bits (`IP/N`, por ejemplo `10.20.0.0/16`).",
+    "para": "Resolvió dos crisis críticas de los años 90: el agotamiento acelerado de direcciones IPv4 clase B y el crecimiento descontrolado de las tablas de enrutamiento BGP globales al permitir agregar cientos de bloques contiguos en una sola ruta (route aggregation o supernetting).",
+    "como": "El número `/N` tras la barra indica cuántos bits más significativos de la dirección IPv4 (de 32 bits) o IPv6 (de 128 bits) identifican a la red, mientras que los `32 - N` bits restantes identifican a los hosts. Por ejemplo, `/24` equivale a la máscara `255.255.255.0` (256 direcciones). Al encaminar paquetes, los routers ya no deducen la máscara por el primer octeto, sino que aplican Longest Prefix Match (LPM): si un destino coincide con `10.0.0.0/16` y con `10.0.1.0/24`, el router siempre elige la ruta con el prefijo `/N` más largo y específico.",
+    "practicas": [
+      "Usar siempre bloques contiguos alineados en potencias de dos para poder resumir múltiples subredes en un solo anuncio BGP o regla de firewall.",
+      "En reglas de seguridad, usar `/32` (IPv4) o `/128` (IPv6) para autorizar un único host específico y nunca confundir `/0` (toda Internet: `0.0.0.0/0`) con una subred local.",
+      "Error típico: escribir una dirección de host con un prefijo de red en listas de acceso creyendo que representa un único servidor, cuando `192.168.1.10/24` en muchos sistemas indica interfaz con su máscara o representa toda la red `192.168.1.0/24`.",
+      "CIDR vs Classful addressing: el esquema por clases desperdiciaba millones de IPs al saltar de `/24` (254 hosts) a `/16` (65.534 hosts); CIDR ofrece granularidad bit a bit."
+    ],
+    "ejemplo": "# Equivalencias CIDR <-> Máscara decimal\n/32 -> 255.255.255.255 (1 IP, host único)\n/24 -> 255.255.255.0   (256 IPs, 254 útiles)\n/20 -> 255.255.240.0   (4096 IPs)\n/0  -> 0.0.0.0         (Cualquier IP, ruta por defecto)",
+    "entrevista": "CIDR eliminó las clases rígidas A/B/C usando prefijos de longitud variable `/N` para asignar bloques ajustados y agregar rutas en BGP, guiando el reenvío de paquetes mediante Longest Prefix Match."
+  },
+  "CNI (Calico - Flannel - Cilium)": {
+    "que": "CNI (Container Network Interface) es la especificación estándar de la CNCF que define cómo los runtimes de contenedores y Kubernetes configuran las interfaces de red y asignan direcciones IP al crear o destruir cada Pod. Calico, Flannel y Cilium son implementaciones concretas de plugins CNI.",
+    "para": "Resuelve la conectividad de red plana entre Pods en distintos nodos del clúster sin usar NAT entre ellos, además de aportar capacidades de enrutamiento, observabilidad y cumplimiento de NetworkPolicies según el plugin elegido.",
+    "como": "Cuando kubelet crea un Pod, invoca al binario CNI configurado en `/etc/cni/net.d/`, el cual crea un par de interfaces `veth`, conecta un extremo al network namespace del Pod, asigna una IP mediante su componente IPAM y enlaza el otro extremo al plano de datos del nodo. Flannel ofrece un modelo simple basado en overlay VXLAN con pocas funciones avanzadas. Calico puede operar con enrutamiento BGP nativo L3 o VXLAN/IP-in-IP y traduce NetworkPolicies a reglas `iptables` o eBPF. Cilium sustituye las cadenas extensas de `iptables` inyectando programas eBPF directamente en los hooks del kernel Linux (XDP y tc), acelerando el encaminamiento, el balanceo de Services (sin kube-proxy) y aplicando políticas L3/L4/L7.",
+    "practicas": [
+      "Elegir el CNI según la escala y requisitos: Flannel para laboratorios o clústeres pequeños simples; Calico para redes empresariales con BGP o integración on-prem; Cilium para alto rendimiento, eBPF, reemplazo de kube-proxy y observabilidad con Hubble.",
+      "Ajustar el MTU del CNI restando el overhead de encapsulación (p.ej. 50 bytes para VXLAN) respecto al MTU de la red física subyacente para evitar fragmentación silenciosa.",
+      "Error típico: instalar un CNI básico como Flannel y crear objetos `NetworkPolicy` esperando que bloqueen tráfico; Flannel por sí solo no implementa NetworkPolicies.",
+      "Overlay (VXLAN) vs Enrutamiento nativo (BGP/VPC CNI): el overlay funciona sobre cualquier red subyacente con leve sobrecarga de CPU/MTU, mientras que el enrutamiento nativo ofrece rendimiento casi bare-metal pero consume IPs de la VPC o exige soporte BGP."
+    ],
+    "ejemplo": "# Verificar configuración CNI activa en un nodo Kubernetes\nls /etc/cni/net.d/\n# Ejemplo: 10-calico.conflist o 05-cilium.conflist\nkubectl get pods -n kube-system -l k8s-app=cilium",
+    "entrevista": "CNI es la interfaz estándar que conecta Pods a la red del clúster: Flannel prioriza simplicidad VXLAN sin políticas, Calico destaca en enrutamiento BGP y NetworkPolicies robustas, y Cilium usa eBPF en el kernel para escalar rendimiento, seguridad L7 y observabilidad sin iptables."
+  },
+  "CORS": {
+    "que": "CORS (Cross-Origin Resource Sharing) es un mecanismo de seguridad ejecutado por los navegadores web que utiliza cabeceras HTTP para permitir que una aplicación web cargada en un origen (esquema + dominio + puerto) acceda de forma controlada a recursos de un origen distinto.",
+    "para": "Permite flexibilizar de forma segura la Same-Origin Policy (SOP) del navegador cuando un frontend SPA (por ejemplo `https://app.ejemplo.com`) necesita consumir una API alojada en otro subdominio, dominio o puerto (`https://api.ejemplo.com`).",
+    "como": "Por defecto, la SOP bloquea que JavaScript lea respuestas de otro origen. Para peticiones simples (GET/POST con tipos de contenido estándar y sin cabeceras personalizadas), el navegador envía la petición incluyendo la cabecera `Origin` y solo entrega la respuesta al código JS si el servidor responde con un `Access-Control-Allow-Origin` coincidente. Para peticiones complejas (PUT, DELETE, `Content-Type: application/json` o cabeceras como `Authorization`), el navegador envía primero una petición `OPTIONS` llamada preflight con `Access-Control-Request-Method` y `Access-Control-Request-Headers`. Si el servidor aprueba la operación con cabeceras `Access-Control-Allow-*`, el navegador procede con la petición real.",
+    "practicas": [
+      "Nunca devolver `Access-Control-Allow-Origin: *` combinado con `Access-Control-Allow-Credentials: true` (el estándar lo prohíbe) ni reflejar ciegamente la cabecera `Origin` de la petición sin validarla contra una lista blanca.",
+      "Configurar `Access-Control-Max-Age` en respuestas preflight para que el navegador cachee la autorización `OPTIONS` y reduzca la latencia de llamadas repetidas a la API.",
+      "Error típico: pensar que CORS protege tu backend contra herramientas CLI como `curl`, scripts o Postman; CORS solo es aplicado por navegadores para proteger al usuario final.",
+      "Error frecuente en proxies: olvidar incluir `Vary: Origin` cuando el servidor devuelve dinámicamente un `Access-Control-Allow-Origin` distinto por origen, provocando envenenamiento de caché en CDNs."
+    ],
+    "ejemplo": "# Respuesta del servidor a una petición preflight OPTIONS\nHTTP/1.1 204 No Content\nAccess-Control-Allow-Origin: https://app.ejemplo.com\nAccess-Control-Allow-Methods: GET, POST, PUT, DELETE\nAccess-Control-Allow-Headers: Authorization, Content-Type\nAccess-Control-Max-Age: 86400\nVary: Origin",
+    "entrevista": "CORS es una relajación controlada de la Same-Origin Policy aplicada únicamente por el navegador mediante cabeceras `Access-Control-Allow-*` y peticiones preflight `OPTIONS`, que debe configurarse con listas blancas estrictas de orígenes y nunca usarse como control de autenticación del backend."
+  },
+  "CSRF": {
+    "que": "CSRF (Cross-Site Request Forgery) es una vulnerabilidad web en la que un sitio malicioso engaña al navegador de un usuario autenticado para que envíe una petición HTTP no deseada a otra aplicación donde el usuario mantiene una sesión activa.",
+    "para": "Comprender y mitigar CSRF es esencial en aplicaciones que confían en credenciales enviadas automáticamente por el navegador (cookies de sesión, autenticación HTTP Basic o NTLM) para proteger acciones sensibles como cambios de contraseña, correos o transferencias.",
+    "como": "Cuando un usuario inicia sesión en `banco.com`, su navegador guarda una cookie de sesión. Si luego visita `atacante.com`, esa página puede contener un formulario oculto autoenviado por JavaScript o una etiqueta HTML apuntando a `https://banco.com/transferir`. El navegador adjunta automáticamente las cookies de `banco.com` en la petición saliente (dependiendo del atributo `SameSite`). Como `banco.com` recibe una cookie de sesión válida y no comprueba que la petición se originó dentro de su propia interfaz, ejecuta la acción creyendo que el usuario la autorizó.",
+    "practicas": [
+      "Configurar cookies de sesión con `SameSite=Lax` (o `Strict` en operaciones críticas) como defensa en profundidad moderna.",
+      "Implementar tokens Anti-CSRF impredecibles por sesión o por petición (Synchronizer Token Pattern o Double Submit Cookie) validados en el servidor para todo método que modifique estado.",
+      "Error típico: confiar en peticiones `GET` para cambiar estado (borrar registros, aprobar acciones) o asumir que usar JSON con CORS abierto (`*`) bloquea CSRF cuando el servidor no exige `Content-Type: application/json` estricto.",
+      "CSRF vs XSS: en CSRF el atacante aprovecha la sesión del usuario para enviar peticiones a ciegas sin leer las respuestas; en XSS inyecta JavaScript dentro del sitio legítimo y tiene control total, pudiendo leer incluso tokens CSRF."
+    ],
+    "ejemplo": "<form action=\"https://app.ejemplo.com/cuenta/email\" method=\"POST\">\n  <input type=\"hidden\" name=\"email\" value=\"atacante@evil.test\">\n  <input type=\"hidden\" name=\"csrf_token\" value=\"9f3c...a81d\">\n</form>",
+    "entrevista": "CSRF abusa del envío automático de cookies por parte del navegador para ejecutar acciones en otro sitio autenticado; se mitiga combinando cookies `SameSite=Lax/Strict`, tokens anti-CSRF validados en servidor y métodos HTTP seguros para operaciones de lectura."
+  },
+  "Cadena de confianza": {
+    "que": "La cadena de confianza (Chain of Trust) en PKI (Public Key Infrastructure) es la estructura jerárquica de firmas criptográficas que permite a un cliente verificar la autenticidad de un certificado digital de un servidor remontándose hasta una Autoridad Certificadora raíz (Root CA) en la que confía previamente.",
+    "para": "Resuelve el problema de no poder preinstalar millones de certificados de sitios web en cada dispositivo: basta con confiar en un conjunto reducido de Root CAs auditadas para validar dinámicamente cualquier servidor en Internet.",
+    "como": "La cadena consta habitualmente de tres niveles: la Root CA (autofirmada, cuya clave privada se mantiene offline y cuyo certificado está preinstalado en el trust store del SO, navegador o paquete `ca-certificates`), una o más Intermediate CAs (firmadas por la Root CA para aislar riesgos operativos) y el certificado final o leaf del servidor (firmado por la Intermediate CA). Durante el handshake TLS, el servidor envía su certificado leaf junto con los certificados intermedios (`fullchain.pem`), omitiendo el raíz. El cliente valida criptográficamente cada firma hacia arriba, verifica fechas de vigencia, propósitos (`Extended Key Usage`), coincidencia del dominio (SAN) y estado de revocación (CRL u OCSP Stapling) hasta llegar a una raíz confiable.",
+    "practicas": [
+      "Configurar siempre en el servidor web o ingress el archivo `fullchain.pem` (leaf + intermedios) y nunca solo el certificado leaf, ya que muchos clientes CLI, móviles y bots no descargan intermedios por AIA.",
+      "Habilitar OCSP Stapling en el servidor TLS para adjuntar la prueba de no revocación firmada por la CA durante el handshake sin penalizar latencia ni privacidad del cliente.",
+      "Error típico: incluir el certificado Root CA dentro de la cadena enviada por el servidor (desperdicia bytes en el handshake sin aportar confianza si el cliente no lo tiene ya en su trust store) o usar contenedores minimalistas (`scratch`/`alpine`) sin instalar `ca-certificates`.",
+      "Trust store del SO vs trust store propio: navegadores como Firefox o runtimes como Java (`cacerts`) y Node.js mantienen sus propios almacenes de raíces independientes del sistema operativo."
+    ],
+    "ejemplo": "# Verificar toda la cadena de confianza recibida por un servidor TLS\nopenssl s_client -connect ejemplo.com:443 -servername ejemplo.com -showcerts\n# Orden esperado:\n# 0 s:CN=ejemplo.com (Leaf)\n# 1 s:CN=R10 (Intermediate) -> firmado por Root CA en trust store",
+    "entrevista": "La cadena de confianza permite validar un certificado leaf recorriendo sus firmas criptográficas a través de CAs intermedias hasta una Root CA preinstalada en el trust store local, por lo que los servidores deben servir siempre la cadena completa de intermedios."
+  },
+  "Certificados - CA - SNI": {
+    "que": "Un certificado X.509 vincula criptográficamente una identidad (nombre DNS) con una clave pública; una Autoridad Certificadora (CA) es la entidad confiable que verifica dicha identidad y firma el certificado; y SNI (Server Name Indication) es la extensión de TLS que indica en el primer mensaje qué dominio solicita el cliente.",
+    "para": "Certificados y CA garantizan identidad y evitan suplantaciones (MITM) en HTTPS/TLS, mientras que SNI permite alojar decenas o miles de sitios HTTPS con distintos certificados detrás de una única dirección IP y puerto 443.",
+    "como": "Para obtener un certificado, el servidor genera un par de claves y una CSR (Certificate Signing Request) que envía a la CA (por ejemplo automáticamente vía protocolo ACME con Let's Encrypt). Tras demostrar control del dominio (reto HTTP-01 o DNS-01), la CA firma el certificado X.509 incluyendo el campo Subject Alternative Name (SAN) con los dominios válidos. Cuando un navegador se conecta por TLS a una IP compartida, envía el dominio objetivo en texto claro dentro de la extensión SNI del mensaje `ClientHello`. Gracias a ese SNI, el balanceador o servidor web selecciona el certificado correcto antes de continuar el handshake cifrado.",
+    "practicas": [
+      "Automatizar la emisión y renovación de certificados de vida corta (90 días o menos) con ACME/cert-manager en lugar de gestionarlos manualmente.",
+      "Declarar siempre los dominios en el campo SAN (Subject Alternative Name), ya que los navegadores modernos ignoran el antiguo Common Name (CN).",
+      "Error típico: probar un endpoint TLS con `curl https://10.0.1.5` o clientes antiguos sin soporte SNI, haciendo que el servidor entregue un certificado por defecto que no coincide y falle la validación.",
+      "SNI estándar vs ECH (Encrypted Client Hello): el SNI tradicional viaja en claro permitiendo que firewalls o ISPs vean el dominio visitado; ECH cifra esa información usando claves publicadas por DNS."
+    ],
+    "ejemplo": "# Inspeccionar SAN y fechas de un certificado probando SNI específico\nopenssl s_client -connect 203.0.113.10:443 -servername api.ejemplo.com </dev/null 2>/dev/null \\\n  | openssl x509 -noout -subject -ext subjectAltName -dates",
+    "entrevista": "Una CA firma certificados X.509 (validando dominios en SAN) para demostrar identidad en TLS, mientras que la extensión SNI permite al cliente indicar el dominio deseado en el ClientHello para que una misma IP 443 sirva el certificado correcto."
+  },
+  "Cliente-servidor": {
+    "que": "El modelo cliente-servidor es una arquitectura de red distribuida que divide responsabilidades entre proveedores de recursos o servicios (servidores), que permanecen escuchando peticiones, y consumidores (clientes), que inician la comunicación para solicitar datos o procesamiento.",
+    "para": "Es el patrón base de la web, APIs REST/gRPC, bases de datos y aplicaciones empresariales, ya que centraliza el estado, la seguridad, el almacenamiento y la lógica de negocio en servidores administrables mientras desacopla múltiples tipos de clientes.",
+    "como": "El servidor vincula un socket a una dirección IP y un puerto conocido mediante `bind()` y `listen()`, permaneciendo pasivo hasta recibir tráfico entrante. El cliente inicia la interacción resolviendo la ubicación del servidor (DNS), abriendo un puerto efímero local y estableciendo la comunicación mediante `connect()` (por ejemplo handshake TCP o petición UDP). El servidor acepta la petición, aplica autenticación/autorización, procesa la lógica o consulta su almacenamiento y devuelve una respuesta estructurada. Para escalar más allá de un único servidor físico, se intercalan balanceadores de carga y proxies inversos manteniendo la abstracción cliente-servidor.",
+    "practicas": [
+      "Diseñar servidores sin estado (stateless) siempre que sea posible, externalizando sesiones a Redis o tokens JWT para escalar horizontalmente detrás de un balanceador.",
+      "Establecer timeouts estrictos, retries con exponential backoff y circuit breakers en el lado cliente para evitar fallos en cascada cuando el servidor se degrada.",
+      "Error típico: acoplar reglas de negocio críticas o validación de autorización únicamente en el cliente (frontend/app móvil), olvidando que cualquier cliente puede ser manipulado.",
+      "Cliente-servidor vs P2P (Peer-to-Peer): cliente-servidor ofrece administración centralizada y consistencia más simple pero introduce puntos de congestión o coste central; P2P distribuye carga entre pares iguales pero complica coordinación, NAT traversal y confianza."
+    ],
+    "ejemplo": "# Flujo mínimo cliente-servidor sobre HTTP\nCliente (puerto efímero 51432) --[GET /api/v1/perfil]--> Servidor (IP:443, en listen)\nCliente                         <--[200 OK + JSON]------ Servidor",
+    "entrevista": "El modelo cliente-servidor separa a quienes inician peticiones de quienes escuchan y centralizan estado y lógica de negocio, facilitando seguridad y mantenimiento a cambio de requerir balanceo y replicación para escalar."
+  },
+  "Cloudflare DNS": {
+    "que": "Cloudflare DNS comprende tanto el servicio de DNS autoritativo gestionado por Cloudflare (alojado en su red Anycast global) como su servicio de resolvedor recursivo público `1.1.1.1` enfocado en velocidad y privacidad.",
+    "para": "En ingeniería de software y operaciones se usa como DNS autoritativo ultrarrápido con propagación casi instantánea, soporte de proxy naranja (WAF/CDN/DDoS), DNSSEC en un clic y CNAME flattening en el dominio raíz (`apex`).",
+    "como": "En su rol autoritativo, los registros de zona se replican en segundos hacia todos los PoPs Anycast globales de Cloudflare. Cada registro DNS puede configurarse en modo \"DNS only\" (nube gris, responde con la IP real del origen) o \"Proxied\" (nube naranja, Cloudflare responde con sus propias IPs Anycast, termina TLS en el edge, aplica WAF/caché y abre conexión hacia tu origen). Además, implementa CNAME flattening en el registro apex (`ejemplo.com`), resolviendo internamente un CNAME objetivo y devolviendo directamente registros `A`/`AAAA` válidos según el RFC sin romper registros `MX` o `TXT` del dominio raíz.",
+    "practicas": [
+      "Usar modo \"DNS only\" (nube gris) para registros que no sean HTTP/HTTPS (como `MX`, servidores SSH, VPN o verificación de dominios externos) si no se contratan servicios específicos de proxy TCP.",
+      "Gestionar las zonas y registros mediante Infrastructure as Code (Terraform `cloudflare_record`) en lugar de ediciones manuales en el panel web.",
+      "Error típico: activar modo SSL \"Flexible\" en Cloudflare (HTTPS cliente->Cloudflare, HTTP en claro Cloudflare->origen), dejando el tramo interno sin cifrar y generando bucles infinitos de redirección cuando el origen redirige HTTP a HTTPS.",
+      "Cloudflare DNS vs AWS Route 53: Cloudflare destaca por su integración directa con CDN/WAF gratuito, propagación sub-minuto y flattening nativo; Route 53 brilla en integraciones nativas con AWS (Alias a ALB/CloudFront, Private Hosted Zones en VPC y enrutamiento por health checks)."
+    ],
+    "ejemplo": "# Gestión declarativa de registro DNS en Cloudflare con Terraform\nresource \"cloudflare_record\" \"api\" {\n  zone_id = var.zone_id\n  name    = \"api\"\n  content = \"203.0.113.50\"\n  type    = \"A\"\n  proxied = true\n}",
+    "entrevista": "Cloudflare DNS combina un servidor autoritativo Anycast de propagación en segundos con CNAME flattening en el apex y un modo proxied opcional que antepone CDN, TLS y WAF frente al servidor de origen."
+  },
+  "Cloudflare Tunnel": {
+    "que": "Cloudflare Tunnel (anteriormente Argo Tunnel) es un servicio que crea conexiones cifradas salientes desde un demonio ligero (`cloudflared`) en tu servidor o clúster hacia el edge de Cloudflare para exponer aplicaciones internas sin abrir puertos entrantes en el firewall ni necesitar IP pública.",
+    "para": "Sirve para publicar servicios locales, entornos on-premise, homelabs o backends en subredes privadas hacia Internet de forma segura, o para conectar redes privadas con políticas Zero Trust (Cloudflare Access) eliminando la exposición directa a escaneos y ataques directos a la IP.",
+    "como": "En el host privado se ejecuta el daemon `cloudflared`, el cual establece múltiples túneles persistentes (sobre HTTP/2 o QUIC) de forma saliente hacia dos o más PoPs cercanos de Cloudflare usando credenciales autenticadas del túnel. En Cloudflare DNS se apunta el subdominio deseado mediante un CNAME hacia `<tunnel-uuid>.cfargotunnel.com`. Cuando un usuario accede a la URL pública, la petición llega al edge de Cloudflare, pasa por WAF y reglas Zero Trust, y se encamina hacia el servidor interno a través del túnel saliente ya abierto hasta `cloudflared`, que la entrega a `localhost` o al servicio interno.",
+    "practicas": [
+      "Combinar Cloudflare Tunnel con Cloudflare Access (políticas de identidad SSO/MFA) para servicios internos administrativos como Grafana, ArgoCD o paneles de staging.",
+      "Ejecutar al menos dos réplicas de `cloudflared` (por ejemplo como Deployment en Kubernetes) para garantizar alta disponibilidad y actualizaciones sin cortes.",
+      "Error típico: exponer una base de datos o servicio interno creyendo que el túnel por sí solo autentica usuarios; sin políticas Access o autenticación en la app, el túnel sigue siendo públicamente accesible por la URL.",
+      "Cloudflare Tunnel vs Port Forwarding / VPN tradicional: el túnel no expone puertos WAN ni IP de origen (evitando DDoS directo al ISP), y publica aplicaciones HTTP/SSH concretas a nivel usuario en lugar de dar acceso completo de red L3 como una VPN clásica."
+    ],
+    "ejemplo": "# ~/.cloudflared/config.yml (ingress declarativo)\ntunnel: 8e39a1b2-...\ncredentials-file: /etc/cloudflared/creds.json\ningress:\n  - hostname: api.ejemplo.com\n    service: http://localhost:8080\n  - service: http_status:404",
+    "entrevista": "Cloudflare Tunnel expone servicios internos mediante conexiones salientes cifradas desde `cloudflared` hacia el edge de Cloudflare, eliminando puertos entrantes abiertos e IPs públicas expuestas y permitiendo integrar WAF y Zero Trust delante del tráfico."
+  },
+  "ClusterIP - NodePort - LoadBalancer - Ingress": {
+    "que": "Son los mecanismos de Kubernetes para exponer aplicaciones: `ClusterIP`, `NodePort` y `LoadBalancer` son tipos de objeto `Service` (capa 4 TCP/UDP), mientras que `Ingress` (y su sucesor Gateway API) es un recurso de enrutamiento L7 HTTP/HTTPS.",
+    "para": "Resuelven el acceso estable a Pods efímeros con IPs cambiantes: `ClusterIP` para tráfico interno entre microservicios, `NodePort` para exposición básica en puertos de nodos, `LoadBalancer` para obtener un balanceador externo por servicio y `Ingress` para multiplexar múltiples dominios y rutas HTTP bajo un único punto de entrada.",
+    "como": "`ClusterIP` (por defecto) asigna una IP virtual interna estable; `kube-proxy` (vía iptables/IPVS) o eBPF traduce esa IP hacia los endpoints de los Pods sanos. `NodePort` añade un puerto estático (rango 30000-32767) abierto en todos los nodos que redirige al `ClusterIP`. `LoadBalancer` crea un `NodePort` y solicita al controlador cloud (CCM) provisionar un NLB/ALB externo apuntando a los nodos. `Ingress` no crea puertos L4 por servicio; en cambio, un Ingress Controller (como Nginx, Traefik o Envoy) corre detrás de un único `LoadBalancer`, termina TLS y enruta por `Host` y `Path` directamente hacia los `ClusterIP` o Pods de cada backend.",
+    "practicas": [
+      "Usar `ClusterIP` por defecto para todos los servicios internos y un único `Ingress` (o Gateway API) para consolidar tráfico HTTP/HTTPS externo bajo un solo balanceador cloud, reduciendo costes.",
+      "Configurar `externalTrafficPolicy: Local` en Services `NodePort`/`LoadBalancer` cuando se necesite preservar la IP real del cliente y evitar saltos extra entre nodos.",
+      "Error típico: crear un Service `LoadBalancer` por cada microservicio HTTP en producción cloud, multiplicando costes de balanceadores y dispersando certificados TLS.",
+      "Service LoadBalancer vs Ingress: `LoadBalancer` opera en capa 4 (1 IP/balanceador por servicio), mientras que `Ingress` opera en capa 7 permitiendo enrutamiento por dominio/ruta y terminación TLS centralizada."
+    ],
+    "ejemplo": "apiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n  name: api-ingress\nspec:\n  rules:\n  - host: api.ejemplo.com\n    http:\n      paths:\n      - path: /v1\n        pathType: Prefix\n        backend:\n          service:\n            name: api-service\n            port: { number: 80 }",
+    "entrevista": "En Kubernetes, ClusterIP expone Pods internamente, NodePort abre un puerto en los nodos, LoadBalancer provisiona un balanceador L4 externo por servicio e Ingress enruta tráfico L7 HTTP/HTTPS por host y ruta hacia múltiples Services ClusterIP."
+  },
+  "Control de congestión (slow start - congestion avoidance)": {
+    "que": "El control de congestión en TCP es el conjunto de algoritmos ejecutados por el emisor para estimar la capacidad disponible de la red intermedia y limitar su tasa de envío mediante la ventana de congestión (`cwnd`), evitando colapsar routers y enlaces compartidos.",
+    "para": "Sirve para maximizar el aprovechamiento del ancho de banda sin provocar pérdidas masivas de paquetes ni colas gigantes (bufferbloat), adaptándose dinámicamente cuando otros flujos entran o salen de la red.",
+    "como": "Al iniciar una conexión, TCP comienza con una `cwnd` pequeña (típicamente 10 MSS según RFC 6928) y entra en fase de **Slow Start**: por cada ACK recibido, aumenta `cwnd` en 1 MSS, duplicando la tasa de envío cada RTT (crecimiento exponencial) hasta alcanzar el umbral `ssthresh`. Al superar `ssthresh`, pasa a **Congestion Avoidance**, creciendo de forma lineal (~1 MSS por cada RTT completo) para sondear capacidad con cautela (esquema AIMD). Cuando se detecta congestión por 3 ACKs duplicados (Fast Retransmit/Fast Recovery), algoritmos clásicos como Reno/CUBIC reducen `cwnd` multiplicativamente sin caer a 1; ante un timeout de RTO más grave, `ssthresh` baja a la mitad y `cwnd` reinicia en Slow Start. Algoritmos modernos como **BBR** miden ancho de banda de cuello de botella y RTT mínimo en lugar de esperar pérdida de paquetes.",
+    "practicas": [
+      "Activar TCP BBR (`net.ipv4.tcp_congestion_control = bbr` con `fq`) en servidores Linux orientados a Internet para mejorar rendimiento en enlaces con ligeras pérdidas y reducir latencia en cola.",
+      "Reutilizar conexiones TCP mediante Keep-Alive o HTTP/2-HTTP/3 para no pagar repetidamente la fase inicial de Slow Start en peticiones pequeñas.",
+      "Error típico: confundir el nombre \"Slow Start\" pensando que crece lento; en realidad crece exponencialmente (se llama así por empezar con una ventana inicial pequeña frente a enviar toda la ventana de golpe).",
+      "Control de congestión (`cwnd`) vs Control de flujo (`rwnd`): el control de congestión protege la red intermedia (lo calcula el emisor), mientras que el control de flujo protege el buffer del receptor (lo anuncia el receptor); el emisor siempre envía como máximo `min(cwnd, rwnd)`."
+    ],
+    "ejemplo": "# Comprobar y habilitar algoritmo de congestión en Linux\nsysctl net.ipv4.tcp_available_congestion_control\nsysctl net.ipv4.tcp_congestion_control\n# Salida moderna recomendada: bbr (clásica por defecto: cubic)",
+    "entrevista": "El control de congestión ajusta dinámicamente la ventana `cwnd` del emisor —creciendo exponencialmente en Slow Start hasta `ssthresh` y linealmente en Congestion Avoidance— para aprovechar la red sin saturarla, y algoritmos como BBR mejoran a CUBIC reaccionando a latencia y ancho de banda antes de que haya pérdidas."
+  },
+  "Control de flujo (ventana deslizante)": {
+    "que": "El control de flujo en TCP es el mecanismo extremo a extremo mediante el cual el receptor regula la velocidad a la que el emisor transmite bytes para evitar desbordar su buffer de recepción.",
+    "para": "Resuelve la disparidad de velocidades entre un emisor rápido (por ejemplo un servidor en un enlace de 10 Gbps) y un receptor más lento o sobrecargado por disco/CPU (como un teléfono móvil o una aplicación que lee despacio del socket).",
+    "como": "Funciona mediante una **ventana deslizante** (sliding window) de bytes que pueden estar en vuelo sin confirmación. En cada segmento TCP enviado de vuelta, el receptor incluye en la cabecera el campo `Window Size` (`rwnd`, Receive Window), indicando cuántos bytes libres quedan actualmente en su buffer de kernel (`SO_RCVBUF`). A medida que la aplicación llama a `recv()` y vacía el buffer, la ventana avanza hacia la derecha y el receptor anuncia más espacio disponible. Si la aplicación deja de leer y el buffer se llena, el receptor envía un `Zero Window` (`rwnd = 0`), deteniendo al emisor salvo por sondeos periódicos (Zero Window Probes) hasta recibir un `Window Update`. Como el campo original es de 16 bits (máx. 64 KiB), durante el handshake 3-way se negocia la opción TCP Window Scaling (RFC 7323) para multiplicar el valor hasta 1 GiB.",
+    "practicas": [
+      "Mantener habilitado TCP Window Scaling (`net.ipv4.tcp_window_scaling = 1`) en entornos de alto Bandwidth-Delay Product (BDP), ya que una ventana limitada a 64 KiB ahoga el rendimiento en enlaces rápidos con latencia >10 ms.",
+      "Monitorizar eventos `ZeroWindow` en capturas Wireshark como síntoma claro de que la aplicación receptora (y no la red) está atascada y no drena su socket.",
+      "Error típico: confundir control de flujo con control de congestión o aumentar `SO_RCVBUF` sin ajustar `net.core.rmem_max` en Linux.",
+      "Ventana deslizante TCP vs Stop-and-Wait: Stop-and-Wait envía un paquete y espera ACK wasting tiempo de línea; la ventana deslizante mantiene múltiples segmentos en tránsito llenando la tubería de red (pipe)."
+    ],
+    "ejemplo": "# Fórmula del Bandwidth-Delay Product (BDP) para dimensionar ventana\n# Enlace 1 Gbps con RTT 40 ms:\n# BDP = (1_000_000_000 / 8) * 0.040 = 5_000_000 bytes (~4.8 MiB)\nss -ti dst 10.0.0.5  # Muestra cwnd, rcv_space y wscale en vivo",
+    "entrevista": "El control de flujo usa una ventana deslizante anunciada por el receptor (`rwnd`) —ampliada con Window Scaling— para que el emisor nunca envíe más bytes de los que caben en el buffer libre del receptor."
+  },
+  "Cookies": {
+    "que": "Las cookies HTTP son pequeños pares clave-valor que un servidor envía mediante la cabecera `Set-Cookie` para que el navegador los almacene y los reenvíe automáticamente en la cabecera `Cookie` en futuras peticiones coincidentes.",
+    "para": "Sirven para mantener estado sobre un protocolo sin estado como HTTP: gestionar identificadores de sesión tras el login, preferencias de usuario o tokens de seguimiento entre múltiples peticiones.",
+    "como": "El servidor incluye `Set-Cookie: nombre=valor; atributos` en una respuesta HTTP. El navegador guarda la cookie asociada al dominio, ruta (`Path`) y tiempo de vida (`Max-Age` o `Expires`; si se omiten, es una cookie de sesión que desaparece al cerrar el navegador). En cada petición subsiguiente cuya URL coincida con `Domain` y `Path`, el navegador adjunta automáticamente `Cookie: nombre=valor`. Sus banderas de seguridad controlan su exposición: `HttpOnly` bloquea lectura desde JavaScript (`document.cookie`) mitigando robo por XSS; `Secure` exige transporte cifrado HTTPS; y `SameSite` (`Strict`, `Lax`, `None`) regula si se envía en peticiones originadas desde sitios externos.",
+    "practicas": [
+      "Para cookies de autenticación, aplicar siempre `Secure; HttpOnly; SameSite=Lax` (o `Strict`) y prefijo `__Host-` para impedir sobrescritura desde subdominios.",
+      "Almacenar en la cookie únicamente un identificador opaco de sesión (y guardar los datos en servidor/Redis) o mantenerlas pequeñas (<4 KiB), ya que viajan en cada petición hacia el dominio.",
+      "Error típico: guardar JWTs sensibles en `localStorage` en lugar de cookies `HttpOnly`, dejándolos totalmente expuestos si existe una vulnerabilidad XSS.",
+      "Error común de configuración: usar `SameSite=None` sin la bandera `Secure`; los navegadores modernos rechazan la cookie."
+    ],
+    "ejemplo": "HTTP/1.1 200 OK\nSet-Cookie: __Host-sid=8d7a9f2e1c4b; Path=/; Max-Age=3600; Secure; HttpOnly; SameSite=Lax",
+    "entrevista": "Las cookies aportan estado a HTTP almacenándose en el navegador y enviándose automáticamente por dominio y ruta; en autenticación deben protegerse con `HttpOnly` contra XSS, `Secure` para HTTPS y `SameSite` contra CSRF."
+  },
+  "CoreDNS": {
+    "que": "CoreDNS es un servidor DNS modular, rápido y extensible escrito en Go (proyecto graduado de la CNCF) que actúa como el servidor DNS estándar de los clústeres Kubernetes para el descubrimiento interno de servicios.",
+    "para": "Resuelve la necesidad de que Pods y servicios se encuentren por nombres lógicos (como `pagos.prod.svc.cluster.local`) sin conocer sus IPs dinámicas, además de reenviar consultas externas hacia servidores DNS corporativos o de Internet.",
+    "como": "CoreDNS funciona mediante una cadena de plugins configurados en un archivo `Corefile`. En Kubernetes se ejecuta normalmente como un Deployment replicado en el namespace `kube-system` detrás del Service `kube-dns` (ClusterIP fijo configurado en el `--cluster-dns` de cada `kubelet`). Cuando un Pod consulta un nombre, el plugin `kubernetes` escucha directamente al API Server (vía watch de Services y Endpoints/EndpointSlices) para responder en memoria registros `A`/`AAAA` y `SRV` para nombres internos del clúster. Si el nombre es externo, el plugin `forward` delega la consulta hacia el `/etc/resolv.conf` del nodo o servidores upstream configurados, apoyándose en el plugin `cache` para acelerar respuestas repetidas.",
+    "practicas": [
+      "Ajustar `ndots` en la configuración DNS de Pods cuando se hagan muchísimas llamadas a dominios externos (por defecto Kubernetes pone `ndots:5`, generando 4 consultas fallidas de sufijos de búsqueda por cada dominio externo si no lleva punto final).",
+      "Desplegar **NodeLocal DNSCache** en clústeres medianos/grandes para cachear DNS en cada nodo por TCP/localhost y evitar saturar CoreDNS o agotar la tabla conntrack UDP.",
+      "Error típico: tener una sola réplica de CoreDNS o sin `PodAntiAffinity` en producción; si cae ese nodo, todo el descubrimiento interno y llamadas salientes del clúster fallan.",
+      "CoreDNS vs kube-dns clásico: `kube-dns` requería varios contenedores separados (`kubedns`, `dnsmasq`, `sidecar`), mientras que CoreDNS unifica todo en un único binario ligero basado en plugins."
+    ],
+    "ejemplo": ".:53 {\n    errors\n    health\n    kubernetes cluster.local in-addr.arpa ip6.arpa {\n        pods insecure\n        fallthrough in-addr.arpa ip6.arpa\n    }\n    cache 30\n    forward . /etc/resolv.conf\n}",
+    "entrevista": "CoreDNS es el servidor DNS basado en plugins de Kubernetes que observa Services y EndpointSlices en el API Server para resolver nombres internos y reenviar tráfico externo, donde optimizar `ndots` y usar NodeLocal DNSCache evita cuellos de botella conntrack."
+  },
+  "Códigos 2xx-3xx-4xx-5xx": {
+    "que": "Son las categorías de códigos de estado de 3 dígitos en las respuestas HTTP (RFC 9110) que comunican de forma estandarizada al cliente, proxies y balanceadores el resultado del procesamiento de una petición.",
+    "para": "Permiten que navegadores, clientes API, CDNs y sistemas de monitorización tomen decisiones automáticas sin parsear el cuerpo de la respuesta: seguir redirecciones, cachear, reintentar con backoff o alertar fallos del servidor.",
+    "como": "El primer dígito define la clase: `2xx` indica éxito (`200 OK`, `201 Created`, `204 No Content`); `3xx` señala redirección (`301 Moved Permanently` cacheable, `302/307/308` temporales o preservando método, `304 Not Modified` para validación de caché); `4xx` indica error atribuible al cliente (`400 Bad Request`, `401 Unauthorized` falta autenticación, `403 Forbidden` sin permisos, `404 Not Found`, `409 Conflict`, `429 Too Many Requests`); y `5xx` indica fallo del servidor o infraestructura intermedia (`500 Internal Server Error`, `502 Bad Gateway` respuesta inválida del upstream, `503 Service Unavailable` sobrecarga/mantenimiento, `504 Gateway Timeout` el upstream tardó demasiado).",
+    "practicas": [
+      "Distinguir con precisión `401` (no autenticado o token inválido) de `403` (autenticado pero sin autorización para ese recurso) y `429` (rate limit alcanzado, acompañado de cabecera `Retry-After`).",
+      "En clientes y balanceadores, reintentar únicamente errores transitorios (`502`, `503`, `504` y `429` respetando `Retry-After`) en métodos idempotentes; nunca reintentar automáticamente `400`, `401`, `403` o `404`.",
+      "Error típico: devolver `200 OK` con `{ \"error\": true }` en APIs REST; engaña a CDNs, métricas de SLO y health checks, ocultando fallos reales.",
+      "301/302 vs 308/307: `301` y `302` permiten históricamente que los navegadores cambien un `POST` a `GET` al redirigir, mientras que `308` (permanente) y `307` (temporal) garantizan conservar el método y cuerpo originales."
+    ],
+    "ejemplo": "# Respuesta estándar ante saturación controlada\nHTTP/1.1 429 Too Many Requests\nRetry-After: 30\nContent-Type: application/problem+json\n\n{\"title\":\"Rate limit exceeded\",\"status\":429}",
+    "entrevista": "Los códigos HTTP estandarizan el contrato operativo de red: `2xx` éxito, `3xx` redirección o caché válida, `4xx` error del cliente (no reintentable salvo 429) y `5xx` fallo del servidor o proxy upstream que guía alertas, reintentos y métricas de disponibilidad."
+  },
+  "DDoS - SYN flood": {
+    "que": "Un DDoS (Distributed Denial of Service) es un ataque coordinado desde miles de orígenes (botnets o amplificadores) para agotar el ancho de banda, cómputo o estado de un servicio y dejarlo inaccesible. El SYN flood es un ataque DDoS clásico de capa 4 que satura la tabla de conexiones semiabiertas del handshake TCP.",
+    "para": "Conocer su mecánica es imprescindible para diseñar defensas por capas (edge Anycast, scrubbing, tuning de kernel y WAF) que mantengan los servicios en línea bajo tráfico malicioso masivo.",
+    "como": "En un SYN flood, los atacantes envían ráfagas enormes de paquetes TCP `SYN` hacia un puerto abierto (como 80 o 443), habitualmente con IPs origen falsificadas (spoofing). El servidor reserva memoria en su cola `SYN backlog` (estado `SYN_RECV`), responde con `SYN-ACK` hacia esas IPs inexistentes o ajenas y espera un `ACK` que jamás llegará hasta expirar por retransmisiones. Al llenarse la cola `backlog`, el sistema descarta cualquier `SYN` nuevo de usuarios legítimos aunque la CPU y la red estén libres. Además existen DDoS volumétricos (amplificación UDP por DNS/NTP/Memcached) y DDoS L7 (peticiones HTTPS costosas hacia endpoints pesados).",
+    "practicas": [
+      "Habilitar **SYN Cookies** (`net.ipv4.tcp_syncookies = 1`) en Linux para codificar el estado del handshake criptográficamente en el número de secuencia del `SYN-ACK` sin reservar memoria en la cola hasta recibir el `ACK` válido.",
+      "Colocar el tráfico público detrás de una CDN/proxy inverso Anycast (Cloudflare, CloudFront + AWS Shield) para absorber ataques volumétricos y completar el handshake TCP en el edge, además de aplicar Rate Limiting y WAF en capa 7.",
+      "Error típico: intentar mitigar un ataque DDoS volumétrico que satura el enlace físico usando solo reglas `iptables` o WAF en el servidor final; el enlace ya llega colapsado antes de procesar los paquetes.",
+      "SYN flood (L4) vs HTTP flood (L7): el SYN flood agota buffers del kernel con paquetes pequeños y falsificados; el HTTP flood completa TCP/TLS desde IPs reales y agota workers, CPU o base de datos simulando usuarios reales."
+    ],
+    "ejemplo": "# Verificación de protección SYN Cookies y cola backlog en Linux\nsysctl net.ipv4.tcp_syncookies\nsysctl net.ipv4.tcp_max_syn_backlog\nss -tan state syn-recv | wc -l",
+    "entrevista": "Un SYN flood agota la cola de conexiones semiabiertas enviando `SYN` sin completar el handshake 3-way; en el host se mitiga sin estado mediante SYN Cookies (`tcp_syncookies`) y a escala Internet mediante proxies/CDNs Anycast que absorben el tráfico en el edge."
+  },
+  "DHCP": {
+    "que": "DHCP (Dynamic Host Configuration Protocol, RFC 2131) es el protocolo cliente-servidor de capa de aplicación que asigna automáticamente direcciones IP y parámetros de red a los dispositivos al conectarse a una red.",
+    "para": "Elimina la configuración manual propensa a errores y colisiones de IPs en redes corporativas, Wi-Fi, VPCs y centros de datos, entregando de forma centralizada IP, máscara de subred, default gateway, servidores DNS y rutas adicionales.",
+    "como": "Opera sobre UDP puertos 67 (servidor) y 68 (cliente) siguiendo el ciclo **DORA** de cuatro mensajes. Primero, el cliente sin IP emite un **Discover** por broadcast (`255.255.255.255`). Los servidores DHCP de la subred (o alcanzados vía un agente **DHCP Relay** en el router) responden con **Offer** proponiendo una IP de su pool y un tiempo de concesión (*lease time*). El cliente elige una oferta y envía un **Request** por broadcast confirmando la IP (para que otros servidores retiren sus ofertas), y el servidor cierra el proceso con un **ACK** registrando el alquiler por MAC. Al alcanzar el 50% del lease time (T1), el cliente intenta renovar la misma IP directamente por unicast.",
+    "practicas": [
+      "Configurar **DHCP Snooping** en switches empresariales marcando como `trusted` únicamente los puertos hacia servidores o relays legítimos para bloquear servidores DHCP piratas (rogue DHCP).",
+      "Usar reservas DHCP basadas en dirección MAC para impresoras, APs o infraestructura que necesite IP predecible sin perder gestión centralizada.",
+      "Error típico: olvidar configurar un `ip helper-address` (DHCP Relay) en el router cuando el servidor DHCP reside en otra VLAN, impidiendo que los mensajes broadcast `Discover` lo alcancen.",
+      "DHCP vs SLAAC (IPv6): DHCP mantiene estado centralizado (asignando IP + DNS + opciones corporativas), mientras que SLAAC permite que el host IPv6 autoconfigure su propia IP a partir del prefijo anunciado por el router (RA)."
+    ],
+    "ejemplo": "# Ciclo DHCP (DORA) sobre UDP 68 <-> 67\n1. Cliente -> 255.255.255.255 : DHCP Discover (MAC aa:bb:cc:11:22:33)\n2. Servidor -> Cliente         : DHCP Offer    (192.168.10.45/24, lease 24h)\n3. Cliente -> 255.255.255.255 : DHCP Request  (Acepto 192.168.10.45)\n4. Servidor -> Cliente         : DHCP ACK      (GW 192.168.10.1, DNS 1.1.1.1)",
+    "entrevista": "DHCP automatiza el aprovisionamiento de IP, máscara, gateway y DNS mediante el intercambio DORA sobre UDP 67/68, y en redes corporativas requiere DHCP Relay entre VLANs y DHCP Snooping para bloquear servidores falsos."
+  },
+  "DNS over HTTPS - TLS": {
+    "que": "DNS over TLS (DoT, RFC 7858) y DNS over HTTPS (DoH, RFC 8484) son estándares modernos que cifran las consultas y respuestas DNS entre el cliente (stub resolver) y el resolvedor recursivo, evitando que viajen en texto claro por UDP/53.",
+    "para": "Protegen la privacidad del usuario frente a la vigilancia de ISPs o redes Wi-Fi públicas (que de otro modo ven cada dominio visitado) y previenen la manipulación o envenenamiento de respuestas DNS en tránsito.",
+    "como": "En **DoT**, el cliente abre una conexión TCP en el puerto dedicado **853**, realiza un handshake TLS autenticando al resolvedor mediante su certificado y envía los mensajes DNS binarios estándar con prefijo de longitud dentro de ese túnel cifrado. En **DoH**, las consultas DNS en formato wire o JSON se encapsulan dentro de peticiones HTTP/2 o HTTP/3 (`GET` o `POST` a un endpoint como `/dns-query`) sobre el puerto **443**, mezclándose indistinguishablemente con el tráfico web HTTPS normal. Ambos protegen exclusivamente el tramo cliente-resolvedor (\"last mile\"); la comunicación posterior entre el resolvedor recursivo y los servidores autoritativos sigue siendo mayoritariamente sin cifrar.",
+    "practicas": [
+      "Usar DoT en infraestructura de red y routers/SO donde convenga mantener el tráfico DNS separable para monitorización y políticas firewall en el puerto 853.",
+      "En redes corporativas con controles de seguridad DNS (p.ej. bloqueo de malware/phishing), gestionar políticas de navegador para que no salten al resolvedor DoH público por defecto ignorando el DNS interno.",
+      "Error típico: asumir que DoH/DoT ocultan completamente qué sitio visitas al ISP; tras resolver el dominio, el cliente igual conecta por IP y suele enviar el nombre del dominio en claro en la extensión SNI de TLS (salvo que se use ECH).",
+      "DoT vs DoH: DoT usa el puerto 853 exclusivo sobre TLS (más ligero y fácil de auditar en red), mientras que DoH usa HTTPS en el puerto 443 (aprovecha multiplexación HTTP/2-3 y atraviesa firewalls restrictivos)."
+    ],
+    "ejemplo": "# Consulta DNS cifrada por DoH y DoT usando dig moderno (BIND >= 9.18)\ndig @1.1.1.1 +https ejemplo.com A +short\ndig @1.1.1.1 +tls ejemplo.com A +short",
+    "entrevista": "DoT (TLS en puerto 853) y DoH (HTTP/2-3 sobre TLS en puerto 443) cifran las consultas DNS entre cliente y resolvedor para evitar espionaje y manipulación en tránsito, aunque no ocultan el tráfico posterior si el SNI sigue viajando en claro."
+  }
+}

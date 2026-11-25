@@ -1,0 +1,210 @@
+{
+  "AWS CDK": {
+    "que": "Framework de Infraestructura como Código (IaC) de código abierto creado por AWS que permite modelar recursos en la nube mediante lenguajes imperativos como TypeScript, Python, Java, C# o Go. Utiliza componentes orientados a objetos llamados Constructs para componer arquitecturas reutilizables y tipadas.",
+    "para": "Resuelve la verbosidad, la falta de abstracción y la duplicación de código que sufren las plantillas planas de JSON o YAML en proyectos grandes. Se emplea cuando equipos de desarrollo quieren aprovechar tipado estático, bucles, condicionales, autocompletado en el IDE y pruebas unitarias para definir su infraestructura en AWS.",
+    "como": "El desarrollador instancia un árbol de Constructs organizados en App, Stack y recursos de nivel L1 (mapeo 1:1 con CloudFormation), L2 (abstracciones con valores por defecto seguros) o L3 (patrones arquitectónicos completos). Al ejecutar `cdk synth`, el motor JSII evalúa el programa en el lenguaje elegido y compila todo el árbol en plantillas de AWS CloudFormation más activos locales (imágenes Docker o código de Lambda). Finalmente, `cdk deploy` sube dichos activos a un repositorio S3/ECR preparado previamente por `cdk bootstrap` y envía un Change Set al servicio CloudFormation para crear o actualizar el Stack.",
+    "practicas": [
+      "Preferir Constructs L2 y L3 frente a L1 (`Cfn*`) porque encapsulan permisos IAM de mínimo privilegio y configuraciones seguras por defecto.",
+      "Ejecutar `cdk diff` en pipelines de CI antes de desplegar y escribir pruebas de aserciones sobre la plantilla sintetizada usando `Template.fromStack()`.",
+      "Versionar Constructs propios mediante paquetes (npm, PyPI) para estandarizar arquitecturas en toda la organización sin copiar y pegar plantillas.",
+      "AWS CDK vs Terraform/Pulumi: CDK compila a CloudFormation y se centra en AWS, mientras Terraform y Pulumi gestionan su propio estado y soportan múltiples proveedores cloud."
+    ],
+    "ejemplo": "import * as cdk from 'aws-cdk-lib';\nimport * as s3 from 'aws-cdk-lib/aws-s3';\nexport class StorageStack extends cdk.Stack {\n  constructor(scope: cdk.App, id: string) {\n    super(scope, id);\n    new s3.Bucket(this, 'ArtifactsBucket', {\n      encryption: s3.BucketEncryption.S3_MANAGED, enforceSSL: true\n    });\n  }\n}",
+    "entrevista": "AWS CDK combina la productividad, el tipado y las pruebas unitarias de un lenguaje de programación moderno con la fiabilidad transaccional y sin gestión manual de estado de CloudFormation."
+  },
+  "AWS Secrets Manager": {
+    "que": "Servicio gestionado de AWS para almacenar, recuperar, auditar y rotar de forma automática credenciales sensibles como contraseñas de bases de datos, claves de API y tokens. Cifra todos los valores en reposo mediante AWS KMS y los transmite cifrados por TLS.",
+    "para": "Elimina la práctica insegura de guardar credenciales en código fuente, archivos de configuración o variables de entorno estáticas. Se utiliza principalmente en cargas de trabajo sobre AWS que necesitan rotación periódica automática sin tiempo de inactividad y auditoría centralizada de accesos.",
+    "como": "Cada secreto mantiene versiones identificadas por etiquetas de staging (`AWSCURRENT`, `AWSPREVIOUS`) cifradas mediante envelope encryption con una clave KMS. Las aplicaciones recuperan la credencial en tiempo de ejecución invocando la API `GetSecretValue` autorizadas por IAM, recomendándose el uso de librerías cliente con caché en memoria para reducir latencia y costo por llamada. Al activar la rotación automática, Secrets Manager invoca periódicamente una función AWS Lambda en cuatro fases (`createSecret`, `setSecret`, `testSecret`, `finishSecret`) que genera una nueva contraseña en la base de datos destino, verifica conectividad y promueve la versión a `AWSCURRENT`.",
+    "practicas": [
+      "Implementar rotación con estrategia de doble usuario en bases de datos para que las conexiones existentes con `AWSPREVIOUS` no fallen mientras las nuevas usan `AWSCURRENT`.",
+      "Usar el cliente de caché oficial o la extensión de Lambda para evitar latencia en el camino crítico y reducir cobros por cada 10,000 llamadas a la API.",
+      "Aplicar políticas IAM y de KMS con mínimo privilegio restringidas al ARN exacto del secreto y auditar accesos con AWS CloudTrail.",
+      "Secrets Manager vs SSM Parameter Store: Secrets Manager ofrece rotación nativa y replicación multi-región con costo por secreto y petición, mientras SSM Standard es gratuito para configuración simple."
+    ],
+    "ejemplo": "import boto3\n\nclient = boto3.client(\"secretsmanager\", region_name=\"us-east-1\")\nresp = client.get_secret_value(SecretId=\"prod/orders/db\")\nsecret_json = resp[\"SecretString\"]",
+    "entrevista": "AWS Secrets Manager no solo cifra y centraliza credenciales con control IAM, sino que automatiza su rotación periódica mediante Lambda sin interrumpir conexiones activas."
+  },
+  "Ansible": {
+    "que": "Herramienta de automatización y gestión de configuración de código abierto que opera sin agentes (agentless) para configurar sistemas operativos, desplegar software y orquestar flujos operativos. Utiliza archivos declarativos en YAML llamados playbooks para describir el estado deseado de cada servidor.",
+    "para": "Resuelve la deriva de configuración (configuration drift) y las tareas repetitivas de administración en flotas de máquinas virtuales, servidores físicos o equipos de red. Se utiliza cuando se necesita configurar el interior del sistema operativo, aplicar parches con rolling updates o ejecutar tareas ad-hoc sin mantener demonios instalados en los nodos destino.",
+    "como": "Un nodo de control lee un inventario (estático o dinámico obtenido de APIs cloud) y establece conexión segura con los hosts objetivo por SSH en Linux o WinRM en Windows. Ansible compila cada tarea del playbook —junto con variables, plantillas Jinja2 y roles— en scripts Python autocontenidos, los transfiere temporalmente al nodo remoto, los ejecuta y limpia los archivos residuales tras recoger la salida JSON. Sus módulos nativos son idempotentes: primero inspeccionan el estado actual del host y solo realizan cambios si difiere del declarado.",
+    "practicas": [
+      "Utilizar módulos nativos idempotentes (`apt`, `template`, `systemd`) y evitar abusar de `command` o `shell`; si son inevitables, añadir `creates` o `changed_when`.",
+      "Cifrar credenciales y variables privadas con `ansible-vault` antes de subir los playbooks a Git y validar el estilo con `ansible-lint`.",
+      "Estructurar la automatización en Roles y Collections reutilizables separando inventario, variables de grupo (`group_vars`) y tareas.",
+      "Ansible vs Terraform: Ansible destaca en gestión de configuración dentro del SO (infraestructura mutable), mientras Terraform gestiona el ciclo de vida de recursos cloud mediante estado."
+    ],
+    "ejemplo": "- name: Configurar servidor web Nginx\n  hosts: webservers\n  become: true\n  tasks:\n    - name: Instalar nginx\n      ansible.builtin.apt: { name: nginx, state: present }\n    - name: Asegurar servicio activo\n      ansible.builtin.systemd: { name: nginx, state: started, enabled: true }",
+    "entrevista": "Ansible simplifica la automatización de sistemas sin agentes por SSH gracias a su modelo idempotente en YAML, siendo el complemento ideal de Terraform para configurar el interior de las instancias."
+  },
+  "Artifacts": {
+    "que": "En CI/CD, un artefacto es cualquier salida compilada, empaquetada e inmutable generada de forma determinista por un pipeline de compilación, como binarios, archivos `.jar`, paquetes npm/PyPI o imágenes de contenedor OCI. Se almacenan en un registro especializado identificados por una versión semántica y un resumen criptográfico.",
+    "para": "Resuelve el riesgo de recompilar el código fuente en cada entorno, garantizando que exactamente el mismo binario validado en pruebas sea el que llega a producción (principio \"build once, deploy many\"). Además, permite auditar la procedencia del software, compartir salidas entre etapas del pipeline y ejecutar rollbacks rápidos hacia versiones anteriores verificadas.",
+    "como": "Tras superar los tests unitarios y análisis estático, el runner de CI compila la aplicación, empaqueta el resultado y genera metadatos asociados como el SHA del commit, firma criptográfica (p. ej. Cosign) y SBOM (Software Bill of Materials). El pipeline publica el paquete mediante HTTP o el protocolo OCI Distribution en un repositorio como Artifactory, Nexus, ECR o GitHub Packages, obteniendo un digest SHA-256 inmutable. Posteriormente, los jobs de despliegue o el orquestador descargan el artefacto verificando su digest en lugar de compilar nuevamente en el servidor destino.",
+    "practicas": [
+      "Garantizar la inmutabilidad: nunca sobrescribir tags mutables como `latest` en producción y referenciar los artefactos por digest SHA-256 o versión exacta.",
+      "Firmar los artefactos y adjuntar su SBOM en el pipeline de CI para proteger la cadena de suministro frente a manipulaciones entre compilación y despliegue.",
+      "Configurar políticas de retención y limpieza automática en el registry para evitar costos crecientes por acumulación de builds antiguos de ramas temporales.",
+      "Distinguir entre caché efímera de dependencias (para acelerar builds) y artefactos de release permanentes y auditables."
+    ],
+    "ejemplo": "docker build -t ghcr.io/org/api:1.4.2 .\ndocker push ghcr.io/org/api:1.4.2\n# Referencia inmutable por digest en producción:\n# image: ghcr.io/org/api@sha256:4f2c9a1e...",
+    "entrevista": "Un artefacto inmutable garantiza el principio de compilar una sola vez y desplegar la misma pieza verificada en todos los entornos, eliminando discrepancias entre QA y producción."
+  },
+  "Blue-green - Canary": {
+    "que": "Son dos estrategias de despliegue progresivo en producción diseñadas para eliminar el tiempo de inactividad y acotar el riesgo al liberar nuevas versiones. Blue-green mantiene dos entornos completos e intercambia todo el tráfico de una vez, mientras Canary desvía gradualmente un pequeño porcentaje de tráfico real hacia la nueva versión antes de completarla.",
+    "para": "Resuelven el impacto de fallos que escapan a los entornos de prueba, evitando ventanas de mantenimiento y permitiendo revertir cambios en segundos. Blue-green se prefiere cuando se necesita validar un entorno completo aislado y conmutar de forma atómica; Canary cuando se busca limitar el radio de explosión (blast radius) midiendo métricas reales bajo carga progresiva.",
+    "como": "En Blue-green, el balanceador de carga o DNS apunta al entorno Blue (v1); el pipeline despliega v2 en el entorno Green, ejecuta pruebas de humo contra Green y cambia la regla de enrutamiento del balanceador o Target Group hacia Green manteniendo Blue encendido temporalmente para rollback instantáneo. En Canary, un ingress controller, service mesh (Istio/Envoy) o controlador como Argo Rollouts divide las peticiones mediante pesos ponderados (por ejemplo 5%, 25%, 50%, 100%) o cabeceras específicas hacia las réplicas v2. En cada paso intermedio, un analizador consulta SLIs (errores 5xx, latencia p99) en Prometheus o CloudWatch para promover automáticamente o abortar el despliegue.",
+    "practicas": [
+      "Diseñar migraciones de base de datos compatibles hacia atrás (patrón expand-and-contract) porque v1 y v2 compartirán temporalmente el mismo esquema.",
+      "En Blue-green, contemplar el pico temporal del doble de capacidad de cómputo y gestionar correctamente el drenado de conexiones WebSocket o sesiones stateful.",
+      "En Canary, definir umbrales automáticos de rollback basados en métricas de negocio y latencia, asegurando suficiente volumen de tráfico para que la muestra sea válida.",
+      "Blue-green vs Canary: Blue-green ofrece conmutación instantánea y entornos limpios a mayor costo de infraestructura; Canary reduce el impacto en usuarios a cambio de mayor complejidad de enrutamiento."
+    ],
+    "ejemplo": "strategy:\n  canary:\n    steps:\n      - setWeight: 10\n      - pause: { duration: 5m }\n      - setWeight: 50\n      - pause: { duration: 10m }",
+    "entrevista": "Blue-green prioriza la validación aislada y el rollback atómico duplicando temporalmente el entorno, mientras Canary minimiza el radio de explosión validando la nueva versión con tráfico real progresivo."
+  },
+  "CircleCI": {
+    "que": "Plataforma de Integración Continua y Entrega Continua (CI/CD) en la nube y autoalojada que automatiza compilación, pruebas y despliegues a partir de un archivo YAML en el repositorio. Estructura la ejecución en workflows compuestos por jobs que corren en contenedores Docker, máquinas virtuales Linux/macOS o entornos Windows.",
+    "para": "Resuelve la necesidad de validar pull requests y automatizar entregas sin administrar infraestructura propia de servidores de CI. Se utiliza ampliamente en equipos que requieren paralelización avanzada de pruebas lentas, compilación nativa en macOS para aplicaciones Apple o reutilización modular de pipelines entre repositorios.",
+    "como": "Al recibir un webhook desde GitHub o GitLab, CircleCI lee `.circleci/config.yml`, resuelve el grafo de dependencias definido en `workflows` y asigna cada `job` a su ejecutor (`docker`, `machine` o `macos`). Dentro del job se ejecutan pasos secuenciales (`steps`): clonar código (`checkout`), restaurar dependencias cacheadas (`restore_cache`), correr scripts (`run`), guardar caché (`save_cache`) y persistir salidas en `workspaces` compartidos para jobs posteriores. Para reducir tiempos de suite, el comando `circleci tests split` reparte dinámicamente los archivos de prueba entre contenedores paralelos según duraciones históricas.",
+    "practicas": [
+      "Aprovechar Orbs oficiales fijados por versión semántica exacta para integrar AWS, Docker o Slack sin mantener scripts repetidos.",
+      "Usar `save_cache` con el hash de los archivos lock (`package-lock.json`, `poetry.lock`) y `persist_to_workspace` para transferir compilaciones entre jobs.",
+      "Configurar `parallelism` junto a `circleci tests split --split-by=timings` cuando las suites de pruebas superen unos pocos minutos.",
+      "Aislar secretos sensibles en `contexts` restringidos por rama protegida o aprobaciones manuales (`type: approval`) antes de desplegar a producción."
+    ],
+    "ejemplo": "version: 2.1\njobs:\n  test:\n    docker:\n      - image: cimg/python:3.12\n    steps:\n      - checkout\n      - run: pip install -r requirements.txt\n      - run: pytest",
+    "entrevista": "CircleCI destaca por su configuración modular mediante Orbs, su ejecución rápida en contenedores y su división inteligente de tests por tiempos históricos para acelerar pipelines pesados."
+  },
+  "CloudFormation": {
+    "que": "Servicio nativo de Infraestructura como Código (IaC) de AWS que permite definir, aprovisionar y actualizar conjuntos completos de recursos de AWS mediante plantillas declarativas en JSON o YAML. Opera de forma totalmente gestionada por AWS sin que el usuario deba mantener binarios ni archivos de estado externos.",
+    "para": "Elimina el aprovisionamiento manual por consola y la inconsistencia entre entornos al permitir versionar en Git la infraestructura completa de red, cómputo y seguridad. Se emplea cuando una empresa opera exclusivamente sobre AWS y busca integración nativa con IAM, despliegues multi-cuenta mediante StackSets y soporte oficial desde el lanzamiento de cada servicio.",
+    "como": "El usuario define parámetros, recursos y salidas usando funciones intrínsecas (`!Ref`, `!GetAtt`, `!Sub`) y envía la plantilla a la API de CloudFormation para crear o actualizar un Stack. El servicio construye un grafo acíclico dirigido (DAG) de dependencias, compara la plantilla contra su estado interno generando un Change Set y llama en paralelo a las APIs correspondientes de AWS para aplicar los cambios. Si algún recurso falla durante la creación o actualización, CloudFormation ejecuta automáticamente un rollback transaccional para devolver el Stack al último estado estable.",
+    "practicas": [
+      "Generar e inspeccionar siempre un Change Set antes de ejecutar actualizaciones en producción para detectar reemplazos destructivos de recursos.",
+      "Ejecutar periódicamente Drift Detection para descubrir modificaciones manuales realizadas fuera de la plantilla.",
+      "Dividir la infraestructura en múltiples Stacks pequeños por ciclo de vida (red, datos, aplicación) en lugar de un único Stack monolítico lento y riesgoso.",
+      "CloudFormation vs Terraform: CloudFormation gestiona el estado nativamente y revierte fallos de forma automática, pero es exclusivo de AWS; Terraform es multi-cloud y más expresivo con HCL."
+    ],
+    "ejemplo": "AWSTemplateFormatVersion: '2010-09-09'\nResources:\n  LogsBucket:\n    Type: AWS::S3::Bucket\n    Properties:\n      BucketEncryption:\n        ServerSideEncryptionConfiguration:\n          - ServerSideEncryptionByDefault:\n              SSEAlgorithm: AES256",
+    "entrevista": "CloudFormation es la base declarativa nativa de AWS que garantiza despliegues repetibles con Change Sets y rollback automático sin requerir almacenamiento ni bloqueo de estado por parte del usuario."
+  },
+  "Feature flags": {
+    "que": "Patrón de desarrollo (también llamado feature toggles) que permite activar, desactivar o variar el comportamiento de funcionalidades en producción en tiempo de ejecución sin volver a compilar ni redesplegar la aplicación. Consiste en evaluar puntos de control condicionales contra reglas de configuración externas.",
+    "para": "Desacopla el despliegue técnico de código (deployment) del lanzamiento al usuario final (release), permitiendo integrar trabajo en curso en la rama principal sin bloquear entregas (trunk-based development). También habilita despliegues graduales por segmento, experimentación A/B y apagado inmediato de funcionalidades defectuosas mediante un kill switch.",
+    "como": "La aplicación integra un SDK cliente (como LaunchDarkly, Unleash, Flagsmith o AWS AppConfig) que mantiene en memoria local una copia actualizada de las reglas de evaluación mediante streaming (SSE) o polling en segundo plano. Cuando una petición alcanza el punto de control, el SDK evalúa localmente un hash determinista combinando el identificador del flag y atributos del contexto (usuario, país, plan) para decidir la variante en microsegundos sin llamadas síncronas de red. Si el servidor de configuración no está disponible, el SDK retorna el valor por defecto seguro definido en el código.",
+    "practicas": [
+      "Tratar los flags de lanzamiento como deuda técnica temporal con fecha de caducidad y limpiarlos del código tras consolidar la funcionalidad para evitar complejidad innecesaria.",
+      "Separar conceptualmente flags temporales de release de flags operacionales permanentes usados como circuit breakers o kill switches.",
+      "Ubicar la evaluación del flag en puntos de entrada o capas límite en lugar de duplicar condicionales `if/else` por todo el dominio.",
+      "Definir siempre valores de respaldo (fallback) conservadores para garantizar continuidad operativa si falla la carga inicial de configuración."
+    ],
+    "ejemplo": "const useNewCheckout = flagClient.boolVariation(\n  'new-checkout-flow',\n  { key: user.id, country: user.country },\n  false // fallback seguro\n);\nreturn useNewCheckout ? renderV2() : renderV1();",
+    "entrevista": "Los feature flags desacoplan el despliegue técnico del lanzamiento de negocio, habilitando trunk-based development, rollouts progresivos y reversión instantánea sin redesplegar."
+  },
+  "GitLab CI": {
+    "que": "Sistema de Integración Continua y Entrega Continua integrado de forma nativa en GitLab, definido mediante el archivo `.gitlab-ci.yml` dentro de cada repositorio. Modela la automatización en pipelines compuestos por etapas (`stages`) y trabajos (`jobs`) ejecutados por agentes denominados GitLab Runners.",
+    "para": "Centraliza repositorios Git, revisión de código, pipelines CI/CD, registro de contenedores y análisis de seguridad en una sola plataforma sin integraciones frágiles entre herramientas dispersas. Es muy utilizado en empresas que operan en nube privada u on-premise y exigen trazabilidad completa y entornos efímeros por rama (Review Apps).",
+    "como": "Ante eventos como push, merge request o etiquetas, GitLab evalúa las condiciones `rules` de `.gitlab-ci.yml` y construye el grafo del pipeline. Los GitLab Runners consultan periódicamente la API de GitLab, recogen los jobs compatibles por etiqueta, inician el ejecutor configurado (Docker, Kubernetes o Shell) y clonan el código autenticados con un `CI_JOB_TOKEN` temporal. Aunque las etapas corren en secuencia, la directiva `needs` permite ejecutar jobs de distintas etapas en paralelo como un grafo acíclico dirigido (DAG), compartiendo salidas mediante `artifacts` y `cache`.",
+    "practicas": [
+      "Usar `rules:` en lugar de `only`/`except` y emplear `needs:` para construir pipelines DAG que eliminen esperas innecesarias entre stages.",
+      "Marcar secretos en Settings como Protected (solo ramas protegidas) y Masked para impedir su exposición en logs de merge requests externos.",
+      "Centralizar plantillas comunes en un repositorio de plataforma reutilizándolas mediante `include:` y `extends:` para evitar duplicación.",
+      "Evitar Docker-in-Docker en modo privilegiado dentro de Kubernetes usando constructores rootless como Kaniko o Buildah."
+    ],
+    "ejemplo": "stages: [test, build]\nunit_tests:\n  stage: test\n  image: node:20-alpine\n  script: [\"npm ci\", \"npm test\"]\nbuild_image:\n  stage: build\n  needs: [unit_tests]\n  script: echo \"Building container...\"",
+    "entrevista": "GitLab CI destaca por unificar repositorios, pipelines DAG con `needs`, registro de artefactos y seguridad en una única plataforma fácil de gobernar tanto en SaaS como on-premise."
+  },
+  "GitOps": {
+    "que": "Modelo operativo de entrega continua e infraestructura que adopta un repositorio Git como única fuente de verdad declarativa para el estado deseado de las aplicaciones y los entornos. Sustituye el despliegue tradicional tipo push desde el servidor de CI por un bucle de reconciliación tipo pull ejecutado dentro del entorno destino.",
+    "para": "Elimina la deriva de configuración por cambios manuales directos en producción, ofrece historial auditable de cada modificación y evita almacenar credenciales de administrador del clúster dentro de herramientas de CI externas. Se emplea ampliamente en clústeres Kubernetes donde se requiere reversión fiable con `git revert` y autorreparación ante cambios no autorizados.",
+    "como": "El flujo separa CI de CD: el pipeline de CI compila la app, publica una imagen inmutable y realiza un commit actualizando el tag en un repositorio separado de manifiestos (YAML, Helm o Kustomize). Dentro del clúster, un controlador GitOps como Argo CD o Flux ejecuta un bucle continuo de reconciliación: obtiene los cambios de Git mediante polling o webhook, compara el estado deseado con el estado actual en la API del clúster y aplica las diferencias necesarias. Si alguien altera un recurso manualmente, el controlador detecta la desviación (`OutOfSync`) y restaura automáticamente la definición de Git.",
+    "practicas": [
+      "Separar el repositorio de código fuente de la aplicación del repositorio de manifiestos de entorno para aislar permisos y evitar bucles de CI.",
+      "No guardar secretos en texto plano en Git; cifrarlos con SOPS/Sealed Secrets o referenciarlos dinámicamente con External Secrets Operator.",
+      "Desactivar permisos de escritura manual (`kubectl apply` o `edit`) en producción para que todo cambio pase por Pull Request revisado.",
+      "Fijar versiones inmutables de imágenes y charts en Git para asegurar despliegues deterministas y rollbacks exactos."
+    ],
+    "ejemplo": "apiVersion: argoproj.io/v1alpha1\nkind: Application\nmetadata:\n  name: orders-prod\nspec:\n  source:\n    repoURL: https://github.com/org/gitops-repo.git\n    path: apps/orders/prod\n  syncPolicy:\n    automated: { prune: true, selfHeal: true }",
+    "entrevista": "GitOps traslada el despliegue de un modelo push desde CI a un modelo pull reconciliado desde dentro del clúster, convirtiendo a Git en la fuente única, auditable y autorreparable de producción."
+  },
+  "HashiCorp Vault": {
+    "que": "Plataforma centralizada de gestión de secretos, identidad y cifrado diseñada para proteger credenciales, tokens, claves de cifrado y certificados TLS en infraestructuras dinámicas y multi-cloud. Almacena secretos estáticos cifrados y genera credenciales dinámicas efímeras bajo demanda con tiempo de vida acotado (TTL).",
+    "para": "Mitiga el riesgo de credenciales estáticas de larga duración dispersas en archivos, pipelines y servidores difíciles de rotar o auditar. Es la solución elegida cuando se necesitan credenciales temporales generadas al vuelo para bases de datos o nubes, cifrado como servicio (Transit) o una PKI interna independiente del proveedor cloud.",
+    "como": "Al iniciar, los datos de Vault permanecen sellados (sealed) porque la clave raíz se divide mediante Shamir's Secret Sharing o se desbloquea automáticamente vía KMS/HSM (Auto-Unseal). Un cliente se autentica usando identidades de plataforma (Kubernetes ServiceAccount JWT, AWS IAM, OIDC o AppRole) recibiendo un token con políticas HCL y un lease con TTL. Al solicitar un secreto dinámico —como el motor de PostgreSQL—, Vault conecta con la base de datos, crea un rol temporal exclusivo para ese cliente y ejecuta `DROP ROLE` automáticamente al expirar el lease.",
+    "practicas": [
+      "Priorizar secretos dinámicos con TTL corto frente a secretos estáticos KV siempre que el sistema destino lo permita para reducir el impacto ante una filtración.",
+      "Configurar Auto-Unseal mediante Cloud KMS o HSM en producción y habilitar Audit Devices desde el primer día para registrar cada petición.",
+      "Autenticar aplicaciones mediante identidades nativas de plataforma (Kubernetes Auth, IAM) evitando distribuir tokens root o credenciales estáticas de larga vida.",
+      "Vault vs AWS Secrets Manager: Vault es multi-cloud y sobresale en secretos dinámicos, PKI y cifrado Transit, pero requiere operar y asegurar el clúster si no se usa HCP Vault."
+    ],
+    "ejemplo": "vault read database/creds/readonly-role\n# Salida resumida:\n# Key                Value\n# lease_duration     1h\n# username           v-token-readonly-a8f3k\n# password           x9P!mQ2z...",
+    "entrevista": "La mayor fortaleza de HashiCorp Vault frente a almacenes pasivos son sus secretos dinámicos con lease y TTL, que crean credenciales únicas por sesión y las revocan automáticamente al expirar."
+  },
+  "Jenkins": {
+    "que": "Servidor de automatización y CI/CD de código abierto escrito en Java con una arquitectura altamente extensible mediante más de un millar de plugins. Permite describir pipelines complejos como código en un archivo `Jenkinsfile` escrito en Groovy (sintaxis Declarative o Scripted) versionado dentro del repositorio.",
+    "para": "Resuelve la orquestación de compilaciones y despliegues en organizaciones que necesitan control completo sobre su servidor de CI, ejecución dentro de redes privadas aisladas o integración con sistemas heredados y hardware específico. Sigue vigente en entornos empresariales donde las plataformas SaaS no cubren requisitos estrictos de red, cómputo dedicado o personalización profunda.",
+    "como": "Opera bajo una arquitectura Controller-Agents: el Jenkins Controller gestiona la interfaz web, la planificación, credenciales y lectura del `Jenkinsfile`, delegando la ejecución pesada a Agents conectados vía SSH o WebSocket/JNLP (incluyendo pods efímeros en Kubernetes). Al iniciarse un pipeline, el Controller interpreta el código Groovy sobre un motor CPS (Continuation-Passing Style) que permite reanudar ejecuciones tras reinicios, asigna un agente según la etiqueta solicitada (`agent { label ... }`) y recopila logs y artefactos.",
+    "practicas": [
+      "Definir toda la configuración del servidor en código con Jenkins Configuration as Code (JCasC) evitando configuraciones manuales por interfaz gráfica.",
+      "Usar siempre `Declarative Pipeline` y Shared Libraries versionadas en lugar de Scripted Pipelines ad-hoc difíciles de mantener.",
+      "No ejecutar nunca builds en el nodo Controller (fijar executors a 0) y usar agentes efímeros aislados para prevenir escalada de privilegios y saturación de disco.",
+      "Minimizar la cantidad de plugins instalados y mantener parches de seguridad al día dado su historial frecuente de vulnerabilidades en plugins de terceros."
+    ],
+    "ejemplo": "pipeline {\n  agent { docker { image 'maven:3.9-eclipse-temurin-21' } }\n  stages {\n    stage('Test') {\n      steps { sh 'mvn test' }\n    }\n  }\n}",
+    "entrevista": "Jenkins ofrece máxima flexibilidad en entornos privados y complejos mediante pipelines como código y agentes efímeros, siempre que se gobierne con JCasC y una política estricta de plugins."
+  },
+  "Pulumi": {
+    "que": "Plataforma de Infraestructura como Código (IaC) de código abierto que permite definir y gestionar recursos en múltiples nubes (AWS, Azure, GCP, Kubernetes) mediante lenguajes de programación reales como TypeScript, Python, Go, C# o Java. Aprovecha compiladores, gestores de dependencias y frameworks de testing estándar.",
+    "para": "Supera las limitaciones expresivas de DSLs declarativos como HCL o YAML cuando se necesitan abstracciones tipadas complejas, bucles seguros, reutilización de librerías y pruebas unitarias reales en entornos multi-cloud o Kubernetes. Es idónea para equipos de desarrollo y plataformas internas que desean unificar el lenguaje de aplicación e infraestructura.",
+    "como": "Un Language Host ejecuta el programa del usuario registrando recursos de forma asíncrona, mientras el Pulumi Deployment Engine compara el grafo deseado contra el estado persistido (state) en Pulumi Cloud o un backend propio (S3, GCS, Azure Blob). Durante `pulumi preview` o `pulumi up`, el motor calcula el plan de cambios y se comunica mediante gRPC con Resource Providers nativos o puenteados desde Terraform para ejecutar las llamadas API. Además, integra cifrado nativo de secretos dentro del estado por stack y Policy as Code (CrossGuard) para validar reglas de seguridad antes de aprovisionar.",
+    "practicas": [
+      "Mantener el código de infraestructura mayormente declarativo y legible, evitando lógica excesivamente dinámica que dificulte anticipar el resultado de `pulumi preview`.",
+      "Configurar backends remotos con bloqueo de concurrencia y proveedor KMS para cifrar secretos del stack desde el primer día.",
+      "Escribir pruebas unitarias con mocks de recursos y políticas CrossGuard en CI para bloquear recursos inseguros antes del despliegue.",
+      "Pulumi vs Terraform/AWS CDK: Pulumi ofrece lenguajes de programación reales como AWS CDK pero con alcance multi-cloud y gestión de estado propia como Terraform."
+    ],
+    "ejemplo": "import * as aws from \"@pulumi/aws\";\n\nconst bucket = new aws.s3.BucketV2(\"app-logs\", {\n  tags: { Environment: \"prod\" }\n});\nexport const bucketName = bucket.bucket;",
+    "entrevista": "Pulumi une el alcance multi-cloud y basado en estado de Terraform con la expresividad, tipado y pruebas unitarias de lenguajes reales como TypeScript, Python o Go."
+  },
+  "SSM Parameter Store": {
+    "que": "Servicio integrado en AWS Systems Manager (SSM) que ofrece almacenamiento jerárquico centralizado para datos de configuración y secretos en tres formatos: `String`, `StringList` y `SecureString` cifrado con AWS KMS. Organiza las claves mediante rutas tipo árbol como `/prod/payments/api_url`.",
+    "para": "Resuelve la dispersión de parámetros de configuración por entorno (URLs, límites, IDs de AMI, feature flags simples) y credenciales básicas sin incrustarlas en el código ni desplegar infraestructura adicional. Es la opción preferida frente a Secrets Manager cuando no se requiere rotación automática programada y se busca optimizar costos.",
+    "como": "Los parámetros se gestionan en dos niveles: Standard (gratuitos, hasta 4 KB y 10,000 parámetros por región) y Advanced (de pago, hasta 8 KB, con políticas de expiración y eventos en EventBridge). Para valores `SecureString`, SSM invoca a AWS KMS para cifrar el contenido en reposo; las cargas de trabajo autorizadas por IAM lo recuperan en tiempo de arranque o ejecución mediante `GetParameter` o `GetParametersByPath`. Además, servicios como CloudFormation y ECS permiten referenciar parámetros de forma nativa mediante `valueFrom` sin escribir código SDK.",
+    "practicas": [
+      "Diseñar una convención de rutas jerárquica (`/<entorno>/<servicio>/<clave>`) para simplificar políticas IAM por prefijo y leer múltiples valores en una sola llamada con `GetParametersByPath`.",
+      "Almacenar cualquier dato sensible exclusivamente como `SecureString` cifrado con CMK, nunca como `String` en claro.",
+      "Cachear los parámetros en memoria o utilizar la extensión AWS Parameters and Secrets para Lambda para evitar throttling ante picos de tráfico.",
+      "SSM Parameter Store vs Secrets Manager: SSM Standard es gratuito e ideal para configuración general y secretos estáticos; Secrets Manager aporta rotación nativa con Lambda y replicación multi-región."
+    ],
+    "ejemplo": "aws ssm put-parameter \\\n  --name \"/prod/api/db_password\" \\\n  --value \"s3cr3t\" \\\n  --type \"SecureString\"\naws ssm get-parameters-by-path --path \"/prod/api/\" --with-decryption",
+    "entrevista": "SSM Parameter Store ofrece gestión jerárquica de configuración y secretos cifrados con KMS sin costo en nivel Standard, reservando Secrets Manager para credenciales que exigen rotación automática."
+  },
+  "Terraform": {
+    "que": "Herramienta de Infraestructura como Código (IaC) declarativa y multi-cloud (junto con su fork abierto OpenTofu) que utiliza el lenguaje HCL para definir y gestionar el ciclo de vida completo de infraestructura cloud, Kubernetes y servicios SaaS. Mantiene un registro persistente del estado (`tfstate`) para calcular cambios incrementales de forma determinista.",
+    "para": "Estandariza el aprovisionamiento entre múltiples proveedores bajo un mismo flujo de trabajo, eliminando clics manuales y permitiendo revisar cambios arquitectónicos en Pull Requests antes de aplicarlos. Es el estándar de facto para crear entornos reproducibles (desarrollo, staging, producción) y modularizar patrones de infraestructura.",
+    "como": "A partir de archivos `.tf`, `terraform init` descarga los binarios de los Providers encargados de traducir bloques HCL en llamadas API de cada plataforma. Al ejecutar `terraform plan`, el motor lee el archivo `terraform.tfstate`, refresca el estado real contra las APIs, construye un grafo de dependencias de recursos y calcula qué debe crearse, actualizarse in-place o destruirse. Finalmente, `terraform apply` adquiere un bloqueo de concurrencia (state lock) en el backend remoto, ejecuta las operaciones en orden topológico paralelo y persiste el nuevo estado actualizado.",
+    "practicas": [
+      "Guardar siempre `terraform.tfstate` en un backend remoto cifrado con bloqueo (p. ej. S3 con lockfile nativo o DynamoDB) y nunca en Git porque expone secretos en texto claro.",
+      "Versionar `.terraform.lock.hcl`, fijar versiones de providers/módulos y revisar obligatoriamente la salida de `terraform plan` antes de aplicar cambios destructivos.",
+      "Segmentar los estados por capa y entorno (red, datos, cómputo) mediante módulos reutilizables para acotar el radio de explosión y acelerar cada `plan`.",
+      "Evitar ejecuciones de `apply` desde portátiles locales en producción; automatizar el ciclo plan/apply desde CI/CD o plataformas GitOps de Terraform como Atlantis."
+    ],
+    "ejemplo": "resource \"aws_s3_bucket\" \"data\" {\n  bucket = \"acme-prod-analytics-data\"\n}\nresource \"aws_s3_bucket_versioning\" \"data\" {\n  bucket = aws_s3_bucket.data.id\n  versioning_configuration { status = \"Enabled\" }\n}",
+    "entrevista": "Terraform abstrae múltiples nubes en un flujo declarativo único mediante providers y un grafo de dependencias respaldado por un archivo de estado remoto bloqueable."
+  },
+  "dotenv": {
+    "que": "Convención y conjunto de librerías multi-lenguaje que cargan variables de configuración desde un archivo local `.env` en formato `CLAVE=VALOR` hacia las variables de entorno del proceso al arrancar la aplicación. Implementa la separación entre código y configuración propuesta por la metodología Twelve-Factor App.",
+    "para": "Facilita el desarrollo local y las pruebas al permitir que cada desarrollador ejecute el mismo código con sus propios puertos, bases de datos locales o claves de prueba sin modificar archivos versionados. No sustituye a un gestor de secretos en producción, donde la configuración debe inyectarse desde el orquestador o servicios como Vault o Secrets Manager.",
+    "como": "Al iniciar la aplicación en entorno local, librerías como `dotenv` (Node.js), `python-dotenv` o `godotenv` leen el archivo `.env`, descartan comentarios (`#`), resuelven comillas y cargan cada par en `process.env` o `os.environ` antes de inicializar los servicios de la app. Por diseño, la mayoría de implementaciones respetan primero las variables ya presentes en el sistema operativo sin sobrescribirlas, permitiendo que en contenedores o servidores prevalezca la configuración inyectada externamente. El archivo `.env` se excluye de Git mediante `.gitignore`, documentando las claves esperadas en un archivo `.env.example` sin valores sensibles.",
+    "practicas": [
+      "Añadir siempre `.env` (y variantes como `.env.local`) a `.gitignore` y mantener actualizado un `.env.example` con claves ficticias para facilitar el onboarding.",
+      "Validar esquema y tipos de las variables requeridas al arrancar la aplicación (p. ej. con Zod o Pydantic Settings) para fallar rápido si falta configuración crítica.",
+      "Nunca copiar archivos `.env` con credenciales reales dentro de imágenes Docker ni usarlos como almacenamiento de secretos en producción.",
+      "Limitar el uso de variables de entorno para secretos críticos en procesos compartidos, ya que pueden filtrarse en dumps de depuración, logs de error o procesos hijos."
+    ],
+    "ejemplo": "# .env\nPORT=8080\nDATABASE_URL=postgres://dev:dev@localhost:5432/app\n\n// index.js\nimport 'dotenv/config';\nconst port = Number(process.env.PORT ?? 3000);",
+    "entrevista": "dotenv agiliza la configuración local siguiendo el principio Twelve-Factor de separar código y entorno, pero en producción debe ser reemplazado por inyección del orquestador y gestores de secretos."
+  }
+}

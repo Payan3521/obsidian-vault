@@ -1,0 +1,47 @@
+---
+titulo: "Open WebUI"
+categoria:
+  - "61. Herramientas y plataformas de IA (complemento)"
+tags:
+  - "mapa-tecnologico"
+  - "nivel-conocer"
+  - "herramientas-y-plataformas-de-ia-complemento"
+nivel: conocer
+estrella: false
+relacionado_con:
+  - "[[AnythingLLM]]"
+  - "[[Chainlit]]"
+  - "[[Chatbot UI]]"
+  - "[[Dify]]"
+  - "[[Extension de navegador con IA]]"
+  - "[[Flowise]]"
+  - "[[Gradio]]"
+  - "[[Langflow]]"
+  - "[[LlamaIndex]]"
+  - "[[Streamlit]]"
+---
+
+# Open WebUI
+
+> Nodo del **Mapa Tecnológico v2.6**.
+
+## Contexto en el mapa
+
+**Interfaces y aplicaciones:** [[Streamlit]], [[Gradio]], [[Chainlit]], [[Open WebUI]], [[AnythingLLM]], [[Dify]], [[Flowise]], [[Langflow]], [[LlamaIndex]], [[UI para LLM]], [[Chatbot UI]], [[Widget de IA]], [[Extension de navegador con IA]].
+
+## Relaciones
+
+- [[AnythingLLM]]
+- [[Chainlit]]
+- [[Chatbot UI]]
+- [[Dify]]
+- [[Extension de navegador con IA]]
+- [[Flowise]]
+- [[Gradio]]
+- [[Langflow]]
+- [[LlamaIndex]]
+- [[Streamlit]]
+
+## Mis notas
+
+Añade aquí tus ejemplos, proyectos, dudas y experiencias con esta tecnología.

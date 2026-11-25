@@ -2,23 +2,25 @@
 titulo: "Prompt caching"
 categoria:
   - "17. IA — nueva era (sección ampliada)"
+  - "52. Context engineering"
 tags:
   - "mapa-tecnologico"
   - "nivel-conocer"
   - "ia-nueva-era-sección-ampliada"
+  - "context-engineering"
 nivel: conocer
 estrella: false
 relacionado_con:
+  - "[[Arquitectura de contexto]]"
+  - "[[Atención diluida]]"
+  - "[[Caché de contexto]]"
   - "[[Chain-of-thought (CoT)]]"
-  - "[[Delimitadores y formato]]"
-  - "[[Eval-driven prompting]]"
-  - "[[Few-shot dinámico]]"
-  - "[[Meta-prompting]]"
-  - "[[Prompt chaining]]"
-  - "[[Prompt engineering]]"
-  - "[[Prompt negativo]]"
-  - "[[ReAct (Reason + Act)]]"
-  - "[[Role prompting]]"
+  - "[[Ciclo de vida del contexto]]"
+  - "[[Compresión de contexto]]"
+  - "[[Context assembly]]"
+  - "[[Context budget]]"
+  - "[[Context collision]]"
+  - "[[Context compaction]]"
 ---
 
 # Prompt caching
@@ -27,20 +29,20 @@ relacionado_con:
 
 ## Contexto en el mapa
 
-[[Prompt engineering]], [[System prompt]], [[Zero-shot - Few-shot]], [[Chain-of-thought (CoT)]], ➕ [[Tree-of-thought (ToT)]], ➕ [[ReAct (Reason + Act)]], ➕ [[Role prompting]], ➕ [[Structured outputs (JSON Schema - Pydantic)]], ➕ [[Delimitadores y formato]], ➕ [[Prompt chaining]], ➕ [[Prompt caching]], ➕ [[Meta-prompting]], ➕ [[Few-shot dinámico]], ➕ [[Prompt negativo]], ➕ [[Eval-driven prompting]].
+**La disciplina:** [[Context engineering]], [[Ingeniería de contexto]], [[Context engineering vs prompt engineering]], [[Arquitectura de contexto]], [[Contexto como producto]], [[Ciclo de vida del contexto]], [[Pipeline de ensamblado de contexto]], [[Context assembly]], [[Context budget]], [[Presupuesto de tokens]], [[Ventana de contexto]], [[Context window management]], [[Gestión de la ventana de contexto]], [[Context compaction]], [[Compresión de contexto]], [[Context offloading]], [[Descarga de contexto]], [[Just-in-time context]], [[Contexto justo a tiempo]], [[Recuperación de contexto]], [[Context poisoning]], [[Context collision]], [[Lost in the middle]], [[Efecto lost in the middle]], [[Atención diluida]], [[Context rot]], [[Podredumbre del contexto]], [[Caché de contexto]], [[Prompt caching]].
 
 ## Relaciones
 
+- [[Arquitectura de contexto]]
+- [[Atención diluida]]
+- [[Caché de contexto]]
 - [[Chain-of-thought (CoT)]]
-- [[Delimitadores y formato]]
-- [[Eval-driven prompting]]
-- [[Few-shot dinámico]]
-- [[Meta-prompting]]
-- [[Prompt chaining]]
-- [[Prompt engineering]]
-- [[Prompt negativo]]
-- [[ReAct (Reason + Act)]]
-- [[Role prompting]]
+- [[Ciclo de vida del contexto]]
+- [[Compresión de contexto]]
+- [[Context assembly]]
+- [[Context budget]]
+- [[Context collision]]
+- [[Context compaction]]
 
 ## Mis notas
 

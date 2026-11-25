@@ -1,0 +1,158 @@
+{
+  "Optimización de código": {
+    "que": "Fase del compilador (presente en el middle-end y el back-end) que transforma una representación intermedia o código objeto en una versión funcionalmente equivalente pero más eficiente. Busca reducir métricas como tiempo de ejecución, consumo de memoria, tamaño del binario o gasto energético sin alterar el comportamiento observable.",
+    "para": "Resuelve la brecha entre las abstracciones legibles escritas por el programador y el rendimiento real que exige el hardware moderno. Se utiliza para eliminar redundancias introducidas en el código fuente o generadas por traducciones ingenuas (como chequeos repetidos o copias innecesarias) antes de emitir instrucciones finales.",
+    "como": "Opera aplicando pasadas iterativas de análisis y transformación sobre el grafo de flujo de control (CFG) o en forma SSA. Primero ejecuta análisis de flujo de datos (reaching definitions, liveness analysis, available expressions) para probar invariantes de seguridad. Luego aplica transformaciones independientes de la arquitectura como constant folding, dead code elimination (DCE), loop-invariant code motion (LICM) e inlining. Finalmente, el back-end ejecuta optimizaciones dependientes de la máquina: selección de instrucciones, planificación (instruction scheduling) y asignación de registros por coloración de grafos.",
+    "practicas": [
+      "Usa -O2 por defecto en producción y reserva -O3 o -Ofast tras perfilar: la vectorización agresiva o relajar IEEE 754 puede inflar la caché de instrucciones o romper precisión numérica.",
+      "Evita el comportamiento indefinido (UB) en C/C++: el optimizador asume que el UB nunca ocurre y puede eliminar comprobaciones de seguridad críticas.",
+      "Combina PGO (Profile-Guided Optimization) y LTO (Link-Time Optimization) para optimizar rutas calientes y hacer inlining entre unidades de traducción distintas.",
+      "No micro-optimices manualmente patrones triviales (como desenrollar bucles pequeños) antes de medir; suele obstaculizar las heurísticas del compilador."
+    ],
+    "ejemplo": "// Antes de constant folding y DCE\nint x = 4 * 8;\nif (0) { printf(\"muerto\"); }\nreturn x + 0;\n\n// Después de optimizar (clang -O2)\nmov eax, 32\nret",
+    "entrevista": "La optimización de código consiste en probar invariantes mediante análisis de flujo de datos para transformar el programa en uno más eficiente preservando su semántica observable bajo la regla 'as-if'."
+  },
+  "Parser LL": {
+    "que": "Analizador sintáctico descendente (top-down) determinista que construye el árbol de derivación desde el símbolo inicial hacia las hojas. El acrónimo indica que lee la entrada de izquierda a derecha (Left-to-right), construye una derivación por la izquierda (Leftmost derivation) y usa k tokens de anticipación (lookahead), siendo LL(1) el caso clásico.",
+    "para": "Sirve para validar la estructura gramatical de una secuencia de tokens y construir el AST de forma intuitiva y predecible. Se emplea ampliamente en compiladores escritos a mano mediante descenso recursivo (GCC, Clang, Go) y en generadores como ANTLR gracias a su claridad para emitir diagnósticos.",
+    "como": "Calcula los conjuntos FIRST (terminales iniciales posibles de cada no terminal) y FOLLOW (terminales que pueden aparecer inmediatamente después) a partir de una gramática libre de contexto. Con ellos construye una tabla predictiva M[no_terminal, token] o funciones mutuamente recursivas por cada regla. En cada paso observa el siguiente token de entrada (lookahead) para elegir sin retroceso (backtracking) qué producción expandir. Usando una pila explícita o la pila de llamadas del lenguaje, empareja terminales consumiendo tokens del lexer hasta agotar la entrada.",
+    "practicas": [
+      "Elimina la recursión por la izquierda (A -> A alpha | beta) reescribiéndola por la derecha, o un parser LL entrará en bucle infinito.",
+      "Aplica factorización por la izquierda (left factoring) cuando dos alternativas compartan prefijo para evitar conflictos en LL(1).",
+      "Combina descenso recursivo para sentencias con Pratt parsing (precedence climbing) para expresiones, evitando jerarquías profundas de llamadas.",
+      "Error típico: intentar parsear gramáticas ambiguas sin predicados sintácticos ni lookahead adaptativo como ALL(*) en ANTLR4."
+    ],
+    "ejemplo": "// Descenso recursivo LL(1) para: Expr -> Term ('+' Term)*\nAST* parse_expr() {\n  AST* node = parse_term();\n  while (peek().type == TOK_PLUS) {\n    consume(TOK_PLUS);\n    node = new BinaryOp('+', node, parse_term());\n  }\n  return node;\n}",
+    "entrevista": "Un parser LL(1) predice qué regla expandir mirando un token adelante con conjuntos FIRST y FOLLOW, lo que exige eliminar la recursión izquierda a cambio de un control directo ideal para descenso recursivo y errores claros."
+  },
+  "Parser LR - LALR": {
+    "que": "Familia de analizadores sintácticos ascendentes (bottom-up) que leen la entrada de izquierda a derecha y construyen una derivación por la derecha en orden inverso (Rightmost derivation). LALR(1) (Look-Ahead LR) es una variante compacta de LR(1) que fusiona estados con idéntico núcleo de ítems LR(0) pero distinto lookahead.",
+    "para": "Reconoce un conjunto mucho más amplio de gramáticas deterministas que LL(1), aceptando de forma natural la recursión por la izquierda y jerarquías de operadores sin reescrituras manuales. Es el motor estándar de generadores clásicos de parsers como yacc, Bison y Menhir para lenguajes complejos como C, SQL o DSLs.",
+    "como": "Opera con una pila de estados/símbolos y un autómata finito determinista de ítems LR guiado por dos tablas: ACTION y GOTO. En cada paso consulta el estado en la cima de la pila y el token actual para ejecutar shift (desplazar token a la pila), reduce (reemplazar el handle en la cima por el no terminal de la regla y saltar vía GOTO), accept o error. SLR(1) usa conjuntos FOLLOW globales; LR(1) incorpora lookaheads exactos por ítem multiplicando estados; y LALR(1) colapsa estados del mismo núcleo manteniendo casi toda la potencia de LR(1) con el tamaño de tabla de LR(0).",
+    "practicas": [
+      "Resuelve conflictos shift/reduce (como el dangling else) explícitamente con directivas de precedencia y asociatividad (%left, %right, %nonassoc) en lugar de ignorar avisos.",
+      "Prefiere recursión por la izquierda (List -> List Item | epsilon) en parsers LR: mantiene la profundidad de la pila en O(1) en vez de O(n).",
+      "Evita conflictos reduce/reduce reestructurando la gramática; suelen indicar ambigüedad real o factorización deficiente.",
+      "LALR vs LL: LALR acepta más gramáticas sin refactorizar, pero depurar conflictos de tabla y recuperar errores sintácticos resulta más opaco que en descenso recursivo."
+    ],
+    "ejemplo": "%left '+' '-'\n%left '*' '/'\n%%\nexpr: expr '+' expr { $$ = $1 + $3; }\n    | expr '*' expr { $$ = $1 * $3; }\n    | NUM           { $$ = $1; }\n    ;",
+    "entrevista": "LALR(1) conserva casi toda la expresividad de LR(1) con tablas tan compactas como LR(0) al fusionar estados de núcleo idéntico, y su algoritmo shift-reduce maneja la recursión izquierda de forma nativa."
+  },
+  "Pipeline de build y toolchain": {
+    "que": "Conjunto coordinado de herramientas (driver del compilador, preprocesador, compilador, ensamblador, enlazador, archivador y sysroot/SDK) y las etapas secuenciales que transforman código fuente en ejecutables o librerías. El toolchain agrupa los binarios y bibliotecas base alineados para una arquitectura y ABI concretas (p. ej. Clang+LLD+libc++ o GCC+binutils+glibc).",
+    "para": "Automatiza compilaciones reproducibles, gestiona dependencias entre unidades de traducción, habilita compilación incremental y permite compilar de forma cruzada entre host y target. Resuelve la escala de proyectos grandes donde recompilar todo desde cero ante un cambio mínimo sería prohibitivo.",
+    "como": "Un sistema de metadatos/build (CMake, Meson, Bazel, Cargo) genera un grafo acíclico dirigido (DAG) de dependencias a partir de fuentes, cabeceras y flags. El ejecutor (Ninja, Make, Bazel) evalúa marcas de tiempo o hashes criptográficos de entrada para invocar solo los nodos desactualizados. Cada unidad pasa por el driver (gcc/clang/rustc), que orquesta preprocesado, frontend, backend hacia objeto (.o), archivado (.a) y enlace final (ld/lld) produciendo ELF, Mach-O o PE. Herramientas como ccache o sccache cachean artefactos intermedios por hash de contenido.",
+    "practicas": [
+      "Busca builds herméticos y reproducibles fijando versiones de toolchain, sysroot, flags y hashes (lockfiles, Bazel/Nix, SOURCE_DATE_EPOCH).",
+      "Separa la fase de configuración (CMake/Meson) de la ejecución (Ninja) y habilita compilación paralela con caché (ccache/sccache).",
+      "Reduce dependencias de cabeceras pesadas y evalúa precompiled headers (PCH) o módulos para evitar re-parsear código idéntico miles de veces.",
+      "Nunca mezcles ABIs ni runtimes incompatibles en un mismo enlace (por ejemplo, libstdc++ con libc++, o CRT debug y release en Windows)."
+    ],
+    "ejemplo": "# Configurar y compilar con CMake + Ninja + Clang + LLD\ncmake -B build -G Ninja -DCMAKE_C_COMPILER=clang \\\n  -DCMAKE_EXE_LINKER_FLAGS=\"-fuse-ld=lld\" -DCMAKE_BUILD_TYPE=RelWithDebInfo\ncmake --build build -j4",
+    "entrevista": "Un pipeline de build modela la compilación como un DAG incremental sobre un toolchain coherente (frontend, ensamblador, linker y sysroot), logrando velocidad y reproducibilidad mediante caché y paralelismo."
+  },
+  "Runtime y garbage collector": {
+    "que": "El runtime es el entorno de ejecución integrado en el programa compilado (librerías estándar de bajo nivel, planificador de hilos/coroutines, gestor de heap, manejo de excepciones y reflexión). El garbage collector (GC) es el subsistema del runtime que identifica y reclama automáticamente memoria dinámica que ya no es alcanzable por la aplicación.",
+    "para": "Elimina errores manuales graves de memoria (use-after-free, double-free, punteros colgantes) y abstrae primitivas del sistema operativo como E/S asíncrona o concurrencia ligera. Es la base de lenguajes gestionados como Java, Go, C# o JavaScript para priorizar seguridad y productividad frente al control manual o por ownership.",
+    "como": "El GC parte de un conjunto de raíces (registros de CPU, pilas de hilos, variables globales) y recorre el grafo de objetos vivos mediante algoritmos de trazado (mark-sweep, mark-compact, copying) o conteo de referencias con recolector de ciclos. Los colectores modernos suelen ser generacionales (hipótesis débil: la mayoría de objetos muere joven), asignando rápido con bump-pointer en la generación joven y compactando la vieja con menor frecuencia. Para acotar pausas Stop-The-World (STW), emplean marcado tricolor concurrente (blanco, gris, negro) protegido con write barriers y compactación por regiones (como G1, ZGC o el GC de Go).",
+    "practicas": [
+      "Reduce la tasa de asignación en rutas calientes (reutilización de buffers, tipos por valor, escape analysis a stack) para aliviar la carga sobre el GC.",
+      "Ajusta el colector según el SLA real: latencia (pausas mínimas como ZGC/Shenandoah) frente a throughput bruto y huella de memoria (GOGC/GOMEMLIMIT).",
+      "Trampa común: el GC no previene fugas lógicas; cachés sin límite, goroutines bloqueadas o listeners sin desregistrar mantienen objetos alcanzables.",
+      "En fronteras FFI (JNI, cgo), fija (pin) o copia los buffers antes de pasarlos a código nativo para impedir que un GC compactador los mueva en vuelo."
+    ],
+    "ejemplo": "// Go runtime: reducir presión al GC reutilizando slices en heap\nvar bufPool = sync.Pool{\n    New: func() any { return make([]byte, 0, 4096) },\n}\nfunc process() {\n    b := bufPool.Get().([]byte)[:0]\n    defer bufPool.Put(b)\n}",
+    "entrevista": "El garbage collector automatiza el ciclo de vida del heap trazando alcanzabilidad desde las raíces mediante recolección generacional y marcado concurrente tricolor con write barriers para acotar las pausas."
+  },
+  "SSA (Static Single Assignment)": {
+    "que": "Forma de representación intermedia (IR) en la que cada variable se asigna estáticamente una sola vez y toda definición domina a sus usos. Cuando el flujo de control converge desde múltiples bloques predecesores, introduce nodos phi para seleccionar el valor correspondiente según la rama tomada.",
+    "para": "Simplifica y acelera drásticamente el diseño de pases de optimización en compiladores modernos (LLVM IR, GCC GIMPLE, Go, V8 TurboFan). Al codificar explícitamente las cadenas definición-uso (def-use) en cada instrucción, muchas optimizaciones globales se vuelven algoritmos dispersos simples y lineales.",
+    "como": "Para construir SSA mínima sobre un CFG, el compilador calcula el árbol de dominadores y la frontera de dominancia (dominance frontier) de cada bloque básico. Luego inserta instrucciones phi al inicio de los bloques de confluencia necesarios y renombra cada escritura creando versiones únicas (x_1, x_2) mediante un recorrido preorden del árbol de dominadores. Sobre SSA se ejecutan pases como Sparse Conditional Constant Propagation (SCCP), Global Value Numbering (GVN) y eliminación de código muerto. Antes de emitir ensamblador (destrucción de SSA), los nodos phi se convierten en copias en los predecesores o se fusionan al asignar registros.",
+    "practicas": [
+      "Respeta siempre los invariantes de SSA (dominancia estricta de la definición sobre cada uso) al escribir pases propios y valídalos con verificadores como llvm::verifyFunction.",
+      "En frontends propios, emite variables locales en pila (alloca) y delega al pase mem2reg la construcción de SSA óptima.",
+      "Cuida el problema de 'lost copy' y 'swap' al destruir nodos phi: todas las phis al inicio de un bloque se evalúan en paralelo, no secuencialmente.",
+      "Conoce los argumentos de bloque básico (estilo MLIR o Swift SIL) como alternativa equivalente a los nodos phi sin restricciones especiales de posición."
+    ],
+    "ejemplo": "; LLVM IR en forma SSA con instrucción phi\nentry:\n  br i1 %cond, label %then, label %else\nthen:\n  br label %merge\nelse:\n  br label %merge\nmerge:\n  %res = phi i32 [ 10, %then ], [ 20, %else ]\n  ret i32 %res",
+    "entrevista": "En forma SSA cada variable tiene una única asignación estática y las confluencias se resuelven con nodos phi en las fronteras de dominancia, haciendo explícitas las cadenas def-use para optimizar con mayor simplicidad y velocidad."
+  },
+  "Sistemas de tipos (estático-dinámico)": {
+    "que": "Conjunto formal de reglas sintácticas y semánticas que clasifica valores y expresiones en tipos para restringir qué operaciones son válidas y prevenir errores de representación o lógica. En un sistema estático los tipos se comprueban en compilación sobre el código; en uno dinámico se asocian a valores en ejecución y se validan al operar.",
+    "para": "Garantiza seguridad (ausencia de errores de tipo al ejecutarse), documenta contratos entre módulos y permite generar layouts de memoria compactos sin etiquetas en runtime. Elegir entre verificación estática, dinámica o gradual equilibra detección temprana de bugs, expresividad y rapidez de iteración.",
+    "como": "Un sistema estático se formaliza con juicios de tipado que asignan tipos bajo un contexto de entorno; el compilador los verifica o infiere (Hindley-Milner, tipado bidireccional) antes de emitir código, habilitando despacho estático y eliminación de comprobaciones en ejecución. Un sistema dinámico (Python, Ruby, JavaScript) adjunta una etiqueta de tipo o puntero a descriptor en cada valor (p. ej. tagged pointers o NaN-boxing) y despacha operaciones en runtime apoyándose en inline caches si usa JIT. Los sistemas graduales (TypeScript, Python con anotaciones) combinan verificación estática parcial con escapes controlados o contratos en frontera.",
+    "practicas": [
+      "No confundas estático/dinámico (cuándo se comprueba) con fuerte/débil (si permite conversiones implícitas o reinterpretación insegura).",
+      "Aprovecha tipos algebraicos (sum types / enums) y tipos no nulables para hacer irrepresentables los estados inválidos en compilación.",
+      "En sistemas de tipado gradual (TypeScript, mypy), evita abusar de tipos comodín como any porque desactivan la verificación en toda su propagación.",
+      "Distingue tipado nominal (Java/C++: compatibilidad por nombre declarado) de tipado estructural (TypeScript/interfaces en Go: compatibilidad por forma)."
+    ],
+    "ejemplo": "// Tipado estático con sum type (Rust): exhaustividad verificada al compilar\nenum Result {\n    Ok(i32),\n    Err(&'static str),\n}\nfn to_int(r: Result) -> i32 {\n    match r { Result::Ok(v) => v, Result::Err(_) => 0 }\n}",
+    "entrevista": "El tipado estático prueba invariantes sobre todo camino de ejecución antes de correr el programa y evita etiquetas en memoria, mientras el dinámico comprueba etiquetas de valores concretos en runtime priorizando flexibilidad."
+  },
+  "Tabla de símbolos": {
+    "que": "Estructura de datos central del analizador semántico que asocia cada identificador del programa (variables, funciones, tipos, parámetros, módulos) con sus atributos: tipo, ámbito léxico (scope), mutabilidad, visibilidad y desplazamiento o dirección asignada.",
+    "para": "Resuelve referencias de nombres (name resolution), detecta redeclaraciones o identificadores no definidos y suministra información al verificador de tipos y al generador de IR. Es indispensable en lenguajes con ámbitos anidados, sombreado (shadowing), espacios de nombres o sobrecarga.",
+    "como": "Se implementa típicamente como una pila de tablas hash (una por cada bloque abierto) o como un árbol de ámbitos con punteros al ámbito padre (parent pointer) para conservar los símbolos una vez finalizado el parsing. Al entrar en un bloque, el analizador crea un ámbito hijo; al declarar inserta el símbolo en el ámbito actual verificando duplicados; y al buscar un identificador recorre la cadena hacia el ámbito global devolviendo la primera coincidencia (lexical scoping). En lenguajes que permiten referencias adelantadas (métodos de clase o funciones mutuamente recursivas), se ejecuta un primer pase de recolección de declaraciones antes de analizar los cuerpos.",
+    "practicas": [
+      "Usa un árbol de ámbitos enlazados referenciado desde el AST si el chequeo de tipos o la generación de código ocurren en pases posteriores al parsing.",
+      "Aplica string interning (tabla única de cadenas) para representar identificadores como enteros y comparar nombres en O(1).",
+      "Separa la fase de registro de declaraciones top-level de la fase de resolución de cuerpos cuando el lenguaje permita usar símbolos antes de declararlos.",
+      "Error típico: usar una única tabla hash plana y olvidar restaurar símbolos sombreados al salir de un bloque interno."
+    ],
+    "ejemplo": "// Búsqueda léxica en cadena de ámbitos\nSymbol* lookup(Scope* scope, SymbolID name) {\n    for (Scope* cur = scope; cur != NULL; cur = cur->parent) {\n        Symbol* sym = map_get(cur->table, name);\n        if (sym != NULL) return sym;\n    }\n    return NULL;\n}",
+    "entrevista": "La tabla de símbolos se modela como una cadena de tablas hash por ámbito léxico combinada con string interning para resolver nombres, validar visibilidad y alimentar el chequeo de tipos en O(profundidad de scope)."
+  },
+  "Testing de compiladores y lenguajes": {
+    "que": "Conjunto de metodologías automatizadas para verificar que un compilador o intérprete acepta programas válidos, rechaza con diagnósticos precisos entradas inválidas, conserva la semántica tras optimizar (sin miscompilations) y evita caídas internas (ICE).",
+    "para": "Un defecto en un compilador propaga corrupción silenciosa a cada binario generado o rompe proyectos enteros al actualizar el toolchain. Sirve para proteger pases de IR, reglas de tipado, emisión de ensamblador y cumplimiento estricto de especificaciones del lenguaje.",
+    "como": "Combina pruebas unitarias de pases con pruebas end-to-end basadas en golden files / snapshot testing (como llvm-lit junto a FileCheck, que validan fragmentos exactos de IR, ensamblador o mensajes de error). Para localizar bugs profundos en optimizadores se emplea fuzzing basado en gramáticas (Csmith, YARPGen) que sintetiza programas válidos libres de UB, junto a differential testing (comparar la ejecución del mismo programa compilado con -O0 frente a -O3 o entre distintos compiladores). Cuando aparece un fallo complejo, herramientas de reducción automática como C-Reduce o llvm-reduce minimizan el código de entrada a unas pocas líneas manteniendo el error.",
+    "practicas": [
+      "Usa golden/expect tests (llvm-lit + FileCheck, UI tests de rustc) para verificar simultáneamente salidas IR y mensajes diagnósticos exactos.",
+      "Aplica differential testing (-O0 vs -O2, intérprete de referencia vs JIT) para detectar miscompilations silenciosas que no lanzan crash.",
+      "Integra reducción automática (delta debugging / C-Reduce / llvm-reduce) antes de depurar salidas de fuzzers de miles de líneas.",
+      "Cubre no solo código válido: prueba exhaustivamente errores léxicos, recuperación sintáctica, ciclos de tipos y límites numéricos."
+    ],
+    "ejemplo": "; Prueba llvm-lit + FileCheck para verificar constant folding\n; RUN: opt -passes=instcombine -S %s | FileCheck %s\ndefine i32 @add_const() {\n  ; CHECK-LABEL: @add_const(\n  ; CHECK: ret i32 7\n  %1 = add i32 3, 4\n  ret i32 %1\n}",
+    "entrevista": "El testing de compiladores combina golden tests por pase (como llvm-lit/FileCheck) con fuzzing generativo libre de UB, differential testing entre -O0 y -O3 y reducción automática para aislar miscompilations."
+  },
+  "Tokens y lexemas": {
+    "que": "Un lexema es la secuencia exacta de caracteres en el código fuente que forma una unidad léxica mínima (por ejemplo \"42\", \"while\", \"total\"). Un token es el símbolo abstracto categorizado que emite el lexer a partir del lexema, formado por un tipo de token (KW_WHILE, IDENT, INT), un valor semántico opcional y su ubicación en el texto (span).",
+    "para": "Desacopla al parser del formato textual crudo del archivo (espacios, tabulaciones, comentarios, saltos de línea y codificación). Permite que el análisis sintáctico trabaje sobre un flujo compacto y uniforme de terminales con coordenadas exactas para reportar diagnósticos.",
+    "como": "El analizador léxico (scanner) procesa el flujo de entrada mediante autómatas finitos deterministas (DFA) generados desde expresiones regulares o implementados a mano. Aplica dos reglas de desambiguación esenciales: maximal munch (consumir el lexema válido más largo posible, reconociendo '==' como un token en lugar de dos '=') y precedencia de reglas (clasificar 'if' como palabra clave antes que como identificador). Al completar un lexema, descarta trivia (o la preserva aparte para formateadores) y emite la tupla Token(kind, span, valor) al parser.",
+    "practicas": [
+      "Almacena siempre el span (offset inicial y longitud o línea/columna) en cada token para habilitar diagnósticos precisos y sourcemaps.",
+      "Evita asignar cadenas nuevas por token: guarda índices sobre el buffer fuente o usa string interning para identificadores repetidos.",
+      "Si construyes herramientas de IDE o formateadores (CST), adjunta espacios y comentarios como 'trivia' del token en vez de descartarlos.",
+      "Trampa clásica de maximal munch: en C++/Java, construcciones como List<List<Int>> exigen que el parser sepa partir un token '>>' en dos '>'."
+    ],
+    "ejemplo": "// Entrada: let x = 42;\n// Secuencia de tokens producida:\nToken { kind: KW_LET,  lexeme: \"let\", span: 0..3 }\nToken { kind: IDENT,   lexeme: \"x\",   span: 4..5 }\nToken { kind: EQ,      lexeme: \"=\",   span: 6..7 }\nToken { kind: INT(42), lexeme: \"42\",  span: 8..10 }\nToken { kind: SEMI,    lexeme: \";\",   span: 10..11 }",
+    "entrevista": "El lexema es el fragmento textual en el fuente y el token es el símbolo tipado con su span que consume el parser, resuelto por el lexer mediante maximal munch y prioridad de palabras clave."
+  },
+  "WebAssembly (destino)": {
+    "que": "Formato binario portable de instrucciones (.wasm) y máquina virtual basada en pila estandarizada por el W3C, diseñada como destino de compilación seguro, compacto y cercano al hardware. Dispone de una sintaxis textual equivalente llamada WAT (WebAssembly Text format) y de un modelo de memoria lineal aislada (sandbox).",
+    "para": "Permite compilar lenguajes de sistemas o alto nivel (C, C++, Rust, Go, Zig) para ejecutar código a velocidad casi nativa tanto en navegadores web como en servidores, plugins o edge mediante WASI (WebAssembly System Interface). Resuelve la portabilidad segura sin acoplarse a una CPU concreta ni exigir confiar en el binario.",
+    "como": "Toolchains como Clang/LLVM (--target=wasm32-wasi) o rustc bajan su IR a instrucciones Wasm fuertemente tipadas (i32, i64, f32, f64, v128) con flujo de control estructurado (block, loop, if, sin saltos arbitrarios). Al cargar el módulo .wasm, el runtime (V8, SpiderMonkey, Wasmtime) valida en una única pasada la seguridad de tipos de la pila y los accesos a memoria lineal. Luego compila el módulo a código máquina nativo (AOT o JIT en dos niveles: compilador baseline rápido más optimizador) y solo concede acceso al exterior mediante funciones importadas explícitamente (capability-based security).",
+    "practicas": [
+      "Optimiza el tamaño de descarga en web compilando con -Oz / opt-level='z', pasando wasm-opt (Binaryen) y eliminando secciones de debug en release.",
+      "Minimiza el cruce frecuente de la frontera host-guest (JS <-> Wasm) operando por lotes sobre buffers en memoria lineal compartida.",
+      "Adopta WASI Preview 2 y el Component Model para componer módulos entre distintos lenguajes con tipos ricos en lugar de punteros crudos de estilo C.",
+      "Error común: asumir acceso directo al DOM o al sistema de archivos; toda capacidad externa debe declararse e inyectarse explícitamente vía imports."
+    ],
+    "ejemplo": ";; Módulo WAT (WebAssembly Text) con una función exportada\n(module\n  (func (export \"suma\") (param $a i32) (param $b i32) (result i32)\n    local.get $a\n    local.get $b\n    i32.add)\n)",
+    "entrevista": "WebAssembly actúa como un target de compilación portable basado en pila, con flujo de control estructurado y memoria lineal aislada, validable en una sola pasada y compilable a nativo por motores como V8 o Wasmtime."
+  },
+  "Árbol sintáctico (AST)": {
+    "que": "Abstract Syntax Tree (Árbol de Sintaxis Abstracta): representación jerárquica en forma de árbol de la estructura sintáctica esencial de un programa. A diferencia del árbol concreto de derivación o CST, omite elementos puramente gramaticales redundantes como paréntesis de agrupación, delimitadores o reglas intermedias de precedencia.",
+    "para": "Sirve como estructura intermedia principal entre el parser y las fases posteriores del compilador (resolución de símbolos, chequeo de tipos, intérpretes y bajada a IR). Permite analizar y transformar construcciones del lenguaje con nodos semánticos limpios en lugar de operar sobre tokens planos.",
+    "como": "El parser instancia nodos tipados (BinaryExpr, IfStmt, FnDecl) durante el descenso recursivo o las reducciones LR, anidando operandos según la precedencia y asociatividad de la gramática. Las fases posteriores recorren el AST usando el patrón Visitor, pattern matching o evaluadores de atributos para validar tipos y reportar errores usando el Span almacenado en cada nodo. En compiladores modernos orientados a datos, los nodos suelen alojarse en una Arena contigua o arrays paralelos indexados por NodeId (AST flattening) para maximizar la localidad de caché y evitar fragmentación en el heap.",
+    "practicas": [
+      "Distingue AST (para compilar y tipar) de CST / red-green trees (estilo Roslyn o rust-analyzer) si construyes formateadores o IDEs que deban preservar comentarios y espacios exactos.",
+      "Asocia un Span (y un NodeId único) a cada nodo desde su creación; sin él no podrás emitir diagnósticos claros ni símbolos de debug.",
+      "Asigna los nodos del AST en una Arena (bump allocator) para acelerar la creación y liberar todo el árbol en bloque al terminar la fase.",
+      "Mantén el AST inmutable tras el parsing y guarda los tipos inferidos en tablas laterales indexadas por NodeId para desacoplar las fases."
+    ],
+    "ejemplo": "// Expresión: (a + b) * 2 -> el AST omite los paréntesis\n      BinaryOp(*)\n       /        \\\n  BinaryOp(+)   IntLit(2)\n   /       \\\nIdent(a)  Ident(b)",
+    "entrevista": "El AST representa la jerarquía semántica del programa descartando puntuación sintáctica redundante y sirve de eje para el análisis semántico y la generación de IR, optimizando su memoria mediante arenas o arreglos indexados."
+  }
+}

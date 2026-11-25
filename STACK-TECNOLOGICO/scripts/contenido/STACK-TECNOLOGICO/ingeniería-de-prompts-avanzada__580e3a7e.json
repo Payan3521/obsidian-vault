@@ -1,0 +1,392 @@
+{
+  "APE": {
+    "que": "APE (Automatic Prompt Engineer) es un marco algorítmico introducido por Zhou et al. que trata las instrucciones en lenguaje natural como programas sintetizados y optimizados automáticamente por un modelo de lenguaje. En lugar de redactar prompts a mano, formula el problema como una búsqueda de caja negra sobre el espacio de instrucciones candidatas maximizando una función de puntuación sobre un conjunto de validación.",
+    "para": "Resuelve el sesgo y el coste de la ingeniería manual de prompts, especialmente cuando una tarea requiere encontrar formulaciones no obvias que maximicen la precisión en modelos concretos. Se utiliza en clasificación, razonamiento y extracción de información cuando se dispone de un pequeño lote de pares entrada-salida representativos y una métrica evaluable.",
+    "como": "El algoritmo opera en tres fases sobre un LLM generador y un LLM evaluador o ejecutor. Primero, realiza muestreo inverso (forward o reverse mode) mostrando al modelo generador ejemplos de demostración entrada-salida para proponer N instrucciones candidatas. Segundo, ejecuta cada instrucción sobre un subconjunto de entrenamiento o validación y calcula la métrica objetivo (exactitud, F1 o log-probabilidad). Tercero, aplica búsqueda iterativa estilo Monte Carlo o reescritura semántica sobre las mejores candidatas para refinar las frases de mayor rendimiento hasta converger.",
+    "practicas": [
+      "Separar estrictamente el split de búsqueda del split de test final para evitar sobreajuste de la redacción a casos particulares.",
+      "Combinar muestreo diverso con temperatura moderada (0.7-1.0) en la fase de propuesta y decodificación determinista (temperature=0) en evaluación.",
+      "Trampa común: optimizar solo por exactitud sin penalizar longitud o latencia, generando instrucciones verbosas que encarecen la inferencia.",
+      "APE vs OPRO: APE genera candidatas desde demostraciones y refina las mejores, mientras OPRO mantiene una trayectoria histórica ordenada con puntuaciones para guiar al optimizador."
+    ],
+    "ejemplo": "# Flujo conceptual de APE\ndemos = [(\"El envío llegó roto\", \"Negativo\"), (\"Excelente soporte\", \"Positivo\")]\ncandidates = llm_proposer.sample_instructions(demos, n=20)\nscored = [(eval_accuracy(p, val_set), p) for p in candidates]\nbest_prompt = max(scored)[1]\nrefined = llm_proposer.paraphrase_top(best_prompt, n=10)",
+    "entrevista": "APE convierte el diseño de prompts en síntesis automática de programas lingüísticos mediante muestreo de hipótesis desde ejemplos y selección iterativa basada en métricas sobre un conjunto de validación."
+  },
+  "Analogical prompting": {
+    "que": "Analogical prompting es una técnica de razonamiento en contexto (Yasunaga et al.) en la que el propio LLM autogenera ejemplos análogos relevantes y sus soluciones antes de resolver la consulta objetivo. Sustituye la provisión manual de ejemplos few-shot por una fase previa de recuperación o síntesis analógica dentro de una única llamada.",
+    "para": "Elimina la necesidad de curar bancos de ejemplos few-shot etiquetados para cada tipo de problema y mejora la generalización en tareas diversas (matemáticas, código, lógica). Es especialmente útil cuando las consultas de entrada abarcan múltiples subdominios y un conjunto estático de ejemplos few-shot quedaría desalineado con la petición actual.",
+    "como": "La plantilla instruye explícitamente al modelo para que identifique la estructura del problema recibido, recuerde o invente k problemas distintos pero estructuralmente análogos y los resuelva paso a paso mediante Chain-of-Thought. Al generar estas trayectorias análogas en el mismo contexto autorregresivo, el mecanismo de atención condiciona los tokens posteriores del problema real sobre patrones de resolución válidos recién activados. Opcionalmente, se pide incluir conocimiento de alto nivel o principios generales antes de abordar el caso concreto.",
+    "practicas": [
+      "Solicitar entre 2 y 3 analogías diversas y explícitamente distintas entre sí para evitar que el modelo repita variaciones triviales del mismo ejemplo.",
+      "Exigir que las analogías se resuelvan paso a paso y no solo como enunciado, ya que la transferencia ocurre a través de la traza de razonamiento.",
+      "Error típico: aplicar analogical prompting en tareas simples de extracción donde duplica el consumo de tokens de salida sin aportar ganancia de precisión.",
+      "Analogical prompting vs Few-shot estándar: el primero adapta dinámicamente los ejemplos a cada entrada sin coste de etiquetado, a cambio de mayor latencia y riesgo de alucinar una analogía errónea."
+    ],
+    "ejemplo": "Problema: {{query}}\n1. Recuerda 2 problemas distintos pero con estructura similar a este y resuélvelos paso a paso.\n2. Extrae el principio común aplicado.\n3. Resuelve ahora el problema original siguiendo la misma metodología.",
+    "entrevista": "Analogical prompting aprovecha el aprendizaje en contexto autogenerado haciendo que el modelo sintetice y resuelva sus propios ejemplos análogos antes de atacar la tarea objetivo."
+  },
+  "Anti-patrones de prompt": {
+    "que": "Los anti-patrones de prompt son prácticas recurrentes de redacción y estructuración de instrucciones que degradan la fiabilidad, precisión, latencia o mantenibilidad de un sistema basado en LLM. Representan decisiones de diseño aparentemente intuitivas que provocan comportamientos erráticos, inestabilidad ante cambios de modelo o fallos en producción.",
+    "para": "Catalogar e identificar anti-patrones permite auditar prompts existentes antes de desplegarlos, diagnosticar tasas altas de alucinación o errores de parseo y establecer criterios objetivos en revisiones de código y linting de prompts. Resulta indispensable cuando una aplicación pasa de prototipo en playground a servicio en producción con SLA definidos.",
+    "como": "Los anti-patrones actúan interfiriendo con el mecanismo de atención y la distribución de probabilidad de salida del modelo. Por ejemplo, las negaciones ambiguas ('no menciones X') activan tokens asociados a X en el contexto; las instrucciones contradictorias dividen la masa de probabilidad generando salidas parciales; el exceso de texto diluye la atención hacia el centro de la ventana ('lost in the middle'); y el acoplamiento entre lógica de negocio y formato sin delimitadores favorece la inyección de instrucciones desde datos de usuario.",
+    "practicas": [
+      "Reemplazar restricciones negativas aisladas por instrucciones afirmativas claras acompañadas de una acción alternativa explícita.",
+      "Separar estrictamente las instrucciones del sistema de los datos no confiables mediante delimitadores XML o mensajes con rol system/developer.",
+      "Auditar la presencia de redundancias, adjetivos subjetivos ('sé muy inteligente') y formatos implícitos mediante reglas de prompt linting en CI.",
+      "Anti-patrón vs deuda técnica aceptable: un prompt largo sin ejemplos puede tolerarse en prototipos exploratorios, pero en producción rompe presupuestos de latencia y caché."
+    ],
+    "ejemplo": "# Anti-patrón: negativo + ambiguo + sin delimitadores\n\"Resume bien este texto, no uses listas ni seas aburrido: \" + user_input\n\n# Corrección: afirmativo + acotado + delimitado\n\"Redacta un resumen ejecutivo en 1 párrafo (máx. 80 palabras) sobre <texto>{{user_input}}</texto>.\"",
+    "entrevista": "Los anti-patrones de prompt son errores estructurales —como instrucciones conflictivas, ejemplos sesgados o ausencia de delimitadores— que degradan la precisión y reproducibilidad de un LLM en producción."
+  },
+  "Automatic prompt engineering": {
+    "que": "Automatic Prompt Engineering (APE en sentido amplio) es la disciplina y conjunto de metodologías que sustituyen la iteración manual de prompts por algoritmos de búsqueda, optimización discreta o meta-prompting asistido por IA. Trata el prompt como un hiperparámetro textual o programa compilable que se ajusta automáticamente contra una función objetivo.",
+    "para": "Resuelve la fragilidad del ajuste manual ('prompt whispering'), donde pequeños cambios léxicos alteran drásticamente el rendimiento y las optimizaciones dejan de servir al cambiar de proveedor o versión de modelo. Se emplea cuando hay que migrar pipelines entre modelos, escalar decenas de tareas en paralelo o exprimir puntos porcentuales críticos en benchmarks de negocio.",
+    "como": "Un pipeline de ingeniería automática de prompts define un espacio de búsqueda (plantilla base, instrucciones, ejemplos few-shot o cadenas de pasos), un generador de variantes (mutación, cruce evolutivo, gradientes textuales o meta-LLM) y un evaluador automatizado sobre un dataset etiquetado. En cada ciclo, el optimizador evalúa las variantes candidatas con métricas deterministas o LLM-as-a-judge, selecciona las mejores mediante búsqueda en haz, algoritmos evolutivos o optimización bayesiana, y repite hasta alcanzar un presupuesto de llamadas o convergencia.",
+    "practicas": [
+      "Invertir primero en construir un dataset de evaluación representativo y libre de fugas antes de lanzar cualquier optimizador automático.",
+      "Incluir penalizaciones multiobjetivo (precisión, coste en tokens, adherencia al esquema JSON) en la función de fitness.",
+      "Trampa común: asumir que un prompt optimizado para un modelo frontier se transfiere intacto a un modelo ligero; siempre reoptimizar por modelo destino.",
+      "Ingeniería manual vs automática: la manual aporta conocimiento del dominio inicial; la automática explora formulaciones contraintuitivas y reajusta rápido ante actualizaciones de modelo."
+    ],
+    "ejemplo": "# Bucle genérico de optimización automática\npopulation = init_prompts(base_instruction, n=12)\nfor step in range(max_iters):\n    scores = evaluate_batch(population, dev_set, metric=exact_match)\n    elites = select_top_k(population, scores, k=4)\n    population = mutate_with_feedback(elites, error_cases)",
+    "entrevista": "Automatic prompt engineering automatiza la generación, selección y refinamiento de instrucciones y ejemplos mediante búsqueda guiada por métricas sobre un conjunto de evaluación."
+  },
+  "Biblioteca de prompts": {
+    "que": "Una biblioteca de prompts (prompt library) es un catálogo centralizado, estructurado y reutilizable de plantillas de prompts verificadas, parametrizadas y documentadas para casos de uso recurrentes dentro de un producto u organización. A diferencia de un simple listado de ejemplos, integra metadatos de versión, esquema de variables, modelo objetivo y métricas de evaluación.",
+    "para": "Evita que cada equipo reinvente instrucciones para tareas comunes (clasificación, extracción estructurada, resumen, moderación, SQL generation) y reduce la inconsistencia entre microservicios. Se utiliza en organizaciones con múltiples flujos de IA que necesitan estandarizar tono, políticas de seguridad, formatos de salida y trazabilidad entre equipos.",
+    "como": "Se implementa como un repositorio versionado en Git o integrado en un registro (Langfuse, PromptLayer, MLflow, Braintrust) donde cada entrada contiene una plantilla con placeholders tipados, configuración de hiperparámetros (temperatura, max_tokens, response_format), casos de prueba asociados y etiquetas semánticas. Los servicios consumidores referencian los prompts por identificador y etiqueta de entorno (por ejemplo, `prod` o `v2.4`) a través de un SDK o paquete versionado.",
+    "practicas": [
+      "Documentar en cada entrada el modelo probado, las variables requeridas, el esquema de salida esperado y los límites conocidos.",
+      "Acompañar cada plantilla reutilizable de al menos un conjunto mínimo de pruebas de regresión para validar cambios antes de publicarlos.",
+      "Error frecuente: convertir la biblioteca en un almacén estático de texto sin versionado ni dueños claros, provocando copias locales desactualizadas.",
+      "Biblioteca de prompts vs Prompt registry: la biblioteca enfatiza la reutilización y estandarización entre casos de uso; el registry gestiona el ciclo de vida, despliegue y rollback en tiempo de ejecución."
+    ],
+    "ejemplo": "# prompts/extract_invoice/v1.2.yaml\nid: extract_invoice\nmodel: gpt-4o-mini\ntemperature: 0.0\nvariables: [document_text, currency_hint]\noutput_schema: schemas/invoice_v1.json\nsystem: \"Extrae los campos fiscales de la factura siguiendo el esquema.\"",
+    "entrevista": "Una biblioteca de prompts centraliza plantillas parametrizadas, tipadas y evaluadas con tests de regresión para reutilizar patrones probados de forma consistente entre equipos y servicios."
+  },
+  "Contraste de ejemplos": {
+    "que": "El contraste de ejemplos (contrastive examples o contrastive few-shot prompting) es una técnica de diseño de demostraciones en contexto que empareja ejemplos positivos y negativos —o pares mínimamente diferentes con distinta etiqueta— para delimitar con precisión las fronteras de decisión del modelo. Pone el foco en qué distingue exactamente un caso válido de uno inválido o ambiguo.",
+    "para": "Resuelve la ambigüedad en tareas de clasificación fina, detección de incumplimientos de políticas, extracción condicional y evaluación automática (LLM-as-a-judge) donde los ejemplos positivos aislados llevan al modelo a sobregeneralizar. Se aplica cuando existen casos límite frecuentes o clases semánticamente cercanas.",
+    "como": "Se construyen pares mínimos (contrastive pairs) en los que la entrada A y la entrada B comparten vocabulario y estructura superficial, pero difieren en el rasgo crítico que cambia la respuesta esperada. Al presentarlos juntos en el prompt —idealmente con una breve justificación en el formato de salida o razonamiento— la atención del modelo pondera el rasgo discriminativo frente al ruido superficial. Esto calibra la frontera de decisión sin necesidad de aumentar drásticamente el número total de ejemplos.",
+    "practicas": [
+      "Diseñar pares que compartan contexto similar y difieran únicamente en el criterio normativo o lógico que se desea enseñar.",
+      "Incluir una línea breve de explicación por par cuando la tarea sea compleja, aclarando por qué uno aplica y el otro no.",
+      "Trampa típica: introducir ejemplos negativos tan alejados del dominio real que no ayudan a resolver los casos frontera de producción.",
+      "Contraste de ejemplos vs ejemplos negativos aislados: el contraste empareja el casi-acierto con el acierto para fijar la frontera exacta, no solo qué evitar."
+    ],
+    "ejemplo": "Clasifica si la consulta requiere escalado humano:\n- Entrada: \"Mi factura tiene un cobro duplicado de 40€\" -> SI (disputa de cobro).\n- Entrada: \"¿Cómo descargo la factura de enero?\" -> NO (consulta informativa de autoservicio).\n- Entrada: \"Quiero cancelar ya y me han cobrado dos veces\" -> SI (disputa activa).",
+    "entrevista": "El contraste de ejemplos usa pares mínimos positivo-negativo en el contexto para fijar con precisión las fronteras de decisión del modelo en casos límite."
+  },
+  "DSPy": {
+    "que": "DSPy (Declarative Self-improving Python) es un framework de programación desarrollado en Stanford que separa la lógica declarativa de un flujo con LLM de la redacción manual de prompts y ejemplos. En lugar de concatenar cadenas de texto, el desarrollador define firmas tipadas (Signatures) y módulos componibles (Predict, ChainOfThought, ReAct), y un compilador optimiza automáticamente las instrucciones y demostraciones.",
+    "para": "Elimina la fragilidad de mantener prompts manuales acoplados a un modelo concreto dentro de pipelines complejos de múltiples pasos (RAG, agentes, verificación). Se utiliza cuando se busca tratar sistemas LLM como código modular optimizable contra métricas cuantitativas y fácilmente portable al cambiar de modelo base.",
+    "como": "Un programa DSPy declara Signatures (`pregunta -> respuesta`) que especifican entradas y salidas semánticas, y las conecta dentro de clases `dspy.Module`. Durante la compilación, un optimizador (`BootstrapFewShot`, `MIPROv2`, `COPRO`) ejecuta el programa sobre un conjunto de entrenamiento (`trainset`) evaluando cada ejecución con una función `metric`. El compilador genera y filtra trazas de razonamiento válidas como demostraciones few-shot y/o propone instrucciones por etapa usando optimización bayesiana hasta maximizar la métrica en el conjunto de desarrollo.",
+    "practicas": [
+      "Definir métricas granulares y fiables (no solo exactitud binaria si hay salidas compuestas) antes de invocar optimizadores como MIPROv2.",
+      "Mantener el programa modular en pasos pequeños para que el optimizador pueda ajustar independientemente cada Signature.",
+      "Error común: compilar con muy pocos ejemplos (<10) y sobreajustar las demostraciones bootstrapped a casos triviales.",
+      "DSPy vs LangChain: LangChain orquesta cadenas y herramientas con prompts explícitos; DSPy compila y optimiza automáticamente los prompts y ejemplos de cada módulo según una métrica."
+    ],
+    "ejemplo": "import dspy\nclass QA(dspy.Signature):\n    context = dspy.InputField()\n    question = dspy.InputField()\n    answer = dspy.OutputField(desc=\"respuesta concisa basada en el contexto\")\n\nrag_step = dspy.ChainOfThought(QA)\noptimizer = dspy.BootstrapFewShot(metric=exact_match)\ncompiled_rag = optimizer.compile(rag_step, trainset=train_examples)",
+    "entrevista": "DSPy reemplaza el ajuste manual de strings por programación declarativa con firmas tipadas y compiladores que optimizan automáticamente instrucciones y ejemplos few-shot contra una métrica."
+  },
+  "Descomposición de tareas": {
+    "que": "La descomposición de tareas (task decomposition) es el patrón arquitectónico y de prompting que divide un problema complejo o multi-restricción en subproblemas más simples, acotados y secuenciales o paralelos. Cada subtarea se resuelve de forma explícita antes de sintetizar el resultado final.",
+    "para": "Mitiga la pérdida de precisión, el olvido de restricciones y las alucinaciones que sufren los LLM cuando deben planificar, recuperar información, razonar y formatear todo en un único paso monolítico. Es fundamental en generación de código complejo, análisis documental extenso, planificación de agentes y razonamiento multi-salto.",
+    "como": "Puede aplicarse dentro de un solo prompt (Least-to-Most prompting, Plan-and-Solve) pidiendo primero una lista de subpreguntas y su resolución ordenada, o a nivel de orquestación dividiendo la carga en llamadas independientes con contexto limpio. En el enfoque orquestado, un nodo planificador genera un grafo acíclico dirigido (DAG) de subtareas; nodos trabajadores ejecutan cada unidad con herramientas o prompts especializados; y un nodo agregador valida y ensambla la salida final.",
+    "practicas": [
+      "Aislar subtareas con requisitos incompatibles (por ejemplo, creatividad abierta vs validación estricta de esquema) en pasos separados.",
+      "Propagar entre subtareas únicamente los artefactos necesarios para evitar la saturación del contexto y la acumulación de ruido.",
+      "Trampa común: sobredescomponer tareas sencillas que un modelo moderno resuelve en un paso, multiplicando innecesariamente latencia y coste.",
+      "Descomposición intra-prompt vs multi-llamada: la primera ahorra rondas de red pero comparte ventana de atención; la segunda permite usar modelos distintos por etapa y validar resultados intermedios."
+    ],
+    "ejemplo": "# Patrón Plan-and-Solve / Least-to-Most\n\"Para responder a {{pregunta}}:\n1. Enumera las subpreguntas necesarias para llegar a la respuesta.\n2. Responde cada subpregunta apoyándote solo en los hechos proporcionados.\n3. Integra las respuestas parciales en una conclusión final.\"",
+    "entrevista": "La descomposición de tareas divide problemas complejos en subtareas acotadas y verificables para reducir la carga cognitiva del modelo, aislar errores y permitir validación intermedia."
+  },
+  "Ejemplos negativos": {
+    "que": "Los ejemplos negativos en prompting son demostraciones explícitas incluidas en el contexto que muestran entradas problemáticas o salidas incorrectas etiquetadas como inválidas, rechazables o fuera de alcance. Indican al modelo no solo qué producir, sino qué patrones, interpretaciones o formatos debe descartar.",
+    "para": "Sirven para reducir falsos positivos en clasificación, moderación, extracción de entidades y cumplimiento de políticas donde los ejemplos positivos por sí solos inducen al modelo a clasificar en exceso o forzar extracciones inexistentes. Son clave cuando el coste de un falso positivo supera al de abstenerse.",
+    "como": "Al incluir casos con la etiqueta negativa o nula (`null`, `NO_APLICA`, `RECHAZADO`) junto con el patrón engañoso que suele confundir al modelo, se ajusta la distribución condicional de tokens hacia la clase de rechazo en presencia de distractores. Para evitar el efecto de priming negativo (que el modelo imite el texto erróneo), conviene etiquetar claramente el ejemplo como `Incorrecto` y acompañarlo de la razón o la salida correcta esperada.",
+    "practicas": [
+      "Mostrar siempre el formato de abstención o rechazo real (`{\"entidad\": null}`) en lugar de limitarse a escribir un ejemplo roto sin corrección.",
+      "No llenar el prompt solo de ejemplos negativos sin casos positivos equilibrados, ya que sesga al modelo hacia el rechazo sistemático.",
+      "Error típico: usar como ejemplo negativo una salida mal formateada y provocar que el modelo reproduzca ese mismo JSON inválido por imitación superficial.",
+      "Ejemplos negativos vs instrucciones negativas: un ejemplo negativo concreto ancla mejor el criterio en casos borde que una prohibición abstracta tipo 'no alucines'."
+    ],
+    "ejemplo": "Extrae el código de descuento si existe; si no, devuelve null.\n- \"Usa el cupón VERANO20 en caja\" -> \"VERANO20\"\n- \"Llama al 900123456 para descuentos\" -> null (es un teléfono, no un cupón)\n- \"Descuento aplicado automáticamente\" -> null (no hay código explícito)",
+    "entrevista": "Los ejemplos negativos calibran la tasa de rechazo mostrando casos engañosos etiquetados como inválidos o nulos, reduciendo falsos positivos sin depender de prohibiciones abstractas."
+  },
+  "Encadenamiento de prompts": {
+    "que": "El encadenamiento de prompts (prompt chaining) es un patrón de arquitectura donde una tarea compleja se implementa como una secuencia de llamadas encadenadas a LLM, de modo que la salida validada de un paso se transforma en la entrada del siguiente. Permite intercalar lógica determinista, consultas a APIs o validaciones de esquema entre llamadas.",
+    "para": "Resuelve los límites de atención, seguimiento simultáneo de muchas instrucciones y mezcla de capacidades dispares en un único prompt gigante. Se emplea en pipelines de producción como redacción con revisión, extracción seguida de normalización, generación de SQL con autocorrección o flujos RAG con reescritura de consulta.",
+    "como": "Un orquestador ejecuta una tubería de nodos `P1 -> V1 -> P2 -> V2 -> ... -> Pn`. La llamada `P1` produce una salida intermedia (idealmente estructurada en JSON), un bloque de código o puerta de validación `V1` verifica invariantes, filtra campos o enriquece con datos externos, y pasa solo el subconjunto limpio al prompt `P2`. Esto permite asignar modelos más rápidos o baratos a etapas mecánicas (clasificación, formateo) y reservar modelos de mayor capacidad para el razonamiento crítico.",
+    "practicas": [
+      "Validar programáticamente (Pydantic/JSON Schema) la salida de cada eslabón antes de alimentar el siguiente para frenar la propagación de errores.",
+      "Usar el principio de menor privilegio de contexto: pasar a cada etapa solo los campos necesarios, no todo el historial acumulado.",
+      "Error habitual: crear cadenas largas sin cortocircuitos ni reintentos locales, disparando la latencia p95 y multiplicando el riesgo de fallo compuesto.",
+      "Encadenamiento secuencial vs bucle agéntico: el encadenamiento sigue un grafo fijo y predecible en latencia y coste; un agente decide dinámicamente cuántas iteraciones ejecutar."
+    ],
+    "ejemplo": "# Pipeline de 2 etapas con validación intermedia\ndraft = call_llm(prompt_extract, input_text, model=\"gpt-4o-mini\")\nparsed = InvoiceSchema.model_validate_json(draft)\nreport = call_llm(prompt_audit, parsed.model_dump_json(), model=\"o3-mini\")",
+    "entrevista": "El encadenamiento de prompts desacopla flujos complejos en pasos secuenciales con validación determinista entre llamadas, mejorando la fiabilidad y permitiendo optimizar modelo y coste por etapa."
+  },
+  "Evaluación de prompts": {
+    "que": "La evaluación de prompts es el proceso sistemático de medir cuantitativa y cualitativamente cómo rinde una plantilla de prompt frente a un conjunto representativo de entradas, criterios de calidad y restricciones operativas. Convierte la percepción subjetiva de 'funciona bien' en métricas reproducibles comparables entre versiones.",
+    "para": "Es imprescindible antes de llevar un prompt a producción y tras cualquier cambio en instrucciones, ejemplos, retriever o versión del modelo proveedor. Permite detectar regresiones silenciosas, equilibrar calidad frente a latencia y coste, y tomar decisiones objetivas de despliegue mediante puertas de calidad.",
+    "como": "Se compone de un dataset de referencia (golden set y casos adversariales), ejecutores reproducibles y evaluadores (evaluators) de tres niveles: comprobaciones deterministas (JSON válido, regex, longitud, latencia), métricas basadas en referencias (Exact Match, F1, BLEU/ROUGE para casos específicos) y jueces automáticos o humanos (LLM-as-a-judge con rúbricas calibradas y consenso entre anotadores). Los resultados se agregan offline en CI/CD antes del merge y se complementan con evaluación online en producción mediante muestreo, telemetría de usuarios o test A/B.",
+    "practicas": [
+      "Combinar evaluadores deterministas rápidos para invariantes de formato con rúbricas semánticas para calidad de contenido.",
+      "Calibrar los jueces LLM contra un subconjunto anotado por humanos midiendo acuerdo (Cohen's kappa o correlación) para evitar sesgos de longitud o posición.",
+      "Error típico: evaluar solo con 5 ejemplos felices escritos por el autor del prompt, ocultando fallos en bordes o derivas de datos reales.",
+      "Evaluación offline vs online: la offline bloquea regresiones conocidas en CI/CD; la online detecta concept drift, casos inéditos y satisfacción real del usuario."
+    ],
+    "ejemplo": "# Ejecución declarativa estilo Promptfoo / CI eval\ntests:\n  - vars: { query: \"Cancelar suscripción anual\" }\n    assert:\n      - type: is-json\n      - type: javascript\n        value: \"JSON.parse(output).intent === 'cancel_subscription'\"\n      - type: llm-rubric\n        value: \"Responde con empatía y sin prometer reembolso automático\"",
+    "entrevista": "La evaluación de prompts combina datasets representativos, aserciones deterministas y rúbricas calibradas en CI/CD y producción para garantizar que cada cambio mejora métricas sin introducir regresiones."
+  },
+  "Formato de salida forzado": {
+    "que": "El formato de salida forzado (constrained decoding o structured outputs) es una técnica a nivel de inferencia o API que garantiza sintácticamente que los tokens generados por el LLM cumplan de forma estricta una gramática libre de contexto, expresión regular o JSON Schema. A diferencia de pedir un formato en el texto del prompt, la restricción se aplica en el proceso de decodificación.",
+    "para": "Elimina por completo los errores de parseo JSON, comillas sin cerrar, campos inventados o texto conversacional envolvente ('Aquí tienes tu JSON:') cuando la salida alimenta código, bases de datos o llamadas a funciones. Se usa siempre que un LLM actúa como componente programático dentro de un backend.",
+    "como": "Durante cada paso autorregresivo de generación de tokens, el motor de inferencia (por ejemplo, Outlines, Guidance, vLLM, llama.cpp o las APIs de Structured Outputs) compila el esquema o gramática en una máquina de estados finitos (FSM). En cada paso, el muestreador enmascara con probabilidad cero (`-inf` en logits) todos los tokens del vocabulario que violarían la gramática en el estado actual, permitiendo muestrear únicamente tokens sintácticamente válidos hasta alcanzar el token de fin.",
+    "practicas": [
+      "Mantener el esquema plano y descriptivo (`description` clara en campos clave) porque forzar la sintaxis no garantiza por sí solo la veracidad semántica.",
+      "Incluir un campo opcional de `reasoning` antes de la respuesta categórica dentro del propio esquema si la tarea requiere razonamiento previo.",
+      "Trampa común: forzar salidas demasiado rígidas sin opción `null` o `unknown`, obligando al modelo a alucinar valores para satisfacer campos `required`.",
+      "Formato forzado vs formato por prompt: el prompt guía el contenido semántico, mientras la decodificación restringida asegura al 100% la validez estructural."
+    ],
+    "ejemplo": "from pydantic import BaseModel\nclass Ticket(BaseModel):\n    category: Literal[\"billing\", \"tech\", \"other\"]\n    urgent: bool\n\nresp = client.beta.chat.completions.parse(\n    model=\"gpt-4o-mini\",\n    messages=[{\"role\": \"user\", \"content\": msg}],\n    response_format=Ticket,\n)",
+    "entrevista": "El formato de salida forzado usa máquinas de estados finitos para enmascarar logits inválidos en cada paso de decodificación, garantizando adherencia sintáctica del 100% al esquema."
+  },
+  "Gestión de prompts": {
+    "que": "La gestión de prompts es la disciplina operativa y de ingeniería de software que abarca el almacenamiento, versionado, pruebas, despliegue, observabilidad y retirada controlada de prompts a lo largo de su ciclo de vida. Aplica prácticas estándar de DevOps y gestión de configuración a los artefactos lingüísticos de un sistema de IA.",
+    "para": "Resuelve el caos de tener prompts incrustados como strings mágicos en múltiples archivos de código, sin trazabilidad de qué versión generó una respuesta errónea ni capacidad de revertir cambios sin redesplegar toda la aplicación. Es esencial en equipos productivos donde ingenieros y expertos de dominio iteran sobre prompts en paralelo.",
+    "como": "Centraliza las plantillas y sus metadatos (modelo, temperatura, esquema, variables) en un repositorio Git o en un registro dedicado conectado mediante SDK. Cada edición crea una versión inmutable identificada por hash o versión semántica (`v1.3.0`), dispara suites automáticas de evaluación y comparación (`prompt diff`) en CI/CD, y promueve la versión a etiquetas de entorno (`staging`, `canary`, `production`). La telemetría en producción registra el `prompt_version_id` en cada traza para correlacionar métricas de negocio y ejecutar un rollback instantáneo si cae la calidad.",
+    "practicas": [
+      "Desacoplar los prompts del código binario o al menos versionarlos con etiquetas inmutables vinculadas a cada traza en observabilidad.",
+      "Implementar despliegues progresivos (canary o shadow traffic) antes de promover una nueva versión al 100% del tráfico.",
+      "Error frecuente: editar prompts directamente en una interfaz web de producción sin pasar por revisión por pares ni suite de evaluación.",
+      "Gestión de prompts ad-hoc vs gobernada: incrustar strings requiere redeploys lentos; la gestión gobernada habilita auditoría, A/B testing y rollback en segundos."
+    ],
+    "ejemplo": "# Carga desacoplada por etiqueta de entorno y trazabilidad\nprompt = registry.get_prompt(\"support-triage\", label=\"production\")\ncompiled = prompt.compile(ticket=user_ticket)\nresponse = llm.invoke(compiled, metadata={\"prompt_version\": prompt.version})",
+    "entrevista": "La gestión de prompts aplica prácticas de ciclo de vida de software —versionado inmutable, evals en CI, promoción por entornos y rollback con trazabilidad— a los prompts en producción."
+  },
+  "Instrucciones conflictivas": {
+    "que": "Las instrucciones conflictivas son un anti-patrón de prompting en el que una misma plantilla o jerarquía de mensajes contiene directivas lógica o estilísticamente incompatibles entre sí (por ejemplo, exigir exhaustividad completa y a la vez un límite de 20 palabras, o contradecir el `system prompt` desde el `user prompt` o los ejemplos few-shot).",
+    "para": "Detectar y eliminar conflictos es crucial para evitar respuestas truncadas, oscilaciones impredecibles entre ejecuciones y vulnerabilidad a la desviación de formato. Ocurre con frecuencia cuando distintos equipos añaden parches incrementales a un mismo prompt largo sin auditar las reglas previas.",
+    "como": "Cuando dos directivas compiten en la ventana de contexto, los cabezales de atención asignan pesos dependientes de la posición (recency bias hacia el final del prompt), la fuerza imperativa del fraseo y la alineación previa del modelo por RLHF. Como resultado, el modelo suele sacrificar una restricción silenciosamente, fusionar criterios de forma incoherente o entrar en bucles de duda. Incluso un ejemplo few-shot que viole una regla textual crea conflicto directo porque los LLM imitan fuertemente la estructura de las demostraciones.",
+    "practicas": [
+      "Establecer una jerarquía explícita de reglas (ej. seguridad > veracidad > formato > tono) para resolver empates.",
+      "Verificar tras cada edición que todos los ejemplos few-shot cumplen al 100% con cada restricción escrita en las instrucciones.",
+      "Trampa común: añadir parches tipo 'MUY IMPORTANTE: ahora haz X' al final para tapar una regla anterior contradictoria en lugar de eliminarla.",
+      "Conflicto directo vs tensión manejable: si se necesitan dos objetivos opuestos (ej. brevedad y detalle), definir criterios condicionales claros o dividir en dos llamadas."
+    ],
+    "ejemplo": "# Conflicto: exhaustividad vs longitud + ejemplo incoherente\n\"Explica cada cláusula legal en detalle. Máximo 15 palabras.\nEjemplo: 'El contrato incluye 4 anexos sobre...' (45 palabras)\"\n\n# Resolución: regla única coherente\n\"Resume en máximo 30 palabras la cláusula de rescisión; omite anexos.\"",
+    "entrevista": "Las instrucciones conflictivas aparecen cuando reglas o ejemplos se contradicen entre sí, forzando al modelo a ignorar restricciones de forma no determinista según sesgos de posición o imitación."
+  },
+  "OPRO": {
+    "que": "OPRO (Optimization by PROmpting) es un algoritmo de optimización automática propuesto por Google DeepMind (Yang et al.) que utiliza un LLM como optimizador iterativo mediante lenguaje natural. A diferencia de métodos basados en gradientes numéricos, el optimizador lee un historial de soluciones previas junto con sus puntuaciones para proponer mejores prompts o soluciones.",
+    "para": "Permite optimizar prompts discretos para modelos de caja negra (solo acceso por API) sin necesidad de acceder a pesos ni derivadas. Es especialmente efectivo para descubrir frases de razonamiento o meta-instrucciones de alto rendimiento (como variaciones específicas de Chain-of-Thought) en benchmarks de razonamiento y clasificación.",
+    "como": "El bucle OPRO mantiene una trayectoria de pares `(instrucción, puntuación)` evaluados en un conjunto de entrenamiento y ordenados de menor a mayor rendimiento. En cada iteración, construye un meta-prompt que contiene la descripción de la tarea, algunos ejemplares del problema y la lista ordenada de las mejores instrucciones previas con sus scores; pide al LLM optimizador que genere k nuevas instrucciones que probablemente obtengan una puntuación aún mayor. Cada candidata nueva se evalúa en el modelo objetivo (scorer), se inserta en el historial manteniendo el top-k y el ciclo continúa hasta converger.",
+    "practicas": [
+      "Ordenar las parejas previas en el meta-prompt de menor a mayor puntuación para aprovechar el sesgo de recencia hacia las mejores soluciones.",
+      "Limitar el historial mostrado en el meta-prompt a las mejores 10-20 candidatas para evitar saturar el contexto y favorecer la convergencia.",
+      "Error típico: usar un modelo optimizador demasiado débil que no logra inferir qué patrón lingüístico correlaciona con las puntuaciones altas.",
+      "OPRO vs gradientes numéricos (soft prompts): OPRO produce texto legible, interpretable y portable entre modelos de caja negra sin modificar pesos."
+    ],
+    "ejemplo": "# Meta-prompt simplificado de OPRO\n\"Genera una nueva instrucción que supere las puntuaciones previas:\nTexto: 'Piensa paso a paso' -> Score: 0.72\nTexto: 'Descompón el problema y verifica cada cálculo' -> Score: 0.79\nNueva instrucción:\"",
+    "entrevista": "OPRO utiliza un LLM como optimizador de caja negra alimentado con un historial ordenado de instrucciones y sus métricas para sintetizar iterativamente prompts de mayor puntuación."
+  },
+  "Optimización de prompts": {
+    "que": "La optimización de prompts es el proceso sistemático —manual, semiautomático o algorítmico— de refinar instrucciones, estructura, ejemplos en contexto y parámetros de decodificación para maximizar la precisión, consistencia y eficiencia en tokens de una tarea con LLM. Puede abarcar tanto la redacción discreta como la selección automática de demostraciones y compresión de contexto.",
+    "para": "Resuelve problemas de bajo rendimiento en métricas clave, alta varianza entre entradas, sobrecoste por prompts excesivamente largos y degradación tras migrar entre modelos. Se aplica después de tener una línea base funcional y una métrica de evaluación automatizada fiable.",
+    "como": "El flujo parte de un baseline medido sobre un dataset de desarrollo y un análisis de errores agrupando fallos por tipo (formato, razonamiento, ambigüedad, falta de contexto). Luego aplica iteraciones controladas: ajustar la posición de instrucciones (principio/fin), seleccionar ejemplos few-shot por similitud semántica (dynamic few-shot), emplear optimizadores automáticos (DSPy, APE, OPRO, MIPRO) o comprimir tokens redundantes (LLMLingua). Cada candidato se compara estadísticamente frente al baseline en calidad, latencia y coste por petición.",
+    "practicas": [
+      "Optimizar siempre contra una métrica fija y un conjunto de validación separado del test final para no memorizar casos.",
+      "Realizar análisis cualitativo de fallos antes de automatizar: muchas mejoras del 10-20% vienen de aclarar definiciones ambiguas de negocio.",
+      "Trampa habitual: optimizar únicamente la tasa de acierto aumentando de 0 a 15 ejemplos few-shot y duplicando el coste y el TTFT (Time to First Token).",
+      "Optimización de prompts vs fine-tuning: optimizar prompts es más rápido, barato y reversible; el fine-tuning se justifica cuando el formato o dominio excede el presupuesto de contexto."
+    ],
+    "ejemplo": "# Comparación controlada baseline vs candidato\nfor name, prompt in [(\"v1_base\", p1), (\"v2_optimized\", p2)]:\n    res = run_eval(prompt, dataset=val_split)\n    print(name, res.accuracy, res.avg_tokens, res.p95_latency_ms)",
+    "entrevista": "La optimización de prompts mejora iterativamente precisión, coste y latencia mediante análisis de errores, selección dinámica de ejemplos y optimizadores automáticos medidos sobre un set de validación."
+  },
+  "Patrones de prompt": {
+    "que": "Los patrones de prompt (prompt design patterns) son soluciones reutilizables y documentadas a problemas recurrentes en la interacción con modelos de lenguaje, análogas a los patrones de diseño en ingeniería de software. Estandarizan cómo estructurar roles, razonamiento, verificación, uso de herramientas y formatos de salida.",
+    "para": "Proporcionan un vocabulario común en equipos de ingeniería y evitan diseñar desde cero estrategias ya resueltas (como verificación, encadenamiento o control de alucinaciones). Se utilizan durante la fase de diseño de aplicaciones LLM para seleccionar la arquitectura de interacción adecuada según la complejidad de la tarea.",
+    "como": "Cada patrón define un contexto de aplicación, una estructura de plantilla y un comportamiento esperado del modelo. Patrones de razonamiento (Chain-of-Thought, Step-back, Self-consistency) guían la generación de pasos intermedios antes de la respuesta; patrones de verificación (Self-refine, Self-critique, Verifier) introducen bucles de crítica; y patrones estructurales (Persona, Template, Few-shot, Tool-use) controlan estilo, interfaz de datos y acoplamiento con el exterior. En sistemas reales suelen componerse varios patrones en un mismo flujo.",
+    "practicas": [
+      "Elegir el patrón más simple que cumpla el SLA de precisión y añadir patrones costosos (Self-consistency, Self-refine) solo donde el error sea caro.",
+      "Documentar qué patrón implementa cada plantilla del repositorio para facilitar su revisión y mantenimiento.",
+      "Error típico: apilar demasiados patrones dentro de un único prompt (Persona + CoT + Step-back + Self-critique) saturando el presupuesto de salida y confundiendo prioridades.",
+      "Patrón de prompt vs truco puntual: un patrón es generalizable y agnóstico de dominio; un truco ('te daré propina') es frágil y no sobrevive a cambios de modelo."
+    ],
+    "ejemplo": "# Composición limpia: Delimitadores + CoT + Formato estructurado\n\"Actúa como auditor SQL. Analiza la consulta en <sql>{{query}}</sql>.\n1. Lista posibles riesgos de rendimiento o inyección.\n2. Emite el veredicto final en JSON: {\\\"safe\\\": bool, \\\"issues\\\": [str]}\"",
+    "entrevista": "Los patrones de prompt son estructuras probadas y componibles —de razonamiento, verificación e interfaz— que resuelven problemas recurrentes de fiabilidad y control en aplicaciones con LLM."
+  },
+  "Plantilla de salida": {
+    "que": "Una plantilla de salida (output template) es una especificación explícita incluida en el prompt que define la estructura visual, secciones, encabezados o esqueleto exacto que debe rellenar el modelo al responder. A diferencia del formato forzado por gramática, opera guiando al modelo mediante un molde textual o ejemplo estructural.",
+    "para": "Estandariza respuestas dirigidas a humanos o a parsers tolerantes (informes ejecutivos, fichas técnicas, mensajes Markdown, correos corporativos) donde importa mantener un orden de secciones, longitud y estilo uniformes. Se usa cuando la salida requiere consistencia documental sin llegar necesariamente a un esquema binario estricto.",
+    "como": "La plantilla coloca marcadores o encabezados literales (`## Resumen`, `## Riesgos`, `{{valor}}`) junto con breves instrucciones de relleno por campo. Gracias al aprendizaje en contexto y la predicción autorregresiva, una vez el modelo empieza reproduciendo la primera cabecera, su atención queda fuertemente condicionada a completar los bloques restantes en el mismo orden y granularidad. Si el consumidor es software crítico, la plantilla suele combinarse con validadores posteriores o con `Structured Outputs`.",
+    "practicas": [
+      "Usar nombres de campos autoexplicativos y acotar la longitud esperada en cada hueco ('máximo 2 viñetas').",
+      "Indicar explícitamente qué escribir si falta información para un bloque ('N/A — no consta en la fuente') para frenar invenciones.",
+      "Trampa común: usar plantillas de texto libre Markdown cuando un backend necesita parsear datos críticos con expresiones regulares frágiles; en ese caso usar JSON Schema forzado.",
+      "Plantilla de salida vs Formato de salida forzado: la plantilla orienta estructura y estilo en texto o Markdown; el formato forzado garantiza validez sintáctica estricta en decodificación."
+    ],
+    "ejemplo": "Responde usando EXACTAMENTE esta plantilla:\n### Diagnóstico\n<1-2 frases sobre la causa raíz>\n### Mitigación inmediata\n- <acción 1>\n- <acción 2>\n### Nivel de severidad\n[BAJO | MEDIO | ALTO]",
+    "entrevista": "Una plantilla de salida define un esqueleto explícito de secciones y restricciones por campo para estandarizar respuestas humanas o semiestructuradas, complementando o precediendo a la validación programática."
+  },
+  "Plantillas de prompt": {
+    "que": "Las plantillas de prompt (prompt templates) son estructuras parametrizadas que separan las instrucciones fijas del sistema de los datos variables proporcionados en tiempo de ejecución mediante marcadores (`{{variable}}`, Jinja2, Mustache o f-strings seguros). Constituyen la unidad básica de abstracción y reutilización en ingeniería de prompts.",
+    "para": "Evitan la duplicación de cadenas concatenadas a mano en el código fuente, facilitan la inyección segura de contexto dinámico (resultados RAG, historial, perfil de usuario) y permiten versionar y probar la lógica lingüística de forma independiente. Se emplean en prácticamente cualquier aplicación productiva con LLM.",
+    "como": "Un motor de plantillas (Jinja2, LangChain `PromptTemplate`, Liquid o motores propios) toma el texto de la plantilla y un diccionario de variables tipadas, valida que existan los campos obligatorios y renderiza la lista de mensajes (`system`, `developer`, `user`, `assistant`). Los sistemas maduros envuelven las variables dinámicas con etiquetas delimitadoras o escapado para prevenir que datos de usuario alteren la estructura de la plantilla (prompt injection) y soportan condicionales o bucles para insertar ejemplos few-shot dinámicos.",
+    "practicas": [
+      "Validar el tipo y longitud máxima de las variables antes de renderizar la plantilla para no desbordar la ventana de contexto.",
+      "Usar motores declarativos (Jinja2 con `StrictUndefined`) para detectar variables faltantes en tiempo de compilación/renderizado y no enviar `{{var}}` literal al LLM.",
+      "Error habitual: concatenar `user_input` sin delimitadores XML ni sanitización dentro de una plantilla de sistema, abriendo vectores de prompt injection.",
+      "Plantillas simples vs Jinja2 con lógica: mantener la lógica compleja (filtros, formateo de fechas) en código Python/TS y dejar la plantilla simple y legible."
+    ],
+    "ejemplo": "from jinja2 import Environment, StrictUndefined\nenv = Environment(undefined=StrictUndefined)\ntpl = env.from_string(\"Resume en {{lang}}:\\n<doc>{{text}}</doc>\")\nprompt = tpl.render(lang=\"español\", text=document_body)",
+    "entrevista": "Las plantillas de prompt parametrizan instrucciones con variables validadas y delimitadas, separando los datos en tiempo de ejecución de la lógica del prompt para hacerlo seguro, reutilizable y testeable."
+  },
+  "Prompt ambiguo": {
+    "que": "Un prompt ambiguo es un anti-patrón caracterizado por instrucciones vagas, subespecificadas, con términos subjetivos no definidos o ausencia de criterios claros de éxito, formato y alcance. Deja múltiples interpretaciones válidas abiertas, delegando decisiones críticas de negocio al azar estadístico del muestreo del modelo.",
+    "para": "Identificar la ambigüedad es clave al depurar salidas inconsistentes entre ejecuciones o quejas de usuarios sobre respuestas irrelevantes o con formato inesperado. Sirve como lista de verificación inversa al redactar especificaciones: todo requisito implícito en la mente del ingeniero debe hacerse explícito en el prompt.",
+    "como": "Ante una instrucción subespecificada ('Analiza este código y dime qué opinas'), el LLM distribuye su probabilidad entre múltiples tareas posibles aprendidas en preentrenamiento y SFT (resumir, refactorizar, buscar bugs o explicar sintaxis). Con temperaturas mayores a 0 o leves cambios en la entrada, el modelo salta de una interpretación a otra, generando alta varianza. Además, al carecer de criterios de borde ('¿qué es urgente?'), aplica heurísticas genéricas del preentrenamiento en vez de las reglas del dominio.",
+    "practicas": [
+      "Sustituir verbos y adjetivos vagos ('analiza bien', 'sé breve', 'clasifica apropiadamente') por criterios observables y límites numéricos.",
+      "Especificar audiencia, alcance, qué hacer ante falta de datos y formato de respuesta en cada prompt operativo.",
+      "Trampa típica: asumir que el modelo conoce el glosario interno o las reglas implícitas de la empresa sin definirlas en el contexto.",
+      "Prompt ambiguo vs prompt sobreespecificado: la ambigüedad dispara la varianza por falta de restricciones; la sobreespecificación la rompe por exceso de reglas rígidas contradictorias."
+    ],
+    "ejemplo": "# Prompt ambiguo\n\"Revisa este CV y dime si el candidato es bueno.\"\n\n# Prompt desambiguado\n\"Evalúa el <cv>{{cv}}</cv> para el puesto de Backend Python Senior.\nRequisitos obligatorios: >=4 años Python, SQL y APIs REST.\nDevuelve JSON: {\\\"fit\\\": bool, \\\"gaps\\\": [str], \\\"evidence\\\": [str]}\"",
+    "entrevista": "Un prompt ambiguo delega criterios de negocio y formato no especificados a la distribución por defecto del modelo, provocando alta varianza e inconsistencia entre ejecuciones."
+  },
+  "Prompt como configuración": {
+    "que": "Prompt como configuración (Prompt as Config) es un enfoque arquitectónico que externaliza los prompts, modelos asignados, parámetros de inferencia y variables fuera del código fuente compilado hacia archivos declarativos (YAML, JSON, TOML) o servicios de configuración dinámica. Trata el prompt como un parámetro operativo ajustable sin modificar la lógica de aplicación.",
+    "para": "Resuelve el acoplamiento entre ciclos de despliegue de software y ajustes rápidos de redacción, pruebas A/B o cambios de modelo proveedor en producción. Es muy útil cuando product managers, lingüistas o equipos de IA necesitan iterar en textos o cambiar de modelo tras una incidencia sin esperar un build completo.",
+    "como": "La aplicación lee en arranque o mediante polling/webhooks un artefacto declarativo (por ejemplo en GitOps, S3, LaunchDarkly o un Prompt Registry) que define plantilla, `model`, `temperature`, `top_p` y `stop_sequences`. Un esquema de validación verifica la integridad sintáctica y las variables requeridas antes de activar la configuración, y un sistema de caché local garantiza resiliencia si el servidor de configuración falla. Las versiones de configuración quedan etiquetadas en logs y trazas distribuídas.",
+    "practicas": [
+      "Validar el archivo de configuración con esquemas estrictos (JSON Schema / Pydantic) antes de recargarlo en caliente en producción.",
+      "Mantener un valor de respaldo local (fallback) empaquetado en la aplicación para evitar caídas si el almacén remoto no responde.",
+      "Error común: permitir cambios en caliente en producción sin ejecutar antes pruebas de regresión automáticas ni revisar el impacto en el código que consume la salida.",
+      "Prompt como configuración vs Prompt como código: como configuración prioriza agilidad operativa y despliegues sin redeploy; como código prioriza tipado estático, tests unitarios y revisión en PR junto al parser."
+    ],
+    "ejemplo": "# config/prompts/summarizer.yaml\nversion: \"2.1.0\"\nmodel: \"claude-3-5-sonnet\"\nparams:\n  temperature: 0.2\n  max_tokens: 400\ntemplate: |\n  Resume el siguiente ticket técnico en 3 puntos clave:\n  <ticket>{{body}}</ticket>",
+    "entrevista": "Prompt como configuración externaliza plantillas e hiperparámetros a artefactos declarativos validados, habilitando iteración rápida, feature flags y rollbacks sin redesplegar el binario."
+  },
+  "Prompt como código": {
+    "que": "Prompt como código (Prompt as Code) es el principio de ingeniería que gestiona los prompts como artefactos de primera clase dentro del repositorio de código fuente, sujetos a control de versiones Git, revisión por pares (PR), análisis estático (linting), tipado fuerte y pruebas automatizadas en CI/CD. Incluye también enfoques programáticos como DSPy, BAML o TypeChat donde el prompt se expresa mediante tipos y funciones.",
+    "para": "Elimina la deriva peligrosa entre la lógica del backend (parsers, herramientas, validadores) y el texto del prompt cuando ambos evolucionan por separado. Se recomienda en sistemas donde los cambios de prompt rompen contratos de datos, requieren auditoría rigurosa o forman parte integral de algoritmos multi-paso.",
+    "como": "Cada prompt reside en módulos versionados junto al código que define sus entradas y valida sus salidas (por ejemplo modelos Pydantic, interfaces TypeScript o archivos `.baml`). Al abrir un Pull Request que modifica un prompt, el pipeline de CI ejecuta linters de prompt, verifica que el contrato de salida sigue correspondiendo con el esquema esperado por el cliente y corre la batería de evaluación sobre casos críticos antes de permitir el merge. El despliegue del prompt avanza de forma atómica con el código consumidor.",
+    "practicas": [
+      "Vincular atómicamente cada plantilla con el esquema tipado de entrada y salida en el mismo commit para evitar desincronizaciones.",
+      "Exigir revisión de código y ejecución de evals mínimas en cada PR que toque archivos de prompts.",
+      "Trampa común: guardar enormes strings multilínea dentro de controladores HTTP sin extraerlos a módulos dedicados ni cubrirlos con tests.",
+      "Prompt como código vs Prompt en UI externa: como código garantiza atomicidad con parsers y revisión en Git; la gestión en UI externa da velocidad a no-desarrolladores pero exige sincronizar contratos de versión."
+    ],
+    "ejemplo": "# Definición tipada y testeable en código (patrón BAML / Pydantic)\nclass ExtractInput(BaseModel):\n    raw_email: str\n\ndef build_extract_prompt(data: ExtractInput) -> list[dict]:\n    return [{\"role\": \"system\", \"content\": \"Extrae remitente y urgencia en JSON.\"},\n            {\"role\": \"user\", \"content\": f\"<email>{data.raw_email}</email>\"}]",
+    "entrevista": "Prompt como código integra los prompts en el flujo Git con tipado de contratos, revisión por pares, linting y evals en CI/CD para garantizar atomicidad con el código que los consume."
+  },
+  "Prompt con ejemplos sesgados": {
+    "que": "Un prompt con ejemplos sesgados es un anti-patrón de few-shot prompting en el que las demostraciones incluidas presentan un desequilibrio de clases, de longitud, de orden o de estilo que distorsiona la distribución de respuestas del modelo. El LLM sobreajusta sus predicciones a los artefactos superficiales de los ejemplos en lugar de atender al contenido real de la entrada.",
+    "para": "Diagnosticar este problema es vital cuando un clasificador devuelve casi siempre la misma etiqueta (`majority label bias`), imita longitudes erróneas o falla cuando cambia el orden de los ejemplos (`recency bias`). Ocurre habitualmente cuando se seleccionan ejemplos ad-hoc de los primeros registros de un log sin estratificación.",
+    "como": "En aprendizaje en contexto (in-context learning), el modelo no actualiza pesos, sino que calibra su distribución previa de salida según las estadísticas aparentes de la ventana: frecuencia de cada etiqueta, posición de la última etiqueta vista y formato de texto. Si 4 de 5 ejemplos son positivos o el último par termina siempre en `RECHAZADO`, el sesgo de mayoría y el sesgo de recencia empujan los logits hacia esa clase incluso en entradas contrarias. Esto también ocurre si todos los ejemplos positivos son largos y los negativos cortos.",
+    "practicas": [
+      "Balancear equitativamente todas las clases objetivo dentro del conjunto de ejemplos few-shot y variar su orden o aleatorizarlo.",
+      "Igualar longitud, nivel de detalle y complejidad entre ejemplos de distintas categorías para que la extensión no sea una señal espuria.",
+      "Error frecuente: copiar como ejemplos los casos más fáciles del dominio, dejando al modelo sin referencias para los casos ambiguos de producción.",
+      "Ejemplos estáticos sesgados vs Dynamic Few-Shot balanceado: recuperar dinámicamente por similitud semántica asegurando diversidad de clases neutraliza gran parte del sesgo."
+    ],
+    "ejemplo": "# Sesgado: 3 positivos seguidos al final y distinta longitud\n\"Texto1\" -> POS; \"Texto2\" -> POS; \"Texto3\" -> POS; \"Texto4\" -> NEG\n\n# Balanceado y alternado\n\"Pago confirmado hoy\" -> POS\n\"Error 500 al pagar\" -> NEG\n\"Factura descargada\" -> POS\n\"Cobro no reconocido\" -> NEG",
+    "entrevista": "Los ejemplos sesgados inducen sesgos de mayoría, recencia o longitud en el aprendizaje en contexto; se corrigen balanceando clases, igualando estilos y alternando el orden de las demostraciones."
+  },
+  "Prompt con herramientas": {
+    "que": "Un prompt con herramientas (tool-use prompting o function calling prompt) es un patrón de diseño que instruye a un LLM sobre cuándo, cómo y con qué argumentos invocar funciones externas, APIs o servidores MCP declarados en su contexto. Combina definiciones formales de herramientas (JSON Schema) con reglas operativas de decisión, manejo de errores y síntesis de resultados.",
+    "para": "Supera las limitaciones de conocimiento estático, cálculo exacto y falta de acceso a estado vivo del mundo real permitiendo consultar bases de datos, ejecutar código o realizar acciones transaccionales. Se utiliza en asistentes conversacionales, flujos RAG agénticos y automatización de procesos.",
+    "como": "La API recibe un array de definiciones de herramientas (`name`, `description`, `parameters` en JSON Schema) que el proveedor serializa en una sección especial del prompt del sistema. Al procesar el turno del usuario, el modelo puede optar por emitir un mensaje de texto o una llamada estructurada (`tool_calls`) con nombre y argumentos JSON. El runtime del desarrollador ejecuta la función real, valida permisos, y devuelve un mensaje con rol `tool` conteniendo el resultado o error, sobre el cual el modelo genera la respuesta final o encadena otra herramienta.",
+    "practicas": [
+      "Escribir `description` precisas en cada herramienta y parámetro indicando explícitamente cuándo usarla, qué formato espera y cuándo NO usarla.",
+      "Instruir al modelo para que no invente IDs ni parámetros faltantes: si falta un dato obligatorio, debe preguntar al usuario o consultar primero una herramienta de búsqueda.",
+      "Trampa común: exponer 40+ herramientas ambiguas a la vez, degradando la selección y disparando el consumo de tokens de entrada en cada turno.",
+      "Prompt con herramientas declarativas vs texto libre (ReAct antiguo): el function calling nativo reduce errores de parseo gracias al entrenamiento específico del modelo y decodificación restringida."
+    ],
+    "ejemplo": "tools = [{\n  \"type\": \"function\",\n  \"function\": {\n    \"name\": \"get_order_status\",\n    \"description\": \"Consulta el estado actual de un pedido. Requiere order_id exacto (ej. ORD-123). No inventar IDs.\",\n    \"parameters\": {\"type\": \"object\", \"properties\": {\"order_id\": {\"type\": \"string\"}}, \"required\": [\"order_id\"]}\n  }\n}]",
+    "entrevista": "El prompting con herramientas combina esquemas JSON claros, descripciones sin solapamiento y reglas explícitas de abstención o verificación para que el modelo invoque APIs externas de forma segura y determinista."
+  },
+  "Prompt demasiado largo": {
+    "que": "Un prompt demasiado largo es un anti-patrón en el que se acumulan instrucciones redundantes, historial sin podar o contexto documental masivo sin curación dentro de la ventana de contexto. Aunque técnicamente quepa en el límite máximo de tokens del modelo, degrada la capacidad de atención efectiva y dispara costes y latencia.",
+    "para": "Reconocer este anti-patrón es esencial cuando un sistema empieza a ignorar reglas ubicadas en la mitad del prompt o tarda varios segundos en emitir el primer token (TTFT). Sirve para justificar estrategias de compresión, poda de historial, recuperación selectiva (RAG) y descomposición en etapas.",
+    "como": "Debido al fenómeno conocido como 'lost in the middle' (Liu et al.) y a la dilución cuadrática o dispersa de los pesos de atención sobre decenas de miles de tokens, la información relevante enterrada en zonas intermedias recibe menos peso que el inicio o el final del prompt. Además, los tokens irrelevantes actúan como distractores semánticos que aumentan las alucinaciones. Operativamente, cada token extra incrementa el tiempo de prefill (TTFT) y el coste por llamada de forma lineal o superior según la arquitectura de caché KV.",
+    "practicas": [
+      "Aplicar recuperación híbrida + reranking en RAG para inyectar únicamente los 3-5 fragmentos más relevantes en vez de volcar documentos enteros.",
+      "Colocar las instrucciones críticas y las restricciones de formato al inicio del `system prompt` y reiterar brevemente el objetivo al final si el contexto es extenso.",
+      "Error habitual: incluir en el prompt reglas para 30 casos borde que solo aplican al 1% del tráfico, en lugar de enrutar primero por intención.",
+      "Ventana de contexto larga vs contexto efectivo: que un modelo soporte 200k o 1M de tokens no significa que razone con igual fidelidad sobre todo el bloque."
+    ],
+    "ejemplo": "# Poda y reordenamiento antes de llamar al LLM\nchunks = retriever.search(query, top_k=20)\ntop_chunks = reranker.top(query, chunks, n=4)\ncontext = \"\\n\".join(c.text for c in top_chunks)\n# Inyectar ~1.5k tokens limpios en lugar de 30k tokens ruidosos",
+    "entrevista": "Un prompt demasiado largo degrada la precisión por dilución de atención ('lost in the middle') y distractores, además de disparar latencia de prefill y costes; se combate con reranking, poda y descomposición."
+  },
+  "Prompt diff": {
+    "que": "Un prompt diff es la comparación estructurada —tanto textual como conductual— entre dos versiones de una plantilla de prompt, sus hiperparámetros y sus resultados sobre un conjunto de evaluación común. Extiende el concepto clásico de `git diff` al impacto observable sobre las respuestas de un LLM.",
+    "para": "Resuelve el problema de aprobar cambios de prompt a ciegas en revisiones de código donde una modificación mínima de dos palabras puede alterar el 15% de las salidas en producción. Se usa en Pull Requests, auditorías de incidentes y comparación entre modelos candidatos antes de promover una versión.",
+    "como": "En un flujo de ingeniería de prompts, el diff tiene dos capas: el diff sintáctico (líneas modificadas en plantilla, `model`, `temperature` y esquema) y el diff de evaluación (side-by-side eval). Una herramienta de evaluación (Promptfoo, Braintrust, LangSmith, CI script) ejecuta tanto la versión base como la versión candidata sobre el mismo dataset congelado, calcula deltas de métricas agregadas (exactitud, coste, latencia) y resalta las filas individuales que pasaron de acierto a fallo (regresiones) o de fallo a acierto (mejoras).",
+    "practicas": [
+      "Exigir siempre en el PR tanto el diff textual como el resumen de regresiones por caso de prueba, no solo el promedio global de métricas.",
+      "Congelar la semilla o usar `temperature=0` durante la comparación para atribuir diferencias al cambio de prompt y no al ruido de muestreo.",
+      "Trampa común: revisar únicamente el diff de texto como si fuera código determinista, ignorando que un cambio de redacción altera rutas de razonamiento no locales.",
+      "Prompt diff textual vs conductual: el texto muestra qué se editó; el diff conductual muestra qué comportamiento cambió realmente en los datos."
+    ],
+    "ejemplo": "# Comparación de dos versiones de prompt con salida en tabla\nnpx promptfoo eval \\\n  --prompts prompts/triage_v1.txt prompts/triage_v2.txt \\\n  --tests evals/triage_golden.yaml \\\n  --output reports/diff_v1_v2.json",
+    "entrevista": "Un prompt diff combina la diferencia textual de plantillas e hiperparámetros con la comparación lado a lado de métricas y regresiones individuales sobre un mismo dataset congelado."
+  },
+  "Prompt evaluation": {
+    "que": "Prompt evaluation (evals de prompts) es el marco técnico y automatizado encargado de verificar si un prompt cumple sus requisitos funcionales, de seguridad, formato y coste frente a una batería de casos de prueba versionados. Funciona como la suite de tests unitarios y de integración para sistemas no deterministas basados en LLM.",
+    "para": "Sustituye el llamado 'vibe check' (probar 3 casos manualmente en el navegador) por evidencia estadística repetible antes de desplegar cambios o actualizar versiones de modelo. Se utiliza continuamente en pipelines CI/CD, experimentos de optimización (DSPy/APE) y monitorización de regresiones.",
+    "como": "Un pipeline de `prompt evaluation` consta de cuatro piezas: (1) un dataset curado con entradas, contexto y salidas esperadas o criterios; (2) un runner que invoca el prompt bajo prueba de forma concurrente y controlada; (3) una pila de scorers (aserciones deterministas de esquema, métricas de similitud o jueces LLM con rúbrica y escala definida); y (4) umbrales de aceptación (quality gates) que bloquean el despliegue si la precisión cae o el coste/latencia supera el límite acordado.",
+    "practicas": [
+      "Separar los evals en un conjunto rápido de humo (smoke tests para cada commit) y un conjunto completo nocturno o pre-release.",
+      "Versionar el dataset de evaluación junto al código e incorporar en él cada bug reportado en producción (eval-driven development).",
+      "Error típico: usar un modelo más débil o sin rúbrica explícita como juez LLM, obteniendo puntuaciones ruidosas incapaces de detectar regresiones reales.",
+      "Unit tests tradicionales vs Prompt evals: los unit tests validan verdad booleana determinista; los evals miden tasas de éxito estadísticas y umbrales sobre distribuciones de entrada."
+    ],
+    "ejemplo": "def evaluate_prompt(prompt_fn, dataset):\n    passed = 0\n    for case in dataset:\n        out = prompt_fn(case[\"input\"])\n        if is_valid_json(out) and llm_judge(out, case[\"rubric\"]) >= 4:\n            passed += 1\n    return passed / len(dataset)",
+    "entrevista": "Prompt evaluation actúa como la suite de pruebas de un sistema no determinista, combinando datasets versionados, scorers deterministas y jueces calibrados con umbrales en CI/CD."
+  },
+  "Prompt linting": {
+    "que": "Prompt linting es el análisis estático automatizado de plantillas de prompts y configuraciones asociadas para detectar errores estructurales, anti-patrones, fugas de seguridad o inconsistencias sintácticas antes de ejecutar ninguna llamada a un LLM. Es el equivalente a ESLint, Ruff o Flake8 aplicado a artefactos de prompting.",
+    "para": "Captura defectos de bajo nivel en milisegundos y a coste cero de tokens durante la edición local o en hooks de pre-commit y CI. Sirve para prevenir fallos evitables como variables sin declarar, ausencia de delimitadores para datos de usuario, instrucciones contradictorias obvias o uso de modelos obsoletos.",
+    "como": "Un linter de prompts parsea la plantilla (Jinja2, YAML, JSON o AST de código) y ejecuta un conjunto de reglas estáticas: comprueba que todas las variables `{{var}}` tengan definición o esquema, verifica la presencia de delimitadores alrededor de entradas no confiables, mide el conteo de tokens respecto al presupuesto del modelo elegido, busca frases prohibidas o anti-patrones (negaciones ambiguas, placeholders sin rellenar tipo `TODO`), y valida que el formato de ejemplo JSON incluido en el prompt sea parseable.",
+    "practicas": [
+      "Integrar el linting de prompts como paso rápido obligatorio en pre-commit y en el pipeline de CI previo a los evals costosos.",
+      "Validar sintácticamente con `json.loads` cualquier bloque JSON puesto como ejemplo few-shot dentro del texto del prompt.",
+      "Trampa común: esperar que el linter evalúe la calidad semántica; el linting detecta fallos estructurales y de higiene, no sustituye a la evaluación con datos reales.",
+      "Prompt linting vs Prompt evaluation: el linting es análisis estático sin inferencia (rápido, determinista, coste cero); el eval ejecuta el modelo sobre casos de prueba."
+    ],
+    "ejemplo": "# Ejemplo de reglas de linter estático en Python\nassert \"TODO\" not in prompt_text, \"Placeholder sin resolver\"\nassert count_tokens(prompt_text) < 2000, \"Supera presupuesto base de tokens\"\nfor block in extract_json_blocks(prompt_text):\n    json.loads(block)  # Falla en CI si un ejemplo few-shot tiene JSON roto",
+    "entrevista": "Prompt linting realiza análisis estático a coste cero sobre plantillas para detectar variables huérfanas, JSON de ejemplo inválidos, excesos de tokens y riesgos de inyección antes de ejecutar evals."
+  },
+  "Prompt management": {
+    "que": "Prompt management es la práctica y plataforma de ingeniería dedicada a centralizar, versionar, gobernar y desplegar prompts en producción de forma desacoplada del ciclo de compilación de la aplicación. Proporciona una fuente única de verdad sobre qué texto, qué modelo y qué parámetros están activos en cada entorno.",
+    "para": "Elimina la fragmentación de prompts dispersos en código, cuadernos y hojas de cálculo, permitiendo a equipos multidisciplinares colaborar sin romper producción. Resulta crítico cuando una empresa opera decenas de casos de uso en múltiples entornos (dev, staging, prod) con requisitos de auditoría, A/B testing y reversión rápida.",
+    "como": "Un sistema de prompt management (como Langfuse, Braintrust, LangSmith Hub o un servicio interno basado en Git + API) almacena versiones inmutables numeradas y asociadas a etiquetas móviles (`staging`, `production`). La aplicación consulta la etiqueta deseada mediante un cliente con caché local y TTL configurable; cada invocación adjunta el identificador exacto de versión en las trazas OpenTelemetry o de observabilidad. Ante una caída de métricas en producción, el operador reasigna la etiqueta `production` a la versión anterior (rollback) sin redesplegar contenedores.",
+    "practicas": [
+      "Tratar cada versión publicada como inmutable: nunca sobreescribir `v3`, crear siempre `v4` y mover el puntero de entorno.",
+      "Mantener un fallback empaquetado en el repositorio de la app por si la API de gestión sufre latencia o indisponibilidad.",
+      "Error frecuente: cambiar la lista de variables de entrada de un prompt al editarlo en el gestor sin coordinar el cambio con el código backend que las suministra.",
+      "Prompt management en SaaS vs Git-backed: una UI SaaS agiliza la edición y vista de trazas; respaldar todo en Git garantiza revisión por PR, historial unificado y cero vendor lock-in."
+    ],
+    "ejemplo": "# Patrón con caché local y trazabilidad de versión\nprompt_obj = langfuse.get_prompt(\"sql-assistant\", label=\"production\", cache_ttl_seconds=60)\ncompiled = prompt_obj.compile(schema=db_schema, question=user_q)\nres = client.chat.completions.create(model=prompt_obj.config[\"model\"], messages=compiled)",
+    "entrevista": "Prompt management centraliza prompts con versiones inmutables, etiquetas por entorno, caché resiliente y trazabilidad hacia observabilidad para habilitar A/B testing y rollback instantáneo."
+  },
+  "Prompt optimization": {
+    "que": "Prompt optimization es el conjunto de técnicas cuantitativas y algorítmicas orientadas a mejorar sistemáticamente una función objetivo (precisión, adherencia a formato, seguridad o eficiencia en tokens) ajustando la redacción, estructura o ejemplos en contexto de un prompt. Opera sobre espacio discreto (texto/ejemplos) o espacio continuo (soft prompts cuando hay acceso a pesos).",
+    "para": "Cierra la brecha entre un prototipo aceptable y un sistema robusto listo para producción sin tener que recurrir de inmediato al reentrenamiento costoso del modelo. Se aplica cuando la línea base ya está instrumentada y existen métricas claras pero el rendimiento actual es insuficiente o el coste por llamada es demasiado alto.",
+    "como": "Los métodos modernos en APIs cerradas combinan optimización de instrucciones y selección de demostraciones: algoritmos como MIPROv2 (DSPy) o TextGrad generan resúmenes de datos y trazas de error, proponen candidatos de instrucciones con un meta-LLM, seleccionan ejemplos few-shot mediante bootstrapping y buscan la mejor combinación con muestreo bayesiano (Optuna/TPE). Complementariamente, técnicas de compresión de prompts (como LLMLingua) eliminan tokens de baja perplejidad para reducir costes manteniendo la semántica.",
+    "practicas": [
+      "Medir siempre la mejora en un conjunto de test retenido (hold-out) nunca visto por el optimizador para detectar sobreajuste textual.",
+      "Optimizar conjuntamente el prompt y la selección de ejemplos en vez de ajustarlos por separado, ya que interactúan fuertemente.",
+      "Trampa común: ejecutar optimizadores costosos cuando el verdadero cuello de botella es la calidad de recuperación del RAG y no la redacción del prompt.",
+      "Prompt optimization discreta vs Soft prompt tuning: la optimización discreta produce texto legible portable por API; el soft prompt tuning ajusta vectores continuos y requiere acceso local a gradientes."
+    ],
+    "ejemplo": "# Optimización conjunta de instrucciones y demos con MIPROv2 (DSPy)\nfrom dspy.teleprompt import MIPROv2\nteleprompter = MIPROv2(metric=f1_metric, auto=\"medium\")\noptimized_program = teleprompter.compile(program, trainset=train_set)",
+    "entrevista": "La optimización de prompts busca maximizar métricas de negocio y eficiencia mediante algoritmos discretos —como bootstrapping de ejemplos, gradientes textuales o búsqueda bayesiana— validados en un split hold-out."
+  }
+}

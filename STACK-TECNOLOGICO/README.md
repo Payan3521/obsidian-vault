@@ -30,13 +30,13 @@ Este vault se generó desde `stack-tecnologico.md`.
 | `conocer` | Sabes qué es y cuándo se usa, sin configurarlo de memoria. |
 | `especialidad` | Tu barra vertical (aquí: seguridad de software / AppSec). |
 
-> Recordatorio: nadie domina las 1416 notas. Esto es un mapa, no un examen.
+> Recordatorio: nadie domina las 1958 notas. Esto es un mapa, no un examen.
 
 ## Estructura final del vault
 
 - `STACK-TECNOLOGICO/` — el mapa completo, las guías y tus apuntes integrados:
   - `arquitectura/`, `documentacion/` — tus carpetas originales, movidas aquí sin perder contenido.
-  - 50 categorías generadas, `SOFTWARE-ENGINEERING.md`, `grafo.md`, `PLAN-DE-GUIAS.md` y el PDF.
+  - 61 categorías generadas, `SOFTWARE-ENGINEERING.md`, `grafo.md`, `PLAN-DE-GUIAS.md` y el PDF.
 - `proyectos/` — queda aparte e intacto.
 
 > Al regenerar, el script preserva automáticamente **todo** lo que no generó él (guías completas, apuntes propios y adjuntos). Puedes volver a generar el mapa sin miedo a perder trabajo.

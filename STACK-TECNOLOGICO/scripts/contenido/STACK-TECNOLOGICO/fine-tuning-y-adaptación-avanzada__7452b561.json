@@ -1,0 +1,366 @@
+{
+  "Adaptación de dominio": {
+    "que": "La adaptación de dominio es el proceso de especializar un modelo de lenguaje o fundación preentrenado de propósito general hacia la terminología, estilos discursivos y distribución estadística de un campo concreto (como derecho, biomedicina o finanzas). A diferencia del entrenamiento desde cero, parte de representaciones lingüísticas ya adquiridas para reajustarlas al subdominio objetivo.",
+    "para": "Sirve para reducir la perplejidad del modelo en jerga técnica especializada, mejorar la comprensión de documentos internos y elevar la precisión en tareas downstream del sector sin asumir el coste prohibitivo de entrenar un modelo base desde cero.",
+    "como": "Se recopila un corpus representativo del dominio, se limpia y deduplica, y se aplica preentrenamiento continuo (Continued Pretraining) con pérdida de modelado causal de lenguaje (CLM) o ajuste supervisado (SFT) específico. Opcionalmente se combina con expansión de vocabulario en el tokenizer si hay muchos términos inéditos y se mezcla un porcentaje (replay) de datos generales para evitar la degradación de capacidades transversales. Finalmente se evalúa tanto en benchmarks del dominio como en métricas generales de retención.",
+    "practicas": [
+      "Mantener entre un 5% y un 15% de datos generales (data replay) en la mezcla de entrenamiento para mitigar el olvido catastrófico.",
+      "Diferenciar entre adaptación de dominio (inyectar conocimiento y lenguaje sectorial mediante texto no etiquetado) y adaptación de tarea (ajustar formato de salida con pares pregunta-respuesta).",
+      "No recurrir a adaptación de dominio si el conocimiento cambia a diario; en ese escenario conviene usar RAG en lugar de reentrenar pesos.",
+      "Evaluar la perplejidad sobre un conjunto de validación del dominio antes de pasar a etapas de alineamiento o SFT."
+    ],
+    "ejemplo": "# Mezcla ponderada de corpus para adaptación de dominio médico\ndataset = interleave_datasets(\n    [corpus_biomedico, corpus_general_replay],\n    probabilities=[0.85, 0.15],\n    seed=42\n)",
+    "entrevista": "La adaptación de dominio desplaza la distribución interna del modelo hacia el lenguaje y conocimiento de un sector mediante preentrenamiento continuo o SFT, preservando sus capacidades generales con mezcla de datos de replay."
+  },
+  "Adapters": {
+    "que": "Los adapters son módulos neuronales ligeros y entrenables que se insertan dentro de las capas de un modelo preentrenado cuyos pesos originales permanecen congelados. Constituyen la familia principal de técnicas Parameter-Efficient Fine-Tuning (PEFT), como LoRA, QLoRA, Bottleneck Adapters o IA3.",
+    "para": "Resuelven el problema del enorme consumo de VRAM y almacenamiento que implica actualizar todos los parámetros (full fine-tuning) de modelos de miles de millones de pesos, permitiendo además servir múltiples especializaciones sobre un mismo modelo base compartido en memoria.",
+    "como": "En los bottleneck adapters clásicos se añaden proyecciones lineal-descendente, no linealidad y lineal-ascendente tras las subcapas de atención y FFN con conexión residual; en variantes modernas como LoRA se inyectan matrices de bajo rango (A y B) en paralelo a las proyecciones lineales W (W + B·A). Durante el backpropagation solo se calculan gradientes y estados del optimizador para ese pequeño porcentaje de parámetros (habitualmente < 1-2%), manteniendo congelados los pesos base en precisión reducida (FP16, BF16 o NF4).",
+    "practicas": [
+      "Preferir LoRA/QLoRA frente a bottleneck adapters secuenciales cuando la latencia en inferencia es crítica, ya que las matrices de LoRA pueden fusionarse (merge) en los pesos base sin añadir sobrecoste.",
+      "En producción multi-tenant, cargar el modelo base una sola vez en GPU e intercambiar dinámicamente adapters ligeros por petición (p. ej. con vLLM o LoRAX).",
+      "Aplicar adapters no solo a q_proj y v_proj sino a todas las capas lineales (incluyendo FFN: gate_proj, up_proj, down_proj) para igualar la calidad del full fine-tuning.",
+      "Evitar usar adapters para inyectar corpus masivos de conocimiento nuevo si el rango r es demasiado bajo; para eso suele requerirse mayor capacidad o preentrenamiento continuo."
+    ],
+    "ejemplo": "from peft import LoraConfig, get_peft_model\nconfig = LoraConfig(\n    r=16, lora_alpha=32, lora_dropout=0.05,\n    target_modules=[\"q_proj\", \"k_proj\", \"v_proj\", \"o_proj\", \"gate_proj\", \"up_proj\", \"down_proj\"],\n    task_type=\"CAUSAL_LM\"\n)\nmodel = get_peft_model(base_model, config)",
+    "entrevista": "Los adapters permiten especializar LLMs congelando el modelo base y entrenando menos del 2% de los parámetros, habilitando entrenamiento en hardware modesto y despliegue multi-inquilino con intercambio dinámico en inferencia."
+  },
+  "Ajuste por instrucciones": {
+    "que": "El ajuste por instrucciones (Instruction Tuning) es una fase de entrenamiento supervisado (SFT) en la que un modelo base preentrenado aprende a interpretar y ejecutar órdenes expresadas en lenguaje natural. Transforma un predictor de siguiente token en un asistente capaz de seguir formatos, restricciones y tareas variadas.",
+    "para": "Sirve para alinear la capacidad latente del modelo base con la intención del usuario, logrando que responda directamente a peticiones (resumir, clasificar, generar código, extraer JSON) en lugar de limitarse a continuar texto.",
+    "como": "Se construye un dataset de tuplas (sistema, instrucción/entrada, respuesta esperada) formateadas mediante la plantilla de chat del modelo (chat template con tokens especiales como <|im_start|>). Durante el entrenamiento se calcula la pérdida de entropía cruzada únicamente sobre los tokens de la respuesta del asistente (enmascarando los tokens de la instrucción con -100 en las etiquetas). De este modo el modelo optimiza la generación útil sin memorizar la formulación de las preguntas.",
+    "practicas": [
+      "Priorizar la calidad, diversidad y limpieza del dataset (miles de ejemplos curados suelen superar a cientos de miles ruidosos).",
+      "Enmascarar siempre el prompt de usuario en el cálculo de la loss (assistant-only loss) para evitar que el modelo desperdicie capacidad prediciendo instrucciones.",
+      "Utilizar exactamente la misma chat template en entrenamiento e inferencia; una discrepancia de tokens especiales destruye el rendimiento.",
+      "No confundir ajuste por instrucciones con alineamiento de preferencias: SFT enseña formato y obediencia, mientras DPO/RLHF refina tono, seguridad y preferencia humana."
+    ],
+    "ejemplo": "{\"messages\": [\n  {\"role\": \"system\", \"content\": \"Eres un analizador SQL estricto.\"},\n  {\"role\": \"user\", \"content\": \"Convierte a SQL: usuarios activos en 2026\"},\n  {\"role\": \"assistant\", \"content\": \"SELECT * FROM users WHERE active = TRUE AND year = 2026;\"}\n]}",
+    "entrevista": "El ajuste por instrucciones convierte un modelo base de completado de texto en un seguidor de órdenes mediante entrenamiento supervisado sobre pares instrucción-respuesta con enmascaramiento de pérdida en el prompt."
+  },
+  "Batch size": {
+    "que": "El batch size (tamaño de lote) es el número de ejemplos de entrenamiento procesados antes de realizar una actualización de los pesos del modelo mediante el optimizador. En fine-tuning de LLMs se distingue entre micro-batch size por GPU y batch size efectivo global.",
+    "para": "Regula el equilibrio entre estabilidad del gradiente, velocidad de convergencia, uso de memoria VRAM y capacidad de generalización durante el entrenamiento.",
+    "como": "En cada paso forward/backward se procesa un micro-batch en cada GPU para ajustar las activaciones al límite de VRAM; luego, mediante gradient accumulation, se acumulan gradientes durante k pasos y se sincronizan entre GPUs (data parallelism) antes de ejecutar optimizer.step(). El tamaño efectivo resultante es micro_batch_size * gradient_accumulation_steps * num_gpus. Lotes más grandes producen gradientes con menor varianza pero consumen más memoria o pasos de acumulación.",
+    "practicas": [
+      "Cuando la VRAM no permite un batch grande, mantener el batch efectivo objetivo aumentando gradient_accumulation_steps en lugar de sacrificar la estabilidad del gradiente.",
+      "Al escalar el batch size efectivo, reescalar proporcionalmente el learning rate (regla lineal o raíz cuadrada para AdamW) y ajustar el warmup.",
+      "Usar sequence packing (empaquetar múltiples ejemplos cortos hasta max_seq_length) para maximizar la utilización real de tokens por batch sin desperdiciar cómputo en padding.",
+      "Evitar batches demasiado pequeños (p. ej. batch efectivo de 1 o 2) en SFT ruidoso, pues introducen gradientes erráticos que desestabilizan AdamW."
+    ],
+    "ejemplo": "# Batch efectivo = 2 * 16 * 4 GPUs = 128 secuencias por actualización\ntraining_args = TrainingArguments(\n    per_device_train_batch_size=2,\n    gradient_accumulation_steps=16,\n    bf16=True\n)",
+    "entrevista": "En fine-tuning, el batch size efectivo combina micro-batch por GPU, pasos de acumulación de gradientes y número de GPUs, balanceando el límite de VRAM con la estabilidad del gradiente y el learning rate."
+  },
+  "Catastrophic forgetting": {
+    "que": "El catastrophic forgetting (olvido catastrófico) es la pérdida abrupta de conocimientos previos y capacidades generales que sufre una red neuronal cuando se entrena secuencialmente sobre una nueva distribución de datos sin restricciones. Ocurre porque las actualizaciones de gradiente sobreescriben pesos críticos para tareas anteriores.",
+    "para": "Comprenderlo y controlarlo es esencial para adaptar un LLM a una tarea específica (como salida JSON estricta o un dominio técnico) sin destruir su razonamiento lógico, multilingüismo, seguimiento de instrucciones o alineamiento de seguridad.",
+    "como": "Al optimizar únicamente la función de pérdida sobre el dataset objetivo, el optimizador mueve los parámetros hacia un mínimo local específico del nuevo dominio, alejándolos de la región donde el modelo conservaba sus habilidades previas. Cuanto mayor es el learning rate, el número de epochs o la distancia estadística entre el corpus nuevo y el preentrenamiento original, más severa es la deriva de pesos. Se contrarresta restringiendo la magnitud del cambio (LoRA, bajo LR, regularización KL/EWC) o mezclando datos generales en los batches.",
+    "practicas": [
+      "Incluir entre un 10% y un 20% de datos generales o de instrucciones previas (experience replay) en el conjunto de entrenamiento.",
+      "Limitar el entrenamiento a 1-3 epochs con learning rate conservador y early stopping monitorizando tanto la loss del dominio como un benchmark general.",
+      "Preferir PEFT (LoRA/Adapters) frente a full fine-tuning en datasets pequeños, ya que acota el subespacio modificado y permite revertir o combinar pesos.",
+      "En alineamiento (RLHF/DPO), mantener una penalización de divergencia KL respecto al modelo de referencia para evitar que colapse la diversidad del lenguaje."
+    ],
+    "ejemplo": "# Evaluación dual para detectar olvido catastrófico tras cada época\nfor epoch in range(3):\n    train_one_epoch(model, domain_loader)\n    domain_score = eval_domain(model)\n    general_score = eval_mmlu_subset(model)  # Alerta si cae > 2-3 puntos",
+    "entrevista": "El catastrophic forgetting ocurre cuando las actualizaciones sobre un dominio nuevo sobrescriben capacidades generales previas; se mitiga con LoRA, learning rates bajos, regularización KL y mezcla de datos de replay."
+  },
+  "Comparación base vs fine-tuned": {
+    "que": "La comparación base vs fine-tuned es la evaluación sistemática y controlada que enfrenta al modelo original (o modelo instruct previo) contra la versión ajustada bajo condiciones idénticas de prompt, temperatura y métricas. Permite cuantificar el valor real aportado por el fine-tuning frente a su coste y posibles regresiones.",
+    "para": "Sirve para validar si el ajuste realmente supera a alternativas más baratas como few-shot prompting o RAG sobre el modelo base, y para detectar degradaciones colaterales antes de promover un modelo a producción.",
+    "como": "Se define un conjunto de prueba estratificado (hold-out) nunca visto en entrenamiento junto con una suite de regresión general. Se ejecutan ambos modelos con los mismos hiperparámetros de decodificación (p. ej. temperatura 0 para reproducibilidad) y plantillas adecuadas a cada uno, comparando métricas deterministas (Exact Match, F1, validez de esquema JSON), evaluaciones con LLM-as-a-judge (evaluación ciega A/B) y pruebas estadísticas de significancia (bootstrap resampling), además de latencia y coste por token.",
+    "practicas": [
+      "Comparar siempre el modelo fine-tuned contra el modelo base optimizado con buenos prompts y few-shot examples (baseline fuerte), no contra un prompt ingenuo.",
+      "Usar evaluación ciega por pares (pairwise blind evaluation) para evitar sesgos de posición o preferencia por respuestas más largas en LLM-as-a-judge.",
+      "Medir el impacto en formato, adherencia a políticas de seguridad, alucinaciones y capacidades fuera de dominio en paralelo.",
+      "Versionar conjuntamente pesos, dataset de evaluación, seed y prompts usados para garantizar comparaciones auditables entre iteraciones."
+    ],
+    "ejemplo": "# Evaluación comparativa simple con temperatura 0\nbase_out = generate(base_model, prompt=few_shot_prompt, temp=0.0)\nft_out   = generate(ft_model, prompt=zero_shot_prompt, temp=0.0)\nassert schema_valid(ft_out) >= schema_valid(base_out)",
+    "entrevista": "Comparar base vs fine-tuned exige enfrentar el modelo ajustado contra un baseline fuerte con few-shot/RAG en hold-out sets ciegos, midiendo tanto la mejora de tarea como la ausencia de regresiones y el retorno sobre el coste."
+  },
+  "Continued pretraining": {
+    "que": "El continued pretraining (CPT) es la continuación del entrenamiento auto-supervisado (predicción del siguiente token) de un modelo base ya entrenado sobre un nuevo corpus masivo de texto sin etiquetar. Extiende el conocimiento paramétrico o la competencia en un idioma o dominio especializado.",
+    "para": "Se emplea cuando un modelo necesita absorber conocimiento profundo, terminología técnica, sintaxis de lenguajes de programación poco comunes o idiomas subrepresentados antes de pasar a la fase de ajuste por instrucciones.",
+    "como": "Se toman los pesos de un checkpoint base (preferiblemente antes del SFT final, aunque también se aplica sobre modelos instruct con cuidado) y se entrena con objetivo causal language modeling (CLM) sobre documentos largos concatenados y empaquetados en bloques de contexto completos. Se utiliza una programación de learning rate con warmup y decaimiento coseno hasta un pico menor que el preentrenamiento original, incorporando mezcla de datos del preentrenamiento previo (replay) para estabilizar representaciones.",
+    "practicas": [
+      "Aplicar CPT sobre el modelo base (pre-instruct) y ejecutar SFT/DPO después, o bien aplicar chat-vector merging si se parte de un modelo instruct.",
+      "Garantizar alta calidad y deduplicación del corpus (MinHash/LSH), pues texto repetitivo o basura degrada gravemente al modelo en CPT.",
+      "Empaquetar documentos completos aprovechando toda la ventana de contexto del modelo con separadores EOS entre documentos independientes.",
+      "Reservar CPT para volúmenes significativos de texto (decenas de millones a miles de millones de tokens); para datos pequeños o cambiantes usar RAG."
+    ],
+    "ejemplo": "# Empaquetado de documentos para Continued Pretraining (CLM)\ndef group_texts(examples, block_size=4096):\n    concatenated = sum(examples[\"input_ids\"], [])\n    total_len = (len(concatenated) // block_size) * block_size\n    return {\"input_ids\": [concatenated[i:i+block_size] for i in range(0, total_len, block_size)]}",
+    "entrevista": "El continued pretraining reanuda el modelado causal de lenguaje sobre texto masivo no etiquetado para inyectar un dominio o idioma nuevo en los pesos del modelo antes del ajuste supervisado."
+  },
+  "Coste de fine-tuning": {
+    "que": "El coste de fine-tuning abarca el gasto total de cómputo, almacenamiento, ingeniería y curación de datos necesario para adaptar un modelo, además del coste operativo recurrente de inferencia y mantenimiento posterior (TCO). No se limita al precio por hora de GPU durante el entrenamiento.",
+    "para": "Evaluarlo permite tomar decisiones de arquitectura económicamente viables, justificando cuándo compensa invertir en entrenamiento propio frente a pagar más tokens de entrada en APIs comerciales mediante prompting largo o RAG.",
+    "como": "El coste se descompone en cuatro partidas: (1) preparación y anotación/validación del dataset (a menudo el mayor coste humano o de modelos sintéticos), (2) cómputo de entrenamiento (FLOPs proporcionales a parámetros activos, tokens procesados y epochs; reducido drásticamente con QLoRA), (3) ciclos de evaluación y reentrenamiento iterativo tras cambios de datos, y (4) alojamiento dedicado de inferencia (GPUs activas 24/7 si el modelo deja de ser serverless compartido). A mayor volumen de peticiones, un modelo pequeño fine-tuned puede amortizar su coste frente a uno grande con prompts extensos.",
+    "practicas": [
+      "Modelar el punto de equilibrio (break-even): calcular cuántos millones de tokens mensuales justifican sustituir few-shot prompts largos en un modelo grande por un modelo pequeño fine-tuned.",
+      "Reducir memoria y horas de GPU combinando QLoRA, FlashAttention-2, gradient checkpointing y precisiones BF16/FP8.",
+      "Contemplar el coste oculto de MLOps: cada actualización del modelo base o del esquema de negocio obliga a re-entrenar y re-evaluar adapters.",
+      "Empezar con un piloto sobre un subconjunto pequeño y APIs managed de fine-tuning antes de aprovisionar clusters propios multi-GPU."
+    ],
+    "ejemplo": "# Estimación rápida de memoria mínima en QLoRA (4-bit) vs Full FT (BF16 + AdamW)\n# Modelo 8B:\n# - Full FT: ~8B * (2 pesos + 2 grad + 8 AdamW fp32) = ~96 GB (+ activaciones)\n# - QLoRA:   ~8B * 0.5 bytes (NF4) + ~2% LoRA BF16 + activaciones ≈ 10-14 GB VRAM",
+    "entrevista": "El coste real del fine-tuning incluye curación de datos, iteraciones de entrenamiento, evaluación y hosting dedicado en inferencia; solo se amortiza cuando el volumen de tráfico o la latencia superan el coste de prompting y RAG."
+  },
+  "Cuándo fine-tuning no conviene": {
+    "que": "Es el conjunto de criterios técnicos y de negocio que indican que ajustar los pesos de un modelo resulta contraproducente, innecesario o inferior frente a otras técnicas como prompt engineering, structured outputs o Retrieval-Augmented Generation (RAG).",
+    "para": "Evita desperdiciar semanas de ingeniería, presupuesto en GPU y deuda técnica de mantenimiento intentando resolver con entrenamiento problemas que requieren acceso a información viva, trazabilidad o lógica determinista.",
+    "como": "Antes de entrenar se diagnostica la naturaleza de la brecha del modelo base: si falla por falta de hechos recientes o cambiantes (catálogos, precios, leyes vigentes), los pesos no pueden actualizarse en tiempo real ni citar fuentes con fiabilidad, por lo que RAG es la vía correcta. Si falla por falta de ejemplos en el prompt, ambigüedad en las instrucciones o ausencia de esquema JSON forzado, el prompt engineering y el constrained decoding resuelven el problema en horas sin riesgo de olvido catastrófico.",
+    "practicas": [
+      "No usar fine-tuning como base de datos factual: los modelos entrenados siguen alucinando hechos y no garantizan citas exactas sin RAG.",
+      "Descartar fine-tuning si no existen al menos cientos de ejemplos verificados y representativos de la distribución real en producción.",
+      "Evitarlo cuando el caso de uso requiere actualizar reglas o conocimientos semanalmente, salvo que exista un pipeline automatizado y barato de reentrenamiento.",
+      "Iterar siempre en orden creciente de complejidad: Prompt Engineering + Structured Outputs → Few-shot + RAG → Fine-tuning."
+    ],
+    "ejemplo": "# Árbol de decisión rápido:\n# ¿Necesita conocimiento dinámico o citas verificables? -> Usar RAG\n# ¿Solo falla por instrucciones ambiguas o formato JSON? -> Prompt + Structured Outputs\n# ¿Necesita estilo específico, latencia mínima o reducir tokens de prompt a escala? -> Fine-tuning",
+    "entrevista": "El fine-tuning no conviene para inyectar datos cambiantes, garantizar trazabilidad factual o compensar prompts mal diseñados; para conocimiento dinámico se usa RAG y para comportamiento se agota primero el prompting."
+  },
+  "Domain adaptation": {
+    "que": "Domain adaptation es el término técnico en aprendizaje automático para la transferencia y recalibración de un modelo entrenado en una distribución fuente (texto web general) hacia una distribución objetivo específica (ej. informes radiológicos, código COBOL o contratos mercantiles).",
+    "para": "Permite cerrar el domain shift (desajuste de distribución) entre los datos de preentrenamiento y el entorno real de producción, mejorando métricas de exactitud, comprensión de entidades raras y consistencia estilística del sector.",
+    "como": "Se ejecuta combinando estrategias según la profundidad del cambio requerido: desde unsupervised domain adaptation mediante continued pretraining (CLM sobre documentos del sector) hasta supervised domain adaptation usando pares etiquetados del dominio con SFT o LoRA. En ámbitos con vocabulario muy ajeno al original también se amplía la tabla de embeddings mediante vocabulary expansion inicializando nuevos tokens con el promedio de sus subtokens previos.",
+    "practicas": [
+      "Medir primero el desajuste de tokenización (fertility rate): si el tokenizer fragmenta palabras clave del dominio en muchos subtokens, considerar expansión de vocabulario o CPT.",
+      "Combinar domain adaptation (para internalizar lenguaje y conceptos) con RAG en inferencia (para aportar datos puntuales actualizados y verificables).",
+      "Curar estrictamente la calidad del corpus de adaptación, eliminando encabezados repetitivos de PDF, marcas de agua y boilerplate HTML.",
+      "Validar siempre con expertos del dominio (SMEs) mediante métricas específicas de error crítico, no solo con perplejidad automática."
+    ],
+    "ejemplo": "# Medir fragmentación del tokenizer en jerga médica antes de adaptar\ntokens = tokenizer.tokenize(\"colecistectomía laparoscópica\")\nprint(f\"Subtokens: {len(tokens)} -> {tokens}\")",
+    "entrevista": "Domain adaptation reduce el desajuste estadístico entre el preentrenamiento general y un sector especializado mediante CPT, SFT o ajuste de vocabulario, reservando RAG para los datos cambiantes."
+  },
+  "Epochs": {
+    "que": "Un epoch (época) representa una pasada completa del algoritmo de optimización sobre todos los ejemplos del conjunto de entrenamiento. En fine-tuning de LLMs, el número de epochs determina cuántas veces el modelo observa cada muestra para ajustar sus pesos.",
+    "para": "Controla el compromiso entre subajuste (underfitting, cuando el modelo no asimila el formato o estilo deseado) y sobreajuste/memorización (overfitting y olvido catastrófico por repetición excesiva).",
+    "como": "Durante cada epoch, el DataLoader baraja el dataset (shuffle) y lo divide en batches hasta recorrer el 100% de los ejemplos. En fine-tuning supervisado (SFT) sobre modelos ya capaces, bastan normalmente entre 1 y 3 epochs porque el modelo converge muy rápido sobre el nuevo patrón; en continued pretraining sobre corpus extensos suele usarse 1 epoch o incluso menos de 1 epoch (entrenamiento en streaming) para no memorizar texto.",
+    "practicas": [
+      "Usar entre 1 y 3 epochs como punto de partida en SFT; superar 5 epochs en datasets pequeños suele disparar la memorización y deteriorar la generalización.",
+      "Guardar checkpoints al final de cada epoch (o cada N pasos) y seleccionar el mejor según la loss de validación y evaluaciones cualitativas, no el último por defecto.",
+      "Acoplar el scheduler del learning rate (p. ej. cosine decay) al número total de pasos/epochs planificados para que el LR decaiga suavemente hacia el final.",
+      "Si el dataset es muy pequeño (< 500 ejemplos) y requiere más pasadas, combinarlo con dropout en LoRA, weight decay y early stopping estricto."
+    ],
+    "ejemplo": "training_args = TrainingArguments(\n    num_train_epochs=2,\n    eval_strategy=\"epoch\",\n    save_strategy=\"epoch\",\n    load_best_model_at_end=True\n)",
+    "entrevista": "En fine-tuning de LLMs suelen bastar de 1 a 3 epochs porque partir de pesos preentrenados acelera la convergencia; pasarse de epochs provoca memorización y pérdida de capacidades generales."
+  },
+  "Evaluación post-fine-tuning": {
+    "que": "La evaluación post-fine-tuning es el proceso riguroso de medición cuantitativa y cualitativa aplicado a un modelo tras finalizar su entrenamiento para verificar que alcanzó los objetivos de negocio sin degradar otras capacidades.",
+    "para": "Sirve para tomar decisiones objetivas de despliegue (go/no-go), diagnosticar fallos como sobreajuste, alucinación o pérdida de seguridad, y comparar objetivamente distintas configuraciones de datos o hiperparámetros.",
+    "como": "Se estructura en cuatro capas: (1) métricas automáticas y deterministas (Exact Match, ROUGE/BERTScore, pass@k en código, cumplimiento de esquema JSON/regex), (2) LLM-as-a-judge con rúbricas calibradas y evaluación ciega A/B sobre un golden dataset, (3) pruebas de regresión en benchmarks generales y red-teaming de seguridad (jailbreaks, toxicidad), y (4) evaluación humana por expertos sobre casos borde antes de pasar a pruebas shadow o canary en producción.",
+    "practicas": [
+      "Separar estrictamente los datos de validación y test (con deduplicación aproximada/semántica respecto al train set) para evitar fuga de datos (data leakage).",
+      "No confiar únicamente en la validation loss: una pérdida más baja no siempre correlaciona con respuestas más útiles o seguras en generación abierta.",
+      "Incluir pruebas unitarias de comportamiento crítico (sanity checks) para verificar que habilidades básicas como seguir formato o negarse a peticiones dañinas siguen intactas.",
+      "Automatizar el pipeline de evaluación (p. ej. con lm-evaluation-harness o frameworks propios) dentro del flujo de CI/CD de modelos."
+    ],
+    "ejemplo": "# Ejemplo de suite mínima de evaluación post-fine-tuning\nresults = {\n    \"json_valid_rate\": check_json_schema(ft_model, test_prompts),\n    \"task_accuracy\": llm_judge_score(ft_model, golden_set, rubric),\n    \"general_regression\": run_mmlu_pro_subset(ft_model)\n}",
+    "entrevista": "La evaluación post-fine-tuning combina métricas deterministas de tarea, LLM-as-a-judge sobre un golden set libre de fugas y tests de regresión general/seguridad antes de autorizar el despliegue."
+  },
+  "Fusión de modelos": {
+    "que": "La fusión de modelos (Model Merging) es un conjunto de técnicas para combinar los pesos de dos o más modelos con la misma arquitectura base en un único modelo unificado, sin necesidad de ejecutar entrenamiento adicional ni disponer de los datos originales.",
+    "para": "Permite sintetizar un modelo multitarea heredando habilidades de especialistas distintos (por ejemplo, unir un modelo bueno en código con otro bueno en español o razonamiento) a coste casi nulo de cómputo.",
+    "como": "Partiendo de que todos los modelos comparten el mismo ancestro preentrenado (y por tanto viven en cuencas de pérdida compatibles), se operan sus tensores capa a capa. Técnicas como Task Arithmetic suman vectores de tarea (θ_ft - θ_base); TIES-Merging recorta parámetros de baja magnitud y resuelve conflictos de signo por voto mayoritario antes de promediar; DARE aplica poda aleatoria con reescalado; y SLERP interpola esféricamente manteniendo constante la norma de los vectores de pesos.",
+    "practicas": [
+      "Verificar que todos los modelos candidatos deriven exactamente del mismo modelo base y compartan arquitectura y tokenizer compatibles.",
+      "Preferir TIES-Merging o DARE sobre el promedio lineal simple cuando se combinan más de dos modelos especialistas, para reducir interferencias destructivas entre pesos.",
+      "Evaluar sistemáticamente el modelo fusionado en todas las tareas origen: la fusión puede producir efectos emergentes positivos o degradar alguna capacidad sensible.",
+      "Combinar Adapters LoRA ya entrenados mediante métodos como LoRA Hub o fusión ponderada antes de consolidarlos en los pesos base."
+    ],
+    "ejemplo": "# Configuración declarativa típica con mergekit (TIES)\nmerge_method: ties\nbase_model: meta-llama/Llama-3.1-8B\nmodels:\n  - model: org/llama-code-ft\n    parameters: {density: 0.5, weight: 0.6}\n  - model: org/llama-es-ft\n    parameters: {density: 0.5, weight: 0.4}",
+    "entrevista": "La fusión de modelos combina sin reentrenamiento las capacidades de varios especialistas derivados de un mismo modelo base usando álgebra de pesos como SLERP, Task Arithmetic, TIES o DARE."
+  },
+  "GRPO": {
+    "que": "GRPO (Group Relative Policy Optimization) es un algoritmo de aprendizaje por refuerzo para alinear y potenciar el razonamiento de LLMs, popularizado por DeepSeek-R1 y DeepSeekMath. Elimina la red crítica (Value Model) de PPO calculando la ventaja de forma relativa dentro de un grupo de respuestas generadas para un mismo prompt.",
+    "para": "Sirve para optimizar modelos en tareas con recompensas verificables (matemáticas, código, lógica) o preferencias sin el enorme consumo de VRAM y la inestabilidad que supone entrenar simultáneamente un modelo de valor del mismo tamaño que la política.",
+    "como": "Para cada prompt q, la política actual muestrea un grupo de G respuestas completas {o_1, ..., o_G}. Cada respuesta recibe una puntuación escalar r_i mediante verificadores deterministas (p. ej. ejecución de tests unitarios o comprobación simbólica) o un reward model. La ventaja A_i de cada salida se calcula normalizando su recompensa respecto a la media y desviación estándar del propio grupo: A_i = (r_i - mean(r)) / std(r), y se actualizan los pesos con un objetivo tipo PPO recortado (clipped) más un término directo de penalización KL contra el modelo de referencia.",
+    "practicas": [
+      "Aprovechar GRPO especialmente cuando existen recompensas verificables por reglas (RLVR: código con tests, matemáticas, formato XML/JSON), reduciendo el riesgo de reward hacking.",
+      "Elegir un tamaño de grupo G suficiente (habitualmente 8 a 64 rollouts por prompt) para que la media y varianza intra-grupo estimen una línea base estable.",
+      "Añadir recompensas auxiliares de formato (por ejemplo, uso de etiquetas <think>...</think>) junto a la recompensa de exactitud para guiar el Chain-of-Thought.",
+      "Vigilar los prompts donde todas las muestras obtienen la misma recompensa (std = 0), pues generan gradiente nulo y conviene filtrarlos o ajustar la dificultad del currículum."
+    ],
+    "ejemplo": "# Cálculo conceptual de ventaja relativa en grupo (GRPO)\nrewards = torch.tensor([score(prompt, out) for out in group_outputs])  # shape: [G]\nadvantages = (rewards - rewards.mean()) / (rewards.std() + 1e-8)\n# Se aplica loss recortada estilo PPO + término KL(policy || ref_policy)",
+    "entrevista": "GRPO simplifica PPO eliminando el modelo crítico y estimando la ventaja al normalizar recompensas entre múltiples respuestas generadas para el mismo prompt, lo que reduce a la mitad la memoria de RL y potencia el razonamiento verificable."
+  },
+  "Hiperparámetros de fine-tuning": {
+    "que": "Los hiperparámetros de fine-tuning son las variables de configuración externas al entrenamiento que gobiernan cómo el optimizador actualiza los pesos del modelo, la capacidad efectiva de adaptación y las restricciones de regularización. Incluyen learning rate, batch size, epochs, scheduler, weight decay y parámetros específicos de PEFT (r, alpha, dropout).",
+    "para": "Determinan si el entrenamiento converge hacia una solución útil y estable, o si fracasa por divergencia numérica, subajuste, sobreajuste u olvido catastrófico.",
+    "como": "Se fijan antes de lanzar la ejecución y controlan la dinámica de descenso por gradiente estocástico (habitualmente con AdamW). El learning rate y su schedule (warmup + cosine decay) regulan el tamaño de paso; el batch size efectivo estabiliza la dirección del gradiente; los epochs fijan la exposición total a los datos; y en LoRA el rango r y lora_alpha ajustan la capacidad y escala de la perturbación sobre los pesos congelados.",
+    "practicas": [
+      "No copiar ciegamente hiperparámetros de preentrenamiento ni de modelos de distinta escala: los modelos grandes requieren learning rates significativamente menores que los pequeños.",
+      "Ajustar primero learning rate y scheduler con un barrido rápido (sweep) sobre un subconjunto antes de optimizar parámetros secundarios como weight decay.",
+      "En LoRA, mantener una relación clara entre r y lora_alpha (por ejemplo alpha = 2*r o usar rsLoRA que escala por 1/sqrt(r)) para evitar cambios bruscos de gradiente al variar r.",
+      "Registrar todos los hiperparámetros junto a curvas de gradient norm, training loss y validation loss en herramientas como W&B o MLflow para diagnosticar inestabilidades."
+    ],
+    "ejemplo": "config = {\n    \"learning_rate\": 2e-4, \"lr_scheduler\": \"cosine\", \"warmup_ratio\": 0.05,\n    \"effective_batch_size\": 64, \"epochs\": 2, \"weight_decay\": 0.01,\n    \"lora_r\": 16, \"lora_alpha\": 32, \"max_grad_norm\": 1.0\n}",
+    "entrevista": "Los hiperparámetros de fine-tuning —como learning rate, batch size efectivo, epochs y rango LoRA— controlan el equilibrio entre convergencia estable, capacidad de adaptación y prevención de sobreajuste u olvido."
+  },
+  "Instruction tuning": {
+    "que": "Instruction tuning es el procedimiento de ajuste supervisado (SFT) aplicado sobre un modelo de lenguaje base utilizando conjuntos de datos estructurados como pares de instrucción en lenguaje natural y respuesta esperada. Es el puente estándar que transforma un LLM fundacional en un modelo conversacional o resolutor de tareas.",
+    "para": "Sirve para dotar al modelo de capacidad de seguimiento de órdenes (instruction following) y generalización zero-shot a tareas nuevas descritas mediante instrucciones sin haber visto ejemplos específicos de cada variante.",
+    "como": "Se recopilan o generan colecciones diversas de tareas (resumen, clasificación, extracción, programación, razonamiento) unificadas bajo plantillas conversacionales o de instrucción. El entrenamiento minimiza la pérdida de entropía cruzada autorregresiva sobre los tokens generados por el asistente, ocultando los tokens del sistema y del usuario de la función de pérdida. Modelos como FLAN, InstructGPT o Tulu popularizaron este enfoque escalando diversidad de tareas y calidad de demostraciones.",
+    "practicas": [
+      "Maximizar la diversidad de tipos de instrucciones y longitudes de respuesta para lograr buena generalización zero-shot.",
+      "Filtrar agresivamente respuestas con errores factuales, rechazos falsos o formato inconsistente; datos sintéticos destilados de modelos frontera suelen requerir verificación automática.",
+      "Incluir ejemplos negativos o de abstención ('no tengo suficiente información') si se desea reducir alucinaciones en entornos RAG.",
+      "Combinar el instruction tuning con un paso posterior de optimización por preferencias (DPO/GRPO) cuando el estilo, el razonamiento o la seguridad sean prioritarios."
+    ],
+    "ejemplo": "# Formato Alpaca/Instruction estándar antes de aplicar chat template\n{\n  \"instruction\": \"Extrae las entidades nombradas en JSON.\",\n  \"input\": \"Ana viajó a Madrid el lunes para reunirse con Indra.\",\n  \"output\": \"{\\\"personas\\\": [\\\"Ana\\\"], \\\"lugares\\\": [\\\"Madrid\\\"], \\\"organizaciones\\\": [\\\"Indra\\\"]}\"\n}",
+    "entrevista": "Instruction tuning entrena supervisadamente al modelo con tareas diversas descritas en lenguaje natural, habilitando el seguimiento de órdenes y la generalización zero-shot antes del alineamiento por preferencias."
+  },
+  "Knowledge distillation": {
+    "que": "La destilación de conocimiento (Knowledge Distillation) es la técnica de transferir las capacidades de un modelo grande y costoso (teacher) hacia un modelo más pequeño, rápido y económico (student). En LLMs actuales adopta tanto destilación de logits (white-box) como destilación basada en datos sintéticos y trazas de razonamiento (black-box).",
+    "para": "Permite desplegar modelos en producción con latencia muy baja, menor coste por token o ejecución local/on-device conservando gran parte de la precisión de un modelo frontera.",
+    "como": "En la destilación clásica (Hinton et al.), el estudiante minimiza la divergencia KL entre su distribución de probabilidades suavizada por temperatura y los logits del profesor, combinada con la pérdida de entropía cruzada sobre etiquetas reales. En LLMs de código cerrado o pesos distintos (black-box distillation), se muestrean respuestas y cadenas de razonamiento (Chain-of-Thought) de alta calidad del profesor —filtradas mediante verificadores o tests— y se entrena al estudiante mediante SFT o DPO sobre esas demostraciones.",
+    "practicas": [
+      "En destilación basada en datos (synthetic data distillation), filtrar las salidas del modelo profesor con reglas, tests unitarios o un juez para no propagar alucinaciones al estudiante.",
+      "Destilar también trazas de razonamiento paso a paso, no solo la respuesta final, para transferir capacidad analítica a modelos pequeños (p. ej. modelos 7B-8B).",
+      "Si profesor y estudiante comparten familia/tokenizer (white-box), aprovechar la divergencia KL inversa o forward sobre logits top-k para captar la incertidumbre relativa ('dark knowledge').",
+      "Respetar siempre las licencias y términos de uso del modelo profesor: muchos modelos propietarios prohíben usar sus salidas para entrenar modelos competidores."
+    ],
+    "ejemplo": "# Pérdida combinada en destilación white-box con temperatura T\np_teacher = F.softmax(teacher_logits / T, dim=-1)\nlog_p_student = F.log_softmax(student_logits / T, dim=-1)\nkl_loss = F.kl_div(log_p_student, p_teacher, reduction=\"batchmean\") * (T ** 2)\nloss = alpha * kl_loss + (1 - alpha) * ce_loss(student_logits, labels)",
+    "entrevista": "La destilación de conocimiento transfiere capacidades de un modelo grande a uno pequeño y eficiente usando divergencia KL sobre logits o entrenamiento supervisado sobre salidas y trazas verificadas del profesor."
+  },
+  "Learning rate": {
+    "que": "El learning rate (tasa de aprendizaje) es el hiperparámetro escalar que determina la magnitud del paso que da el optimizador en dirección opuesta al gradiente al actualizar cada peso del modelo. Es el parámetro más sensible en cualquier proceso de fine-tuning.",
+    "para": "Regula directamente la velocidad de convergencia y la estabilidad numérica: un valor demasiado alto destruye el conocimiento preentrenado o hace diverger la pérdida, mientras uno demasiado bajo estanca el aprendizaje.",
+    "como": "En AdamW, el learning rate multiplica la actualización normalizada por los momentos primero y segundo del gradiente en cada paso. En fine-tuning suele acompañarse de un scheduler: primero un warmup lineal (p. ej. 3-10% de los pasos iniciales) que sube desde 0 hasta el LR pico para estabilizar las estimaciones de varianza de AdamW, seguido de un decaimiento coseno o lineal hacia un mínimo cercano a cero al final del entrenamiento.",
+    "practicas": [
+      "Usar tasas significativamente distintas según el método: en full fine-tuning de LLMs suelen rondar 1e-5 a 5e-5 (e incluso 1e-6 en DPO), mientras que en LoRA/QLoRA suelen ser ~10x mayores (1e-4 a 3e-4).",
+      "Incluir siempre warmup lineal al inicio para evitar picos bruscos de gradiente cuando los pesos nuevos del adapter (o matrices B en cero) empiezan a acoplarse.",
+      "Vigilar la curva de grad_norm y training loss: oscilaciones violentas o pérdida en NaN indican que el learning rate es excesivo.",
+      "Escalar el learning rate hacia abajo conforme aumenta el tamaño del modelo base (un 70B requiere LR menor que un 7B)."
+    ],
+    "ejemplo": "training_args = TrainingArguments(\n    learning_rate=2e-4,        # Típico para LoRA\n    lr_scheduler_type=\"cosine\",\n    warmup_ratio=0.05,\n    max_grad_norm=1.0\n)",
+    "entrevista": "El learning rate controla cuánto cambian los pesos en cada paso; en fine-tuning es mucho menor que en preentrenamiento —sobre todo en full FT y DPO frente a LoRA— y se combina con warmup lineal y decaimiento coseno."
+  },
+  "Model merging": {
+    "que": "Model merging es la técnica de combinar en el espacio de parámetros dos o más modelos compatibles (normalmente derivados del mismo modelo base) para obtener un modelo resultante con las habilidades combinadas, sin ejecutar pasos adicionales de gradiente.",
+    "para": "Sirve para crear modelos multitarea, recuperar capacidades perdidas tras un fine-tuning agresivo (como restaurar habilidades de chat sobre un modelo con CPT) o ensemblar múltiples experimentos sin multiplicar el coste de inferencia.",
+    "como": "Dado un modelo base θ_0 y varios modelos ajustados θ_i, se calculan sus task vectors Δ_i = θ_i - θ_0 o se interpolan directamente los tensores capa por capa. Algoritmos como Linear Averaging promedian pesos; SLERP realiza interpolación esférica entre dos modelos; Task Arithmetic suma deltas ponderados; y TIES o DARE podan cambios irrelevantes y resuelven signos opuestos antes de fusionar. La herramienta estándar en el ecosistema open-source es MergeKit.",
+    "practicas": [
+      "Asegurar que los modelos comparten arquitectura, dimensionalidad exacta y vocabulario compatible; si difieren en tokens especiales, alinear embeddings antes.",
+      "Usar SLERP para combinar exactamente dos modelos con proporciones suaves (t entre 0.3 y 0.7) y TIES/DARE+TIES para tres o más modelos.",
+      "Probar la técnica de 'model soup' (promediar checkpoints de un mismo modelo entrenado con distintos hiperparámetros o seeds) para ganar robustez sin coste de inferencia.",
+      "Tener presente que el model merging no sustituye a un SFT/RL bien hecho cuando se requieren comportamientos estrictamente nuevos no presentes en ninguno de los padres."
+    ],
+    "ejemplo": "# Task arithmetic conceptual: transferir capacidad de chat de M_chat a M_dominio\n# θ_final = θ_dominio + λ * (θ_chat - θ_base)\nmerged_weight = w_domain + 0.7 * (w_chat - w_base)",
+    "entrevista": "Model merging combina pesos de modelos compatibles sin reentrenamiento mediante técnicas como SLERP, Task Arithmetic, TIES o DARE, integrando especialidades o recuperando capacidades con coste cero de inferencia extra."
+  },
+  "Modelo de recompensa": {
+    "que": "Un modelo de recompensa (Reward Model, RM) es un modelo neuronal entrenado para asignar una puntuación escalar numérica a una pareja (prompt, respuesta) que refleja qué tan alineada, útil, veraz o preferida por humanos es esa salida.",
+    "para": "Actúa como proxy automático y diferenciable del juicio humano dentro de pipelines de aprendizaje por refuerzo (RLHF como PPO), así como para filtrar datos sintéticos o seleccionar la mejor respuesta en tiempo de inferencia (Best-of-N sampling).",
+    "como": "Suele construirse partiendo de un LLM preentrenado o ajustado por instrucciones, sustituyendo su cabeza de proyección al vocabulario por una capa lineal que emite un único escalar. Se entrena sobre pares de preferencias (y_w ganadora, y_l perdedora para un mismo prompt x) utilizando la pérdida de Bradley-Terry: -log(σ(r(x, y_w) - r(x, y_l))). Así aprende a ordenar respuestas sin necesidad de puntuaciones absolutas humanas calibradas.",
+    "practicas": [
+      "Normalizar o centrar las puntuaciones del reward model durante el RL para estabilizar el cálculo de ventajas y evitar derivas.",
+      "Mitigar el reward hacking (p. ej. el sesgo hacia respuestas excesivamente largas o aduladoras) equilibrando longitudes en el dataset de entrenamiento y aplicando penalización KL.",
+      "Diferenciar entre Outcome Reward Models (ORM, puntúan solo la respuesta final) y Process Reward Models (PRM, puntúan cada paso de razonamiento intermedio).",
+      "Considerar si DPO o GRPO con verificadores deterministas permiten prescindir de entrenar y servir un reward model separado."
+    ],
+    "ejemplo": "# Pérdida de Bradley-Terry para entrenar un Reward Model con pares (chosen, rejected)\nr_chosen = reward_model(prompt, chosen_resp)\nr_rejected = reward_model(prompt, rejected_resp)\nloss = -F.logsigmoid(r_chosen - r_rejected).mean()",
+    "entrevista": "Un modelo de recompensa traduce preferencias humanas comparativas en un escalar mediante la pérdida de Bradley-Terry, sirviendo como señal de optimización en RLHF o como selector en Best-of-N."
+  },
+  "Olvido catastrófico": {
+    "que": "El olvido catastrófico es el fenómeno por el cual un modelo neuronal pierde bruscamente habilidades o conocimientos adquiridos en etapas previas al ser entrenado exclusivamente sobre un nuevo conjunto de datos. Representa la manifestación práctica del dilema estabilidad-plasticidad.",
+    "para": "Entenderlo es crucial para diseñar estrategias de fine-tuning seguro en producción, asegurando que especializar un modelo en una nueva tarea no rompa su capacidad de seguir instrucciones generales, razonar o mantener guardrails de seguridad.",
+    "como": "Durante el ajuste secuencial, los gradientes derivados únicamente del nuevo corpus empujan los pesos lejos de las configuraciones que sustentaban las tareas previas. Sin restricciones sobre cuánto pueden moverse los parámetros ni muestras de recordatorio de la distribución anterior, las representaciones internas se reasignan al nuevo dominio. Técnicas como PEFT (LoRA), data replay, regularización L2/EWC o penalización KL frente al modelo base anclan el comportamiento original.",
+    "practicas": [
+      "Mezclar siempre datos generales de alta calidad (replay buffer del 5-20%) junto con el dataset especializado durante SFT o CPT.",
+      "Usar learning rates moderados y limitar los epochs (1-3 en SFT), monitorizando benchmarks generales en cada checkpoint.",
+      "Cuando el olvido afecta solo a seguridad o formato conversacional tras un CPT, aplicar fusión de task vectors de chat o una breve fase final de SFT+DPO.",
+      "Preferir LoRA frente a full fine-tuning cuando el dataset específico sea pequeño o muy estrecho."
+    ],
+    "ejemplo": "# Mezcla simple de dataset específico + datos generales de replay\nfrom datasets import concatenate_datasets\nreplay = general_ds.shuffle(seed=42).select(range(int(len(domain_ds) * 0.15)))\ntrain_ds = concatenate_datasets([domain_ds, replay]).shuffle(seed=42)",
+    "entrevista": "El olvido catastrófico es la degradación de capacidades previas al reentrenar sobre datos nuevos; se previene combinando data replay, PEFT/LoRA, tasas de aprendizaje conservadoras y evaluación de regresión."
+  },
+  "Optimización por preferencias": {
+    "que": "La optimización por preferencias es el conjunto de métodos de post-entrenamiento que alinean un modelo de lenguaje usando comparaciones relativas entre respuestas ('A es mejor que B') en lugar de depender únicamente de demostraciones supervisadas únicas. Incluye enfoques de RL clásico (RLHF/PPO) y métodos directos sin reward model explícito (DPO, ORPO, KTO, SimPO).",
+    "para": "Sirve para moldear matices difíciles de especificar mediante SFT puro: reducir alucinaciones, mejorar el tono, reforzar seguridad ante peticiones ambiguas y preferir respuestas concisas, precisas y útiles.",
+    "como": "Parte de un modelo ya pasado por SFT (modelo de referencia) y de tuplas (prompt, respuesta elegida y_w, respuesta rechazada y_l). Mientras RLHF entrena primero un reward model y luego optimiza la política con PPO sujeto a una penalización KL, los métodos directos como DPO reparametrizan analíticamente la función de recompensa óptima en términos de las razones de probabilidad logarítmica entre la política actual y la referencia, optimizando directamente con una pérdida logística binaria.",
+    "practicas": [
+      "Ejecutar siempre SFT antes de la optimización por preferencias (salvo métodos combinados como ORPO) para que la distribución base ya genere respuestas razonables.",
+      "Asegurar que las respuestas elegidas y rechazadas procedan idealmente de muestreos del propio modelo (on-policy o semi on-policy) para maximizar la señal de aprendizaje.",
+      "Usar learning rates muy bajos (p. ej. 5e-7 a 5e-6 en full FT, o ~5e-5 en LoRA) y controlar beta para no colapsar la entropía del modelo.",
+      "Considerar KTO cuando solo se dispone de feedback binario independiente (pulgar arriba/abajo) en lugar de pares comparativos."
+    ],
+    "ejemplo": "# Configuración típica de DPO con TRL\nfrom trl import DPOConfig\ndpo_args = DPOConfig(\n    beta=0.1,                  # Controla la desviación respecto al modelo ref\n    learning_rate=5e-6,\n    loss_type=\"sigmoid\"\n)",
+    "entrevista": "La optimización por preferencias alinea el comportamiento fino del LLM usando comparaciones entre respuestas elegidas y rechazadas —ya sea mediante RLHF o directamente con DPO/ORPO/KTO— respetando una restricción KL."
+  },
+  "Overfitting en fine-tuning": {
+    "que": "El overfitting (sobreajuste) en fine-tuning ocurre cuando el modelo memoriza literalmente los ejemplos, muletillas o sesgos del conjunto de entrenamiento en lugar de aprender la regla o estilo generalizable, perdiendo rendimiento ante entradas nuevas o ligeramente distintas.",
+    "para": "Detectarlo a tiempo evita desplegar un modelo rígido que repite respuestas memorizadas, falla ante parafraseos simples o pierde su capacidad de razonar fuera de las plantillas vistas en entrenamiento.",
+    "como": "Se produce porque los LLMs tienen millones o miles de millones de parámetros frente a datasets de SFT típicamente pequeños (cientos o miles de filas). Al entrenar demasiados epochs, con un learning rate alto o con ejemplos repetidos/similares, la training loss sigue cayendo hacia cero mientras la validation loss empieza a subir (divergencia train/val) y la entropía de generación colapsa.",
+    "practicas": [
+      "Monitorizar entrenamiento y validación en paralelo: detener el entrenamiento cuando la validation loss empiece a subir aunque la training loss siga bajando.",
+      "Deduplicar el dataset de entrenamiento (exacta y semánticamente) antes de empezar para no multiplicar artificialmente ciertos ejemplos.",
+      "Usar regularización adecuada: dropout en LoRA (0.05-0.1), weight decay (0.01-0.1), batches efectivos suficientemente grandes y 1-3 epochs como máximo.",
+      "Probar el modelo con prompts parafraseados y casos adversariales, no solo con ejemplos parecidos al train set."
+    ],
+    "ejemplo": "# Señal clásica de overfitting en logs de entrenamiento:\n# Epoch 1: train_loss=1.24, val_loss=1.28\n# Epoch 2: train_loss=0.71, val_loss=0.95  <- mejor checkpoint\n# Epoch 4: train_loss=0.12, val_loss=1.42  <- memorización y pérdida de generalización",
+    "entrevista": "El overfitting en fine-tuning sucede cuando el modelo memoriza el dataset de ajuste, reflejándose en caída continua de la training loss con subida de la validation loss y rigidez ante variaciones del prompt."
+  },
+  "Preentrenamiento continuo": {
+    "que": "El preentrenamiento continuo (Continued Pretraining) consiste en seguir entrenando un modelo fundacional ya preentrenado mediante aprendizaje auto-supervisado sobre un nuevo corpus extenso sin etiquetar, manteniendo el objetivo de predicción del siguiente token.",
+    "para": "Sirve para dotar al modelo de conocimientos profundos en un dominio técnico, código propietario o un idioma específico que estaban ausentes o poco representados en su preentrenamiento original.",
+    "como": "El proceso toma los pesos del modelo base, formatea los documentos brutos en secuencias continuas hasta la longitud máxima de contexto separadas por tokens EOS y ejecuta pasos de gradiente con Causal Language Modeling (CLM). Para no perder fluidez general se combina el corpus nuevo con un subconjunto del preentrenamiento general (replay) y se emplea un learning rate con warmup corto y decaimiento coseno hacia el final.",
+    "practicas": [
+      "Invertir la mayor parte del esfuerzo en limpieza, filtrado de toxicidad/ruido y deduplicación del corpus antes de consumir horas de GPU.",
+      "Realizar el preentrenamiento continuo antes del SFT y DPO, o reinyectar capacidades de chat mediante fusión de modelos si se partió de un modelo instruct.",
+      "Usar 1 sola época sobre corpus muy grandes y evitar repetir los mismos documentos múltiples veces.",
+      "Evaluar tanto la perplejidad en textos del dominio como benchmarks generales (MMLU, GSM8K) para comprobar que no hubo olvido catastrófico."
+    ],
+    "ejemplo": "# Objetivo CLM estándar sobre documentos concatenados\noutputs = model(input_ids=batch[\"input_ids\"], labels=batch[\"input_ids\"])\nloss = outputs.loss  # Entropía cruzada desplazada un token (next-token prediction)",
+    "entrevista": "El preentrenamiento continuo extiende el conocimiento base de un LLM entrenándolo con predicción del siguiente token sobre corpus masivos no etiquetados antes de las fases de ajuste supervisado y alineamiento."
+  },
+  "Preference optimization": {
+    "que": "Preference optimization agrupa las técnicas de alineamiento que entrenan un LLM utilizando señales de comparación relativa entre salidas candidatas (chosen vs rejected), optimizando directamente lo que los humanos o evaluadores prefieren frente a lo que debe evitarse.",
+    "para": "Resuelve las limitaciones del SFT puro —que asigna probabilidad similar a variantes aceptables y no enseña explícitamente qué errores evitar— mejorando la veracidad, seguridad, formato y preferencia subjetiva.",
+    "como": "Incluye desde RLHF clásico (Reward Model + PPO) hasta familia de optimización directa offline/online como DPO (Direct Preference Optimization), IPO, KTO, ORPO y SimPO. Por ejemplo, DPO compara las log-probabilidades de la respuesta elegida frente a la rechazada ponderadas por un hiperparámetro β respecto a un modelo de referencia congelado, eliminando la necesidad de muestreo en línea y de mantener un reward model y un crítico en memoria.",
+    "practicas": [
+      "Cuidar que la diferencia de calidad entre chosen y rejected sea real y consistente; pares ambiguos o ruidosos degradan rápidamente la política.",
+      "Ajustar el coeficiente β (típicamente 0.05 a 0.2 en DPO): valores muy pequeños permiten al modelo desviarse demasiado; muy altos impiden aprender las preferencias.",
+      "Aplicar variantes sin modelo de referencia como SimPO u ORPO cuando la memoria VRAM esté muy ajustada y no quepa mantener dos copias del modelo.",
+      "Monitorizar el margen de recompensa implícita (rewards/margins) y asegurarse de que la probabilidad de la respuesta chosen no caiga en términos absolutos."
+    ],
+    "ejemplo": "# Pérdida DPO simplificada (PyTorch)\npi_logratios = policy_chosen_logps - policy_rejected_logps\nref_logratios = ref_chosen_logps - ref_rejected_logps\nloss = -F.logsigmoid(beta * (pi_logratios - ref_logratios)).mean()",
+    "entrevista": "Preference optimization alinea al modelo contrastando respuestas elegidas y rechazadas mediante métodos como DPO, ORPO, KTO o RLHF, logrando respuestas más seguras y precisas que el SFT aislado."
+  },
+  "RLAIF": {
+    "que": "RLAIF (Reinforcement Learning from AI Feedback) es un paradigma de alineamiento en el que las etiquetas de preferencia o evaluaciones de recompensa son generadas por otro modelo de IA siguiendo una constitución o rúbrica explícita, en lugar de anotadores humanos.",
+    "para": "Permite escalar el entrenamiento por preferencias de forma mucho más rápida, barata y consistente que el etiquetado humano tradicional (RLHF), especialmente en políticas complejas de seguridad o estilos específicos.",
+    "como": "Se parte de un conjunto de prompts y de un conjunto de principios escritos (como en Constitutional AI de Anthropic). Un modelo crítico/juez de IA evalúa pares de respuestas generadas por la política bajo esa rúbrica —mitigando sesgos de posición mediante evaluación bidireccional— y produce datos de preferencia sintéticos o puntuaciones directas. Esas preferencias alimentan luego el entrenamiento de un Reward Model + PPO o directamente DPO/GRPO.",
+    "practicas": [
+      "Evaluar siempre cada par en ambos órdenes (A vs B y B vs A) y descartar o empatar resultados inconsistentes para neutralizar el position bias del modelo juez.",
+      "Redactar principios o rúbricas claras y descomponer criterios complejos (utilidad, veracidad, inocuidad) en evaluaciones separadas.",
+      "Auditar periódicamente una muestra de las preferencias generadas por la IA frente a jueces humanos para detectar sesgos sistemáticos (p. ej. verbosity bias).",
+      "Evitar usar un juez más débil que el modelo que se pretende mejorar, salvo en tareas donde la verificación sea asimétrica y mucho más fácil que la generación."
+    ],
+    "ejemplo": "# Prompt de juez RLAIF bajo principio constitucional\njudge_prompt = \"\"\"Principio: Sé conciso, preciso y no inventes APIs.\nPrompt: {q}\nRespuesta A: {a}\nRespuesta B: {b}\n¿Cuál cumple mejor el principio? Responde solo A o B.\"\"\"",
+    "entrevista": "RLAIF sustituye o complementa el etiquetado humano en RLHF usando modelos de IA guiados por rúbricas o principios constitucionales para generar preferencias escalables hacia DPO o RL."
+  },
+  "Reward model": {
+    "que": "Un Reward Model es una red neuronal entrenada para estimar la calidad de una respuesta completa (ORM) o de pasos intermedios (PRM) asignándole un número real continuo que modela la preferencia humana o de un criterio de evaluación.",
+    "para": "Proporciona la función de recompensa automática necesaria en algoritmos de aprendizaje por refuerzo como PPO, y también habilita técnicas de escalado en tiempo de inferencia como reranking Best-of-N o búsqueda en árbol (MCTS).",
+    "como": "Se inicializa desde un modelo base/SFT sustituyendo la capa de salida del vocabulario por una cabeza escalar (linear projection a dimensión 1). Se entrena sobre comparaciones binarias (prompt, chosen, rejected) maximizando la probabilidad de que el puntaje de la respuesta ganadora supere al de la perdedora bajo el modelo probabilístico de Bradley-Terry. En variantes de proceso (PRM), se etiqueta la corrección paso a paso para penalizar razonamientos erróneos aunque acierten por azar.",
+    "practicas": [
+      "Validar si el reward model sufre Goodhart's Law / reward hacking probando si respuestas largas o llenas de palabras clave reciben mayor puntuación sin ser mejores.",
+      "Entrenar el reward model con ejemplos diversos y con el mismo estilo/distribución de salidas que generará la política durante el RL.",
+      "Para matemáticas o código con tests automáticos, preferir verificadores deterministas en lugar de un reward model neuronal aproximado.",
+      "Calibrar o normalizar la salida del reward model antes de combinar recompensas de múltiples criterios."
+    ],
+    "ejemplo": "class RewardModel(nn.Module):\n    def __init__(self, backbone, hidden_size):\n        super().__init__()\n        self.backbone = backbone\n        self.score_head = nn.Linear(hidden_size, 1, bias=False)\n    def forward(self, input_ids, attention_mask):\n        last_hidden = self.backbone(input_ids, attention_mask).last_hidden_state[:, -1, :]\n        return self.score_head(last_hidden).squeeze(-1)",
+    "entrevista": "Un Reward Model aprende a puntuar respuestas mediante comparaciones de preferencias con pérdida Bradley-Terry, actuando como señal de entrenamiento en RLHF o como evaluador en Best-of-N."
+  },
+  "Weight averaging": {
+    "que": "Weight averaging es la técnica de promediar los parámetros de varios checkpoints o modelos entrenados a partir de una misma inicialización para producir un único conjunto de pesos más robusto, mejor calibrado y con mayor capacidad de generalización.",
+    "para": "Sirve para reducir la varianza del entrenamiento, suavizar picos de pérdida en la etapa final del fine-tuning y mejorar métricas fuera de distribución (como en Model Soups o EMA) sin añadir coste alguno en latencia ni memoria en inferencia.",
+    "como": "Aprovecha que distintos checkpoints del final de un entrenamiento (SWA, Exponential Moving Average - EMA) o distintas corridas con hiperparámetros cercanos caen en la misma cuenca plana de la superficie de pérdida (linear mode connectivity). Al calcular θ_avg = Σ α_i · θ_i (con Σ α_i = 1), las perturbaciones ruidosas de cada paso estocástico se cancelan mientras las direcciones consistentes se refuerzan, ubicando la solución más cerca del centro del valle plano.",
+    "practicas": [
+      "Aplicar Exponential Moving Average (EMA) o promediado de los últimos K checkpoints de una corrida larga para estabilizar la calidad final de generación.",
+      "Verificar que los checkpoints promediados compartan trayectoria cercana o modelo base idéntico; promediar pesos en cuencas distintas destruye el modelo.",
+      "En Model Soups greedy, añadir un checkpoint al promedio solo si mejora el score en el conjunto de validación (greedy soup) frente a promediar todos a ciegas (uniform soup).",
+      "Recordar recalibrar estadísticas de normalización si la arquitectura usa BatchNorm (aunque los Transformers estándar usan LayerNorm/RMSNorm y no lo requieren)."
+    ],
+    "ejemplo": "# Promediado uniforme de los últimos 3 checkpoints en PyTorch\nsd_avg = {}\nfor k in checkpoints[0].keys():\n    sd_avg[k] = sum(ckpt[k].float() for ckpt in checkpoints) / len(checkpoints)",
+    "entrevista": "Weight averaging promedia pesos de checkpoints o corridas compatibles dentro de una misma cuenca de pérdida (como EMA, SWA o Model Soups) para mejorar la generalización con cero sobrecoste en inferencia."
+  }
+}

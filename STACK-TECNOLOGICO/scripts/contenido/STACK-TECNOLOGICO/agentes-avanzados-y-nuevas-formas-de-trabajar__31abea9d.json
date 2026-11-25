@@ -1,0 +1,392 @@
+{
+  "Desarrollo especificado": {
+    "que": "El desarrollo especificado (spec-driven development) es una metodología de ingeniería asistida por IA en la que una especificación formal y estructurada precede y gobierna la generación de código. En lugar de iterar mediante prompts informales (vibe coding), el ingeniero define contratos, requisitos verificables, invariantes y criterios de aceptación antes de delegar la implementación a modelos o agentes.",
+    "para": "Resuelve la deriva arquitectónica, las alucinaciones de requisitos y la deuda técnica generada por prompts ambiguos en sistemas complejos. Se utiliza cuando un equipo necesita que múltiples agentes o desarrolladores produzcan código coherente, auditable y alineado con las reglas de negocio del sistema.",
+    "como": "El flujo comienza redactando un documento de especificación (por ejemplo, en Markdown estructurado, OpenAPI o YAML) que describe el modelo de datos, las interfaces, los casos borde y las pruebas esperadas. Un agente planificador descompone esa especificación en tareas atómicas y valida que no existan contradicciones antes de escribir código. Luego, agentes ejecutores implementan cada módulo tomando la especificación como fuente única de verdad en su ventana de contexto. Finalmente, un bucle de verificación ejecuta pruebas automatizadas y linters contra los criterios de la especificación hasta cumplir todos los contratos.",
+    "practicas": [
+      "Mantener las especificaciones versionadas en Git junto al código fuente para revisar cambios funcionales en Pull Requests antes de regenerar código.",
+      "Separar claramente qué debe hacer el sistema (contratos e invariantes) de cómo implementarlo, evitando sobreespecificar detalles internos triviales.",
+      "Diferenciar entre vibe coding (exploración rápida y prototipos desechables sin contrato) y desarrollo especificado (software mantenible en producción).",
+      "Error típico: tratar la especificación como documentación estática que no se actualiza tras cambios manuales en el código, rompiendo la sincronía con futuros agentes."
+    ],
+    "ejemplo": "# spec/auth-token.spec.md\n## Contrato\n- Endpoint: POST /v1/tokens/refresh\n- Invariante: Un refresh_token solo puede usarse una vez (rotación estricta).\n## Criterios de aceptación\n1. Token válido -> 200 OK + nuevo par access/refresh.\n2. Token reutilizado -> 401 Unauthorized + revocación de toda la familia.",
+    "entrevista": "El desarrollo especificado traslada el centro de gravedad de escribir sintaxis a diseñar contratos verificables para que los agentes implementen con precisión y trazabilidad."
+  },
+  "Determinismo del agente": {
+    "que": "El determinismo del agente es la propiedad por la cual, ante una misma entrada, estado inicial y secuencia de respuestas de herramientas, el agente sigue exactamente la misma trayectoria de razonamiento y emite las mismas invocaciones. Dado que los LLM son modelos probabilísticos por naturaleza, el determinismo puro en agentes suele requerir controles explícitos en la capa de inferencia y orquestación.",
+    "para": "Sirve para depurar fallos complejos, cumplir requisitos de auditoría en sectores regulados (finanzas, salud) y construir suites de pruebas de regresión confiables. Se vuelve crítico cuando un cambio mínimo en el entorno no debe provocar decisiones erráticas o no reproducibles.",
+    "como": "Para maximizar el determinismo se fijan hiperparámetros de muestreo en la API del modelo (`temperature=0`, `top_p=1` y parámetro `seed` cuando el proveedor lo soporta). Sin embargo, el paralelismo en GPU (operaciones de coma flotante no asociativas en distinto orden) y el enrutamiento dinámico de modelos MoE aún introducen variabilidad residual. Por ello, los frameworks de agentes capturan las respuestas del LLM y de las herramientas externas en un registro de ejecución (event log o cassette) para reproducir decisiones exactas mediante replay.",
+    "practicas": [
+      "Fijar `temperature=0` y `seed` en flujos críticos de clasificación o extracción estructurada, asumiendo aun así que no garantiza determinismo bit a bit entre actualizaciones de hardware.",
+      "Separar la lógica determinista (validación de esquemas, reglas de negocio, cálculos financieros) en código tradicional y herramientas, dejando al LLM solo la interpretación.",
+      "Distinguir determinismo (mismo cómputo interno exacto) de idempotencia y repetibilidad funcional (mismo resultado de negocio válido ante variaciones menores).",
+      "Trampa común: confiar en `temperature=0` en producción como garantía absoluta sin registrar trazas ni proteger herramientas mutables con claves de idempotencia."
+    ],
+    "ejemplo": "response = client.responses.create(\n    model=\"gpt-4.1\",\n    temperature=0,\n    seed=42,\n    response_format={\"type\": \"json_schema\", \"json_schema\": schema},\n    input=messages\n)",
+    "entrevista": "Como los LLM son estocásticos incluso con temperatura cero por efectos de concurrencia en GPU, el determinismo real en agentes se logra combinando muestreo restringido, lógica determinista en herramientas y replay basado en registros."
+  },
+  "Dry run de agente": {
+    "que": "Un dry run de agente es un modo de ejecución en vacío en el que el agente planifica, razona y selecciona llamadas a herramientas, pero las acciones con efectos secundarios (escrituras, pagos, envíos de correo, mutaciones de infraestructura) se interceptan sin aplicarse realmente. En su lugar, el entorno devuelve un resultado simulado o registra la intención exacta de la operación.",
+    "para": "Resuelve el riesgo de ejecutar agentes autónomos directamente sobre sistemas productivos cuando se prueban nuevos prompts, herramientas o flujos complejos. Se usa en entornos de preproducción, revisiones previas a la ejecución (plan-and-approve) y auditorías de seguridad antes de habilitar el modo live.",
+    "como": "El runtime del agente recibe una bandera de configuración (por ejemplo, `--dry-run` o `execution_mode=\"dry_run\"`) propagada en el contexto de ejecución. Las herramientas de solo lectura (`get_*`, `search_*`) suelen ejecutarse contra datos reales o snapshots, mientras que las herramientas mutadoras implementan un adaptador que valida argumentos contra el esquema (JSON Schema / Pydantic), comprueba permisos y devuelve un payload sintético de éxito con el diff previsto. Al finalizar, el usuario o un evaluador inspecciona el plan de mutaciones generado.",
+    "practicas": [
+      "Asegurar que el modo dry run ejecute exactamente las mismas validaciones de permisos, tipos y políticas que la ejecución real para detectar fallos antes de aplicar cambios.",
+      "Mostrar un resumen estructurado (tipo `terraform plan`) con los recursos que se crearían, modificarían o eliminarían.",
+      "Evitar que respuestas stub demasiado optimistas oculten errores de estado: simular también respuestas de error o conflictos en pruebas de dry run.",
+      "Dry run vs Simulación de agente: el dry run valida el plan de un caso real interceptando mutaciones antes de aplicarlas; la simulación evalúa el agente contra usuarios y entornos sintéticos completos."
+    ],
+    "ejemplo": "def delete_user(user_id: str, dry_run: bool = True) -> dict:\n    validate_permissions(user_id)\n    if dry_run:\n        return {\"status\": \"dry_run\", \"would_delete\": user_id}\n    return db.users.delete_one({\"id\": user_id})",
+    "entrevista": "El dry run desacopla el razonamiento del agente de sus efectos secundarios, permitiendo inspeccionar y validar cada mutación propuesta como un diff antes de tocar producción."
+  },
+  "Error del agente": {
+    "que": "Un error del agente es cualquier fallo ocurrido durante el ciclo percepción-razonamiento-acción que impide completar la tarea según la especificación o produce una acción incorrecta. Abarca tanto fallos de infraestructura y formato (JSON inválido, herramienta caída, límite de contexto) como fallos cognitivos y de planificación (alucinación de parámetros, bucles o violación de restricciones).",
+    "para": "Comprender y taxónomizar los errores de agentes sirve para diseñar observabilidad, métricas de calidad y estrategias de recuperación específicas por categoría. Sin una clasificación clara, los equipos intentan arreglar fallos de herramientas o de datos modificando indefinidamente el prompt del sistema.",
+    "como": "Durante la ejecución, el orquestador captura excepciones en tres capas: errores de modelo (truncamiento por `max_tokens`, rechazo por políticas, salida que no cumple el esquema), errores de herramienta (timeouts HTTP 504, errores de validación 400, permisos insuficientes 403) y errores semánticos o de trayectoria (el agente interpreta mal una observación o invoca una herramienta destructiva innecesaria). Cada error se etiqueta con su código, paso de la traza, entrada y salida para alimentar alertas y sistemas de evaluación.",
+    "practicas": [
+      "Distinguir errores transitorios (rate limit 429, timeout de red) de errores deterministas o de esquema (argumento inválido), ya que solo los primeros deben reintentarse ciegamente.",
+      "Devolver mensajes de error accionables al LLM desde las herramientas (indicando qué campo falló y el formato esperado) en lugar de stack traces crudos.",
+      "Instrumentar cada fallo con OpenTelemetry (atributos de span como `error.type`, `tool.name`, `step.index`) para calcular tasas de error por herramienta y por paso.",
+      "Error típico: silenciar excepciones de herramientas devolviendo cadenas vacías, lo que provoca que el agente alucine datos o asuma que la operación tuvo éxito."
+    ],
+    "ejemplo": "{\n  \"error_category\": \"TOOL_VALIDATION_ERROR\",\n  \"tool\": \"create_invoice\",\n  \"step\": 4,\n  \"recoverable\": true,\n  \"hint\": \"El campo 'currency' debe seguir ISO-4217 (ej. 'EUR', 'USD'), se recibió 'euros'.\"\n}",
+    "entrevista": "En ingeniería de agentes no basta con capturar excepciones HTTP: hay que clasificar por separado los fallos de modelo, de herramienta y de trayectoria semántica para saber si se corrigen con reintentos, validación o contexto."
+  },
+  "Especificación como código": {
+    "que": "La especificación como código (Spec-as-Code) es la práctica de expresar requisitos, contratos de comportamiento, políticas y criterios de aceptación de un sistema en archivos estructurados y legibles por máquina dentro del mismo repositorio que el código fuente. De este modo, las especificaciones heredan control de versiones, revisión por pares, linters y automatización CI/CD.",
+    "para": "Elimina la desconexión entre documentos de producto en wikis desactualizadas y la implementación real generada por humanos o agentes de IA. Permite que los agentes lean requisitos sin ambigüedad y que cualquier cambio en el comportamiento del sistema sea auditable en un diff de Git.",
+    "como": "Se utilizan formatos declarativos y estandarizados como OpenAPI para APIs REST, AsyncAPI para eventos, JSON Schema / Protobuf para datos, o plantillas Markdown con frontmatter YAML y secciones normalizadas. Un pipeline de CI valida la sintaxis de las especificaciones, detecta referencias rotas y verifica que existan pruebas o implementaciones asociadas. Cuando cambia una especificación en una rama, un flujo agéntico puede proponer automáticamente la actualización del código y los tests correspondientes.",
+    "practicas": [
+      "Tratar cualquier cambio de comportamiento como un commit que modifica primero la especificación y luego el código, facilitando la revisión arquitectónica.",
+      "Validar las especificaciones en pre-commit o CI con linters (como Spectral para OpenAPI) para evitar ambigüedades antes de pasarlas a un agente.",
+      "Vincular identificadores únicos de requisito (`REQ-042`) entre la especificación, los casos de prueba y los commits.",
+      "Especificación como código vs Especificación ejecutable: la primera versiona y estructura el contrato en el repo; la segunda además se ejecuta automáticamente como prueba contra el sistema."
+    ],
+    "ejemplo": "# specs/orders.openapi.yaml (fragmento)\npaths:\n  /orders/{id}/cancel:\n    post:\n      x-agent-invariant: \"Solo cancelable si status in [PENDING, CONFIRMED]\"\n      responses:\n        '200': { description: Pedido cancelado }\n        '409': { description: Transición de estado inválida }",
+    "entrevista": "Spec-as-Code aplica a los requisitos los mismos principios que Infrastructure-as-Code: versionado en Git, revisión en Pull Requests y validación automática como fuente de verdad para humanos y agentes."
+  },
+  "Especificación ejecutable": {
+    "que": "Una especificación ejecutable es un artefacto de requisitos escrito de forma suficientemente precisa para que un motor de pruebas o framework de verificación lo ejecute directamente contra el software real y emita un veredicto automático de aprobado o fallido. Une en un solo documento la definición funcional para humanos/agentes y la suite de verificación automatizada.",
+    "para": "Evita que la documentación y los tests diverjan con el tiempo y actúa como oráculo determinista para agentes de programación autónomos. Cuando un agente genera o refactoriza código, la especificación ejecutable valida objetivamente si cumplió el contrato sin depender únicamente de que el propio agente se autoevalúe.",
+    "como": "El equipo escribe escenarios estructurados mediante sintaxis BDD (Gherkin: `Given/When/Then` con Cucumber o Behave), tablas de decisión (FitNesse), contratos API ejecutables (Schemathesis sobre OpenAPI) o pruebas basadas en propiedades (Hypothesis / fast-check derivadas de invariantes). Un runner vincula cada cláusula declarativa con step definitions o generadores de peticiones reales contra un entorno efímero. En flujos agénticos de CI, el agente itera sobre el código hasta que el 100% de la especificación ejecutable pasa en verde.",
+    "practicas": [
+      "Escribir escenarios centrados en el comportamiento observable del dominio y no en selectores de interfaz frágiles o detalles de implementación.",
+      "Combinar especificaciones ejecutables con property-based testing para descubrir casos límite que los ejemplos manuales pasan por alto.",
+      "Mantener el tiempo de ejecución bajo para que los agentes puedan usar la especificación como señal de feedback rápida en su bucle de edición-prueba.",
+      "Trampa común: escribir paso a paso pseudocódigo imperativo en Gherkin, perdiendo legibilidad de negocio y duplicando esfuerzo con los tests unitarios."
+    ],
+    "ejemplo": "Feature: Límite de presupuesto de agente\n  Scenario: Detener ejecución al agotar presupuesto de pasos\n    Given un agente configurado con max_steps = 5\n    When la tarea requiere 8 llamadas consecutivas a herramientas\n    Then el agente se detiene en el paso 5 con estado BUDGET_EXHAUSTED",
+    "entrevista": "Una especificación ejecutable convierte los requisitos en un oráculo automatizado, dando a los agentes de desarrollo un bucle cerrado objetivo para verificar su propio código."
+  },
+  "Evaluación de agentes": {
+    "que": "La evaluación de agentes (agent evals) es la disciplina y conjunto de métricas para medir de forma sistemática la calidad, corrección, seguridad y eficiencia de un agente de IA a lo largo de toda su trayectoria y en su resultado final. A diferencia de evaluar una única respuesta de texto, requiere valorar secuencias de decisiones, uso de herramientas, coste y adherencia a restricciones.",
+    "para": "Sirve para detectar regresiones al cambiar prompts, modelos o herramientas, comparar arquitecturas con datos objetivos y decidir si un agente es apto para pasar a producción. Sin evals rigurosos, cualquier ajuste en el sistema es un cambio a ciegas basado en impresiones anecdóticas.",
+    "como": "Un pipeline de evaluación ejecuta al agente sobre un dataset curado de tareas (con casos normales, borde y adversariales) en un entorno controlado o mediante trazas de producción. Se miden dos dimensiones: la evaluación del resultado final (exactitud, pass@k, pass^k, cumplimiento de esquema) y la evaluación de trayectoria (selección correcta de herramienta, orden de pasos, pasos redundantes, consumo de tokens y latencia). Los evaluadores combinan aserciones deterministas de código, modelos LLM-as-a-Judge calibrados y revisión humana sobre muestras representativas.",
+    "practicas": [
+      "Evaluar tanto `pass@1` (éxito al primer intento) como `pass^k` (consistencia al repetir la tarea k veces) en flujos críticos donde la variabilidad es inaceptable.",
+      "Separar las métricas de resultado final de las de trayectoria: un agente puede acertar por suerte tras diez llamadas erróneas a herramientas.",
+      "Integrar un subconjunto rápido de evals como puerta de calidad en CI/CD y mantener una evaluación online continua en producción para detectar deriva.",
+      "Error típico: usar el mismo modelo y el mismo prompt como juez sin calibrarlo frente a etiquetas humanas (consenso de jueces), introduciendo sesgos de auto-preferencia."
+    ],
+    "ejemplo": "assert trace.final_state == \"ORDER_REFUNDED\"\nassert trace.tool_calls == [\"get_order\", \"verify_policy\", \"issue_refund\"]\nassert trace.total_steps <= 5\nassert judge_score(trace.response, rubric=POLICY_RUBRIC) >= 4",
+    "entrevista": "Evaluar un agente exige medir tanto el estado final alcanzado como la eficiencia y seguridad de toda su trayectoria de herramientas, combinando aserciones deterministas con jueces LLM calibrados."
+  },
+  "Fiabilidad de agentes": {
+    "que": "La fiabilidad de agentes es la capacidad de un sistema agéntico para completar sus tareas de manera consistente, predecible y segura dentro de límites definidos de error, latencia y coste, incluso ante entradas ambiguas o fallos parciales de herramientas. Refleja la probabilidad de éxito sostenido en escenarios reales de producción.",
+    "para": "Es el principal puente entre un prototipo llamativo en demo y un producto empresarial usable: un agente con un 90% de éxito por paso cae por debajo del 35% de fiabilidad en un flujo de 10 pasos encadenados. Sirve para garantizar SLA, evitar acciones dañinas y acotar el riesgo operativo.",
+    "como": "La fiabilidad se construye en defensa en profundidad a través de todo el ciclo de vida del agente. En diseño, se acota el alcance de herramientas, se aplican salidas estructuradas estrictas y se introducen límites de pasos, presupuesto y timeouts. En ejecución, se implementan reintentos con backoff, recuperación de errores, verificación de acciones y puntos de revisión humana (human-in-the-loop) para acciones irreversibles. En operación, se monitorizan trazas, tasas de éxito y deriva en producción.",
+    "practicas": [
+      "Reducir la longitud de la cadena agéntica moviendo pasos predecibles a flujos deterministas (workflows) y reservando el agente solo para decisiones abiertas.",
+      "Aplicar el principio de menor privilegio en herramientas e idempotencia en todas las mutaciones para que los reintentos nunca dupliquen efectos.",
+      "Medir la fiabilidad compuesta ($p^n$) por flujo completo y no solo la precisión aislada de cada llamada al modelo.",
+      "Trampa común: compensar un sistema poco fiable añadiendo un agente verificador igual de poco fiable sin guardrails deterministas ni circuitos de parada."
+    ],
+    "ejemplo": "# Fiabilidad compuesta en N pasos secuenciales independientes\np_paso = 0.95\npasos = 10\nfiabilidad_flujo = p_paso ** pasos  # ~0.598 (59.8% de éxito total)",
+    "entrevista": "Como los errores en agentes se multiplican exponencialmente con el número de pasos, la fiabilidad se logra acotando la autonomía, haciendo las herramientas idempotentes y combinando guardrails deterministas con verificación."
+  },
+  "Flujo de trabajo agéntico": {
+    "que": "Un flujo de trabajo agéntico (agentic workflow) es una arquitectura de ejecución donde uno o varios modelos de lenguaje colaboran de forma iterativa con herramientas, memoria y bucles de retroalimentación para alcanzar un objetivo. Abarca desde flujos guiados con transiciones definidas hasta sistemas autónomos donde el modelo decide dinámicamente el siguiente paso.",
+    "para": "Resuelve problemas complejos de múltiples pasos que no pueden satisfacerse con una sola inferencia de prompt-respuesta, como investigar bases de código, diagnosticar incidentes o ejecutar procesos empresariales con reglas variables. Permite equilibrar flexibilidad cognitiva y control operativo.",
+    "como": "El motor de ejecución (por ejemplo, una máquina de estados o grafo dirigido como LangGraph o Temporal) mantiene un estado compartido entre nodos. En cada iteración, un nodo invoca al LLM con el historial y las herramientas disponibles, analiza si la respuesta solicita una llamada a herramienta o entrega un resultado final, ejecuta la acción correspondiente en un entorno controlado y añade la observación al estado. El ciclo continúa mediante patrones como planificación, reflexión, enrutamiento o paralelización hasta cumplir la condición de parada.",
+    "practicas": [
+      "Preferir flujos agénticos estructurados (workflows con pasos explícitos y enrutamiento acotado) frente a agentes totalmente libres cuando el proceso de negocio es conocido.",
+      "Persistir el estado tras cada transición de nodo (checkpointing) para soportar pausas, depuración y reanudación ante fallos.",
+      "Establecer condiciones de salida explícitas y métricas de coste/latencia por ejecución para evitar que el flujo degrade en exploración sin fin.",
+      "Flujo agéntico vs Pipeline clásico: en un pipeline clásico el grafo de control es estático; en un flujo agéntico el modelo puede bifurcar, iterar o corregir su ruta según observaciones."
+    ],
+    "ejemplo": "# Grafo conceptual de flujo agéntico con reflexión\nplan = planner_node(goal)\nwhile not verifier_node(draft, criteria):\n    draft = executor_node(plan, feedback=verifier_feedback)\n    if steps >= MAX_STEPS: break",
+    "entrevista": "Un flujo de trabajo agéntico estructura la autonomía del LLM dentro de una máquina de estados con herramientas y bucles de retroalimentación, logrando adaptabilidad sin perder control ni observabilidad."
+  },
+  "Handoff entre agentes": {
+    "que": "El handoff entre agentes es el mecanismo mediante el cual un agente transfiere explícitamente el control de la ejecución, junto con un paquete estructurado de contexto y estado, a otro agente especializado. A diferencia de una simple llamada a función que retorna un resultado al emisor, en un handoff el agente receptor pasa a liderar la interacción o la siguiente fase del flujo.",
+    "para": "Sirve para descomponer dominios amplios en especialistas pequeños con prompts enfocados y conjuntos mínimos de herramientas (por ejemplo, triaje -> soporte técnico -> facturación). Reduce la confusión de instrucciones y la sobrecarga de herramientas en la ventana de contexto de un único agente monolítico.",
+    "como": "El agente activo dispone de una herramienta especial de transferencia (por ejemplo, `transfer_to_billing_agent(summary, customer_id)`). Cuando detecta que la intención o subproblema corresponde a otro especialista, invoca esa herramienta; el orquestador intercepta la llamada, actualiza el puntero del agente activo en la sesión, filtra o resume el historial de mensajes para evitar ruido y carga el `system_prompt` y herramientas del agente destino. El nuevo agente continúa la conversación o tarea sin que el usuario tenga que repetir la información.",
+    "practicas": [
+      "Pasar en el handoff un resumen estructurado (objetivo, hechos verificados, restricciones, referencias) en lugar de volcar ciegamente miles de tokens de historial irrelevante.",
+      "Prevenir ciclos de ping-pong entre agentes limitando el número máximo de handoffs por sesión y definiendo criterios de enrutamiento mutuamente excluyentes.",
+      "Handoff vs Subagente (tool call): el handoff cede el control de la conversación o turno al agente destino; invocar un subagente delega una subtarea aislada y devuelve el resultado al agente padre.",
+      "Error típico: olvidar trasladar el contexto de autorización del usuario al agente receptor, permitiendo escalada de privilegios o fallos de permisos."
+    ],
+    "ejemplo": "def transfer_to_refund_agent(reason: str, order_id: str) -> Handoff:\n    return Handoff(\n        target=refund_agent,\n        context={\"order_id\": order_id, \"validated_reason\": reason}\n    )",
+    "entrevista": "El handoff transfiere la titularidad del flujo y un contexto depurado a un agente especialista, evitando prompts gigantes y reduciendo errores por exceso de herramientas."
+  },
+  "Investigación autónoma": {
+    "que": "La investigación autónoma es una modalidad operativa en la que un agente planifica, ejecuta y refina de forma independiente ciclos largos de búsqueda, lectura, contraste de fuentes y síntesis de hipótesis sin intervención humana paso a paso. El agente decide qué preguntas formular, qué fuentes descartar y cuándo la evidencia recogida es suficiente.",
+    "para": "Resuelve tareas exploratorias abiertas donde las rutas de información no se conocen de antemano, como auditorías de vulnerabilidades en un repositorio, análisis de mercado, vigilancia tecnológica o diagnóstico de causas raíz en sistemas distribuidos. Libera al ingeniero de realizar decenas de búsquedas iterativas manuales.",
+    "como": "Dado un objetivo de alto nivel, el agente genera un árbol o cola de subpreguntas y lanza búsquedas en paralelo mediante herramientas web, bases documentales o consultas al código. A medida que obtiene resultados, extrae hechos relevantes a una memoria de trabajo (scratchpad), evalúa lagunas o contradicciones entre fuentes y formula nuevas consultas de seguimiento. Finalmente, consolida los hallazgos en un informe estructurado con citas trazables y nivel de confianza, respetando límites de tiempo, presupuesto de pasos y dominios permitidos.",
+    "practicas": [
+      "Exigir que cada afirmación del informe final incluya su cita o referencia exacta a archivo/URL observada para mitigar síntesis alucinadas.",
+      "Configurar un criterio de parada por cobertura o rendimiento decreciente, además del presupuesto duro de iteraciones y tokens.",
+      "Aislar las herramientas de lectura externa contra inyección de prompts indirecta presente en páginas web o documentos no confiables.",
+      "Investigación autónoma vs RAG estándar: el RAG estándar recupera una vez por similitud semántica; la investigación autónoma planifica múltiples rondas adaptativas según lo que descubre."
+    ],
+    "ejemplo": "# Bucle típico de investigación autónoma\nopen_questions = decompose(topic)\nwhile open_questions and budget.remaining():\n    findings = parallel_search_and_read(open_questions.pop_batch())\n    evidence.add(findings)\n    open_questions.extend(identify_gaps(evidence, topic))",
+    "entrevista": "La investigación autónoma convierte la búsqueda en un bucle iterativo guiado por hipótesis y detección de lagunas, exigiendo trazabilidad de citas y protección contra prompt injection en fuentes externas."
+  },
+  "Investigación profunda": {
+    "que": "La investigación profunda (deep research) es un patrón y capacidad de sistemas agénticos avanzados diseñada para producir informes exhaustivos, multi-fuente y bien fundamentados mediante razonamiento prolongado y navegación intensiva. Suele ejecutarse de forma asíncrona durante varios minutos combinando planificación, lectura crítica de documentos extensos y verificación cruzada.",
+    "para": "Sirve para tareas que requieren análisis comparativos complejos, estado del arte técnico, due diligence o documentación arquitectónica donde una respuesta rápida de chat resulta superficial o imprecisa. Sustituye horas de lectura manual y recopilación dispersa por un artefacto analítico estructurado.",
+    "como": "El flujo comienza opcionalmente con una fase de aclaración para acotar alcance, audiencia y restricciones con el usuario. Luego, un modelo de razonamiento descompone el tema en ejes de investigación, lanza múltiples agentes o llamadas en paralelo sobre buscadores, APIs especializadas y documentos completos (PDF, repositorios, papers), y contrasta afirmaciones conflictivas. Una fase final de síntesis y edición verifica la coherencia lógica, elimina duplicidades y adjunta referencias verificadas antes de entregar el documento.",
+    "practicas": [
+      "Definir claramente el alcance, horizonte temporal y criterios de exclusión al inicio; una pregunta vaga produce informes extensos pero poco accionables.",
+      "Priorizar fuentes primarias (documentación oficial, código fuente, RFC, artículos revisados) sobre resúmenes secundarios mediante reglas en el prompt o filtros de dominio.",
+      "Auditar manualmente las citas clave antes de tomar decisiones críticas de arquitectura o negocio, ya que la síntesis puede malinterpretar matices.",
+      "Trampa común: usar investigación profunda para preguntas puntuales de API o hechos simples, desperdiciando minutos de latencia y alto consumo de tokens."
+    ],
+    "ejemplo": "research_job = client.deep_research.create(\n    query=\"Comparativa de protocolos A2A y MCP en arquitecturas multiagente 2026\",\n    clarifications={\"enfoque\": \"seguridad y latencia\", \"fuentes\": \"specs oficiales\"},\n    background=True\n)",
+    "entrevista": "Deep research orquesta razonamiento prolongado, lectura paralela de fuentes primarias y verificación cruzada de citas para entregar síntesis técnicas profundas en modo asíncrono."
+  },
+  "Latencia de voz": {
+    "que": "La latencia de voz en agentes conversacionales es el tiempo transcurrido desde que el usuario termina de hablar (fin de turno o VAD end-of-speech) hasta que empieza a escuchar el primer fragmento de audio de respuesta del agente (Time-To-First-Audio, TTFA). En interacción humana natural, superar el umbral aproximado de 300 a 500 ms empieza a percibirse como torpeza o retardo conversacional.",
+    "para": "Es la métrica determinante de la experiencia de usuario en agentes de voz en tiempo real (atención telefónica, asistentes de cabina, soporte técnico hablado). Una latencia alta provoca interrupciones accidentales, silencios incómodos y abandono de la llamada.",
+    "como": "En arquitecturas en cascada tradicionales, la latencia total suma detección de fin de voz (VAD), transcripción streaming (STT), primer token del LLM (TTFT), síntesis de voz streaming (TTS) y transporte de red. Para reducirla por debajo de ~400 ms se emplean modelos nativos voz a voz sobre WebRTC/WebSockets, streaming bidireccional por chunks de 20 ms, detección semántica de fin de turno (turn detection) y colocación geográfica del servidor cerca de los nodos de medios. Cuando una herramienta lenta es necesaria, el agente emite audio de relleno breve o ejecuta la llamada de forma asíncrona.",
+    "practicas": [
+      "Usar transporte UDP/WebRTC en lugar de HTTP/REST o incluso WebSockets sobre TCP en redes móviles con pérdida de paquetes para evitar bloqueo de cabecera (head-of-line blocking).",
+      "Medir percentiles P95 y P99 del TTFA desglosados por etapa (red, VAD/turn-detection, inferencia, herramienta) en lugar de mirar solo el promedio.",
+      "Optimizar el tiempo de respuesta de las herramientas usadas en llamadas de voz (caché agresiva, consultas pre-cargadas) porque una consulta SQL de 1.5 s destruye la fluidez.",
+      "Error típico: ajustar el VAD con tiempos de silencio demasiado cortos para bajar latencia, haciendo que el agente interrumpa al usuario cuando hace una pausa para respirar."
+    ],
+    "ejemplo": "# Desglose típico de presupuesto de latencia de voz (objetivo < 400 ms)\nVAD/Turn-detection:  120 ms\nRed ida/vuelta:       60 ms\nModelo voz-a-voz:    180 ms\nBuffer audio/TTS:     40 ms\nTotal TTFA:          400 ms",
+    "entrevista": "Mantener la latencia de voz por debajo de 400 ms exige streaming nativo voz a voz sobre WebRTC, detección inteligente de fin de turno y evitar bloqueos síncronos en herramientas lentas."
+  },
+  "Long-running agent": {
+    "que": "Un long-running agent es un agente diseñado para operar de forma continua o prolongada durante minutos, horas o días para completar objetivos complejos o monitorizar eventos. A diferencia de los agentes síncronos de una sola petición HTTP, gestiona estado persistente, checkpoints, pausas de espera y recuperación ante reinicios del proceso.",
+    "para": "Resuelve trabajos asíncronos de gran escala como migraciones completas de repositorios, ejecución y reparación de suites de pruebas extensas, investigación autónoma o flujos de aprobación empresariales que esperan respuesta humana. Permite desacoplar la duración de la tarea del timeout de la conexión del cliente.",
+    "como": "El agente se ejecuta sobre un motor de ejecución durable (como Temporal, workflows persistentes o colas de trabajo con workers) que guarda en base de datos cada transición, historial compactado, artefactos y estado de herramientas pendientes. Para evitar saturar la ventana de contexto del modelo durante horas, aplica compactación de memoria, resúmenes periódicos y almacenamiento externo de artefactos en disco o memoria vectorial. Si ocurre una caída de red, límite de cuota o espera humana (`await_approval`), el proceso hiberna y reanuda exactamente desde el último checkpoint.",
+    "practicas": [
+      "Implementar ejecución durable (checkpointing por paso) e idempotencia en herramientas para que un reinicio tras fallo no repita acciones ya completadas.",
+      "Gestionar activamente el presupuesto de contexto mediante compactación periódica y notas estructuradas de progreso en disco para evitar degradación cognitiva (context rot).",
+      "Exponer señales de progreso en tiempo real (eventos SSE/WebSocket, estado por fase) y controles para pausar, cancelar o redirigir al agente en vuelo.",
+      "Error típico: mantener un long-running agent en memoria volátil dentro de una petición web síncrona, perdiendo todo el trabajo ante un deploy o timeout."
+    ],
+    "ejemplo": "// Estado durable guardado tras cada paso de un long-running agent\n{\n  \"run_id\": \"mig-2026-091\",\n  \"phase\": \"updating_tests\",\n  \"checkpoint_step\": 42,\n  \"completed_modules\": [\"auth\", \"billing\"],\n  \"pending_modules\": [\"orders\"],\n  \"status\": \"WAITING_CI\"\n}",
+    "entrevista": "Un long-running agent combina ejecución durable con checkpoints, compactación progresiva de contexto y herramientas idempotentes para sobrevivir horas de trabajo, esperas humanas y fallos de infraestructura."
+  },
+  "Límite de pasos del agente": {
+    "que": "El límite de pasos del agente (`max_steps` o `max_iterations`) es una restricción dura configurada en el runtime que acota el número máximo de ciclos de razonamiento-acción que un agente puede ejecutar dentro de una misma corrida. Al alcanzar dicho umbral, el orquestador detiene el bucle inmediatamente y devuelve una terminación controlada.",
+    "para": "Es el mecanismo de seguridad básico contra bucles infinitos de razonamiento, llamadas repetidas a herramientas que fallan y facturas descontroladas de API. Se utiliza obligatoriamente en todo bucle agéntico en desarrollo y producción como último cortacircuitos.",
+    "como": "El orquestador mantiene un contador incremental por cada turno del modelo o invocación de herramienta dentro del ciclo `while`. Antes de emitir la siguiente petición al LLM, evalúa `if step_count >= max_steps`; si se cumple la condición, interrumpe el bucle, opcionalmente solicita al modelo un último resumen de estado parcial sin herramientas habilitadas (`tool_choice=\"none\"`), y retorna un estado explícito de truncamiento junto con la traza.",
+    "practicas": [
+      "Dimensionar `max_steps` según la complejidad real del flujo (por ejemplo, 2x el promedio observado en evals P95) en lugar de poner cifras arbitrarias enormes como 100.",
+      "Cuando se alcance el límite, entregar al usuario o al agente supervisor un resumen del progreso logrado y lo que faltó, no una excepción vacía.",
+      "Límite de pasos vs Presupuesto de pasos: el límite es un tope binario de iteraciones (`max_steps`); el presupuesto de pasos/recursos asigna y gestiona cuotas ponderadas de pasos, tokens o costes entre subtareas.",
+      "Error típico: olvidar que las llamadas paralelas a herramientas o los subagentes pueden multiplicar el consumo real si el contador solo cuenta turnos del agente padre."
+    ],
+    "ejemplo": "for step in range(1, MAX_STEPS + 1):\n    msg = llm.generate(history, tools=TOOLS)\n    if not msg.tool_calls:\n        return msg.content\n    history.append(execute_tools(msg.tool_calls))\nreturn summarize_partial_progress(history, reason=\"MAX_STEPS_REACHED\")",
+    "entrevista": "El límite de pasos es el cortacircuitos determinista indispensable en todo bucle agéntico para acotar bucles infinitos, latencia máxima y consumo de tokens."
+  },
+  "Memoria compartida de agentes": {
+    "que": "La memoria compartida de agentes es un espacio de estado común accesible por múltiples agentes de un mismo flujo o enjambre para leer y publicar hechos, artefactos, decisiones y progreso sin reenviar todo el historial conversacional. Actúa como una pizarra (blackboard) o almacén estructurado coordinado.",
+    "para": "Resuelve la pérdida de información entre agentes especializados, evita duplicar trabajo (como investigar el mismo archivo dos veces) y reduce drásticamente el consumo de tokens al no copiar historiales completos en cada delegación. Es fundamental en arquitecturas de enjambre, grafos multiagente y equipos supervisor-ejecutor.",
+    "como": "Se implementa sobre un estado tipado en el orquestador (por ejemplo, un objeto `State` en LangGraph), un almacén clave-valor/Redis, una base vectorial compartida o archivos de trabajo con bloqueo optimista. Cada agente recibe permisos de lectura y escritura sobre claves o espacios de nombres específicos (como `findings`, `plan`, `open_issues`). Para evitar condiciones de carrera cuando varios agentes escriben en paralelo, se utilizan funciones reductoras (reducers), versionado por timestamp o colas de mensajes atómicas.",
+    "practicas": [
+      "Definir un esquema estricto de memoria compartida con propiedad clara de quién escribe cada campo para evitar sobrescrituras silenciosas en paralelo.",
+      "Separar la memoria compartida de hechos verificados (estado canónico) del razonamiento interno privado (scratchpad) de cada agente.",
+      "Incluir metadatos de procedencia (qué agente escribió el dato, cuándo y con qué fuente) para resolver conflictos si dos agentes discrepan.",
+      "Trampa común: convertir la memoria compartida en un volcadero de texto no estructurado que acaba llenando la ventana de contexto de todos los agentes."
+    ],
+    "ejemplo": "class SwarmState(TypedDict):\n    goal: str\n    plan: list[str]\n    # Reducer 'add' evita condiciones de carrera en escrituras paralelas\n    findings: Annotated[list[Finding], operator.add]\n    artifacts: dict[str, str]",
+    "entrevista": "La memoria compartida implementa el patrón blackboard en sistemas multiagente, usando esquemas tipados y reductores seguros para compartir hechos y artefactos sin saturar los contextos individuales."
+  },
+  "Orquestación de agentes": {
+    "que": "La orquestación de agentes es la capa de coordinación encargada de planificar, enrutar, sincronizar y supervisar la ejecución de múltiples agentes, herramientas y flujos para cumplir un objetivo global. Define quién ejecuta qué, en qué orden, con qué contexto y cómo se agregan o verifican los resultados.",
+    "para": "Sirve para abordar tareas demasiado amplias, paralelizables o multidisciplinares para un único agente, mejorando la especialización, el aislamiento de contexto y la tolerancia a fallos. Permite combinar pasos deterministas de código con decisiones flexibles de modelos.",
+    "como": "El orquestador puede ser centralizado (un agente supervisor o un motor de grafo/máquina de estados que despacha subagentes y recoge resultados) o coreografiado (agentes que reaccionan a eventos en un bus o tablero compartido). Gestiona el grafo de dependencias (DAG), lanza ramas independientes en paralelo (`fan-out / fan-in`), aplica políticas de timeouts y presupuestos, resuelve handoffs y pasa los resultados por agentes verificadores antes de confirmar la salida final.",
+    "practicas": [
+      "Empezar con un único agente bien equipado antes de introducir orquestación multiagente; solo dividir cuando el prompt, el número de herramientas o la paralelización lo justifiquen.",
+      "Aislar los contextos: cada trabajador recibe solo el subconjunto de información necesario para su tarea y devuelve un resultado resumido al orquestador.",
+      "Preferir orquestación determinista en código (grafos explícitos, pipelines) para las transiciones fijas y dejar el enrutamiento basado en LLM solo donde haya ambigüedad.",
+      "Error típico: diseñar jerarquías profundas de agentes llamando a sub-subagentes sin trazabilidad distribuida ni límite global de presupuesto."
+    ],
+    "ejemplo": "# Fan-out / Fan-in en orquestación\nmodules = planner.split_modules(repo)\nresults = await asyncio.gather(*(worker.analyze(m) for m in modules))\nreport = synthesizer.merge(results)",
+    "entrevista": "La orquestación de agentes coordina especialistas mediante patrones como supervisor, DAG o fan-out/fan-in, equilibrando control determinista de flujo con aislamiento de contexto."
+  },
+  "Patrones de agentes": {
+    "que": "Los patrones de agentes son arquitecturas reutilizables y probadas que estructuran cómo los modelos de lenguaje razonan, llaman a herramientas, se corrigen y colaboran para resolver problemas complejos. Funcionan como el equivalente a los patrones de diseño de software aplicados a sistemas probabilísticos.",
+    "para": "Evitan reinventar bucles ad-hoc frágiles y permiten elegir la arquitectura mínima necesaria según el equilibrio requerido entre latencia, coste y autonomía. Facilitan la comunicación técnica dentro del equipo al nombrar claramente la estructura del flujo.",
+    "como": "Entre los patrones fundamentales destacan: ReAct (intercalar razonamiento y llamada a herramienta paso a paso), Plan-and-Execute (generar un plan completo y ejecutarlo por fases), Reflection / Evaluator-Optimizer (un generador produce una salida y un crítico la evalúa iterativamente), Routing (clasificador que deriva al especialista adecuado) y Orchestrator-Workers (descomposición dinámica en subagentes paralelos). Cada patrón define transiciones explícitas entre inferencia del modelo y código determinista.",
+    "practicas": [
+      "Seleccionar el patrón más simple que resuelva el problema: Routing o Prompt Chaining suelen ser más rápidos, baratos y fiables que un bucle ReAct abierto.",
+      "Usar Evaluator-Optimizer solo cuando existan criterios objetivos de calidad que un crítico pueda verificar claramente y el coste de múltiples pasadas sea aceptable.",
+      "Combinar Plan-and-Execute con replanificación condicional cuando el entorno cambia tras ejecutar los primeros pasos.",
+      "Trampa común: usar un sistema multiagente complejo por moda cuando un único flujo con salidas estructuradas y dos herramientas obtiene mayor precisión y menor latencia."
+    ],
+    "ejemplo": "# Patrón Evaluator-Optimizer\ndraft = generator.run(task)\nfor _ in range(max_revisions):\n    critique = evaluator.check(draft, rubric)\n    if critique.passed: return draft\n    draft = generator.refine(draft, critique.feedback)",
+    "entrevista": "Los patrones de agentes —como Routing, ReAct, Plan-and-Execute y Evaluator-Optimizer— permiten graduar la autonomía del sistema según el compromiso entre flexibilidad, coste y fiabilidad."
+  },
+  "Presupuesto de pasos": {
+    "que": "El presupuesto de pasos (step budget) es un mecanismo de asignación y control dinámico de recursos que distribuye una cuota finita de iteraciones, llamadas a herramientas o tokens entre las distintas fases o subagentes de una tarea. A diferencia de un límite fijo ciego, el agente puede ser consciente de cuánto presupuesto le queda para ajustar su estrategia.",
+    "para": "Sirve para optimizar el equilibrio entre profundidad de exploración y coste/latencia en tareas de complejidad variable, evitando que un subproblema secundario agote todo el margen disponible antes de completar la síntesis final. Se usa en investigación profunda, enjambres y agentes de resolución de incidencias.",
+    "como": "Al iniciar la ejecución, el orquestador crea un objeto de presupuesto (`StepBudget(total=20, reserved_for_synthesis=3)`) que descuenta unidades tras cada paso o según el coste ponderado de cada herramienta. El saldo restante se inyecta en el contexto del agente (por ejemplo, `[Presupuesto: 4/20 pasos restantes]`) para que priorice acciones de alto impacto y cierre la tarea cuando se acerque al límite. En sistemas multiagente, el padre asigna sub-presupuestos acotados a cada subagente para evitar fugas de cuota.",
+    "practicas": [
+      "Reservar siempre un margen final del presupuesto para consolidación y entrega de respuesta, evitando cortes abruptos sin salida útil.",
+      "Informar al modelo de forma periódica sobre el presupuesto restante cuando debe decidir entre seguir explorando o entregar conclusiones.",
+      "Ponderar de forma distinta acciones baratas (leer un archivo local) y acciones caras (lanzar una suite de tests o consultar una API externa de pago).",
+      "Presupuesto de pasos vs Límite de pasos: el límite corta de forma abrupta; el presupuesto asigna, comunica y prioriza el gasto en todas las ramas del flujo."
+    ],
+    "ejemplo": "budget = StepBudget(total=15, reserve_final=2)\nsub_budget = budget.allocate(share=5)\n# Inyectado en el prompt del turno:\n# \"Te quedan 4 pasos de exploración antes de pasar a la síntesis final.\"",
+    "entrevista": "El presupuesto de pasos convierte el tope de iteraciones en un recurso gestionado que se reparte entre subagentes, reserva margen para la síntesis final e informa al modelo para que priorice."
+  },
+  "Programación en pareja con IA": {
+    "que": "La programación en pareja con IA (AI pair programming) es un flujo de trabajo colaborativo en tiempo real donde un desarrollador humano y un asistente o agente integrado en el IDE co-diseñan, escriben, refactorizan y depuran código de forma interactiva. El humano conserva la dirección arquitectónica y la revisión continua mientras la IA acelera la implementación y exploración.",
+    "para": "Sirve para aumentar la productividad sin perder comprensión del código generado, abordar tecnologías poco conocidas, generar pruebas unitarias al vuelo y detectar errores lógicos tempranos. Se diferencia de la delegación totalmente autónoma en que el ciclo de feedback ocurre segundo a segundo junto al ingeniero.",
+    "como": "Opera en dos planos complementarios dentro del editor o CLI: autocompletado predictivo contextual (FIM / Next Edit Prediction) que anticipa ediciones locales según el cursor y archivos abiertos, y chat/edición en línea con acceso al árbol del repositorio, diagnósticos del LSP y terminal. El desarrollador formula intenciones acotadas, revisa diffs propuestos hunk por hunk, ejecuta pruebas de verificación y corrige el rumbo inmediatamente si el modelo toma un atajo incorrecto.",
+    "practicas": [
+      "Trabajar en incrementos pequeños con pruebas automatizadas frecuentes para validar cada bloque antes de seguir construyendo encima.",
+      "Mantener reglas explícitas del proyecto (archivos de contexto/convenciones) para que la IA respete estilo, librerías y patrones del equipo.",
+      "Exigirse entender cada línea aceptada en el diff: aceptar código incomprensible transforma la programación en pareja en deuda técnica instantánea.",
+      "Programación en pareja con IA vs Agente autónomo en background: el pair programming maximiza control e interactividad síncrona; el agente en background maximiza paralelismo en tareas bien especificadas."
+    ],
+    "ejemplo": "# Ciclo corto de AI pair programming\n1. Humano define interfaz + test fallido (TDD).\n2. IA propone implementación mínima en diff.\n3. Humano revisa invariantes y ejecuta `pytest`.\n4. Ambos refactorizan nombres y casos borde.",
+    "entrevista": "En la programación en pareja con IA el valor está en mantener el bucle humano de diseño y verificación en incrementos pequeños, evitando aceptar diffs que no se comprenden."
+  },
+  "Protocolo de agentes": {
+    "que": "Un protocolo de agentes es un estándar abierto de comunicación, descubrimiento y contratos de mensajes que permite que agentes, herramientas y fuentes de contexto de distintos proveedores interoperen de forma predecible. En el ecosistema de 2026 destacan dos planos complementarios: protocolos agente-herramienta (como MCP, Model Context Protocol) y protocolos agente-agente (como A2A, Agent-to-Agent).",
+    "para": "Elimina las integraciones personalizadas $N \times M$ entre cada framework de agentes y cada herramienta externa o agente de otro equipo. Permite construir redes heterogéneas donde un orquestador escrito en un lenguaje delega tareas o consulta capacidades de agentes remotos con autenticación y streaming estandarizados.",
+    "como": "Los protocolos de herramientas (MCP) definen servidores que exponen `tools`, `resources` y `prompts` sobre JSON-RPC (stdio o Streamable HTTP) con esquemas tipados. Por su parte, los protocolos entre agentes (como A2A) publican un manifiesto de capacidades (`Agent Card` en `/.well-known/agent.json`), negocian autenticación (OAuth2/OIDC) y gestionan tareas asíncronas de larga duración mediante estados (`submitted`, `working`, `completed`), artefactos y actualizaciones por SSE o webhooks.",
+    "practicas": [
+      "Usar MCP para conectar un agente con datos y herramientas deterministas, y protocolos A2A para delegar objetivos opacos entre agentes autónomos de distintos dominios.",
+      "Versionar esquemas de entrada/salida y capacidades en la descripción pública del agente para evitar roturas silenciosas entre clientes y servidores.",
+      "Exigir autenticación fuerte, propagación de identidad del usuario y límites de alcance (scopes) en toda frontera de protocolo entre agentes remotos.",
+      "Error típico: exponer decenas de servidores MCP con cientos de herramientas simultáneas al mismo agente, degradando su precisión de selección y saturando el contexto."
+    ],
+    "ejemplo": "// Descubrimiento estándar en protocolo agente-agente (/.well-known/agent.json)\n{\n  \"name\": \"billing-specialist\",\n  \"url\": \"https://agents.internal/billing\",\n  \"capabilities\": { \"streaming\": true, \"pushNotifications\": true },\n  \"skills\": [{ \"id\": \"refund-check\", \"description\": \"Evalúa elegibilidad de reembolso\" }]\n}",
+    "entrevista": "Los protocolos de agentes separan la conectividad con herramientas y datos (MCP) de la delegación y descubrimiento entre agentes autónomos (A2A), evitando integraciones propietarias acopladas."
+  },
+  "RAG agéntico": {
+    "que": "El RAG agéntico (Agentic RAG) es una evolución de la generación aumentada por recuperación en la que un agente controla de forma dinámica y iterativa la estrategia de búsqueda en lugar de ejecutar una única consulta vectorial fija. El modelo decide cuándo recuperar, qué fuentes consultar, cómo reformular la query y si la evidencia obtenida basta para responder.",
+    "para": "Resuelve las limitaciones del RAG ingenuo ante preguntas complejas, multi-salto (multi-hop), comparaciones entre documentos o consultas que requieren combinar búsqueda semántica, filtros SQL y APIs en tiempo real. Reduce alucinaciones causadas por contexto irrelevante o incompleto.",
+    "como": "Ante una consulta, un agente enrutador analiza la intención y elige entre múltiples herramientas de recuperación (búsqueda híbrida BM25 + embeddings, grafo de conocimiento, consultas SQL o búsqueda web). Tras recibir los fragmentos, un paso de evaluación de relevancia (grading) verifica si contestan la pregunta; si faltan datos o los documentos se contradicen, el agente reescribe la consulta, expande términos o salta a documentos referenciados antes de sintetizar la respuesta final.",
+    "practicas": [
+      "Aplicar RAG estándar cuando las preguntas son simples y de un solo salto para evitar latencia y coste innecesarios, reservando RAG agéntico para consultas complejas.",
+      "Limitar el número máximo de reintentos de recuperación para no quedar atrapado reformulando consultas cuando la información simplemente no existe en el corpus.",
+      "Combinar búsqueda híbrida (léxica + semántica) y metadatos estructurados en las herramientas del agente para mejorar la precisión sobre identificadores exactos y códigos.",
+      "Trampa común: devolver fragmentos demasiado cortos sin contexto circundante ni identificadores de documento, obligando al agente a hacer múltiples rondas extra."
+    ],
+    "ejemplo": "docs = hybrid_search(query)\nif not relevance_grader(query, docs).sufficient:\n    refined_query = query_rewriter(query, missing_info)\n    docs += sql_lookup_or_search(refined_query)\nreturn synthesize_with_citations(query, docs)",
+    "entrevista": "El RAG agéntico sustituye el pipeline lineal recuperar-y-generar por un bucle donde el agente selecciona fuentes, evalúa la relevancia de los fragmentos y reformula consultas hasta reunir evidencia suficiente."
+  },
+  "Realtime API": {
+    "que": "Una Realtime API es una interfaz de inferencia multimodal de baja latencia basada en sesiones persistentes bidireccionales (WebSockets o WebRTC) que procesa y genera audio, texto y llamadas a herramientas en streaming continuo. Elimina el ciclo clásico de petición-respuesta discreta junto con los pasos intermedios separados de STT y TTS.",
+    "para": "Sirve para construir agentes de voz en tiempo real, tutores interactivos, asistentes telefónicos y aplicaciones colaborativas donde la naturalidad conversacional, la entonación y la capacidad de interrupción inmediata (barge-in) son esenciales.",
+    "como": "El cliente abre una conexión persistente con el servidor de inferencia y negocia la configuración de sesión (instrucciones, voz, formato PCM/Opus, umbral de detección de voz y herramientas). El audio capturado del micrófono se envía continuamente en pequeños tramas; el modelo multimodal nativo ingiere el audio directamente, detecta turnos de habla en el servidor (Server VAD), emite eventos de audio de respuesta en streaming y dispara eventos `function_call` cuando necesita consultar datos externos. Si el usuario habla mientras el modelo responde, la sesión cancela instantáneamente la generación de audio en curso.",
+    "practicas": [
+      "Elegir WebRTC para clientes finales (navegadores y móviles) por su resiliencia ante jitter y pérdida de paquetes, y WebSockets para comunicación servidor a servidor (p. ej. pasarelas SIP/telefonía).",
+      "Mantener las herramientas invocadas en tiempo real rápidas o ejecutar las lentas de forma asíncrona para no congelar la sesión de audio.",
+      "Implementar sincronización del historial conversacional al producirse un barge-in, truncando los tokens que el usuario no llegó a escuchar para no corromper la memoria del agente.",
+      "Error típico: olvidar cerrar o limpiar sesiones inactivas y manejar los límites de duración máxima de sesión (p. ej. 15-30 min) reconectando con resumen de estado."
+    ],
+    "ejemplo": "// Evento enviado por WebSocket/DataChannel en sesión Realtime\n{\n  \"type\": \"session.update\",\n  \"session\": {\n    \"turn_detection\": { \"type\": \"semantic_vad\", \"interrupt_response\": true },\n    \"input_audio_format\": \"pcm16\",\n    \"tools\": [{ \"type\": \"function\", \"name\": \"lookup_order\" }]\n  }\n}",
+    "entrevista": "Una Realtime API mantiene una sesión multimodal bidireccional sobre WebRTC o WebSockets para hacer inferencia voz-a-voz en streaming, habilitando latencias sub-segundo y barge-in nativo."
+  },
+  "Reanudación de agente": {
+    "que": "La reanudación de agente es la capacidad de pausar una ejecución agéntica en curso —por un fallo de red, reinicio del servidor, agotamiento de cuota o espera de aprobación humana— y continuarla posteriormente desde el punto exacto donde se detuvo sin perder memoria ni repetir acciones previas.",
+    "para": "Resulta indispensable en agentes de larga duración, flujos human-in-the-loop (donde un humano tarda horas en aprobar un pago o PR) y entornos distribuidos sujetos a reinicios de contenedores. Evita costes duplicados y efectos secundarios repetidos al recuperar trabajos interrumpidos.",
+    "como": "Tras cada paso atómico (turno del modelo o resultado de herramienta), el orquestador persiste un checkpoint inmutable con un `thread_id` o `run_id`, el historial de mensajes, el estado de las variables de flujo y las llamadas a herramientas pendientes o ya resueltas. Al reanudar, el runtime carga el último checkpoint válido, inyecta la nueva entrada (por ejemplo, la aprobación humana o el reintento de un paso fallido) y continúa el grafo desde el nodo siguiente usando ejecución determinista o replay de pasos previos.",
+    "practicas": [
+      "Garantizar la idempotencia de todas las herramientas externas usando un `idempotency_key` derivado del `run_id` y el índice de paso por si un fallo ocurre justo tras ejecutar una mutación y antes de guardar el checkpoint.",
+      "Versionar el esquema del estado persistido para no romper la reanudación de ejecuciones antiguas cuando se despliega una nueva versión del código del agente.",
+      "Exponer claramente si una reanudación reintenta el paso interrumpido o acepta una corrección manual del estado antes de continuar.",
+      "Trampa común: guardar únicamente el texto de la conversación sin el estado interno de los subagentes o herramientas en curso, dejando la sesión corrupta al reiniciar."
+    ],
+    "ejemplo": "# Reanudación tras aprobación humana (human-in-the-loop)\nconfig = {\"configurable\": {\"thread_id\": \"deploy-8821\"}}\n# En la primera corrida se pausó en interrupt()\ngraph.invoke(Command(resume={\"approved\": True, \"reviewer\": \"ana\"}), config=config)",
+    "entrevista": "La reanudación de agente se apoya en checkpoints persistentes tras cada paso y claves de idempotencia en herramientas para sobrevivir interrupciones y esperas humanas sin repetir efectos."
+  },
+  "Recuperación de errores del agente": {
+    "que": "La recuperación de errores del agente es el conjunto de mecanismos automáticos y de diseño que permiten a un agente detectar un fallo durante su ejecución, diagnosticar si es recuperable y aplicar una estrategia correctiva para completar la tarea o degradar de forma segura.",
+    "para": "Sirve para absorber fallos inevitables en sistemas distribuidos y modelos estocásticos (APIs temporalmente caídas, JSON malformado, consultas SQL erróneas o bloqueos por permisos) sin abortar inmediatamente la experiencia del usuario ni requerir intervención manual en fallos triviales.",
+    "como": "Se estructura por capas según el tipo de fallo: ante errores de red o límites de tasa (429/503), el runtime aplica reintentos con exponential backoff y jitter o cambia a un modelo de respaldo (fallback). Ante errores de esquema o validación de herramientas, el orquestador devuelve el mensaje de error estructurado al LLM como observación para que se autocorrija en el siguiente turno (self-correction). Ante acciones irreversibles fallidas o bucles repetidos de un mismo error, dispara compensaciones (patrón Saga), cambia de ruta o escala a un humano.",
+    "practicas": [
+      "Limitar el número de intentos de autocorrección ante un mismo error repetido (p. ej. máximo 2 o 3 fallos idénticos consecutivos) para evitar bucles infinitos quemando tokens.",
+      "Degradar con elegancia (graceful degradation): si una herramienta secundaria falla, permitir que el agente informe qué parte no pudo verificar en lugar de alucinar o colapsar.",
+      "Implementar acciones de compensación cuando una secuencia de mutaciones falla a mitad de camino (cancelar reserva si falla el cobro).",
+      "Error típico: reintentar indefinidamente errores 4xx deterministas (como un parámetro inexistente) sin pasarle al modelo información de cómo corregirlo."
+    ],
+    "ejemplo": "if tool_error.is_transient:\n    retry_with_backoff(call)\nelif same_error_count < 2:\n    return ToolMessage(f\"Error de validación: {tool_error.hint}. Corrige los argumentos.\")\nelse:\n    escalate_to_human(trace, reason=\"UNRECOVERABLE_TOOL_ERROR\")",
+    "entrevista": "Recuperar errores en un agente requiere distinguir fallos transitorios (backoff y fallback de modelo) de fallos de uso de herramientas (feedback accionable para autocorrección acotada) y fallos irreversibles (compensación o escalado)."
+  },
+  "Registro de decisiones del agente": {
+    "que": "El registro de decisiones del agente es la bitácora estructurada e inmutable de cada paso cognitivo y operativo ejecutado por un agente: entradas recibidas, contexto recuperado, llamadas a herramientas evaluadas, argumentos emitidos, respuestas observadas, versiones de prompt/modelo y justificación de alto nivel.",
+    "para": "Sirve para auditar qué hizo exactamente el agente y por qué ante un incidente en producción, cumplir normativas legales de trazabilidad, reproducir errores mediante replay y extraer datasets de evaluación a partir de fallos reales.",
+    "como": "Cada ejecución genera un `trace_id` único y registra spans cronológicos (habitualmente siguiendo convenciones de OpenTelemetry GenAI) en un almacén de trazas o event log append-only. A diferencia de los logs de texto planos, captura metadatos estructurados: hash del `system_prompt`, versión del modelo, latencia, tokens, herramientas seleccionadas y su resultado. Por seguridad, un middleware de sanitización enmascara datos personales (PII) o secretos antes de persistir el registro.",
+    "practicas": [
+      "Registrar versiones exactas de prompts, definiciones de herramientas y documentos recuperados (no solo la respuesta final) para poder diagnosticar regresiones.",
+      "Aplicar redactado automático de secretos, tokens y PII antes de enviar trazas a plataformas de observabilidad externas.",
+      "Evitar confiar en el texto libre de 'explicación' del modelo como verdad absoluta de su razonamiento interno: contrastar siempre contra las entradas y salidas reales observadas en la traza.",
+      "Diferenciar el registro de trazas para auditoría/depuración del historial de mensajes visible que se reenvía al LLM en cada turno."
+    ],
+    "ejemplo": "{\n  \"trace_id\": \"tr_99f1c\",\n  \"step\": 3,\n  \"model\": \"claude-sonnet-4-5\",\n  \"prompt_version\": \"v2.4.1\",\n  \"decision\": \"call_tool\",\n  \"tool\": \"apply_discount\",\n  \"args\": {\"order_id\": \"ORD-12\", \"pct\": 10},\n  \"policy_check\": \"PASSED\"\n}",
+    "entrevista": "El registro de decisiones convierte la caja negra de un agente en un event log auditable con versiones de prompt, contexto recuperado, llamadas a herramientas y resultados sanitizados."
+  },
+  "Repetibilidad del agente": {
+    "que": "La repetibilidad del agente es la capacidad de un sistema agéntico para producir resultados funcionales equivalentes y conformes a los criterios de éxito cuando se ejecuta repetidamente la misma tarea bajo condiciones comparables. A diferencia del determinismo estricto bit a bit, evalúa la estabilidad y consistencia del resultado de negocio.",
+    "para": "Resuelve el problema de la varianza estocástica en agentes de producción: un cliente o un pipeline de CI necesita que un agente de soporte o de generación de código resuelva el mismo tipo de tarea de forma consistente hoy y en diez ejecuciones seguidas, no solo una vez por azar.",
+    "como": "La repetibilidad se mide ejecutando cada caso de prueba $k$ veces y calculando métricas como `pass^k` (probabilidad de que las $k$ ejecuciones tengan éxito) frente a `pass@k` (éxito en al menos una de las $k$). Para mejorarla en ingeniería, se estabilizan los prompts con instrucciones no ambiguas, se fijan semillas y temperaturas bajas, se ordenan de forma canónica los resultados de herramientas (por ejemplo, listas de archivos o resultados de búsqueda) y se añaden validadores deterministas que rechazan salidas fuera de contrato.",
+    "practicas": [
+      "Medir `pass^k` (por ejemplo `pass^5` o `pass^8`) en flujos críticos antes de lanzar a producción, ya que un `pass@1` del 85% implica un `pass^5` de apenas ~44%.",
+      "Ordenar de manera determinista el contexto inyectado (claves de JSON, resultados de base de datos, listas de herramientas) para evitar que cambios de orden alteren la atención del modelo.",
+      "Repetibilidad vs Determinismo: el determinismo exige exactamente la misma secuencia de tokens y pasos; la repetibilidad exige que distintas trayectorias válidas converjan siempre al mismo resultado correcto.",
+      "Error típico: ejecutar los evals una sola vez (`k=1`) y atribuir los fallos intermitentes a 'mala suerte del modelo' en lugar de medir la varianza."
+    ],
+    "ejemplo": "# Métrica de repetibilidad pass^k sobre 5 corridas de la misma tarea\nresults = [run_eval(task_id=\"T-104\") for _ in range(5)]\npass_all_5 = all(r.passed for r in results)  # pass^5\nconsistency_rate = sum(r.passed for r in results) / 5",
+    "entrevista": "Mientras el determinismo busca una ejecución idéntica bit a bit, la repetibilidad garantiza consistencia funcional medida con métricas como pass^k, estabilizando el orden del contexto y validando invariantes."
+  },
+  "Revisión de plan del agente": {
+    "que": "La revisión de plan del agente es una compuerta de verificación —manual o automatizada— que evalúa el plan de acción propuesto por un agente antes de permitir que ejecute herramientas mutadoras o costosas. El agente expone los pasos previstos, recursos afectados y suposiciones para recibir aprobación, correcciones o rechazo.",
+    "para": "Sirve para detectar interpretaciones erróneas de requisitos, dependencias omitidas o acciones destructivas antes de que el agente modifique código, bases de datos o infraestructura. Reduce drásticamente el coste de revertir errores tras ejecuciones largas.",
+    "como": "Implementa el patrón plan-and-review: en la primera fase, el agente opera solo con herramientas de lectura y emite un artefacto estructurado de plan (objetivo, pasos ordenados, archivos o registros a tocar, riesgos y criterios de verificación). El orquestador pausa la ejecución (`interrupt`) y presenta el plan al ingeniero humano o a un agente crítico/revisor con reglas de seguridad. Solo tras recibir aprobación explícita o un plan enmendado se desbloquean las herramientas de escritura en la fase de ejecución.",
+    "practicas": [
+      "Exigir revisión de plan en tareas de alto impacto o ambigüedad (migraciones, refactorizaciones amplias, cambios de permisos), pero omitirla en micro-tareas triviales para no añadir fricción.",
+      "Hacer que el plan especifique qué archivos o recursos tocará y cómo se verificará cada paso, evitando planes genéricos tipo 'analizar y arreglar el problema'.",
+      "Permitir edición interactiva del plan antes de aprobarlo, de modo que una corrección de una línea ahorre decenas de turnos posteriores.",
+      "Trampa común: aprobar planes demasiado largos sin leerlos por fatiga de revisión; mantener los planes concisos, en lista de verificación y con riesgos resaltados."
+    ],
+    "ejemplo": "## Plan propuesto por el agente (pendiente de aprobación)\n1. [READ] Verificar esquema actual en `migrations/004_users.sql`.\n2. [WRITE] Crear `migrations/005_add_role_index.sql` (CONCURRENTLY).\n3. [TEST] Ejecutar `pytest tests/test_auth_queries.py`.\nRiesgo: Bloqueo de tabla evitado usando índice concurrente. ¿Aprobar? [s/n]",
+    "entrevista": "La revisión de plan introduce un punto de control previo a cualquier escritura donde el agente opera en solo lectura y valida su estrategia y riesgos antes de gastar recursos o mutar estado."
+  },
+  "Rol de agente": {
+    "que": "El rol de agente es la definición explícita de identidad, responsabilidad, alcance de decisión, restricciones y conjunto de herramientas asignadas a un agente dentro de un sistema individual o multiagente. Funciona como la especificación de contrato de un microservicio cognitivo.",
+    "para": "Sirve para evitar agentes generalistas sobrecargados que mezclan objetivos contradictorios (como implementar código y aprobar su propia seguridad) y para mantener prompts concisos y herramientas acotadas. Permite estructurar equipos de agentes complementarios como planificador, ejecutor, investigador o verificador.",
+    "como": "Cada rol se materializa en una configuración declarativa que combina: un `system_prompt` enfocado en su dominio y criterio de calidad, una lista mínima de herramientas permitidas (principio de menor privilegio), un formato de entrada/salida esperado y reglas claras de cuándo delegar o escalar. Por ejemplo, el rol de verificador tiene acceso a ejecutar tests y leer código pero carece de permisos de escritura sobre los archivos fuente para garantizar independencia en su evaluación.",
+    "practicas": [
+      "Separar los roles por conflicto de interés y capacidad de herramientas (p. ej. el ejecutor modifica archivos; el verificador solo lee y corre pruebas), no por títulos humanos artificiales.",
+      "Mantener cada rol con un conjunto reducido de herramientas afines; dar 30 herramientas a un solo rol degrada el enrutamiento.",
+      "Definir explícitamente qué está fuera del alcance del rol ('No modifiques esquemas de BD; escala al agente DBA') para evitar que improvise acciones indebidas.",
+      "Error típico: crear diez roles distintos con prompts floridos que comparten exactamente las mismas herramientas y acaban haciendo lo mismo."
+    ],
+    "ejemplo": "verifier_agent = Agent(\n    name=\"security_verifier\",\n    role=\"Auditar diffs en busca de vulnerabilidades sin modificar código\",\n    tools=[read_file, git_diff, run_semgrep],  # Sin write_file\n    output_schema=AuditReport\n)",
+    "entrevista": "Un rol de agente bien diseñado se define por sus límites de responsabilidad, su formato de salida y el principio de menor privilegio en herramientas, separando claramente quién ejecuta de quién verifica."
+  },
+  "Simulación de agente": {
+    "que": "La simulación de agente es la ejecución de un agente completo dentro de un entorno sintético y controlado donde usuarios simulados, APIs falsificadas (mocks/sandboxes) y escenarios adversariales interactúan con él a lo largo de múltiples turnos. Permite observar comportamientos emergentes antes del despliegue real.",
+    "para": "Resuelve la imposibilidad de probar únicamente con entradas estáticas de un solo turno a agentes que conversan o operan en entornos cambiantes. Sirve para detectar fallos de negociación, manipulación por usuarios difíciles, colisiones de estado y degradación en conversaciones largas.",
+    "como": "Un simulador de usuario (otro LLM configurado con una persona, objetivo oculto y nivel de frustración o ataque) conversa con el agente bajo prueba durante N turnos. Simultáneamente, un entorno sandbox replica el estado de bases de datos o APIs con latencias, errores inyectados (chaos engineering) y datos de prueba aislados. Al terminar la simulación, un conjunto de evaluadores analiza toda la traza multi-turno para verificar si se cumplieron las metas de negocio sin violar políticas.",
+    "practicas": [
+      "Simular perfiles de usuario diversos y adversariales (usuarios impacientes, ambiguos, con errores tipográficos o intentos de jailbreak), no solo usuarios cooperativos ideales.",
+      "Inyectar fallos realistas en el entorno simulado (timeouts, datos inconsistentes, stock agotado a mitad de flujo) para validar la recuperación de errores.",
+      "Aislar completamente los entornos de simulación de credenciales y redes reales para evitar fugas accidentales durante pruebas adversariales.",
+      "Simulación de agente vs Dry run de agente: la simulación prueba el comportamiento multi-turno frente a personas y entornos sintéticos; el dry run intercepta mutaciones en una ejecución puntual."
+    ],
+    "ejemplo": "# Bucle de simulación multi-turno usuario-agente\nfor turn in range(max_turns):\n    user_msg = user_simulator.reply(conversation, persona=\"frustrated_customer\")\n    agent_msg = support_agent.step(user_msg, env=sandbox_crm)\n    if agent_msg.is_terminal: break\nscore = eval_simulation(conversation, sandbox_crm.final_state())",
+    "entrevista": "La simulación de agente somete al sistema a interacciones multi-turno con personas sintéticas y sandboxes con fallos inyectados para descubrir fallos emergentes antes de llegar a producción."
+  }
+}

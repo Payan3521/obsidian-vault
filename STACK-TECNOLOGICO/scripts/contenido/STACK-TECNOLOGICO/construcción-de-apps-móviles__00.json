@@ -1,0 +1,236 @@
+{
+  "APK - AAB y firma de app": {
+    "que": "APK (Android Package) y AAB (Android App Bundle) son los formatos de empaquetado de aplicaciones Android, mientras que la firma digital criptográfica garantiza la autenticidad del autor y la integridad del binario. El APK es un archivo ZIP instalable directamente que contiene bytecode DEX, recursos y manifiesto; el AAB es un formato de publicación modular que delega la generación de APKs optimizados a la tienda.",
+    "para": "Permiten empaquetar código compilado, librerías nativas y recursos multimedia para distribuir la app de forma segura e inalterable. El formato AAB reduce el tamaño de descarga al entregar únicamente los recursos de densidad de pantalla, idioma y arquitectura ABI (arm64-v8a, armeabi-v7a) del dispositivo destino; la firma evita que terceros inyecten código malicioso o suplanten actualizaciones.",
+    "como": "Durante el build, Gradle compila fuentes Kotlin/Java a bytecode JVM, D8/R8 lo traduce y ofusca a archivos .dex, y AAPT2 compila recursos en tables binarias. Si se genera un AAB, bundletool organiza módulos base y dinámicos; luego Google Play App Signing usa Dynamic Delivery para ensamblar Split APKs específicos por dispositivo. En paralelo, apksigner aplica el esquema de firma APK Signature Scheme v2/v3 (y v4 para ADB incremental) calculando hashes SHA-256 sobre bloques completos del archivo con la clave privada almacenada en un Keystore (.jks o .keystore).",
+    "practicas": [
+      "Habilitar Play App Signing para separar la upload key (rotable si se filtra) de la app signing key custodiada por Google.",
+      "Nunca versionar archivos .keystore ni contraseñas en Git; inyectarlos en CI/CD mediante variables de entorno o gestores de secretos.",
+      "Usar APK únicamente para pruebas internas, sideloading o distribución fuera de Play Store; usar AAB de forma obligatoria en Google Play.",
+      "Activar R8 (minifyEnabled y shrinkResources) en builds release para eliminar código muerto y reducir el tamaño del bundle."
+    ],
+    "ejemplo": "android {\n  signingConfigs {\n    release {\n      storeFile file(System.getenv(\"KEYSTORE_PATH\"))\n      storePassword System.getenv(\"KEYSTORE_PASS\")\n      keyAlias System.getenv(\"KEY_ALIAS\")\n      keyPassword System.getenv(\"KEY_PASS\")\n    }\n  }\n}",
+    "entrevista": "Publicamos en AAB para que Google Play genere Split APKs por arquitectura y densidad mediante Dynamic Delivery, firmados con una upload key independiente de la clave de firma final."
+  },
+  "Android Studio": {
+    "que": "Android Studio es el entorno de desarrollo integrado (IDE) oficial para construir aplicaciones Android, basado en IntelliJ IDEA de JetBrains. Integra compilación con Gradle, editores visuales de interfaz (Jetpack Compose Preview y Layout Editor), analizadores de rendimiento y gestión de SDK y emuladores.",
+    "para": "Centraliza todo el ciclo de desarrollo nativo Android: escritura de código Kotlin/Java, resolución de dependencias, depuración en tiempo real y empaquetado para producción. Resuelve la complejidad de compilar contra múltiples niveles de API de Android y arquitecturas de hardware desde una sola interfaz.",
+    "como": "El IDE delega la construcción del proyecto al sistema Gradle (a través del Android Gradle Plugin, AGP), que orquesta tareas como compilación de recursos con AAPT2, compilación de código, ejecución de KSP/kapt y generación de APK/AAB. Para depuración e inspección, se comunica con dispositivos o emuladores mediante ADB (Android Debug Bridge), exponiendo herramientas como Logcat, Database Inspector, Layout Inspector y Android Profiler (CPU, memoria, red y energía).",
+    "practicas": [
+      "Usar Gradle Version Catalogs (libs.versions.toml) y mantener sincronizada la compatibilidad entre versión de Gradle, AGP y Kotlin.",
+      "Preferir Compose Previews con parámetros de estado aislados en lugar de compilar toda la app en cada ajuste visual.",
+      "Evitar abusar de Invalidate Caches; usar el Build Analyzer para detectar tareas lentas o plugins que rompen la caché incremental de Gradle.",
+      "Android Studio vs VS Code: Android Studio ofrece perfiles nativos profundos (Profiler, Layout Inspector) indispensables en Android nativo, aunque VS Code suele ser más ligero para Flutter o React Native."
+    ],
+    "ejemplo": "./gradlew assembleDebug --build-cache\nadb logcat *:E",
+    "entrevista": "Android Studio combina la productividad de IntelliJ con el pipeline de AGP y Gradle, dándonos inspección profunda vía ADB y profilers de memoria, CPU y red antes de llegar a producción."
+  },
+  "Batería y rendimiento": {
+    "que": "La optimización de batería y rendimiento móvil engloba las técnicas para minimizar el consumo energético, el uso de CPU/GPU, la memoria RAM y el tráfico de radio sin degradar la fluidez de la interfaz (60 o 120 FPS). En dispositivos portátiles, cada milisegundo de bloqueo en el hilo principal o despertar innecesario de hardware impacta directamente la experiencia y retención del usuario.",
+    "para": "Previene bloqueos de interfaz (jank y errores ANR - Application Not Responding en Android o Watchdog kills en iOS), reduce el drenaje térmico y evita que el sistema operativo restrinja o cierre la app en segundo plano. Es crítico en apps con rastreo GPS, reproducción multimedia, sincronización continua o listas complejas.",
+    "como": "El sistema operativo agrupa tareas diferibles mediante mecanismos como Doze Mode y App Standby en Android (usando WorkManager sobre JobScheduler) o BGTaskScheduler en iOS para evitar despertar la radio celular y el procesador con frecuencia. En renderizado, el hilo principal (UI thread) dispone de ~16.6 ms por frame a 60 Hz (~8.3 ms a 120 Hz) para medir, posicionar y dibujar vistas; si se ejecuta I/O, decodificación de bitmaps o consultas pesadas ahí, se pierden frames. Herramientas como Perfetto, Android Profiler y Xcode Instruments capturan trazas de syscalls, wakelocks, asignaciones de heap y fugas de memoria.",
+    "practicas": [
+      "Mover toda operación de red, disco o JSON parsing fuera del hilo principal usando corrutinas (Dispatchers.IO/Default) o Swift Concurrency.",
+      "Usar WorkManager (Android) o BGTaskScheduler (iOS) con restricciones de red/batería en lugar de AlarmManager o timers persistentes.",
+      "Reutilizar vistas/componentes, decodificar imágenes al tamaño exacto del contenedor (Coil, Glide, Kingfisher) y evitar recomposiciones o layouts anidados profundos.",
+      "Monitorear fugas de memoria (LeakCanary en Android, Memory Graph en Xcode) provocadas por referencias fuertes a Context, Activity o closures."
+    ],
+    "ejemplo": "val constraints = Constraints.Builder()\n  .setRequiredNetworkType(NetworkType.UNMETERED)\n  .setRequiresBatteryNotLow(true)\n  .build()\nval work = OneTimeWorkRequestBuilder<SyncWorker>()\n  .setConstraints(constraints).build()",
+    "entrevista": "Protegemos los 16 ms por frame manteniendo el hilo principal libre de I/O y diferimos el trabajo en segundo plano mediante WorkManager o BGTaskScheduler respetando las ventanas de ahorro del sistema."
+  },
+  "Ciclo de vida de Activity e Intents": {
+    "que": "El ciclo de vida de una Activity es la máquina de estados que gobierna cómo Android crea, muestra, pausa, detiene y destruye una pantalla ante eventos del usuario o del sistema. Un Intent es el objeto de mensajería asíncrona usado para solicitar acciones a componentes del mismo proceso o de otras aplicaciones.",
+    "para": "Permite gestionar correctamente recursos costosos (cámara, sensores, conexiones), preservar el estado temporal de la UI ante rotaciones de pantalla o falta de memoria, y desacoplar la navegación o invocación de capacidades del sistema como compartir archivos o abrir enlaces.",
+    "como": "El ActivityManagerService (AMS) transiciona la Activity a través de callbacks ordenados: onCreate() (inicialización), onStart() (visible), onResume() (en primer plano con foco), onPause() (pierde foco), onStop() (invisible) y onDestroy() (destruida). Ante cambios de configuración como rotación, Android destruye y recrea la Activity invocando onSaveInstanceState() antes de detenerla, por lo que el estado de UI se conserva en un ViewModel o SavedStateHandle. Los Intents pueden ser explícitos (indican la clase exacta del componente destino) o implícitos (declaran una acción como ACTION_VIEW y datos MIME/URI para que el sistema resuelva el componente mediante Intent Filters).",
+    "practicas": [
+      "Almacenar el estado de pantalla y lógica de negocio en ViewModel + SavedStateHandle, nunca en campos de la Activity que se pierden al rotar.",
+      "Liberar listeners, cámaras o suscripciones simétricamente (si se registra en onStart, liberar en onStop; si es en onResume, liberar en onPause).",
+      "Preferir arquitectura Single-Activity con Jetpack Navigation (o Navigation Compose) en lugar de lanzar decenas de Activities por pantalla.",
+      "Validar y sanitizar extras de Intents entrantes y usar Activity Result API (registerForActivityResult) en vez del obsoleto startActivityForResult."
+    ],
+    "ejemplo": "val openUrl = Intent(Intent.ACTION_VIEW, Uri.parse(\"https://example.com\"))\nstartActivity(openUrl)\n\nval detail = Intent(this, DetailActivity::class.java).apply {\n  putExtra(\"ITEM_ID\", 42)\n}",
+    "entrevista": "Separamos la lógica del ciclo de vida usando ViewModel y SavedStateHandle para sobrevivir a cambios de configuración y muerte de proceso, comunicando componentes mediante Intents tipados o navegación Single-Activity."
+  },
+  "Emuladores": {
+    "que": "Un emulador móvil (como Android Emulator mediante AVD o iOS Simulator en Xcode) es un entorno virtualizado que replica la interfaz, APIs del sistema operativo y sensores de un dispositivo físico en la máquina de desarrollo. Permite probar apps sin depender de hardware real para cada combinación de versión de SO y tamaño de pantalla.",
+    "para": "Acelera el ciclo de edición-compilación-prueba y habilita la validación sistemática en múltiples resoluciones, niveles de API, orientaciones, condiciones de red degradadas y ubicaciones GPS simuladas. También resulta indispensable en pipelines de CI/CD para ejecutar pruebas instrumentadas automatizadas.",
+    "como": "Android Emulator se basa en QEMU con aceleración por hardware (KVM en Linux, HVF en macOS, WHPX en Windows) ejecutando imágenes del sistema Android completas (x86_64 o arm64 según el host), incluyendo kernel Linux e imitación de módem, batería y cámara. Por su parte, iOS Simulator corre nativamente sobre el kernel de macOS (sin virtualizar CPU ARM cuando corre en Apple Silicon, o traduciendo binarios de arquitectura de escritorio) ejecutando los frameworks de usuario de iOS. Ambos exponen control por línea de comandos (adb emu / xcrun simctl) para inyectar coordenadas GPS, permisos, push simulados y capturas.",
+    "practicas": [
+      "Usar imágenes del sistema con la misma arquitectura del host (arm64 en Apple Silicon, x86_64 en x64) y snapshots rápidos para arranque en segundos.",
+      "Recordar que iOS Simulator no es un emulador de hardware completo: no soporta Metal idéntico al dispositivo físico, cámara real, Bluetooth LE ni ciertas pruebas de memoria/batería.",
+      "Automatizar creación y borrado de instancias headless en CI (Android Managed Devices o simctl) para pruebas de UI deterministas.",
+      "Desactivar animaciones de ventana en emuladores de testing (adb shell settings put global) para evitar flakiness en Espresso."
+    ],
+    "ejemplo": "xcrun simctl boot \"iPhone 16\"\nxcrun simctl location \"iPhone 16\" set 40.4168,-3.7038\nemulator -avd Pixel_8_API_35 -no-snapshot-load",
+    "entrevista": "Usamos emuladores y simuladores con snapshots en desarrollo y CI para cubrir matrices de pantalla y API rápidamente, pero validamos rendimiento térmico, sensores y cámara siempre en dispositivo físico."
+  },
+  "Flutter": {
+    "que": "Flutter es un SDK multiplataforma creado por Google para construir aplicaciones compiladas nativamente para móvil, web y escritorio desde una única base de código en lenguaje Dart. A diferencia de otros frameworks híbridos, no envuelve controles nativos del sistema operativo, sino que dibuja cada píxel en su propio motor gráfico.",
+    "para": "Resuelve el costo de mantener equipos separados para Android e iOS cuando se requiere paridad visual estricta, animaciones fluidas a 60/120 FPS y alto ritmo de iteración con Hot Reload. Se utiliza ampliamente en productos B2C, fintech y apps empresariales que priorizan diseño consistente entre plataformas.",
+    "como": "Todo en Flutter es un árbol inmutable de Widgets que se reconcilia en un árbol de Elements y se traduce en RenderObjects para layout y pintado. En lugar de cruzar un puente JavaScript en cada frame, Flutter compila Dart en código máquina ARM nativo (AOT en release, JIT con Hot Reload en debug) y renderiza mediante su motor en C++ (Impeller en iOS/Android modernos o Skia) directamente sobre GPU (Metal/Vulkan/OpenGL). Cuando requiere hardware del SO (cámara, biometría), se comunica asíncronamente mediante Platform Channels (MethodChannel, EventChannel) o FFI.",
+    "practicas": [
+      "Usar constructores const en widgets estáticos para que el framework omita reconstrucciones innecesarias del árbol.",
+      "Separar estado efímero de estado de aplicación con gestores predecibles (Riverpod, Bloc) y evitar llamadas de red dentro del método build().",
+      "Delegar cómputo intensivo (parsing masivo, cifrado) a Isolates (Isolate.run) para no bloquear el Isolate principal de UI.",
+      "Flutter vs React Native: Flutter garantiza interfaz idéntica y sin jitter por puente usando Impeller, mientras React Native aprovecha el ecosistema JS/TS y componentes nativos reales."
+    ],
+    "ejemplo": "class CounterText extends StatelessWidget {\n  final int count;\n  const CounterText({super.key, required this.count});\n  @override\n  Widget build(BuildContext context) => Text('Total: $count');\n}",
+    "entrevista": "Flutter evita la sobrecarga de traducir widgets nativos en cada frame al compilar Dart a código máquina AOT y dibujar su propio árbol de RenderObjects directamente en GPU con Impeller."
+  },
+  "Fragments y RecyclerView": {
+    "que": "Un Fragment es un componente modular de interfaz en Android con su propio ciclo de vida que vive alojado dentro de una Activity, mientras que RecyclerView es el contenedor clásico optimizado para mostrar grandes colecciones de datos desplazables reutilizando vistas. Ambos forman la base del sistema tradicional de Android Views (XML).",
+    "para": "Los Fragments permiten componer pantallas reutilizables y adaptar layouts entre teléfonos y tabletas sin duplicar Activities; RecyclerView resuelve el problema de memoria y lentitud al renderizar miles de elementos evitando inflar un objeto View por cada fila de datos.",
+    "como": "FragmentManager gestiona transacciones (add, replace, back stack) sincronizando el ciclo de vida del Fragment con el de su Activity y el de su vista (viewLifecycleOwner). Por su parte, RecyclerView aplica el patrón ViewHolder junto con un Pool de vistas recicladas (RecycledViewPool) y un LayoutManager (Linear, Grid, Staggered): cuando una fila sale de pantalla, su ViewHolder se desvincula y se reasigna en onBindViewHolder() al nuevo elemento entrante. Para actualizar listas eficientemente sin parpadeos, DiffUtil (habitualmente vía ListAdapter) calcula el conjunto mínimo de inserciones y borrados en un hilo secundario.",
+    "practicas": [
+      "En Fragments, observar LiveData/StateFlow usando viewLifecycleOwner en lugar de this para evitar múltiples observadores tras recrear la vista.",
+      "Limpiar la referencia a ViewBinding en onDestroyView() del Fragment para prevenir fugas de memoria mientras el Fragment sigue en el back stack.",
+      "Usar ListAdapter con DiffUtil.ItemCallback en RecyclerView y nunca llamar a notifyDataSetChanged() salvo cambio total inevitable.",
+      "Views/RecyclerView vs Jetpack Compose: en proyectos nuevos preferir LazyColumn/LazyRow de Compose, manteniendo RecyclerView en apps XML existentes."
+    ],
+    "ejemplo": "class UserDiff : DiffUtil.ItemCallback<User>() {\n  override fun areItemsTheSame(a: User, b: User) = a.id == b.id\n  override fun areContentsTheSame(a: User, b: User) = a == b\n}",
+    "entrevista": "RecyclerView evita saturar la memoria y el inflado XML reciclando ViewHolders visibles mediante un pool y calculando cambios mínimos en segundo plano con DiffUtil."
+  },
+  "Notificaciones push y permisos": {
+    "que": "Las notificaciones push son mensajes enviados desde un servidor remoto hacia un dispositivo móvil incluso cuando la aplicación está cerrada o en segundo plano, mientras que el modelo de permisos regula el acceso explícito del usuario a capacidades sensibles como notificaciones, ubicación, cámara o contactos.",
+    "para": "Mantienen al usuario informado en tiempo real sobre eventos críticos (pagos, mensajes, alertas de seguridad) sin que la app mantenga conexiones abiertas drenando batería. El sistema de permisos protege la privacidad del usuario exigiendo consentimiento contextual y granular antes de habilitar hardware o datos personales.",
+    "como": "En Android, Firebase Cloud Messaging (FCM) mantiene una conexión persistente compartida a nivel de sistema (Google Play Services); en iOS, Apple Push Notification service (APNs) cumple el mismo rol usando TLS sobre HTTP/2. Al registrarse, la app obtiene un device token único que envía al backend; cuando el servidor publica un payload hacia FCM/APNs, el sistema despierta brevemente la app (push silencioso) o muestra el banner directamente. Desde Android 13 (POST_NOTIFICATIONS) e iOS (UNUserNotificationCenter), mostrar alertas exige permiso en tiempo de ejecución (runtime permission), evaluado con justificación previa y manejo de denegación permanente.",
+    "practicas": [
+      "Solicitar permisos en el momento contextual en que el usuario activa la funcionalidad (just-in-time), nunca en cascada al abrir la app por primera vez.",
+      "En Android, crear Notification Channels agrupados por categoría desde el inicio para que el usuario silencie solo avisos promocionales sin bloquear alertas críticas.",
+      "Rotar y limpiar device tokens inválidos o expirados en el backend cuando FCM/APNs devuelven errores Unregistered o BadDeviceToken.",
+      "Contemplar el estado de denegación permanente redirigiendo amablemente al usuario hacia los ajustes del sistema (App Settings) en lugar de reintentar el diálogo."
+    ],
+    "ejemplo": "if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {\n  requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)\n}",
+    "entrevista": "Las notificaciones push delegan la conexión persistente al canal del sistema (FCM y APNs) mediante tokens de dispositivo, y los permisos deben solicitarse en contexto manejando canales y denegación permanente."
+  },
+  "Offline-first y sincronización": {
+    "que": "Offline-first es un enfoque de arquitectura móvil donde la aplicación lee y escribe primero en una base de datos local en el dispositivo, tratando la red como un canal de sincronización asíncrona y no como requisito indispensable para operar.",
+    "para": "Garantiza una experiencia instantánea y resiliente en entornos con conectividad intermitente, túneles, aviones o redes móviles lentas. Elimina pantallas de carga bloqueantes en lecturas frecuentes y evita la pérdida de trabajo del usuario cuando falla una petición HTTP.",
+    "como": "La base de datos local (Room/SQLite, Realm, CoreData/SwiftData) actúa como Single Source of Truth (SSOT): la UI observa flujos reactivos locales mientras un Repository coordina actualizaciones remotas. Las mutaciones sin conexión se registran en una cola persistente local (outbox pattern) con identificadores idempotentes (UUID generados en cliente) y marcas de tiempo o versiones. Cuando hay conectividad, un planificador en segundo plano (WorkManager o BGProcessingTask) envía los cambios pendientes en orden y resuelve conflictos mediante estrategias definidas (Last-Write-Wins, CRDTs o fusión por campos), actualizando la caché local tras confirmar.",
+    "practicas": [
+      "Mantener una única fuente de verdad (SSOT): la UI nunca debe leer directo de Retrofit/URLSession y de la BD local por separado.",
+      "Incluir claves de idempotencia (UUID) en escrituras offline para evitar duplicados si el cliente reintenta tras un timeout donde el servidor sí procesó la petición.",
+      "Definir una política explícita de resolución de conflictos y caducidad de caché (TTL/stale-while-revalidate) antes de escribir código.",
+      "Offline-first vs Cache-first: Cache-first solo acelera lecturas temporales; Offline-first también encola escrituras locales y reconcilia estado."
+    ],
+    "ejemplo": "fun observeTasks(): Flow<List<Task>> = localDao.observeAll()\n\nsuspend fun syncPending() {\n  val pending = localDao.getUnsynced()\n  pending.forEach { api.upsert(it.id, it.toDto()); localDao.markSynced(it.id) }\n}",
+    "entrevista": "En offline-first la base de datos local es la única fuente de verdad para la UI y las escrituras se encolan en un outbox con UUID idempotente que un worker en segundo plano sincroniza al recuperar red."
+  },
+  "Play Store - App Store": {
+    "que": "Google Play Store y Apple App Store son las plataformas oficiales de distribución, revisión, monetización y actualización de aplicaciones móviles para Android e iOS respectivamente. Actúan como puerta de cumplimiento técnico, legal y de seguridad antes de que el software llegue a los usuarios finales.",
+    "para": "Centralizan el descubrimiento de apps, la distribución de binarios firmados, la gestión de pagos in-app/suscripciones y el despliegue gradual de versiones. Permiten detectar regresiones tempranas mediante pistas de prueba cerradas/abiertas y minimizar el impacto de fallos en producción.",
+    "como": "En Google Play (Play Console), se sube un AAB firmado con la upload key hacia tracks (Internal, Closed, Open, Production) con soporte para Staged Rollouts (por ejemplo, liberar al 5% y escalar según métricas de Android Vitals). En Apple (App Store Connect), Xcode o Transporter suben un archivo .ipa firmado con certificado de distribución y Provisioning Profile hacia TestFlight (beta) y luego a App Review, donde revisores humanos y estáticos verifican cumplimiento de las App Store Review Guidelines, privacidad (Privacy Manifests) y compras digitales. Ambas tiendas exigen declaraciones de datos (Data Safety / App Privacy) y metadatos versionados.",
+    "practicas": [
+      "Automatizar compilación, firmado, subida de metadatos y envío a TestFlight/Internal Track con Fastlane o GitHub Actions.",
+      "Usar despliegues escalonados (staged/phased release) monitoreando tasas de crash-free sessions y ANRs antes de abrir al 100%.",
+      "Subir siempre los archivos de mapeo de símbolos (mapping.txt de R8 en Android y dSYMs en iOS) para desofuscar stack traces en Crashlytics.",
+      "Revisar con antelación los requisitos de targetSdk (Google Play) y Xcode SDK mínimo (Apple) que caducan anualmente para evitar bloqueos de actualización."
+    ],
+    "ejemplo": "lane :beta do\n  build_app(scheme: \"MyApp\")\n  upload_to_testflight(skip_waiting_for_build_processing: true)\nend",
+    "entrevista": "Desplegamos mediante Fastlane a pistas internas o TestFlight y luego aplicamos staged rollouts vigilando crash-free users y símbolos desofuscados antes de liberar al 100%."
+  },
+  "Pruebas en dispositivo": {
+    "que": "Las pruebas en dispositivo consisten en ejecutar pruebas manuales, automatizadas de UI (instrumentadas) y de rendimiento directamente sobre hardware móvil real con sus sensores, chipsets, módems y restricciones térmicas auténticas.",
+    "para": "Descubren fallos que los emuladores ocultan: throttling térmico, consumo real de batería, fragmentación de drivers GPU de fabricantes (Samsung, Xiaomi, etc.), manejo real de permisos OEM agresivos y comportamiento con Bluetooth, NFC, cámara o biometría.",
+    "como": "Las suites instrumentadas (Espresso / UI Automator / Compose Test en Android; XCUITest en iOS) se compilan en un APK/runner de test independiente que se instala vía ADB o Xcode sobre el dispositivo conectado por USB o Wi-Fi y dirige eventos del sistema sobre el árbol de accesibilidad. Para escalar sin comprar cientos de teléfonos, los equipos conectan pipelines de CI a granjas de dispositivos en la nube (Firebase Test Lab, AWS Device Farm, BrowserStack) que provisionan teléfonos reales, ejecutan el suite, graban video y recolectan logs y trazas de rendimiento.",
+    "practicas": [
+      "Definir una matriz mínima representativa (gama baja con poca RAM, dispositivo de pantalla plegable/pequeña, última versión y versión mínima soportada).",
+      "Probar en dispositivos reales funciones de hardware (biometría, cámara, BLE, NFC) y escenarios de memoria baja o red 3G real.",
+      "Usar tags de accesibilidad estables (testTag en Compose, accessibilityIdentifier en iOS) para que las pruebas en dispositivo no se rompan con cambios de texto.",
+      "Aplicar la pirámide de pruebas: mayoría de unit tests rápidos en JVM/Host y un conjunto acotado de flujos críticos end-to-end en granjas de dispositivos."
+    ],
+    "ejemplo": "gcloud firebase test android run \\\n  --type instrumentation \\\n  --app app-debug.apk \\\n  --test app-debug-androidTest.apk \\\n  --device model=oriole,version=33",
+    "entrevista": "Mantenemos pruebas unitarias rápidas en host y ejecutamos flujos críticos y benchmarks sobre granjas de dispositivos reales para capturar problemas de drivers OEM, memoria limitada y hardware que el emulador oculta."
+  },
+  "React Native": {
+    "que": "React Native es un framework open-source de Meta para crear aplicaciones móviles multiplataforma usando JavaScript/TypeScript y el paradigma declarativo de React, renderizando componentes nativos reales de iOS (UIKit) y Android (Android Views).",
+    "para": "Permite a equipos con experiencia en desarrollo web y React reutilizar lógica de negocio, estado y gran parte de la interfaz entre iOS y Android con una sola base de código. Es ideal cuando se busca velocidad de entrega, integración con ecosistemas JS/TS y actualizaciones rápidas de lógica sin perder controles nativos.",
+    "como": "En la arquitectura clásica, el código JS corría en un hilo separado comunicándose con los hilos nativos mediante un Bridge asíncrono que serializaba mensajes en JSON. La Nueva Arquitectura (habilitada por defecto en versiones recientes) reemplaza ese puente con JSI (JavaScript Interface), permitiendo que el motor JS (Hermes, optimizado con bytecode precompilado AOT) mantenga referencias directas en C++ a objetos nativos de forma síncrona; Fabric gestiona el renderizado concurrente de UI y TurboModules cargan módulos nativos bajo demanda.",
+    "practicas": [
+      "Habilitar Hermes y la Nueva Arquitectura (Fabric + TurboModules) para reducir tiempo de arranque, uso de memoria y cuellos de botella de serialización.",
+      "Usar Expo (Managed o Prebuild/CNG) salvo requisitos muy específicos de configuración nativa manual, aprovechando EAS Build y actualizaciones OTA controladas.",
+      "Evitar renderizar listas grandes con ScrollView; usar FlatList o FlashList (Shopify) para reciclaje eficiente de celdas nativas.",
+      "React Native vs Flutter: React Native renderiza widgets nativos reales y aprovecha TypeScript/React, mientras Flutter dibuja su propia UI con Impeller garantizando paridad visual total."
+    ],
+    "ejemplo": "import { FlatList, Text } from 'react-native';\n\nexport const UserList = ({ data }: { data: { id: string; name: string }[] }) => (\n  <FlatList\n    data={data}\n    keyExtractor={(item) => item.id}\n    renderItem={({ item }) => <Text>{item.name}</Text>}\n  />\n);",
+    "entrevista": "Con Hermes y JSI/Fabric, React Native elimina la serialización JSON del antiguo bridge asíncrono e invoca directamente módulos y vistas nativas reales desde TypeScript."
+  },
+  "Room y SQLite": {
+    "que": "SQLite es el motor de base de datos relacional embebido estándar en dispositivos móviles, mientras que Room es la librería oficial de Jetpack en Android que proporciona una capa de abstracción ORM ligera y verificada en tiempo de compilación sobre SQLite.",
+    "para": "Permiten almacenar grandes volúmenes de datos estructurados, relaciones, índices y búsquedas complejas en el dispositivo de forma transaccional y persistente. Room resuelve los errores silenciosos en consultas SQL escritas como cadenas crudas, el código repetitivo de cursores (Cursor) y la integración directa con corrutinas y flujos reactivos.",
+    "como": "Room se compone de tres elementos principales: @Entity (define tablas y columnas), @Dao (interfaces con métodos @Query, @Insert, @Update, @Delete) y @Database (punto de acceso singleton y gestor de versiones). Al compilar, el procesador de anotaciones (KSP) valida la sintaxis SQL y los tipos contra el esquema real, generando las implementaciones concretas que operan sobre SQLite. Soporta transacciones atómicas (@Transaction), reactividad nativa devolviendo Flow<T> o LiveData<T> ante cambios de tabla, y migraciones estructuradas (Migration o AutoMigration) al incrementar la versión del esquema.",
+    "practicas": [
+      "Usar KSP en lugar de kapt para acelerar significativamente el procesamiento de anotaciones de Room.",
+      "Definir migraciones explícitas (y probarlas con MigrationTestHelper); nunca dejar fallbackToDestructiveMigration() en producción porque borra datos del usuario.",
+      "Crear índices (@Index) en claves foráneas y columnas usadas en cláusulas WHERE o JOIN para evitar escaneos completos de tabla.",
+      "Room vs SharedPreferences/DataStore: Room es para datos estructurados, relacionales o colecciones crecientes; DataStore/SharedPreferences solo para pares clave-valor pequeños."
+    ],
+    "ejemplo": "@Dao\ninterface NoteDao {\n  @Query(\"SELECT * FROM notes ORDER BY updatedAt DESC\")\n  fun observeAll(): Flow<List<NoteEntity>>\n  @Upsert suspend fun upsert(note: NoteEntity)\n}",
+    "entrevista": "Room valida nuestras consultas SQL en compilación mediante KSP sobre SQLite y expone flujos reactivos transaccionales ideales como fuente de verdad local."
+  },
+  "SharedPreferences": {
+    "que": "SharedPreferences es la API clásica de Android para almacenar y recuperar pequeños conjuntos de pares clave-valor primitivos (booleanos, enteros, cadenas, flotantes) persistidos en un archivo XML privado de la aplicación.",
+    "para": "Sirve para guardar preferencias ligeras de usuario o banderas de estado simples (tema oscuro activado, onboarding completado, idioma elegido) sin montar una base de datos relacional. Hoy en día se considera reemplazada en proyectos modernos por Jetpack DataStore, aunque sigue presente en la mayoría de bases de código existentes.",
+    "como": "Al abrirse con getSharedPreferences(), carga y parsea en memoria todo el archivo XML asociado al nombre indicado. Las modificaciones se realizan a través de SharedPreferences.Editor, donde commit() escribe en disco de forma síncrona devolviendo éxito booleano y apply() actualiza inmediatamente el mapa en memoria mientras programa el volcado asíncrono a disco. Su principal limitación interna es que no ofrece seguridad de tipos en tiempo de compilación, no maneja errores de I/O de forma segura y puede provocar ANRs al esperar que escrituras pendientes de apply() terminen antes de detener una Activity o Service.",
+    "practicas": [
+      "En proyectos nuevos, preferir Jetpack DataStore (Preferences o Proto) por su uso asíncrono basado en Flow/corrutinas y seguridad transaccional.",
+      "No guardar nunca tokens sensibles o secretos en SharedPreferences plano; utilizar cifrado respaldado por Android Keystore (o migraciones seguras).",
+      "Evitar commit() en el hilo principal y no almacenar objetos JSON grandes o listas crecientes dentro de SharedPreferences.",
+      "SharedPreferences vs Room: SharedPreferences guarda configuraciones clave-valor puntuales; Room almacena entidades relacionales y colecciones consultables."
+    ],
+    "ejemplo": "val prefs = context.getSharedPreferences(\"app_settings\", Context.MODE_PRIVATE)\nprefs.edit().putBoolean(\"dark_mode\", true).apply()\nval isDark = prefs.getBoolean(\"dark_mode\", false)",
+    "entrevista": "SharedPreferences persiste configuraciones ligeras clave-valor en XML, pero en arquitectura moderna migramos a Jetpack DataStore para evitar bloqueos ANR en el hilo principal y ganar tipado asíncrono con Flow."
+  },
+  "Swift": {
+    "que": "Swift es el lenguaje de programación compilado, multiparadigma y de tipado estático fuerte desarrollado por Apple como sucesor de Objective-C para iOS, macOS, watchOS, tvOS, visionOS y servidores.",
+    "para": "Se utiliza para escribir aplicaciones Apple seguras, expresivas y de alto rendimiento, eliminando categorías enteras de errores comunes de memoria y punteros nulos. Es el lenguaje estándar tanto para lógica de dominio como para interfaces declarativas con SwiftUI o imperativas con UIKit.",
+    "como": "Swift compila mediante LLVM a código máquina nativo optimizado y gestiona la memoria automáticamente sin recolector de basura (GC) usando ARC (Automatic Reference Counting), insertando retenciones y liberaciones en tiempo de compilación. Su sistema de tipos fuerza el manejo explícito de ausencia de valores mediante Optionals (Optional<T>), favorece el uso de tipos por valor (struct, enum con valores asociados) con Copy-on-Write y soporta concurrencia estructurada nativa con async/await y actors para prevenir data races en compilación.",
+    "practicas": [
+      "Preferir struct y protocolos (Protocol-Oriented Programming) frente a jerarquías profundas de herencia con class cuando no se requiera identidad compartida.",
+      "Romper ciclos de retención en closures y delegados declarando [weak self] o [unowned self] según corresponda bajo ARC.",
+      "Evitar force unwrapping (!) y force try (try!) en código de producción; usar guard let, if let o propagación de errores tipados.",
+      "Adoptar Swift Concurrency (Task, async/await, @MainActor, actors) en lugar de pirámides anidadas de DispatchQueue y completion handlers."
+    ],
+    "ejemplo": "@MainActor\nfinal class ProfileViewModel: ObservableObject {\n  @Published var user: User?\n  func load(id: String) async {\n    user = try? await api.fetchUser(id: id)\n  }\n}",
+    "entrevista": "Swift combina compilación nativa vía LLVM y gestión de memoria determinista con ARC junto con Optionals, tipos por valor y actors para garantizar seguridad de memoria y concurrencia sin garbage collector."
+  },
+  "Xamarin": {
+    "que": "Xamarin (evolucionado oficialmente a .NET MAUI a partir de .NET 6/8) es el framework multiplataforma de Microsoft que permite desarrollar aplicaciones móviles iOS y Android utilizando C# y el ecosistema .NET, compartiendo lógica de negocio e incluso interfaz de usuario.",
+    "para": "Resuelve el aprovechamiento de equipos con sólida experiencia en C#/.NET y código compartido con backends ASP.NET para entregar apps móviles en múltiples plataformas. En 2026 su relevancia se concentra en mantenimiento, migración progresiva hacia .NET MAUI o soporte de aplicaciones empresariales existentes (legacy), dado que Microsoft finalizó el soporte oficial de Xamarin clásico en mayo de 2024.",
+    "como": "Xamarin ofrecía dos enfoques: Xamarin.Native (Xamarin.iOS y Xamarin.Android), que exponía bindings directos a las APIs nativas de cada plataforma manteniendo UI separadas, y Xamarin.Forms, que introducía una capa abstracta XAML traducida en tiempo de ejecución a controles nativos mediante Renderers. En Android el runtime Mono ejecutaba IL junto a la JVM mediante wrappers JNI (MCW/ACW); en iOS, debido a la restricción de ejecución dinámica de código, compilaba C# completamente AOT hacia binarios ARM nativos. .NET MAUI reemplazó los Renderers por Handlers desacoplados sobre .NET unificado.",
+    "practicas": [
+      "Para proyectos nuevos en el ecosistema C#, usar .NET MAUI en lugar de Xamarin (cuyo ciclo de vida oficial terminó).",
+      "Al mantener proyectos Xamarin existentes, planificar la migración gradual de Xamarin.Forms Renderers hacia MAUI Handlers y proyectos estilo SDK.",
+      "Separar estrictamente la lógica de dominio y acceso a datos en librerías .NET Standard / .NET sin dependencias de UI para facilitar la portabilidad.",
+      "Xamarin/.NET MAUI vs Flutter: el stack .NET destaca cuando existe fuerte inversión empresarial en C# y librerías compartidas con backend; Flutter domina en rendimiento gráfico uniforme y ecosistema móvil."
+    ],
+    "ejemplo": "<ContentPage xmlns=\"http://schemas.microsoft.com/dotnet/2021/maui\">\n  <VerticalStackLayout Padding=\"24\">\n    <Label Text=\"Hola desde .NET\" FontSize=\"20\" />\n    <Button Text=\"Sincronizar\" Command=\"{Binding SyncCommand}\" />\n  </VerticalStackLayout>\n</ContentPage>",
+    "entrevista": "Xamarin permitió compartir código C# sobre Mono con bindings nativos y AOT en iOS; tras su fin de soporte oficial, su evolución natural para mantener o modernizar ese stack es .NET MAUI con arquitectura basada en Handlers."
+  },
+  "Xcode": {
+    "que": "Xcode es el entorno de desarrollo integrado oficial de Apple (exclusivo de macOS) para diseñar, compilar, depurar, perfilar y distribuir software para iOS, macOS, watchOS, tvOS y visionOS.",
+    "para": "Es una herramienta obligatoria en cualquier flujo iOS (incluso cuando se usa Flutter, React Native o .NET MAUI) porque solo Xcode provee los SDKs de Apple, el compilador clang/swiftc, la firma con certificados y la publicación hacia App Store Connect.",
+    "como": "Organiza proyectos mediante archivos .xcodeproj o espacios .xcworkspace (integrando dependencias con Swift Package Manager o CocoaPods) compuestos por Targets y Schemes. Al compilar, xcodebuild invoca swiftc/clang, enlaza frameworks, empaqueta recursos (Asset Catalogs) y firma el ejecutable combinando el certificado privado del Keychain con el Provisioning Profile correspondiente. Incluye Xcode Previews para SwiftUI, LLDB para depuración, Instruments (Time Profiler, Allocations, Leaks) y Xcode Cloud para CI/CD.",
+    "practicas": [
+      "Usar Swift Package Manager (SPM) como gestor de dependencias por defecto antes que CocoaPods o Carthage.",
+      "Definir Schemes y Build Configurations separados (Debug, Staging, Release) mediante archivos .xcconfig para gestionar URLs y banderas sin tocar el proyecto gráfico.",
+      "Apoyarse en Xcode Instruments (Time Profiler y Leaks) antes de cada release importante para detectar bloqueos del main thread o ciclos ARC.",
+      "Automatizar la firma de código en CI usando fastlane match o App Store Connect API keys en lugar de gestionar perfiles manualmente."
+    ],
+    "ejemplo": "xcodebuild -workspace MyApp.xcworkspace \\\n  -scheme MyApp \\\n  -configuration Release \\\n  -destination 'generic/platform=iOS' archive",
+    "entrevista": "Xcode es imprescindible incluso en proyectos multiplataforma porque gestiona los SDKs de Apple, Swift Package Manager, el firmado con Provisioning Profiles y el perfilado con Instruments antes de subir a App Store Connect."
+  },
+  "iOS": {
+    "que": "iOS es el sistema operativo móvil propietario desarrollado por Apple para el iPhone, caracterizado por una integración estrecha entre hardware (Apple Silicon serie A) y software, estricto aislamiento de seguridad (sandboxing) y ciclos de vida agresivos en memoria y segundo plano.",
+    "para": "Constituye una de las dos plataformas móviles dominantes a nivel global, especialmente relevante en mercados de alta monetización y entornos corporativos MDM. Comprender su arquitectura es indispensable para diseñar aplicaciones que respeten sus políticas de privacidad, renderizado y permisos sin ser cerradas por el sistema.",
+    "como": "iOS se apoya en un núcleo XNU (Darwin) que aísla cada aplicación dentro de su propio sandbox de sistema de archivos con acceso restringido mediante Entitlements y Keychain para secretos. La capa de interfaz ofrece dos frameworks principales: UIKit (imperativo, basado en UIViewController) y SwiftUI (declarativo y reactivo, apoyado en AttributeGraph). La gestión de memoria sin swap tradicional implica que, ante presión de RAM o bloqueo del hilo principal en lanzamiento, el proceso Watchdog termina la app inmediatamente con código de excepción (como 0x8badf00d); el trabajo diferido en background se delega exclusivamente a APIs controladas como BGTaskScheduler o push silenciosos.",
+    "practicas": [
+      "Guardar credenciales, tokens OAuth y claves privadas únicamente en iOS Keychain, nunca en UserDefaults ni archivos en Documents.",
+      "Declarar el Privacy Manifest (PrivacyInfo.xcprivacy) documentando el uso de APIs sensibles y SDKs de terceros exigido por Apple.",
+      "Diseñar la navegación y estado contemplando que iOS suspende o termina la app en segundo plano sin garantía de aviso prolongado (State Restoration).",
+      "iOS vs Android: iOS ofrece menor fragmentación de hardware y actualizaciones rápidas de SO, pero impone revisiones estrictas de App Store y ejecución mucho más restrictiva en segundo plano."
+    ],
+    "ejemplo": "let query: [String: Any] = [\n  kSecClass as String: kSecClassGenericPassword,\n  kSecAttrAccount as String: \"auth_token\",\n  kSecValueData as String: tokenData\n]\nSecItemAdd(query as CFDictionary, nil)",
+    "entrevista": "Desarrollar para iOS exige respetar su sandbox estricto, custodiar secretos en Keychain, evitar bloqueos del hilo principal frente al Watchdog y adaptarse a su gestión agresiva de procesos en segundo plano."
+  }
+}

@@ -1,0 +1,392 @@
+{
+  "A (A-star)": {
+    "que": "A* (A-star) es un algoritmo de búsqueda informada sobre grafos ponderados que encuentra el camino de costo mínimo entre un nodo origen y un nodo destino. Combina el costo real acumulado desde el origen, g(n), con una función heurística que estima el costo restante hasta la meta, h(n), evaluando cada nodo mediante f(n) = g(n) + h(n).",
+    "para": "Resuelve problemas de planificación de rutas donde explorar todo el grafo en todas direcciones sería demasiado costoso, como navegación GPS, pathfinding en videojuegos (mallas o navmeshes) y robótica. Se utiliza en lugar de Dijkstra cuando existe información geométrica o de dominio que permite estimar la distancia restante al objetivo sin perder la garantía de optimalidad.",
+    "como": "Mantiene un conjunto abierto (open set) implementado como cola de prioridad (min-heap) ordenado por f(n) = g(n) + h(n), un mapa de costos g(n) conocidos y un mapa de predecesores (came_from) para reconstruir la ruta. En cada iteración extrae el nodo u con menor f(u); si u es la meta, reconstruye y devuelve el camino. Para cada vecino v de u calcula un costo tentativo g_tent = g(u) + peso(u, v) y, si mejora el g(v) registrado, actualiza came_from[v], g(v) y f(v) = g(v) + h(v) en el min-heap. Si la heurística h(n) es admisible (nunca sobreestima el costo real) y consistente (cumple la desigualdad triangular h(u) <= peso(u, v) + h(v)), cada nodo se expande a lo sumo una vez con su ruta óptima.",
+    "practicas": [
+      "Asegura que la heurística sea admisible (p. ej. distancia Manhattan en cuadrículas de 4 direcciones, Euclidiana en movimiento libre); si sobreestima, A* se vuelve más rápido (Weighted A*) pero pierde la garantía del camino más corto.",
+      "A* vs Dijkstra: Dijkstra equivale a A* con h(n) = 0; usa Dijkstra cuando necesites distancias mínimas a todos los nodos o no exista una heurística útil.",
+      "En cuadrículas con muchos caminos equivalentes (empates en f), añade un pequeño desempate en h (tie-breaking) para evitar expandir grandes mesetas de nodos con el mismo costo.",
+      "Evita recalcular o re-enhebrar nodos en el heap sin control: permite entradas duplicadas en el min-heap descartando al extraer si g registrado es menor, lo que simplifica la implementación frente a decrease-key."
+    ],
+    "ejemplo": "def a_star(grafo, inicio, meta, h):\n    pq, g_score = [(h(inicio, meta), 0, inicio)], {inicio: 0}\n    while pq:\n        _, g, u = heapq.heappop(pq)\n        if u == meta: return g\n        if g > g_score.get(u, float('inf')): continue\n        for v, w in grafo[u]:\n            if g + w < g_score.get(v, float('inf')):\n                g_score[v] = g + w\n                heapq.heappush(pq, (g + w + h(v, meta), g + w, v))",
+    "entrevista": "A* optimiza Dijkstra guiando la exploración mediante f(n) = g(n) + h(n), garantizando el camino óptimo siempre que la heurística sea admisible y reduciendo drásticamente los nodos expandidos."
+  },
+  "AVL - Red-Black": {
+    "que": "Los árboles AVL y Red-Black (rojo-negro) son árboles binarios de búsqueda (BST) autobalanceados que mantienen su altura en O(log n) tras cada inserción o eliminación. Un AVL impone un balance estricto basado en diferencia de alturas, mientras que un Red-Black aplica reglas de coloración por nodo para garantizar que la rama más larga nunca supere el doble de la más corta.",
+    "para": "Resuelven la degradación a O(n) de un BST convencional cuando llegan datos ordenados o casi ordenados. Se usan en índices en memoria, estructuras ordenadas de bibliotecas estándar (std::map y std::set en C++, TreeMap en Java usan Red-Black) y planificadores de procesos como el CFS de Linux, donde se requieren búsquedas, inserciones y recorridos en rango predecibles en O(log n).",
+    "como": "En un árbol AVL cada nodo almacena su altura o factor de balance (altura_izq - altura_der), el cual debe permanecer en {-1, 0, 1}; cuando una inserción o borrado rompe ese invariante, se aplican rotaciones simples (LL, RR) o dobles (LR, RL) subiendo hacia la raíz. En un árbol Red-Black cada nodo es rojo o negro, la raíz y las hojas NIL son negras, ningún nodo rojo tiene hijos rojos y todo camino de un nodo a sus hojas NIL contiene el mismo número de nodos negros (black-height). Tras insertar o borrar, se restauran estos cinco invariantes mediante recoloreo de nodos en O(1) y como máximo dos rotaciones en inserción (o tres en borrado), evitando recorrer y reestructurar toda la ruta hasta la raíz con tanta frecuencia.",
+    "practicas": [
+      "AVL vs Red-Black: elige AVL cuando la carga sea casi exclusivamente de lecturas/búsquedas (menor altura máxima: ~1.44 log2 n) y Red-Black cuando haya escrituras frecuentes (rotaciones acotadas en O(1) amortizado).",
+      "No implementes árboles autobalanceados desde cero en producción salvo en motores de almacenamiento o sistemas embebidos sin librería estándar; la lógica de borrado en Red-Black es propensa a errores sutiles.",
+      "Para almacenamiento en disco o SSD, prefiere B-Trees / B+ Trees sobre AVL o Red-Black porque empaquetan cientos de claves por página y maximizan la localidad de caché y las lecturas por bloque.",
+      "Recuerda que mantener metadatos extra en los nodos (como el tamaño del subárbol) convierte a ambos en Order Statistic Trees capaces de responder k-ésimo elemento o rank en O(log n)."
+    ],
+    "ejemplo": "# Rotación simple a la derecha (caso LL en AVL)\ndef rotar_derecha(y):\n    x = y.izq\n    T2 = x.der\n    x.der = y\n    y.izq = T2\n    y.altura = 1 + max(altura(y.izq), altura(y.der))\n    x.altura = 1 + max(altura(x.izq), altura(x.der))\n    return x",
+    "entrevista": "Los árboles AVL ofrecen búsquedas ligeramente más rápidas gracias a su balance estricto, mientras que los Red-Black sacrifican un poco de altura para acotar las rotaciones en inserciones y borrados."
+  },
+  "Arreglos": {
+    "que": "Un arreglo (array) es una estructura de datos lineal que almacena una colección de elementos en un bloque contiguo de memoria física o virtual. Al tener elementos de tamaño fijo ubicados de forma consecutiva, permite calcular directamente la dirección de memoria de cualquier índice en tiempo O(1).",
+    "para": "Es la estructura base para almacenar secuencias de longitud conocida o donde predominan las lecturas aleatorias por índice y los recorridos secuenciales de alto rendimiento. Se utiliza en buffers de I/O, procesamiento numérico, implementación de otras estructuras (heaps, tablas hash, listas dinámicas) y escenarios sensibles al caché de CPU.",
+    "como": "Al declarar un arreglo de tipo T y longitud N, el sistema reserva N * sizeof(T) bytes contiguos a partir de una dirección base B. El acceso al elemento arr[i] se traduce en aritmética de punteros: dirección = B + i * sizeof(T), ejecutada en una sola instrucción sin seguir enlaces. Debido a la contigüidad, al leer arr[0] la CPU carga una línea completa de caché (típicamente 64 bytes) en L1/L2, acelerando enormemente el acceso a arr[1], arr[2], etc. En cambio, insertar o eliminar en una posición intermedia exige desplazar todos los elementos posteriores una posición (O(n)), y exceder la capacidad fija requiere asignar un nuevo bloque y copiar los datos.",
+    "practicas": [
+      "Aprovecha la localidad espacial: recorrer arreglos secuencialmente supera en órdenes de magnitud a estructuras basadas en punteros como listas enlazadas, incluso con la misma complejidad Big O.",
+      "Arreglos vs Listas enlazadas: usa arreglos para acceso aleatorio O(1) y bajo overhead de memoria por elemento; usa listas enlazadas solo si necesitas inserciones/borrados O(1) con referencia directa al nodo o estabilidad de punteros.",
+      "Valida siempre los límites del índice (bounds checking) para evitar desbordamientos de buffer (buffer overflows) en lenguajes de bajo nivel como C/C++ o IndexError en lenguajes gestionados.",
+      "En algoritmos in-place sobre arreglos ordenados o particionados, aplica la técnica de dos punteros (two pointers) o ventana deslizante para evitar copias auxiliares."
+    ],
+    "ejemplo": "// Acceso O(1) por aritmética de punteros vs inserción O(n)\nint arr[5] = {10, 20, 30, 40, 50};\nint x = arr[3]; // Dirección base + 3 * sizeof(int) -> 40\n// Insertar en índice 1 exige desplazar [20, 30, 40] a la derecha",
+    "entrevista": "Un arreglo garantiza acceso aleatorio en O(1) y excelente localidad de caché gracias a su memoria contigua, a costa de un tamaño fijo e inserciones intermedias en O(n)."
+  },
+  "BST": {
+    "que": "Un árbol binario de búsqueda (Binary Search Tree o BST) es una estructura de datos jerárquica donde cada nodo contiene una clave comparable y como máximo dos hijos (izquierdo y derecho). Cumple el invariante de orden: todas las claves del subárbol izquierdo son menores que la del nodo, y todas las del subárbol derecho son mayores.",
+    "para": "Sirve para mantener conjuntos dinámicos ordenados que soportan búsqueda, inserción, eliminación, mínimo, máximo y consultas de rango (sucesor/predecesor) de forma eficiente. Es la base conceptual de índices en memoria, diccionarios ordenados y árboles autobalanceados como AVL y Red-Black.",
+    "como": "Para buscar una clave k, se comienza en la raíz y se compara k con el valor del nodo actual: si es igual se devuelve, si es menor se desciende al hijo izquierdo y si es mayor al derecho, descartando todo un subárbol en cada paso. La inserción sigue exactamente la misma ruta de descenso hasta alcanzar un puntero nulo, donde enlaza el nuevo nodo hoja. La eliminación contempla tres casos: si el nodo es hoja se desvincula; si tiene un hijo se sustituye por ese hijo; y si tiene dos hijos se reemplaza su valor por el sucesor in-order (el mínimo del subárbol derecho) o el predecesor, y se elimina dicho reemplazo. Un recorrido in-order (izquierda, raíz, derecha) visita todas las claves en orden ascendente en O(n).",
+    "practicas": [
+      "Trampa clásica: un BST sin balanceo degenera en una lista enlazada de altura O(n) si se insertan claves ya ordenadas o en orden inverso; en producción usa variantes autobalanceadas (AVL, Red-Black, Treap).",
+      "Define claramente la política ante claves duplicadas (rechazarlas, guardar un contador en el nodo o enviarlas consistentemente a un lado) para no romper el invariante en búsquedas y borrados.",
+      "BST vs HashMap: prefiere un BST cuando necesites recorrer elementos en orden, encontrar predecesor/sucesor o consultar rangos [a, b]; usa HashMap para búsquedas exactas O(1).",
+      "En entrevistas, recuerda que validar un BST no basta con comprobar nodo.izq < nodo < nodo.der localmente: debes propagar un rango (min_val, max_val) válido hacia abajo."
+    ],
+    "ejemplo": "def es_bst_valido(nodo, minimo=float('-inf'), maximo=float('inf')):\n    if not nodo:\n        return True\n    if not (minimo < nodo.val < maximo):\n        return False\n    return (es_bst_valido(nodo.izq, minimo, nodo.val) and\n            es_bst_valido(nodo.der, nodo.val, maximo))",
+    "entrevista": "Un BST permite búsquedas, inserciones y consultas ordenadas en O(log n) promedio, pero requiere balanceo para evitar el peor caso O(n) cuando los datos llegan ordenados."
+  },
+  "Bubble Sort": {
+    "que": "Bubble Sort (ordenamiento por burbuja) es un algoritmo de ordenamiento por comparación, estable e in-place, con complejidad temporal O(n^2) en el caso promedio y peor caso. Su nombre proviene de cómo los elementos de mayor valor 'flotan' progresivamente hacia el final de la secuencia mediante intercambios adyacentes.",
+    "para": "En la práctica productiva no se usa para ordenar colecciones reales debido a su costo cuadrático frente a O(n log n). Su utilidad principal es didáctica, para demostrar invariantes de ciclo, estabilidad e intercambios locales, o en microarreglos casi ordenados donde el código mínimo prima sobre todo lo demás.",
+    "como": "Ejecuta hasta n - 1 pasadas sobre el arreglo comparando cada par de elementos adyacentes arr[j] y arr[j + 1]. Si arr[j] > arr[j + 1], los intercambia; al finalizar la i-ésima pasada, los i elementos mayores ya ocupan sus posiciones definitivas al final del arreglo. Con la optimización de bandera booleana (swapped), si una pasada completa no realiza ningún intercambio, el algoritmo concluye inmediatamente que el arreglo está ordenado y termina en O(n) para el mejor caso.",
+    "practicas": [
+      "Incluye siempre la bandera de parada temprana (early exit) para lograr O(n) cuando el arreglo ya está ordenado, y reduce el límite interno en cada pasada ya que el sufijo está ordenado.",
+      "Bubble Sort vs Insertion Sort: incluso para arreglos diminutos o casi ordenados, Insertion Sort es casi siempre superior porque realiza asignaciones simples en vez de tres escrituras por cada swap.",
+      "Es un algoritmo estable (conserva el orden relativo de claves iguales) siempre que uses comparación estricta (>) y no (>=).",
+      "Evita usarlo en entrevistas como solución principal: cítalo solo como línea base ingenua antes de proponer Quick Sort, Merge Sort o Timsort."
+    ],
+    "ejemplo": "def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n - 1):\n        swapped = False\n        for j in range(n - 1 - i):\n            if arr[j] > arr[j + 1]:\n                arr[j], arr[j + 1] = arr[j + 1], arr[j]\n                swapped = True\n        if not swapped: break",
+    "entrevista": "Bubble Sort es un algoritmo estable e in-place de complejidad O(n^2) útil sobre todo a nivel pedagógico, aunque con parada temprana alcanza O(n) en entradas ya ordenadas."
+  },
+  "Búsqueda binaria": {
+    "que": "La búsqueda binaria es un algoritmo de divide y vencerás que localiza un elemento o una frontera de condición dentro de un espacio ordenado o monótono en tiempo O(log n) y espacio O(1) iterativo. En cada iteración descarta exactamente la mitad del espacio de búsqueda restante.",
+    "para": "Resuelve búsquedas rápidas en arreglos ordenados, índices estáticos, detección de versiones defectuosas (como git bisect) y optimización paramétrica ('Binary Search on Answer'). Se aplica siempre que exista una función predicado monótona (F, F, ..., T, T) sobre un rango discreto o continuo.",
+    "como": "Inicializa dos punteros, low = 0 y high = n - 1, delimitando el intervalo cerrado [low, high]. En cada paso calcula el punto medio mid = low + (high - low) // 2 (evitando desbordamiento de enteros) y evalúa el elemento arr[mid] frente al objetivo. Si arr[mid] == target devuelve mid; si arr[mid] < target descarta la mitad izquierda moviendo low = mid + 1; de lo contrario mueve high = mid - 1. En variantes de frontera (lower_bound / upper_bound), converge hasta que low y high coinciden para hallar la primera o última ocurrencia válida.",
+    "practicas": [
+      "Calcula mid como low + (high - low) // 2 en lenguajes con enteros de tamaño fijo (C++, Java) para prevenir integer overflow cuando low + high supera INT_MAX.",
+      "Los errores off-by-one son la trampa más común: define claramente si tu intervalo es cerrado [low, high] (while low <= high) o semiabierto [low, high) (while low < high) y mantén esa convención en todas las actualizaciones.",
+      "Búsqueda binaria vs HashMap: si los datos son estáticos o necesitas consultas de rango y bajo uso de memoria, búsqueda binaria en arreglo ordenado gana en localidad de caché; si hay muchas inserciones con búsquedas exactas, usa HashMap.",
+      "Domina el patrón 'Binary Search on Answer' para problemas de minimizar un máximo o maximizar un mínimo (p. ej. capacidad mínima de envío o velocidad de procesamiento)."
+    ],
+    "ejemplo": "def lower_bound(arr, target):\n    low, high = 0, len(arr)\n    while low < high:\n        mid = low + (high - low) // 2\n        if arr[mid] < target:\n            low = mid + 1\n        else:\n            high = mid\n    return low",
+    "entrevista": "La búsqueda binaria reduce un espacio de búsqueda monótono a la mitad en cada paso para lograr O(log n), y su dominio real incluye hallar fronteras exactas y optimizar sobre respuestas posibles."
+  },
+  "Búsqueda en anchura (BFS)": {
+    "que": "La búsqueda en anchura (Breadth-First Search o BFS) es un algoritmo de recorrido de grafos y árboles que explora los nodos por capas de distancia creciente desde un origen. Visita todos los vecinos directos de un nodo antes de avanzar hacia los vecinos de segundo nivel, con complejidad O(V + E).",
+    "para": "Resuelve el problema de encontrar el camino más corto (en número de aristas) en grafos no ponderados, recorridos por niveles en árboles, verificación de bipartición y difusión o propagación mínima (como contagio en redes o distancia en mallas). Es indispensable cuando la meta suele estar cerca de la raíz o el grafo tiene profundidad infinita.",
+    "como": "Utiliza una cola FIFO (queue) y un conjunto o arreglo booleano de nodos visitados para evitar ciclos. Inserta el nodo origen en la cola y lo marca como visitado de inmediato (antes de encolar, no al desencolar) para impedir inserciones duplicadas. En un ciclo mientras la cola no esté vacía, extrae el nodo frontal u, procesa u e inserta cada vecino no visitado v al final de la cola marcándolo como visitado. Para medir niveles o reconstruir rutas, guarda la distancia dist[v] = dist[u] + 1 y el predecesor parent[v] = u.",
+    "practicas": [
+      "Marca siempre los nodos como visitados al momento de encolarlos (no al sacarlos de la cola), o insertarás el mismo nodo múltiples veces causando explosión de memoria y tiempo.",
+      "BFS vs DFS: usa BFS cuando busques el camino mínimo en grafos sin pesos o quieras explorar por niveles; usa DFS cuando necesites explorar rutas completas, backtracking o consumir menos memoria en grafos muy anchos.",
+      "En problemas con múltiples orígenes simultáneos (ej. distancia a la salida más cercana en una matriz), inicializa la cola con todos los orígenes a distancia 0 (Multi-source BFS).",
+      "Si el factor de ramificación es alto y conoces origen y destino, considera BFS bidireccional para reducir el espacio explorado de O(b^d) a O(b^(d/2))."
+    ],
+    "ejemplo": "from collections import deque\ndef bfs(grafo, inicio):\n    visitados = {inicio}\n    cola = deque([(inicio, 0)])\n    while cola:\n        u, dist = cola.popleft()\n        for v in grafo[u]:\n            if v not in visitados:\n                visitados.add(v)\n                cola.append((v, dist + 1))",
+    "entrevista": "BFS explora el grafo por capas mediante una cola FIFO en tiempo O(V + E), garantizando el camino más corto en grafos no ponderados siempre que marquemos visitados al encolar."
+  },
+  "Búsqueda en profundidad (DFS)": {
+    "que": "La búsqueda en profundidad (Depth-First Search o DFS) es un algoritmo de recorrido de grafos y árboles que explora cada rama tan lejos como sea posible antes de retroceder (backtrack). Opera en tiempo O(V + E) y espacio O(V) en el peor caso debido a la pila de recursión o pila explícita.",
+    "para": "Se utiliza para detectar ciclos, calcular componentes conexas o fuertemente conexas (Tarjan/Kosaraju), generar ordenamientos topológicos en DAGs, resolver laberintos y explorar árboles de decisión en problemas de backtracking. A diferencia de BFS, no garantiza el camino más corto pero requiere menos memoria en grafos con gran factor de ramificación y poca profundidad.",
+    "como": "Puede implementarse de forma recursiva usando el call stack o iterativa mediante una pila LIFO explícita. Al visitar un nodo u, se marca como visitado (o en estado 'visitando' / gris para detección de ciclos en grafos dirigidos) y se invoca DFS sobre cada vecino v aún no explorado. Cuando todos los vecinos de u han terminado su exploración, u pasa a estado 'completado' (negro) y el flujo retrocede al nodo padre. Los tiempos de entrada y salida (discovery/finish times) permiten clasificar aristas (árbol, retroceso, avance, cruce) y obtener orden topológico invirtiendo el orden de finalización.",
+    "practicas": [
+      "En grafos dirigidos, usa tres estados (0 = no visitado, 1 = en pila actual, 2 = completado) para detectar ciclos con precisión; dos estados solo sirven en grafos no dirigidos.",
+      "Ten cuidado con el límite de recursión (StackOverflowError / RecursionError en Python con límite por defecto de ~1000) en grafos profundos; reescribe DFS con una pila explícita cuando la profundidad pueda ser grande.",
+      "DFS vs BFS: nunca uses DFS para buscar la ruta más corta en un grafo general sin pesos, porque puede encontrar un camino largo primero o requerir explorar todo el grafo.",
+      "En árboles binarios, recuerda que los recorridos pre-order, in-order y post-order son todas variantes directas de DFS."
+    ],
+    "ejemplo": "def dfs_ciclo_dirigido(u, grafo, estado):\n    estado[u] = 1  # En proceso (gris)\n    for v in grafo[u]:\n        if estado[v] == 1: return True\n        if estado[v] == 0 and dfs_ciclo_dirigido(v, grafo, estado):\n            return True\n    estado[u] = 2  # Completado (negro)\n    return False",
+    "entrevista": "DFS profundiza por cada rama usando recursión o una pila LIFO en O(V + E), siendo la herramienta ideal para detección de ciclos, ordenamiento topológico, componentes conexas y backtracking."
+  },
+  "Búsqueda lineal": {
+    "que": "La búsqueda lineal (o secuencial) es el algoritmo de búsqueda más elemental: inspecciona los elementos de una colección uno por uno desde el inicio hasta encontrar el valor buscado o agotar todos los elementos. Su complejidad es O(n) en el peor caso y caso promedio, con espacio auxiliar O(1).",
+    "para": "Resuelve búsquedas sobre colecciones pequeñas, datos no ordenados sin índice previo o estructuras que solo admiten acceso secuencial como listas enlazadas y flujos de datos (streams). En arreglos muy pequeños (pocas decenas de elementos), suele superar en tiempo real a la búsqueda binaria o hash por su simplicidad y ausencia de sobrecarga.",
+    "como": "Recorre la secuencia mediante un puntero o índice i desde 0 hasta n - 1 comparando arr[i] con el valor objetivo. Si encuentra coincidencia, detiene el ciclo inmediatamente (early return) y devuelve el índice o referencia del elemento; si llega al final sin éxito, devuelve un valor centinela (como -1 o null). Una optimización clásica en arreglos mutables es colocar un valor centinela (sentinel search) al final del arreglo para eliminar la comprobación de límite i < n en cada iteración del bucle.",
+    "practicas": [
+      "Si vas a ejecutar múltiples búsquedas sobre el mismo conjunto de datos estático, ordena primero (O(n log n)) y usa búsqueda binaria, o indexa en un HashMap (O(n)) para búsquedas futuras en O(1).",
+      "No subestimes la búsqueda lineal en arreglos pequeños (< 32-64 elementos): la predicción de saltos y el prefetching secuencial de la CPU la hacen extremadamente veloz en hardware moderno.",
+      "Evita hacer búsquedas lineales anidadas dentro de bucles sobre colecciones grandes; ese patrón oculto convierte una rutina aparentemente simple en O(n^2).",
+      "Búsqueda lineal vs Búsqueda binaria: la lineal no impone precondiciones de orden y funciona en listas enlazadas, mientras que la binaria exige ordenamiento y acceso aleatorio."
+    ],
+    "ejemplo": "def busqueda_lineal(arr, target):\n    for i, valor in enumerate(arr):\n        if valor == target:\n            return i\n    return -1",
+    "entrevista": "La búsqueda lineal opera en O(n) tiempo y O(1) espacio sin exigir orden previo, siendo óptima para colecciones no indexadas, streams o arreglos muy pequeños por su excelente localidad de caché."
+  },
+  "Búsqueda por hash": {
+    "que": "La búsqueda por hash es una técnica de acceso directo que localiza elementos en tiempo promedio O(1) transformando la clave buscada en un índice numérico mediante una función hash. A diferencia de las búsquedas por comparación, no recorre ni particiona el conjunto de claves, sino que calcula directamente dónde debería residir el dato.",
+    "para": "Se emplea cuando se necesitan búsquedas de igualdad exacta ultrarrápidas, detección de duplicados, caché en memoria, indexación de bases de datos (hash indexes) y verificación de membresía en conjuntos. No sirve para consultas de rango, ordenamiento o búsqueda por prefijo.",
+    "como": "Dada una clave k, el algoritmo calcula h = hash(k) y la reduce al tamaño de la tabla mediante módulo o máscara de bits (idx = h & (capacidad - 1)). Accede directamente al bucket en esa posición y compara k con las claves almacenadas allí para confirmar coincidencia exacta y descartar colisiones. Si hay colisión, recorre la lista/árbol del bucket (separate chaining) o sigue la secuencia de sondeo lineal/cuadrático/Robin Hood (open addressing) hasta encontrar k o una ranura vacía que demuestre su ausencia.",
+    "practicas": [
+      "Asegura que los objetos usados como clave sean inmutables y cumplan el contrato hashCode/equals: si dos objetos son iguales, deben producir exactamente el mismo hash.",
+      "Búsqueda por hash vs Búsqueda binaria: hash logra O(1) promedio pero pierde orden y tiene peor localidad para rangos; binaria toma O(log n) pero permite rangos, predecesores y menor consumo de memoria.",
+      "En entradas no confiables (APIs públicas), usa funciones hash con semilla aleatoria (como SipHash en Rust/Python) para prevenir ataques HashDoS que fuerzan colisiones y degradan el tiempo a O(n).",
+      "Si solo necesitas comprobar probable pertenencia con memoria mínima y aceptas falsos positivos controlados, considera un Bloom Filter en lugar de almacenar todas las claves."
+    ],
+    "ejemplo": "# Búsqueda O(1) promedio frente a búsqueda O(n) en lista\nvistos = set()\nfor num in flujo_datos:\n    complemento = objetivo - num\n    if complemento in vistos:  # Búsqueda por hash O(1)\n        return (complemento, num)\n    vistos.add(num)",
+    "entrevista": "La búsqueda por hash alcanza O(1) promedio mapeando claves a posiciones mediante hashing y resolución de colisiones, siendo la opción óptima para búsquedas exactas cuando no se requiere orden."
+  },
+  "Colas": {
+    "que": "Una cola (queue) es una estructura de datos lineal abstracta que sigue el principio FIFO (First-In, First-Out): el primer elemento en entrar es el primero en salir. Todas las inserciones ocurren por el extremo posterior (rear/tail) y todas las extracciones por el extremo frontal (front/head).",
+    "para": "Modela colas de espera, buffers de entrada/salida, planificación de tareas asíncronas, mensajería entre productores y consumidores y el recorrido BFS en grafos. Se utiliza siempre que deba respetarse estrictamente el orden de llegada de los elementos.",
+    "como": "Puede implementarse sobre una lista enlazada manteniendo dos punteros (head y tail) para lograr enqueue y dequeue en O(1) real, o sobre un arreglo circular (ring buffer) usando índices modulares (head = (head + 1) % cap) que evita desplazar elementos al extraer. Cuando un ring buffer se llena, o bien rechaza/bloquea (bounded queue), o bien realoca y copia en un arreglo de doble tamaño en O(1) amortizado. Variantes extendidas incluyen la cola doble (deque), que permite inserción y extracción en ambos extremos en O(1), y la cola de prioridad (implementada típicamente con un Heap).",
+    "practicas": [
+      "Nunca implementes una cola en Python usando list.pop(0) o shift() en JS sobre arreglos grandes: desplaza todos los elementos en O(n); usa collections.deque o un ring buffer.",
+      "Colas vs Pilas: las colas preservan el orden cronológico (FIFO, ideal para BFS y buffers), mientras que las pilas lo invierten (LIFO, ideal para DFS y evaluación de expresiones).",
+      "En sistemas concurrentes y productores-consumidores, usa colas acotadas (bounded queues) para aplicar backpressure y evitar que un productor rápido agote la memoria.",
+      "Cuando necesites procesar primero los elementos más urgentes sin importar cuándo llegaron, reemplaza la cola FIFO por una Priority Queue (Heap)."
+    ],
+    "ejemplo": "from collections import deque\ncola = deque()\ncola.append('tarea_1')    # Enqueue O(1)\ncola.append('tarea_2')\nactual = cola.popleft()   # Dequeue O(1) -> 'tarea_1'",
+    "entrevista": "Una cola garantiza orden FIFO con enqueue y dequeue en O(1) usando un ring buffer o lista doblemente enlazada, evitando desplazamientos O(n) típicos de arreglos simples."
+  },
+  "Complejidad (Big O)": {
+    "que": "La notación Big O (O grande) es una herramienta matemática de análisis asintótico que describe la cota superior del crecimiento de tiempo o espacio de un algoritmo cuando el tamaño de la entrada n tiende a infinito. Ignora factores constantes y términos de menor orden para centrarse en la tasa de crecimiento dominante.",
+    "para": "Sirve para comparar algoritmos de forma independiente del hardware, lenguaje o compilador, y para predecir si una solución escalará al pasar de cientos a millones de registros. Permite detectar cuellos de botella algorítmicos antes de escribir código o realizar micro-optimizaciones prematuras.",
+    "como": "Para calcular la complejidad temporal se cuentan las operaciones elementales en función del tamaño de entrada N (y otras variables independientes como V, E o K), expresando el costo como f(N). Se conserva únicamente el término de mayor orden sin su coeficiente: por ejemplo, 3n^2 + 100n + 50 se simplifica a O(n^2). Formalmente, f(n) es O(g(n)) si existen constantes positivas c y n0 tales que f(n) <= c * g(n) para todo n >= n0. Junto a Big O (cota superior), existen Omega (cota inferior) y Theta (cota ajustada), evaluadas habitualmente en el peor caso, caso promedio o mejor caso.",
+    "practicas": [
+      "Distingue claramente entre múltiples variables de entrada: recorrer una matriz M x N es O(M * N), no O(N^2), y un algoritmo sobre grafos es O(V + E).",
+      "No olvides el costo oculto de operaciones integradas: concatenar strings en un bucle en lenguajes inmutables o copiar slices dentro de una recursión puede añadir un factor O(n) extra.",
+      "Big O mide escalabilidad asintótica, no velocidad absoluta para entradas pequeñas: un algoritmo O(n log n) con constante alta o mala localidad de caché puede ser más lento que uno O(n^2) para n = 20.",
+      "Evalúa siempre tanto la complejidad temporal como la espacial (incluyendo la pila de llamadas recursivas y estructuras auxiliares)."
+    ],
+    "ejemplo": "# O(n^2) temporal, O(1) espacial vs O(n) temporal, O(n) espacial\n# Doble bucle para buscar duplicados: O(n^2)\n# Uso de set() para buscar duplicados: O(n) tiempo, O(n) espacio",
+    "entrevista": "Big O mide cómo escala el consumo de tiempo o memoria respecto al tamaño de entrada en el límite asintótico, permitiendo comparar diseños algorítmicos sin depender del hardware."
+  },
+  "Complejidad amortizada": {
+    "que": "La complejidad amortizada es el costo promedio por operación garantizado a lo largo de cualquier secuencia de operaciones en el peor caso, incluso si operaciones puntuales resultan costosas. A diferencia del análisis de caso promedio probabilístico, no asume ninguna distribución aleatoria de los datos de entrada.",
+    "para": "Explica el rendimiento real de estructuras que realizan reorganizaciones periódicas poco frecuentes, como arreglos dinámicos (std::vector, ArrayList, Python list), tablas hash con rehashing, colas implementadas con dos pilas y Union-Find con compresión de caminos. Evita descartar estructuras eficientes por mirar únicamente el peor caso de una operación aislada.",
+    "como": "Se analiza mediante tres métodos formales: análisis agregado (se suma el costo total T(n) de n operaciones en el peor caso y se divide entre n), método de contabilidad (se asigna un 'crédito' prepagado a operaciones baratas para financiar futuras operaciones caras) y método potencial (se define una función de energía potencial acumulada en la estructura). En un arreglo dinámico que duplica su capacidad al llenarse, n inserciones provocan copias en potencias de 2 (1 + 2 + 4 + ... + n < 2n), por lo que el costo total de n push_back es < 3n, resultando en O(1) amortizado por inserción aunque un resize individual cueste O(n).",
+    "practicas": [
+      "Si el arreglo dinámico creciera sumando una cantidad constante k en lugar de multiplicando (p. ej. +10 elementos), el costo amortizado degradaría a O(n) por inserción.",
+      "Complejidad amortizada vs Caso promedio: el caso promedio depende de que la entrada sea aleatoria (ej. Quick Sort), mientras que la amortizada es determinista sobre la peor secuencia posible de llamadas.",
+      "En sistemas de tiempo real estricto (hard real-time, audio, trading de baja latencia), un pico ocasional O(n) de redimensionamiento es inaceptable aunque sea O(1) amortizado; preasigna capacidad o usa estructuras incrementales.",
+      "Ejemplo clásico de entrevista: una cola hecha con dos pilas tiene dequeue O(n) ocasional al volcar la pila de entrada, pero cada elemento se mueve como máximo dos veces, garantizando O(1) amortizado."
+    ],
+    "ejemplo": "# Cola con 2 pilas: cada elemento entra en 'in_s', pasa a 'out_s' y sale -> O(1) amortizado\nclass ColaDosPilas:\n    def __init__(self): self.in_s, self.out_s = [], []\n    def push(self, x): self.in_s.append(x)\n    def pop(self):\n        if not self.out_s:\n            while self.in_s: self.out_s.append(self.in_s.pop())\n        return self.out_s.pop()",
+    "entrevista": "La complejidad amortizada promedia el costo sobre la peor secuencia de operaciones, demostrando que picos aislados O(n) como duplicar un arreglo dinámico se diluyen en O(1) amortizado por operación."
+  },
+  "Counting Sort": {
+    "que": "Counting Sort es un algoritmo de ordenamiento estable y no basado en comparaciones que ordena enteros (o claves mapeables a enteros) dentro de un rango acotado [0, k] en tiempo O(n + k) y espacio O(n + k). Al no comparar elementos entre sí, supera la cota inferior Omega(n log n) de los algoritmos por comparación.",
+    "para": "Es ideal cuando el número de elementos n es grande pero el rango de valores posibles k es pequeño o comparable a n (por ejemplo edades, calificaciones, códigos ASCII o bytes). Además, sirve como subrutina estable fundamental dentro de Radix Sort para ordenar dígito a dígito.",
+    "como": "Primero crea un arreglo de conteo count de tamaño k + 1 inicializado en cero y recorre la entrada incrementando count[x] por cada ocurrencia del valor x. Luego transforma count en un arreglo de sumas prefijas (prefix sums), donde cada posición count[x] pasa a indicar la posición final límite del valor x en la salida ordenada. Finalmente, recorre el arreglo original de derecha a izquierda (para preservar la estabilidad), coloca cada elemento x en salida[count[x] - 1] y decrementa count[x].",
+    "practicas": [
+      "Para garantizar estabilidad (indispensable cuando Counting Sort se usa dentro de Radix Sort o sobre objetos con satélite), debes recorrer el arreglo original hacia atrás en la fase de reconstrucción.",
+      "Si el rango tiene valores negativos o un mínimo alto (ej. [1000, 1050]), normaliza restando min_val a cada clave para que el arreglo de conteo mida (max_val - min_val + 1) y no wasted space.",
+      "Counting Sort vs Quick/Merge Sort: si k >> n log n (por ejemplo ordenar 100 enteros de 64 bits), Counting Sort explota en memoria y tiempo; en ese caso vuelve a un algoritmo O(n log n).",
+      "Úsalo como primera opción en entrevistas cuando veas restricciones explícitas de rango reducido en las claves."
+    ],
+    "ejemplo": "def counting_sort(arr, k):\n    count = [0] * (k + 1)\n    for x in arr: count[x] += 1\n    for i in range(1, k + 1): count[i] += count[i - 1]\n    out = [0] * len(arr)\n    for x in reversed(arr):\n        count[x] -= 1\n        out[count[x]] = x\n    return out",
+    "entrevista": "Counting Sort rompe la barrera O(n log n) logrando O(n + k) mediante conteo de frecuencias y sumas prefijas, siendo óptimo y estable cuando el rango k de las claves es acotado."
+  },
+  "Dijkstra": {
+    "que": "El algoritmo de Dijkstra es un algoritmo voraz (greedy) que calcula las rutas más cortas desde un único nodo origen hacia todos los demás nodos en un grafo dirigido o no dirigido con pesos de arista no negativos. Con una cola de prioridad binaria (min-heap), su complejidad temporal es O((V + E) log V).",
+    "para": "Resuelve problemas de enrutamiento de redes (protocolo OSPF), cálculo de rutas mínimas en mapas viales y minimización de latencia o costo en grafos ponderados donde todos los pesos son >= 0. Se elige sobre BFS cuando las aristas tienen costos variables, y sobre Bellman-Ford cuando no hay pesos negativos por ser mucho más rápido.",
+    "como": "Inicializa la distancia a todos los vértices como infinito y la del origen como 0, insertando (0, origen) en un min-heap. En cada paso extrae el vértice u con la menor distancia tentativa conocida; como los pesos son no negativos, ninguna ruta futura pasando por otro nodo no procesado podrá mejorar esa distancia, por lo que u queda definitivo. Luego realiza la relajación (relaxation) de cada arista saliente (u, v) de peso w: si dist[u] + w < dist[v], actualiza dist[v] = dist[u] + w, registra parent[v] = u e inserta (dist[v], v) en el heap.",
+    "practicas": [
+      "Nunca uses Dijkstra si el grafo puede contener aristas con peso negativo: la propiedad greedy falla al asumir que agregar aristas nunca reduce el costo acumulado; usa Bellman-Ford o SPFA en ese caso.",
+      "Usa la técnica de 'lazy deletion' en el min-heap: inserta nuevas tuplas (nueva_dist, v) al relajar y, al hacer pop, ignora la entrada si la distancia extraída es mayor que dist[u] actual.",
+      "Dijkstra vs A*: si solo necesitas la ruta hacia un único destino y tienes una heurística admisible, A* explora una fracción menor del grafo; si quieres distancias a todos los nodos, usa Dijkstra.",
+      "Si el grafo es denso (E ~ V^2), una implementación sin heap (búsqueda lineal del mínimo en O(V^2)) puede superar al min-heap (O(V^2 log V))."
+    ],
+    "ejemplo": "import heapq\ndef dijkstra(grafo, origen):\n    dist, pq = {origen: 0}, [(0, origen)]\n    while pq:\n        d, u = heapq.heappop(pq)\n        if d > dist.get(u, float('inf')): continue\n        for v, w in grafo[u]:\n            if d + w < dist.get(v, float('inf')):\n                dist[v] = d + w\n                heapq.heappush(pq, (dist[v], v))",
+    "entrevista": "Dijkstra encuentra caminos mínimos desde un origen en O((V + E) log V) relajando aristas desde un min-heap de forma voraz, pero exige estrictamente pesos no negativos."
+  },
+  "Espacio vs tiempo": {
+    "que": "El compromiso espacio vs tiempo (space-time tradeoff) es un principio fundamental de diseño algorítmico que establece que se puede reducir el tiempo de ejecución de un programa consumiendo más memoria (para almacenar resultados intermedios o índices), o reducir el uso de memoria recalculando datos sobre la marcha.",
+    "para": "Guía decisiones de arquitectura y optimización diaria: desde memoización, tablas de búsqueda (lookup tables), índices de bases de datos y cachés Redis, hasta compresión de datos y algoritmos streaming en sistemas con RAM limitada. Determina si conviene precomputar o calcular bajo demanda según el cuello de botella real.",
+    "como": "Al aumentar el espacio auxiliar S(n), se evita trabajo redundante: por ejemplo, pasar de búsqueda lineal O(n) tiempo / O(1) espacio a un HashMap en O(1) tiempo / O(n) espacio, o usar programación dinámica con tabla O(n) en vez de recursión exponencial. En el sentido opuesto, técnicas como rolling arrays reducen una tabla DP de O(n^2) espacio a O(n), los algoritmos in-place evitan copiar arreglos sacrificando simplicidad, y la compresión intercambia ciclos de CPU por menos memoria y ancho de banda. En hardware moderno este compromiso también interactúa con la jerarquía de caché: usar demasiada memoria puede provocar cache misses y acabar siendo más lento.",
+    "practicas": [
+      "Antes de añadir memoria (cachés, tablas auxiliares) para acelerar un algoritmo, verifica si el mayor consumo rompe la localidad de caché L1/L2 o provoca swapping, lo cual degradaría el tiempo.",
+      "Usa memoización o tabulación cuando existan subproblemas repetidos; si solo necesitas las últimas filas de una tabla DP, aplica compresión de estado para mantener el mismo tiempo con menor espacio.",
+      "Evalua el costo de invalidación y mantenimiento: los índices de base de datos aceleran lecturas (tiempo) a cambio de más almacenamiento (espacio) y escrituras más lentas.",
+      "En entrevistas, suele esperarse pasar de una solución fuerza bruta O(n^2) tiempo / O(1) espacio a una óptima O(n) tiempo / O(n) espacio usando un HashMap o Set."
+    ],
+    "ejemplo": "# Dos enfoques para Fibonacci:\n# 1) Tabla DP completa: O(n) tiempo, O(n) espacio\n# 2) Variables a, b (rolling): O(n) tiempo, O(1) espacio\na, b = 0, 1\nfor _ in range(n):\n    a, b = b, a + b",
+    "entrevista": "El tradeoff espacio-tiempo permite acelerar cómputos precalculando o indexando en memoria, pero en arquitecturas modernas hay que vigilar que el exceso de memoria no degrade la localidad de caché."
+  },
+  "Grafos": {
+    "que": "Un grafo G = (V, E) es una estructura de datos no lineal formada por un conjunto de vértices o nodos (V) y un conjunto de aristas o conexiones (E) que vinculan pares de vértices. Puede ser dirigido o no dirigido, ponderado o no ponderado, cíclico o acíclico (DAG).",
+    "para": "Modela prácticamente cualquier red de relaciones arbitrarias: mapas y rutas de transporte, redes sociales, dependencias de paquetes o tareas, topologías de red, máquinas de estados y grafos de conocimiento. Permite responder preguntas de alcanzabilidad, ruta mínima, flujo máximo, ciclos y conectividad.",
+    "como": "En memoria se representa principalmente de dos formas: lista de adyacencia (un arreglo o diccionario donde cada nodo u guarda la lista de sus vecinos y pesos) o matriz de adyacencia (una matriz booleana o numérica V x V donde M[u][v] indica si existe arista). La lista de adyacencia ocupa espacio O(V + E) y es óptima para grafos dispersos (la mayoría en el mundo real), permitiendo iterar solo sobre los vecinos reales de u. La matriz de adyacencia ocupa O(V^2), permite verificar si existe una arista entre u y v en O(1) y facilita multiplicación matricial, pero desperdicia memoria cuando E << V^2.",
+    "practicas": [
+      "Usa lista de adyacencia por defecto para grafos reales (dispersos); reserva la matriz de adyacencia para grafos muy densos (E ~ V^2) o algoritmos como Floyd-Warshall.",
+      "Identifica rápido las propiedades del grafo antes de elegir algoritmo: si es un DAG piensa en ordenamiento topológico y DP; si no tiene pesos usa BFS; si tiene pesos >= 0 usa Dijkstra; si tiene pesos negativos usa Bellman-Ford.",
+      "En grafos no dirigidos con muchos nodos dinámicos donde solo interesa saber si dos nodos están conectados, usa Disjoint Set Union (Union-Find) en lugar de lanzar BFS/DFS repetidos.",
+      "Recuerda incluir un mecanismo de nodos visitados en cualquier recorrido: a diferencia de los árboles, los grafos pueden contener ciclos y componentes desconexas."
+    ],
+    "ejemplo": "# Lista de adyacencia para grafo dirigido ponderado\ngrafo = {\n    'A': [('B', 4), ('C', 2)],\n    'B': [('C', 5), ('D', 10)],\n    'C': [('D', 3)],\n    'D': []\n}",
+    "entrevista": "Un grafo modela relaciones arbitrarias entre entidades y suele representarse con listas de adyacencia en O(V + E) para evitar el costo cuadrático en memoria de las matrices en grafos dispersos."
+  },
+  "HashMap - Tabla hash": {
+    "que": "Una tabla hash (HashMap / diccionario) es una estructura de datos asociativa que almacena pares clave-valor y ofrece inserción, búsqueda y eliminación en tiempo promedio O(1). Utiliza una función hash para transformar claves arbitrarias en índices dentro de un arreglo subyacente de cubetas (buckets).",
+    "para": "Es una de las estructuras más usadas en ingeniería de software: implementa diccionarios, cachés, conteo de frecuencias, agrupación de datos, deduplicación, memoización y tablas de símbolos en compiladores. Se elige siempre que se necesite mapear o buscar claves exactas sin requerir que estén ordenadas.",
+    "como": "Al insertar (k, v), calcula h = hash(k) y obtiene el índice i = h mod M en el arreglo de capacidad M. Como distintas claves pueden producir el mismo índice (colisión), se resuelve mediante encadenamiento separado (separate chaining: cada bucket apunta a una lista enlazada o árbol rojo-negro cuando crece mucho, como en Java HashMap) o direccionamiento abierto (open addressing: se busca la siguiente ranura libre en el mismo arreglo, como linear probing o Robin Hood hashing en Rust/SwissTables). Cuando el factor de carga alpha = n / M supera un umbral (p. ej. 0.75), la tabla realiza un rehashing: asigna un arreglo de doble tamaño y reubica todas las entradas para mantener O(1) amortizado.",
+    "practicas": [
+      "Nunca mutes un objeto después de usarlo como clave en un HashMap (si cambia su hash, quedará inaccesible dentro del bucket incorrecto); usa claves inmutables.",
+      "HashMap vs TreeMap/BST: usa HashMap para O(1) promedio sin orden; usa TreeMap (O(log n)) cuando necesites claves ordenadas o consultas de rango.",
+      "Conoce las implementaciones modernas: Java HashMap convierte buckets con >= 8 colisiones en árboles Red-Black (degradando el peor caso de O(n) a O(log n)), y SwissTable/Python dict usan open addressing compacto amigable con caché.",
+      "Si conoces de antemano el número aproximado de elementos, preasigna la capacidad inicial para evitar múltiples ciclos costosos de rehashing."
+    ],
+    "ejemplo": "# Conteo de frecuencias en O(n) tiempo usando tabla hash\nfrecuencias = {}\nfor palabra in texto.split():\n    frecuencias[palabra] = frecuencias.get(palabra, 0) + 1",
+    "entrevista": "Una tabla hash logra O(1) amortizado en promedio combinando una función hash uniforme, resolución de colisiones por chaining u open addressing, y rehashing al superar el factor de carga."
+  },
+  "Heap Sort": {
+    "que": "Heap Sort es un algoritmo de ordenamiento por comparación, in-place y no estable, con complejidad temporal garantizada O(n log n) en el mejor, promedio y peor caso, y complejidad espacial auxiliar O(1). Utiliza un Max-Heap binario construido directamente sobre el arreglo de entrada.",
+    "para": "Se utiliza en sistemas embebidos o entornos críticos donde se requiere garantía estricta de peor caso O(n log n) sin consumir memoria extra (a diferencia de Merge Sort) y sin arriesgar la degradación O(n^2) de Quick Sort. También forma parte de algoritmos híbridos como Introsort (std::sort en C++), que cambia a Heap Sort si la recursión de Quick Sort profundiza demasiado.",
+    "como": "Consta de dos fases sobre el mismo arreglo. Primero, construye un Max-Heap (heapify bottom-up) desde el último nodo interno (n // 2 - 1) hasta la raíz (0) aplicando sift-down en tiempo lineal O(n). Segundo, extrae repetidamente el elemento máximo situado en arr[0], lo intercambia con el último elemento de la zona aún no ordenada arr[i], reduce el tamaño lógico del heap en 1 y restaura la propiedad de Max-Heap aplicando sift-down desde la raíz en O(log n), repitiendo el proceso n - 1 veces.",
+    "practicas": [
+      "Heap Sort vs Quick Sort: aunque ambos son O(n log n) promedio e in-place, Quick Sort suele ser 2 a 3 veces más rápido en la práctica porque sus accesos secuenciales aprovechan el caché, mientras que sift-down salta por índices 2i+1.",
+      "No es estable: intercambiar la raíz con el último elemento altera el orden relativo de claves iguales.",
+      "Recuerda que construir el heap inicialmente (build-heap) es O(n) y no O(n log n), porque la mayoría de nodos están cerca de las hojas y apenas descienden.",
+      "Úsalo como respaldo determinista de espacio O(1) cuando no puedas tolerar peor caso cuadrático ni asignaciones dinámicas."
+    ],
+    "ejemplo": "def heap_sort(arr):\n    n = len(arr)\n    for i in range(n // 2 - 1, -1, -1):\n        sift_down(arr, n, i)      # Fase 1: O(n)\n    for end in range(n - 1, 0, -1):\n        arr[0], arr[end] = arr[end], arr[0]\n        sift_down(arr, end, 0)    # Fase 2: O(n log n)",
+    "entrevista": "Heap Sort ordena in-place en O(1) espacio y O(n log n) garantizado en todo caso, aunque su pobre localidad de caché y falta de estabilidad hacen que pierda frente a Quick Sort o Timsort en uso general."
+  },
+  "Heap": {
+    "que": "Un Heap (montículo binario) es una estructura de datos basada en un árbol binario casi completo que satisface la propiedad de montículo: en un Max-Heap cada nodo es mayor o igual que sus hijos, y en un Min-Heap es menor o igual. No ordena todos los elementos globalmente, pero garantiza acceso en O(1) al extremo (mínimo o máximo).",
+    "para": "Es la implementación estándar de las Colas de Prioridad (Priority Queues). Resulta fundamental en planificación de tareas por prioridad, algoritmos de grafos (Dijkstra, Prim), combinación de k flujos ordenados (k-way merge), obtención de los Top-K elementos más frecuentes o grandes, y cálculo de mediana en streaming (usando dos heaps).",
+    "como": "Aunque conceptualmente es un árbol binario, se almacena de forma compacta en un arreglo contiguo sin punteros: para un nodo en índice i, su padre está en (i - 1) // 2, su hijo izquierdo en 2*i + 1 y su hijo derecho en 2*i + 2. Para insertar (push) en O(log n), se añade el elemento al final del arreglo y se sube intercambiándolo con su padre mientras viole la propiedad del heap (sift-up / bubble-up). Para extraer la raíz (pop) en O(log n), se reemplaza arr[0] con el último elemento del arreglo, se reduce el tamaño y se hunde hacia el hijo más prioritario (sift-down / heapify).",
+    "practicas": [
+      "Para encontrar los K elementos mayores de un flujo de N elementos, usa un Min-Heap de tamaño K (mantiene los K mejores descartando el menor en O(log K)), logrando tiempo O(N log K) y espacio O(K).",
+      "Heap vs BST balanceado: usa un Heap si solo necesitas insertar y consultar/extraer el mínimo o máximo (mayor compacidad en memoria y build-heap en O(n)); usa BST si necesitas búsquedas arbitrarias, rangos o borrar elementos medios fácilmente.",
+      "Construir un heap a partir de un arreglo completo con heapify() toma O(n) tiempo, no O(n log n) como insertar uno por uno.",
+      "Ten presente que Python (heapq) solo ofrece Min-Heap de forma nativa: para simular un Max-Heap, niega los valores numéricos o envuélvelos con comparador invertido."
+    ],
+    "ejemplo": "import heapq\n# Top-3 elementos mayores usando Min-Heap de tamaño 3\nmin_heap = []\nfor num in [5, 1, 9, 3, 12, 7]:\n    heapq.heappush(min_heap, num)\n    if len(min_heap) > 3:\n        heapq.heappop(min_heap)\n# Resultado en min_heap: [7, 9, 12]",
+    "entrevista": "Un Heap binario se almacena en un arreglo implícito logrando leer el extremo en O(1), insertar o extraer en O(log n) y construirse en O(n), siendo el motor estándar de colas de prioridad y algoritmos Top-K."
+  },
+  "Insertion Sort": {
+    "que": "Insertion Sort (ordenamiento por inserción) es un algoritmo de ordenamiento por comparación, estable e in-place, con complejidad O(n^2) en el peor caso y O(n) en el mejor caso cuando la entrada ya está ordenada. Construye el arreglo ordenado un elemento a la vez, insertando cada nuevo valor en su posición correcta dentro del prefijo ya ordenado.",
+    "para": "Aunque es cuadrático para arreglos grandes desordenados, es extremadamente eficiente para arreglos pequeños (típicamente n <= 16 a 32) y entradas casi ordenadas (adaptativo), donde supera a Quick Sort o Merge Sort por su bajísimo overhead y localidad de caché. Por ello se usa internamente como caso base de algoritmos híbridos en producción como Timsort e Introsort.",
+    "como": "Divide conceptualmente el arreglo en una zona izquierda ordenada (inicialmente solo arr[0]) y una zona derecha sin procesar. Para cada índice i desde 1 hasta n - 1, guarda key = arr[i] y desplaza hacia la derecha los elementos de la zona ordenada que sean estrictamente mayores que key (arr[j + 1] = arr[j]). Cuando encuentra el primer elemento <= key o alcanza el inicio del arreglo, inserta key en el hueco creado. El número de desplazamientos es exactamente igual al número de inversiones del arreglo.",
+    "practicas": [
+      "Úsalo para terminar las particiones pequeñas (n < 16..32) en implementaciones optimizadas de Merge Sort o Quick Sort y reducir el costo de llamadas recursivas.",
+      "Insertion Sort vs Selection Sort: Insertion Sort es estable, adaptativo (O(n) si ya está ordenado) y hace menos comparaciones en promedio; Selection Sort siempre ejecuta n(n-1)/2 comparaciones.",
+      "Si el costo de comparar es muy alto pero mover es barato, puedes usar búsqueda binaria (Binary Insertion Sort) para hallar el punto de inserción en O(log n), aunque los desplazamientos siguen siendo O(n).",
+      "Es un algoritmo en línea (online): puede ir ordenando elementos conforme llegan sin necesitar el arreglo completo desde el principio."
+    ],
+    "ejemplo": "def insertion_sort(arr):\n    for i in range(1, len(arr)):\n        key = arr[i]\n        j = i - 1\n        while j >= 0 and arr[j] > key:\n            arr[j + 1] = arr[j]\n            j -= 1\n        arr[j + 1] = key",
+    "entrevista": "Insertion Sort es estable, in-place y adaptativo (O(n) en entradas casi ordenadas), razón por la cual Timsort e Introsort lo usan en subarreglos pequeños pese a su cota O(n^2)."
+  },
+  "Lista enlazada": {
+    "que": "Una lista enlazada (linked list) es una estructura de datos lineal cuyos elementos (nodos) no ocupan posiciones contiguas en memoria, sino que cada nodo almacena su dato y uno o más punteros hacia el nodo siguiente (y/o anterior). Sus variantes principales son simple (singly), doble (doubly) y circular.",
+    "para": "Se emplea cuando se necesitan inserciones o eliminaciones en O(1) dada la referencia al nodo, o cuando el tamaño varía constantemente sin querer realocar bloques contiguos de memoria. Sus casos de uso reales clave incluyen cachés LRU (lista doblemente enlazada + HashMap), colas/deques, historial undo/redo y listas de colisión en tablas hash.",
+    "como": "En una lista simple cada nodo apunta solo a next (O(1) para insertar/borrar al inicio si se conoce el nodo previo). En una lista doblemente enlazada cada nodo guarda next y prev, permitiendo recorrer en ambos sentidos y desvincular un nodo arbitrario en O(1) conociendo solo su propia referencia. En una lista circular el último nodo apunta de vuelta al primero (head), útil para planificación round-robin o buffers cíclicos. En todas ellas, acceder al k-ésimo elemento exige recorrer enlaces desde un extremo en O(n).",
+    "practicas": [
+      "Usa un nodo centinela (dummy node) antes de head (y después de tail en listas dobles) para eliminar casos borde al insertar o borrar al principio o en listas vacías.",
+      "Lista enlazada vs Arreglo dinámico: evita listas enlazadas para uso general en hardware moderno; los saltos de puntero causan continuos cache misses y cada nodo desperdicia memoria extra en punteros.",
+      "Domina la técnica de dos punteros rápido/lento (Floyd's Tortoise and Hare) para hallar el punto medio o detectar ciclos en O(n) tiempo y O(1) espacio.",
+      "Al eliminar o reenlazar nodos, actualiza primero los punteros del nodo nuevo antes de sobrescribir la referencia existente para no perder el resto de la lista."
+    ],
+    "ejemplo": "# Invertir una lista simplemente enlazada en O(n) tiempo, O(1) espacio\nprev, curr = None, head\nwhile curr:\n    nxt = curr.next\n    curr.next = prev\n    prev, curr = curr, nxt\nreturn prev",
+    "entrevista": "Las listas enlazadas ofrecen inserciones y borrados en O(1) con referencia directa y tamaño dinámico sin realocación, pero pierden el acceso aleatorio O(1) y la localidad de caché de los arreglos."
+  },
+  "Lista simple": {
+    "que": "En el contexto de las estructuras lineales y lenguajes modernos, una lista simple (lista secuencial o lista dinámica, como list en Python, ArrayList en Java o std::vector en C++) representa una colección ordenada y redimensionable de elementos indexables en secuencia. Implementa el tipo abstracto de dato Lista respaldado internamente por un arreglo dinámico contiguo.",
+    "para": "Es la estructura de propósito general por defecto para almacenar colecciones ordenadas de longitud variable donde se requieren recorridos frecuentes, acceso por índice y adiciones al final. Se elige frente a un arreglo estático cuando no se conoce el tamaño final de antemano, y frente a una lista enlazada en la gran mayoría de tareas por su rendimiento en caché.",
+    "como": "Mantiene internamente un puntero a un arreglo contiguo de capacidad C y un contador de longitud actual N (con N <= C). La lectura o escritura por índice i es O(1) directo y agregar al final (append/push) es O(1) mientras N < C. Cuando N alcanza C y llega un nuevo elemento, asigna un nuevo bloque contiguo de capacidad mayor (habitualmente multiplicada por un factor geométrico entre 1.5x y 2x), copia los N elementos existentes y libera el bloque anterior, logrando O(1) amortizado al final. Insertar o borrar en índices iniciales o intermedios desplaza los elementos posteriores en O(n).",
+    "practicas": [
+      "Reserva la capacidad estimada de antemano (reserve / ensureCapacity) si conoces el volumen de datos para evitar copias y asignaciones repetidas durante el crecimiento.",
+      "Lista simple (dinámica) vs Lista enlazada: prefiere siempre la lista basada en arreglo dinámico salvo que necesites eliminar nodos intermedios en O(1) conservando iteradores estables.",
+      "Evita usar la lista como cola FIFO haciendo pop(0) o insert(0, x) en bucles grandes (es O(n) cada llamada); usa deque para operaciones en ambos extremos.",
+      "Al pasar o devolver listas entre funciones, ten claro si se comparte referencia mutable o se realiza copia superficial (shallow copy) para prevenir efectos secundarios."
+    ],
+    "ejemplo": "# Lista dinámica en Python (respaldada por arreglo contiguo redimensionable)\nitems = [10, 20, 30]\nitems.append(40)       # O(1) amortizado al final\nx = items[2]           # O(1) acceso directo -> 30\nitems.insert(0, 5)     # O(n) por desplazamiento de todos los elementos",
+    "entrevista": "Una lista dinámica combina acceso aleatorio O(1) y localidad de caché de un arreglo contiguo con crecimiento geométrico, logrando inserciones al final en O(1) amortizado."
+  },
+  "Matrices": {
+    "que": "Una matriz es una estructura de datos bidimensional (o multidimensional) organizada en filas y columnas, equivalente matemáticamente a una tabla o tensor de rango 2. Permite identificar cada elemento mediante un par de índices (fila, columna) en tiempo O(1).",
+    "para": "Se utiliza para representar tableros, imágenes (píxeles RGB/escala de grises), mallas de juegos, mapas de costos/distancias, grafos densos (matriz de adyacencia), tablas de programación dinámica y transformaciones lineales en gráficos 3D y Machine Learning.",
+    "como": "En memoria lineal (RAM), una matriz de M filas por N columnas se aplana típicamente en un único bloque contiguo en orden row-major (fila tras fila, usado por C, Python/NumPy y Java) o column-major (columna tras columna, usado por Fortran, MATLAB y R). En row-major, el elemento M[i][j] se localiza en base + (i * N + j) * sizeof(T). Lenguajes como Java o listas anidadas en Python también implementan arreglos de punteros a subarreglos independientes (jagged arrays), lo que añade una indirección y permite filas de distinta longitud a costa de peor localidad espacial.",
+    "practicas": [
+      "Respeta siempre el orden de almacenamiento al recorrer: en lenguajes row-major (C, Python, Java) itera primero por filas (bucle externo i) y luego por columnas (bucle interno j) para evitar cache misses masivos.",
+      "Para matrices muy grandes donde la mayoría de celdas son cero (matrices dispersas / sparse), no reserves M * N espacios; usa formatos comprimidos (CSR, CSC) o un HashMap de tuplas (i, j).",
+      "En problemas de cuadrículas (BFS/DFS en matrices), define un arreglo constante de desplazamientos (dirs = [(-1,0), (1,0), (0,-1), (0,1)]) en lugar de duplicar 4 bloques if.",
+      "Si necesitas rotar o transponer una matriz cuadrada in-place, transponla primero (intercambiando M[i][j] con M[j][i] para j > i) y luego invierte cada fila."
+    ],
+    "ejemplo": "# Recorrido amigable con caché (row-major) y vecinos en cuadrícula\ndirs = [(-1, 0), (1, 0), (0, -1), (0, 1)]\nfor r in range(filas):\n    for c in range(cols):\n        for dr, dc in dirs:\n            nr, nc = r + dr, c + dc\n            if 0 <= nr < filas and 0 <= nc < cols:\n                procesar(grid[nr][nc])",
+    "entrevista": "Una matriz ofrece acceso O(1) mediante indexación (fila, columna), pero su rendimiento real en producción depende de recorrerla respetando su orden row-major o column-major para maximizar los aciertos de caché."
+  },
+  "Merge Sort": {
+    "que": "Merge Sort (ordenamiento por mezcla) es un algoritmo de ordenamiento por comparación basado en divide y vencerás, estable y con complejidad temporal garantizada O(n log n) en todos los casos (mejor, promedio y peor). Requiere O(n) de espacio auxiliar en su versión estándar sobre arreglos.",
+    "para": "Es la opción preferida cuando se necesita ordenamiento estable garantizado sin riesgo de peor caso cuadrático, para ordenar listas enlazadas (donde logra espacio O(1) al reenlazar punteros) y para ordenamiento externo (external sorting) de archivos masivos que no caben en RAM. También sirve de base para algoritmos híbridos como Timsort y para contar inversiones en un arreglo.",
+    "como": "Divide recursivamente el arreglo por la mitad hasta obtener subarreglos de tamaño 1 (trivialmente ordenados). En la fase de combinación (merge), toma dos subarreglos ordenados izquierdo y derecho y usa dos punteros para comparar sus frentes, copiando el menor al arreglo auxiliar (eligiendo el izquierdo en caso de empate para preservar estabilidad) hasta agotar ambos. El árbol de recursión tiene profundidad log2(n) y cada nivel realiza O(n) trabajo en la mezcla, totalizando O(n log n).",
+    "practicas": [
+      "Merge Sort vs Quick Sort: prefiere Merge Sort cuando la estabilidad sea obligatoria, ordenes listas enlazadas o proceses datos externos desde disco; prefiere Quick Sort cuando importe minimizar memoria extra (O(log n) vs O(n)) en RAM.",
+      "Evita asignar nuevos arreglos temporales en cada llamada recursiva: reserva un único buffer auxiliar de tamaño n al inicio y pásalo entre niveles, o cambia a Insertion Sort en subarreglos pequeños.",
+      "En sistemas distribuidos o datasets de terabytes, implementa K-way Merge Sort combinando bloques ordenados en disco mediante un Min-Heap de tamaño K.",
+      "Para listas enlazadas, Merge Sort es el algoritmo óptimo O(n log n): encuentra el centro con dos punteros (rápido/lento) y mezcla sin memoria auxiliar."
+    ],
+    "ejemplo": "def merge(izq, der):\n    res, i, j = [], 0, 0\n    while i < len(izq) and j < len(der):\n        if izq[i] <= der[j]:  # <= preserva estabilidad\n            res.append(izq[i]); i += 1\n        else:\n            res.append(der[j]); j += 1\n    return res + izq[i:] + der[j:]",
+    "entrevista": "Merge Sort garantiza O(n log n) en todo caso y preserva estabilidad mediante divide y vencerás, sacrificando O(n) de espacio auxiliar en arreglos pero siendo óptimo para listas enlazadas y ordenamiento externo."
+  },
+  "Pilas": {
+    "que": "Una pila (stack) es una estructura de datos lineal abstracta que sigue el principio LIFO (Last-In, First-Out): el último elemento insertado es el primero en ser extraído. Todas sus operaciones principales (push, pop y peek/top) se ejecutan en un único extremo llamado cima (top) en tiempo O(1).",
+    "para": "Controla el flujo de ejecución de programas (call stack con marcos de función y direcciones de retorno), implementa historiales de deshacer (undo), valida balanceo de paréntesis o etiquetas XML/HTML, evalúa expresiones en notación polaca inversa (RPN) y sustenta recorridos DFS iterativos y pilas monótonas.",
+    "como": "Se implementa habitualmente sobre un arreglo dinámico (incrementando un puntero top en push y decrementándolo en pop en O(1) amortizado con excelente localidad de caché) o sobre una lista simplemente enlazada insertando y borrando siempre en head (O(1) estricto). La operación peek consulta el elemento en top sin modificar la pila. En arquitecturas de CPU reales, el registro SP (Stack Pointer) apunta al tope de una región contigua de memoria que crece hacia direcciones bajas o altas al invocar subrutinas.",
+    "practicas": [
+      "Verifica siempre si la pila está vacía antes de llamar pop() o peek() para evitar errores de underflow, y cuida la profundidad máxima en sistemas de memoria acotada para evitar Stack Overflow.",
+      "Pilas vs Colas: usa una pila cuando necesites revertir el orden o resolver contextos anidados (LIFO); usa una cola cuando debas respetar estrictamente el orden de llegada (FIFO).",
+      "Aprende el patrón de Pila Monótona (Monotonic Stack): mantener la pila estrictamente creciente o decreciente resuelve problemas como 'siguiente elemento mayor' o 'área máxima bajo histograma' en O(n).",
+      "Si necesitas consultar el elemento mínimo de la pila en O(1) (Min-Stack), guarda en cada nodo o en una pila paralela el mínimo acumulado hasta ese nivel."
+    ],
+    "ejemplo": "# Validar paréntesis balanceados con una pila O(n)\npila, pares = [], {')': '(', ']': '[', '}': '{'}\nfor ch in cadena:\n    if ch in '([{': pila.append(ch)\n    elif not pila or pila.pop() != pares[ch]:\n        return False\nreturn not pila",
+    "entrevista": "Una pila impone orden LIFO con operaciones O(1) en la cima, siendo esencial para gestionar llamadas a funciones, evaluar expresiones anidadas, convertir recursión a iteración y resolver problemas con pilas monótonas."
+  },
+  "Quick Sort": {
+    "que": "Quick Sort es un algoritmo de ordenamiento por comparación basado en divide y vencerás, in-place (espacio O(log n) por la pila recursiva) y generalmente no estable. Logra una complejidad temporal de O(n log n) en el caso promedio y mejor caso, con un peor caso de O(n^2) si se eligen malos pivotes de forma sistemática.",
+    "para": "Es uno de los algoritmos más rápidos en la práctica para ordenar grandes colecciones en memoria RAM gracias a sus accesos secuenciales amigables con el caché de CPU y su bajo overhead constante. Es la base de ordenamientos en bibliotecas estándar de sistemas (como qsort o Introsort en C++, que lo combina con Heap Sort).",
+    "como": "Selecciona un elemento del arreglo como pivote y ejecuta una rutina de particionado (esquema de Lomuto o de Hoare) que reorganiza el subarreglo dejando todos los elementos menores a la izquierda del pivote y los mayores a la derecha, ubicando al pivote en su posición final. Luego se invoca recursivamente sobre el subarreglo izquierdo y el derecho. El esquema de Hoare (dos punteros moviéndose hacia el centro) realiza en promedio tres veces menos intercambios que Lomuto y maneja mejor los elementos duplicados.",
+    "practicas": [
+      "Nunca elijas el primer o último elemento fijo como pivote sobre datos reales: un arreglo ya ordenado provocaría particiones desbalanceadas O(n^2); usa pivote aleatorio, mediana de tres o Ninther.",
+      "Cuando haya muchos valores duplicados, usa partición de tres vías (3-way Quick Sort / Dutch National Flag: menores, iguales, mayores) para evitar reordenar elementos idénticos y degradar a O(n^2).",
+      "Quick Sort vs Merge Sort: Quick Sort gana en velocidad pura en RAM y memoria O(log n), pero no es estable y tiene peor caso O(n^2) si no se hibrida (como hace Introsort).",
+      "Recurre primero sobre la partición más pequeña y usa iteración de cola (tail-call elimination) sobre la más grande para acotar la profundidad de la pila estrictamente a O(log n) incluso en el peor caso."
+    ],
+    "ejemplo": "def particion_lomuto(arr, lo, hi):\n    pivote = arr[hi]\n    i = lo\n    for j in range(lo, hi):\n        if arr[j] <= pivote:\n            arr[i], arr[j] = arr[j], arr[i]\n            i += 1\n    arr[i], arr[hi] = arr[hi], arr[i]\n    return i",
+    "entrevista": "Quick Sort ordena en RAM con una constante muy baja gracias a su localidad de caché y particionado in-place, alcanzando O(n log n) promedio mediante pivote aleatorio o mediana de tres."
+  },
+  "Radix Sort": {
+    "que": "Radix Sort es un algoritmo de ordenamiento estable y no basado en comparaciones que ordena enteros, cadenas de longitud fija o claves representables en base b procesando sus dígitos o caracteres posición por posición. Su complejidad temporal es O(d * (n + b)), donde d es el número de dígitos y b la base numérica.",
+    "para": "Supera a algoritmos O(n log n) como Quick Sort cuando se ordenan grandes volúmenes de claves numéricas de ancho acotado (enteros de 32/64 bits, direcciones IP, fechas) o cadenas de longitud fija. En la práctica de alto rendimiento se usa en motores de GPU, ordenamiento paralelo y bases de datos analíticas.",
+    "como": "En su variante más común, LSD (Least Significant Digit), ordena las claves desde el dígito menos significativo hasta el más significativo aplicando una subrutina de ordenamiento estable (típicamente Counting Sort sobre la base b) en cada pasada. La estabilidad garantiza que, al ordenar por el dígito i, el orden relativo establecido por los dígitos previos 0..i-1 se conserve intacto. Para optimizar en computadoras modernas, en lugar de base 10 se usa base 2^8 = 256 (bytes) o 2^16, ordenando un entero de 32 bits en solo 4 pasadas usando operadores bit a bit (>> y &).",
+    "practicas": [
+      "La subrutina usada en cada pasada debe ser obligatoriamente estable; si usas un algoritmo inestable en el dígito superior, destruirás el orden de los dígitos inferiores.",
+      "Para optimizar rendimiento en CPUs modernas, agrupa bits en bytes (base 256) o bloques de 11 bits en lugar de base 10 para hacer pocas pasadas con arreglos de conteo que quepan en caché L1.",
+      "Radix Sort vs Counting Sort: Counting Sort falla si el rango k es enorme (ej. enteros de 64 bits); Radix Sort descompone ese rango enorme en d dígitos de base pequeña b.",
+      "Para ordenar enteros con signo en complemento a dos usando Radix Sort bit a bit, invierte el bit de signo en la última pasada (o aplica XOR con 0x80000000 al inicio y al final) para que los negativos queden antes que los positivos."
+    ],
+    "ejemplo": "# Radix Sort LSD en base 256 para enteros no negativos de 32 bits (4 pasadas)\nfor shift in (0, 8, 16, 24):\n    count = [0] * 256\n    for x in arr: count[(x >> shift) & 0xFF] += 1\n    # Sumas prefijas + reconstrucción estable usando (x >> shift) & 0xFF",
+    "entrevista": "Radix Sort logra tiempo lineal O(d * (n + b)) en claves de tamaño fijo procesando dígito a dígito con una subrutina estable como Counting Sort, usando bases potencia de dos para máxima velocidad en hardware."
+  },
+  "Recursividad": {
+    "que": "La recursividad es una técnica de programación y definición matemática en la que una función se invoca a sí misma directa o indirectamente para resolver un problema descomponiéndolo en subproblemas más pequeños de la misma estructura. Todo algoritmo recursivo requiere al menos un caso base que detenga la ejecución y un paso recursivo que converja hacia dicho caso.",
+    "para": "Permite expresar de forma natural y concisa algoritmos sobre estructuras inherentemente recursivas como árboles, grafos (DFS), expresiones anidadas, divide y vencerás (Merge Sort, Quick Sort) y exploración combinatoria con vuelta atrás (backtracking).",
+    "como": "Cada llamada recursiva crea un nuevo marco de pila (stack frame) en el call stack del proceso para almacenar sus parámetros, variables locales y la dirección de retorno. Las llamadas se apilan sucesivamente hasta alcanzar el caso base, momento en el cual comienzan a retornar y desapilar resultados hacia atrás (unwinding). En lenguajes o compiladores con Tail Call Optimization (TCO), una función cuya última instrucción es la llamada recursiva (tail recursion) puede reutilizar el mismo stack frame en O(1) de espacio; sin embargo, lenguajes imperativos populares como Python y Java no aplican TCO.",
+    "practicas": [
+      "Verifica siempre que exista un caso base inalcanzable de romper y que cada llamada reduzca estrictamente el tamaño del problema para evitar recursión infinita y StackOverflowError.",
+      "Si el árbol de recursión recalcula los mismos estados múltiples veces (como Fibonacci ingenuo en O(2^n)), añade memoización (Programación Dinámica Top-Down) para reducirlo a tiempo polinomial.",
+      "Recursividad vs Iteración: convierte algoritmos recursivos muy profundos (profundidad > 10^4) a iterativos usando una pila explícita en el heap para no agotar el tamaño fijo del call stack.",
+      "Contabiliza siempre la profundidad máxima de recursión dentro de la complejidad espacial: una función que no crea arreglos sigue consumiendo O(profundidad) de memoria en la pila."
+    ],
+    "ejemplo": "def potencia(base, exp):\n    if exp == 0: return 1                 # Caso base\n    mitad = potencia(base, exp // 2)      # Paso recursivo O(log n)\n    return mitad * mitad if exp % 2 == 0 else base * mitad * mitad",
+    "entrevista": "La recursividad divide problemas en subproblemas idénticos apoyándose en el call stack hasta alcanzar un caso base, consumiendo O(profundidad) en memoria y requiriendo memoización si hay subproblemas repetidos."
+  },
+  "Selection Sort": {
+    "que": "Selection Sort (ordenamiento por selección) es un algoritmo de ordenamiento por comparación, in-place y no estable en su forma estándar, con complejidad temporal O(n^2) en todos los casos (mejor, promedio y peor) y espacio auxiliar O(1). Su característica distintiva es que realiza como máximo n - 1 intercambios (swaps) en total.",
+    "para": "Al igual que Bubble Sort, no se recomienda para ordenar colecciones grandes frente a algoritmos O(n log n). Su único nicho práctico legítimo ocurre en sistemas con memoria flash/EEPROM muy limitada o registros muy grandes donde las escrituras en memoria son órdenes de magnitud más caras que las lecturas/comparaciones.",
+    "como": "Mantiene una frontera en el índice i dividiendo el arreglo en un prefijo ordenado y un sufijo desordenado. En la iteración i (desde 0 hasta n - 2), asume que min_idx = i y recorre todo el sufijo restante (j desde i + 1 hasta n - 1) buscando el índice del elemento mínimo real. Al terminar la búsqueda, intercambia arr[i] con arr[min_idx], realizando una única escritura doble por iteración independientemente de cuán desordenado esté el arreglo.",
+    "practicas": [
+      "Selection Sort vs Insertion Sort: Insertion Sort es casi siempre mejor porque es estable y termina en O(n) si el arreglo ya está ordenado; Selection Sort no es adaptativo y siempre hace ~n^2/2 comparaciones.",
+      "El intercambio final de un elemento a distancia rompe la estabilidad relativa de claves iguales (aunque puede hacerse estable insertando y desplazando, perdiendo su ventaja de O(n) escrituras).",
+      "En entrevistas, recuerda su propiedad única: minimiza el número total de escrituras/swaps a O(n) entre los algoritmos simples.",
+      "Nunca lo uses para datos de tamaño mediano o grande ni asumas que terminará rápido si la lista ya viene ordenada."
+    ],
+    "ejemplo": "def selection_sort(arr):\n    n = len(arr)\n    for i in range(n - 1):\n        min_idx = i\n        for j in range(i + 1, n):\n            if arr[j] < arr[min_idx]:\n                min_idx = j\n        arr[i], arr[min_idx] = arr[min_idx], arr[i]",
+    "entrevista": "Selection Sort es un algoritmo O(n^2) no adaptativo ni estable, cuyo único rasgo destacable es realizar como máximo O(n) escrituras totales al intercambiar solo una vez por iteración."
+  }
+}

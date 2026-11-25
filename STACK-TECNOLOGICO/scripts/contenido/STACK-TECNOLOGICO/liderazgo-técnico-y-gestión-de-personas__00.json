@@ -1,0 +1,362 @@
+{
+  "Burnout y carga cognitiva": {
+    "que": "El burnout es un síndrome de agotamiento físico, mental y emocional crónico provocado por estrés laboral sostenido sin recuperación adecuada. La carga cognitiva, en ingeniería de software y según la teoría de Sweller aplicada por Team Topologies, es el esfuerzo mental total requerido en la memoria de trabajo para comprender, operar y modificar un sistema.",
+    "para": "Identificar y gestionar ambos factores evita la degradación silenciosa de la calidad del código, el aumento de incidentes en producción y la rotación involuntaria de talento clave. Se aplica al diseñar límites de dominio entre equipos, rotar guardias on-call y planificar entregas sin deuda técnica descontrolada.",
+    "como": "La carga cognitiva se divide en tres componentes: intrínseca (complejidad inherente del dominio o lenguaje), extrínseca (fricción de herramientas, despliegues manuales o burocracia) y pertinente (aprendizaje útil del negocio). Cuando la suma supera la capacidad del equipo de forma crónica, sumada a guardias ruidosas o cambios constantes de contexto, se activa el ciclo de burnout: cinismo, caída de productividad y errores por fatiga. El mitigador estructural consiste en reducir la carga extrínseca mediante plataformas internas (IDP), limitar el trabajo en curso (WIP) y alinear la arquitectura con fronteras claras de dominio.",
+    "practicas": [
+      "Audita la carga cognitiva por servicio en lugar de solo medir horas trabajadas; un microservicio mal documentado con 5 dependencias acopladas genera más fatiga que un monolito modular.",
+      "Diferencia entre descanso puntual (vacaciones) y cambio sistémico: el burnout no se cura con un fin de semana libre si al volver persisten las alertas falsas de madrugada y la falta de autonomía.",
+      "Mide métricas de fricción como interrupciones por guardia, tiempo de espera en CI/CD y número de repositorios activos por desarrollador (context switching)."
+    ],
+    "ejemplo": "Carga total = Intrínseca (reglas de negocio) + Extrínseca (scripts rotos, CI lento) + Pertinente (modelado de dominio)\nObjetivo Team Topologies: minimizar Extrínseca -> liberar memoria de trabajo para Pertinente\nIndicador de alerta: >2 alertas accionables por turno on-call/semana o >3 cambios de contexto/día.",
+    "entrevista": "Reducir la carga cognitiva extrínseca mediante límites de dominio claros, automatización y límites de WIP es la palanca estructural más efectiva para prevenir el burnout y sostener la velocidad a largo plazo."
+  },
+  "Capacidad del equipo": {
+    "que": "Es la cantidad real de trabajo técnico y de producto que un equipo puede absorber y entregar de forma sostenible dentro de un intervalo definido (sprint, ciclo o trimestre). No equivale a las horas brutas de nómina, sino al tiempo efectivo tras descontar ceremonias, soporte, deuda técnica y ausencias.",
+    "para": "Sirve para hacer compromisos realistas con negocio, evitar la sobrecarga crónica y detectar cuellos de botella antes de iniciar un ciclo de desarrollo. Se utiliza en planificaciones trimestrales (QBR/PI Planning), dimensionamiento de roadmaps y decisiones de contratación o reasignación.",
+    "como": "El cálculo parte de los días-persona brutos disponibles en el horizonte y descuenta vacaciones, festivos y días dedicados a eventos recurrentes. Sobre ese neto se aplica un factor de enfoque (focus factor, habitualmente entre 0,65 y 0,80) o una reserva explícita para trabajo no planificado como bugs urgentes, soporte on-call y mantenimiento. Con datos históricos de throughput (ítems completados por semana) o cycle time, el equipo calibra cuántas iniciativas concurrentes puede ejecutar sin degradar la calidad ni acumular inventario en progreso.",
+    "practicas": [
+      "Nunca planifiques al 100 % de la capacidad teórica: la teoría de colas demuestra que por encima del 80-85 % de utilización los tiempos de espera y el cycle time crecen exponencialmente.",
+      "Reserva un porcentaje explícito (p. ej., 15-20 %) para salud del sistema y trabajo reactivo en lugar de ocultarlo dentro de estimaciones infladas.",
+      "Capacidad vs. Velocity: la capacidad mide disponibilidad real de entrada (personas-día o slots WIP), mientras que la velocity mide entrega histórica observada."
+    ],
+    "ejemplo": "Equipo: 5 devs, sprint de 10 días -> 50 días-persona brutos\nMenos: 4 días vacaciones + 10 % soporte/guardia (5 días) = 41 días netos\nFactor de enfoque (0.75 por ceremonias/reviews) -> 30.75 días efectivos de desarrollo",
+    "entrevista": "Planifico la capacidad del equipo reservando margen explícito para trabajo reactivo y deuda técnica, manteniendo la utilización por debajo del 80 % para evitar colas y preservar la previsibilidad."
+  },
+  "Coaching": {
+    "que": "Es un proceso estructurado de acompañamiento no directivo mediante preguntas poderosas y escucha activa para que un profesional descubra sus propias soluciones, desbloquee su criterio y desarrolle autonomía. A diferencia de la consultoría o la dirección técnica, el coach no aporta la respuesta sino el marco de reflexión.",
+    "para": "Resuelve problemas de estancamiento en la toma de decisiones, dependencia excesiva del líder y transición de roles individuales hacia liderazgo o senioridad. Se emplea en reuniones 1:1 con ingenieros mid/senior, nuevos tech leads y miembros que enfrentan bloqueos interpersonales o de criterio.",
+    "como": "El flujo clásico sigue modelos como GROW: primero se define el Goal (objetivo concreto de la sesión o trimestre); luego se explora la Reality (hechos observables, restricciones técnicas y sesgos actuales sin juzgar); después se generan Options (alternativas posibles evaluando riesgos e impacto) y finalmente se acuerda el Will / Way Forward (compromiso específico con fecha y primer paso verificable). Durante el proceso, el coach evita rescatar al coachee dando la solución inmediata y usa reformulación para validar comprensión.",
+    "practicas": [
+      "Coaching vs. Mentoría vs. Dirección: dirige en crisis o ante riesgo grave de producción, mentoriza cuando falta conocimiento técnico específico y haz coaching cuando la persona ya tiene la base técnica pero duda o evita decidir.",
+      "Usa preguntas abiertas que empiecen por «qué» o «cómo» («¿Qué opciones ves si cae la latencia?») en lugar de preguntas cerradas o sugerencias disfrazadas («¿No probaste usar caché?»).",
+      "Cierra siempre con una acción concreta y medible del coachee para evitar que la sesión quede en conversación abstracta."
+    ],
+    "ejemplo": "Modelo GROW en 1:1 con Tech Lead:\nG: Desbloquear la definición de API con el equipo de pagos antes del viernes.\nR: Llevan 2 semanas en hilos asíncronos sin acuerdo.\nO: Hacer sesión de 30m con RFC escrito, escalar al staff o prototipar ambos contratos.\nW: Enviar RFC hoy y agendar sesión de decisión mañana a las 10:00.",
+    "entrevista": "Uso el coaching con ingenieros con base técnica mediante marcos como GROW para escalar su autonomía y criterio, reservando la instrucción directa solo para emergencias o brechas de conocimiento críticas."
+  },
+  "Comunicación técnica": {
+    "que": "Es la transmisión precisa, estructurada y verificable de información sobre arquitectura, riesgos, trade-offs, incidentes y decisiones de ingeniería entre pares técnicos y audiencias no técnicas. Combina documentos escritos de largo alcance (RFC, ADR, postmortems) con comunicación síncrona concisa.",
+    "para": "Elimina ambigüedades en diseños distribuidos, acelera el alineamiento entre equipos y traduce restricciones técnicas (latencia, deuda, costes) a impacto de negocio para stakeholders. Es crítica en revisiones de diseño, gestión de incidentes SEV-1, demos ejecutivas y colaboración asíncrona.",
+    "como": "Una comunicación técnica efectiva aplica el principio BLUF (Bottom Line Up Front) o la pirámide de Minto: abre con la conclusión, decisión o impacto en las primeras tres líneas, seguido de los datos de soporte, alternativas descartadas y riesgos residuales. Para la audiencia técnica incluye diagramas de secuencia o C4, contratos de API y métricas de SLA/SLO; para producto o dirección traduce esas métricas a coste de oportunidad, riesgo de ingresos y plazos. El cierre define responsables (DRI) y próximos pasos con fecha.",
+    "practicas": [
+      "Adapta la granularidad al receptor: un VP necesita riesgo, costo y opciones de mitigación; un equipo par necesita contratos, modos de fallo y plan de rollback.",
+      "Reemplaza adjetivos vagos («más rápido», «más escalable») por cifras concretas («reduce p99 de 420 ms a 110 ms con un ahorro de 1.200 USD/mes»).",
+      "Prefiere documentos cortos con lectura previa de 5 minutos antes que presentaciones largas donde nadie lee ni cuestiona supuestos."
+    ],
+    "ejemplo": "[BLUF] Migrar sesiones a Redis reduce timeouts de login un 90 %.\nImpacto negocio: evita pérdida estimada de 15k USD/mes en carritos abandonados.\nTrade-off: +180 USD/mes en infra; requiere 4 días de desarrollo y rollback por feature flag.",
+    "entrevista": "Aplico estructura BLUF y adapto el nivel de abstracción a cada audiencia, respaldando siempre las recomendaciones técnicas con métricas medibles e impacto de negocio."
+  },
+  "Consenso y disidencia": {
+    "que": "Es el equilibrio operativo entre fomentar el debate técnico crítico (disidencia constructiva) y converger en una decisión ejecutable sin parálisis (consenso o compromiso). Se apoya en mecanismos explícitos donde discrepar antes de decidir es obligatorio y apoyar la ejecución tras decidir es la norma.",
+    "para": "Previene tanto el pensamiento grupal (groupthink), que oculta fallos graves de arquitectura por cortesía, como la parálisis por análisis, donde equipos discuten indefinidamente sin implementar nada. Es vital en decisiones arquitectónicas irreversibles, selección de stack y resolución de desacuerdos entre ingenieros senior.",
+    "como": "El flujo sigue el patrón «Disagree and Commit» articulado con un marco de decisión como DACI o RAPID. Primero se abre una fase divergente (normalmente mediante comentarios en un RFC) donde se exige registrar objeciones basadas en datos o riesgos concretos, evitando votar por popularidad. Luego, el Decisor (DRI) sintetiza los argumentos, explica por qué se aceptan o descartan las objeciones en el documento y fija una fecha límite. Una vez cerrada la decisión, todo el equipo se alinea en la ejecución y define criterios objetivos de revisión si los supuestos fallan.",
+    "practicas": [
+      "Exige que toda disidencia proponga una alternativa viable o un riesgo falsable; criticar sin alternativa bloquea al equipo.",
+      "Distingue decisiones Tipo 1 (unidireccionales, difíciles de revertir: requieren mayor consenso y análisis) de Tipo 2 (reversibles: decide rápido un dueño claro y mide).",
+      "Consenso vs. Consentimiento: no todos deben amar la solución (consenso), basta con que nadie tenga una objeción crítica de seguridad o viabilidad sin mitigar (consentimiento)."
+    ],
+    "ejemplo": "RFC-042: Elección de cola de mensajes\n- Disidencia registrada (Ana): RabbitMQ añade operación manual frente a SQS.\n- Decisión DRI (Luis): Elegimos SQS por menor carga operativa; revisaremos si superamos 5k msg/s con requisitos FIFO complejos.\n- Estado: Aceptada (Disagree and Commit).",
+    "entrevista": "Fomento la disidencia temprana documentada con criterios técnicos en RFCs, pero evito la parálisis asignando un DRI claro y practicando Disagree and Commit según la reversibilidad de la decisión."
+  },
+  "Contratación técnica": {
+    "que": "Es el proceso integral de planificación, definición de perfiles, atracción, evaluación estructurada y cierre de talento de ingeniería alineado con las necesidades técnicas y culturales de la organización. Abarca desde el análisis de brechas del equipo hasta la aceptación de la oferta.",
+    "para": "Resuelve el crecimiento escalable del equipo sin diluir la barra técnica, reduce sesgos subjetivos en la selección y minimiza el costo de malas contrataciones. Se activa al abrir nuevas líneas de producto, cubrir bajas críticas o reequilibrar niveles (junior, mid, senior, staff) en un equipo.",
+    "como": "Comienza con el diseño de la requisición y la rúbrica de competencias (qué problemas resolverá la persona en sus primeros 6 meses, no una lista infinita de frameworks). Continúa con el sourcing y un cribado inicial ligero, seguido de un loop de entrevistas estandarizado donde cada entrevistador evalúa ejes disjuntos (código, arquitectura, colaboración, producto). Finalmente, se realiza un debrief basado en evidencias escritas antes de ver la opinión de otros pares, se calibra el nivel salarial según banda interna y se ejecuta una oferta competitiva.",
+    "practicas": [
+      "Contrata por capacidad de aprendizaje, criterio y fundamentos más que por coincidencia exacta con la versión actual de una librería.",
+      "Balancea la pirámide del equipo: contratar solo seniors genera fricción por falta de trabajo de impacto acorde y bloquea el crecimiento interno.",
+      "Mide la salud del embudo (tasa de conversión por etapa, tiempo hasta oferta y aceptación) para detectar cuellos de botella o preguntas que filtran mal."
+    ],
+    "ejemplo": "Loop estructurado (4 bloques disjuntos):\n1. Pair programming realista (60m) -> legibilidad, debugging, testing\n2. Diseño de sistemas (60m) -> trade-offs, escalabilidad, datos\n3. Comportamiento/STAR (45m) -> conflictos, ownership, impacto\n4. Debrief con scorecard independiente (1-4: Strong No / No / Yes / Strong Yes)",
+    "entrevista": "Diseño procesos de contratación basados en rúbricas de impacto a 6 meses y entrevistas disjuntas con evaluación independiente previa al debrief para maximizar señal y reducir sesgos."
+  },
+  "Cultura de equipo": {
+    "que": "Es el conjunto de normas explícitas e implícitas, valores practicados, rituales y estándares de calidad que determinan cómo trabaja, decide y se relaciona un equipo de ingeniería cuando nadie está supervisando. Según Edgar Schein, se refleja en artefactos visibles, valores declarados y supuestos compartidos.",
+    "para": "Alinea el comportamiento autónomo sin necesidad de microgestión, define el nivel de exigencia técnica (testing, documentación, ownership) y determina la capacidad de atraer y retener talento. Es clave al formar equipos nuevos, fusionar áreas o corregir derivas de calidad y silos.",
+    "como": "La cultura no se impone con lemas, sino que se moldea mediante tres mecanismos: qué comportamientos se recompensan o promocionan, qué se tolera (el estándar mínimo aceptado en PRs o incidentes) y cómo actúan los líderes bajo presión. Los rituales cotidianos —como postmortems sin culpa, demos semanales, revisión de código respetuosa y documentación viva— refuerzan los supuestos del equipo. Cuando ocurre una brecha cultural (por ejemplo, lanzar sin pruebas para llegar a una fecha), la reacción del liderazgo recalibra inmediatamente la norma real.",
+    "practicas": [
+      "Recuerda la máxima: tu cultura está definida por el peor comportamiento que estás dispuesto a tolerar, no por el póster de valores.",
+      "Codifica las normas operativas en un Working Agreement explícito (tiempos de respuesta en PR, horario núcleo, reglas de guardia) y revísalo cada trimestre.",
+      "Cultura de aprendizaje vs. Cultura de culpa: tras un incidente, busca debilidades en el sistema y salvaguardas, nunca culpables individuales."
+    ],
+    "ejemplo": "Working Agreement (extracto):\n- PRs < 300 líneas; primera revisión en < 4 horas hábiles.\n- Todo incidente SEV-1/2 genera postmortem sin culpa en 48h con al menos 1 acción preventiva.\n- Ningún despliegue a producción los viernes después de las 15:00 sin bandera de reversión.",
+    "entrevista": "Construyo cultura de ingeniería mediante acuerdos operativos claros y coherencia en lo que se premia y tolera, priorizando la calidad sostenible y el aprendizaje sin culpa."
+  },
+  "Delegación": {
+    "que": "Es la transferencia deliberada de responsabilidad, autoridad de decisión y rendición de cuentas sobre una tarea, módulo o iniciativa desde un líder hacia otro miembro del equipo. Delegar implica ceder el cómo y aceptar un margen de ejecución distinto al propio, no simplemente repartir tareas operativas.",
+    "para": "Libera al tech lead o manager del rol de cuello de botella, desarrolla las competencias de liderazgo en ingenieros en crecimiento y escala la capacidad ejecutiva de la organización. Es indispensable cuando un proyecto crece en alcance o cuando se prepara a un ingeniero para un ascenso.",
+    "como": "Una delegación efectiva sigue el nivel de autonomía adecuado a la madurez de la persona en esa tarea (modelos como Delegation Poker de Jurgen Appelo o Liderazgo Situacional): desde decidir e informar hasta proponer y ejecutar con revisión posterior. El líder comunica el contexto estratégico, el resultado esperado («qué» y «por qué»), las restricciones no negociables (presupuesto, SLA, seguridad, fecha) y los puntos de control (check-ins) acordados. Durante la ejecución evita recuperar la tarea al primer tropiezo, salvo riesgo crítico, y realiza un cierre retrospectivo.",
+    "practicas": [
+      "Delega problemas y resultados («reducir latencia de búsqueda bajo 100 ms»), no listas cerradas de subtareas mecánicas.",
+      "Ajusta el nivel de seguimiento al riesgo y experiencia: delegar sin contexto a un junior es abandono; microgestionar a un senior destruye motivación.",
+      "Evita la delegación inversa (monkey on your back): cuando alguien trae un bloqueo, ayúdale a formular opciones en lugar de asumir tú la ejecución."
+    ],
+    "ejemplo": "Brief de delegación:\n- Objetivo: Migrar autenticación a OIDC antes de fin de Q2.\n- Límites: Cero downtime para usuarios activos y auditoría de seguridad aprobada.\n- Nivel de autoridad: Decides librería y diseño; consulta solo si requiere cambio de esquema en BD.\n- Check-in: Sincronización de 15m cada miércoles.",
+    "entrevista": "Delego resultados completos con restricciones claras y puntos de control calibrados a la experiencia de la persona, evitando tanto el abandono como la microgestión."
+  },
+  "Diversidad e inclusión": {
+    "que": "La diversidad es la representación de distintas experiencias, orígenes, géneros, neurotipos y trayectorias en los equipos de ingeniería; la inclusión es el entorno operativo y cultural que garantiza que todas esas personas tengan igualdad de voz, acceso a proyectos de alto impacto y oportunidades de crecimiento.",
+    "para": "Mitiga sesgos ciegos en el diseño de productos y sistemas (desde accesibilidad hasta algoritmos y flujos de usuario), mejora la resolución de problemas complejos gracias a perspectivas cognitivas variadas y amplía el acceso al mercado de talento. Se aplica en procesos de selección, asignación de trabajo y dinámicas de reunión.",
+    "como": "Funciona integrando salvaguardas estructurales en todo el ciclo de vida del empleado. En contratación, exige descripciones de puesto libres de jerga excluyente, paneles diversos y rúbricas objetivas en lugar de «encaje cultural» vago. En la operación diaria, mide de forma equitativa quién recibe el «trabajo pegamento» (glue work no promocionable como organizar notas o coordinar) frente a iniciativas visibles de arquitectura, y asegura turnos de palabra en reuniones y canales asíncronos. En promociones, audita evaluaciones por lenguaje sesgado y criterios transparentes de carrera.",
+    "practicas": [
+      "Mide la inclusión además de la diversidad: contratar talento diverso sin seguridad psicológica ni equidad en ascensos solo aumenta la rotación.",
+      "Rota las tareas operativas no promocionables (notas, coordinación de ceremonias, triaje básico) de forma sistemática entre todo el equipo.",
+      "Combina discusión síncrona con comentarios escritos asíncronos en documentos para dar voz equitativa a perfiles introvertidos o en distintas zonas horarias."
+    ],
+    "ejemplo": "Auditoría trimestral de equipo:\n1. Rotación automática de roles de facilitador y soporte en calendario.\n2. Distribución de épicas críticas entre todo el equipo según plan de carrera.\n3. Calibración de evaluaciones revisando evidencia objetiva frente a adjetivos subjetivos.",
+    "entrevista": "Entiendo la diversidad y la inclusión como calidad de ingeniería aplicada: uso rúbricas objetivas, reparto equitativo de trabajo de alto impacto y canales asíncronos para que todas las perspectivas mejoren nuestras decisiones."
+  },
+  "Engineering manager": {
+    "que": "Es el rol de liderazgo orientado a las personas, la salud organizacional, la ejecución sostenible y el alineamiento estratégico de uno o varios equipos de ingeniería. Aunque posee sólido criterio técnico, su responsabilidad primaria es el crecimiento del equipo y los resultados de negocio, no ser el principal contribuyente individual de código.",
+    "para": "Resuelve la coordinación entre personas, producto y arquitectura, gestiona carreras, contratación, desempeño y bloqueos organizacionales. Es necesario cuando un equipo supera las 4-5 personas o requiere interlocución continua con múltiples áreas (Producto, Diseño, Seguridad, Dirección).",
+    "como": "Opera en cuatro ejes: Personas (1:1 semanales, coaching, feedback, evaluaciones, retención y planes de desarrollo), Entrega (eliminar impedimentos, gestionar capacidad, calidad DORA y colaboración con Product Manager), Estrategia (traducir objetivos de negocio a hoja de ruta técnica y presupuesto) y Cultura (seguridad psicológica, normas de trabajo y colaboración inter-equipos). En lugar de tomar todas las decisiones técnicas de bajo nivel, forma alianza con el Tech Lead o Staff Engineer para equilibrar la salud técnica con las metas de producto.",
+    "practicas": [
+      "Engineering Manager vs. Tech Lead: el EM responde por las personas, el proceso y la estrategia de equipo; el TL responde por la coherencia técnica y la arquitectura del sistema.",
+      "Mide tu éxito por la autonomía y rendimiento del equipo cuando estás ausente, no por cuántas PRs apruebas personalmente.",
+      "Protege al equipo del ruido corporativo y cambios de prioridad constantes actuando como escudo y negociador hacia arriba."
+    ],
+    "ejemplo": "Cadencia semanal típica de un EM:\n- Lunes: Alineamiento con PM y TL sobre prioridades y bloqueos.\n- Martes/Jueves: 1:1 de 30m con cada integrante (carrera, bienestar, feedback).\n- Miércoles: Calibración de contratación y revisión de métricas DORA/salud.\n- Viernes: Sincronización con dirección y seguimiento de OKRs.",
+    "entrevista": "Como Engineering Manager mi producto es el equipo: multiplico su impacto desarrollando el talento mediante 1:1s y feedback, eliminando bloqueos sistémicos y alineando la ejecución técnica con los objetivos de negocio."
+  },
+  "Entrevistas técnicas": {
+    "que": "Es el instrumento de evaluación estructurada diseñado para recolectar evidencia observable sobre la capacidad de un candidato para escribir código mantenible, diseñar sistemas, depurar fallos y colaborar en un entorno real de ingeniería.",
+    "para": "Sirve para predecir el desempeño futuro en el puesto reduciendo falsos positivos (contratar a quien solo memorizó trucos) y falsos negativos (descartar a excelentes ingenieros por nervios o pruebas irrelevantes). Se aplica en cada fase técnica del proceso de selección según el nivel del puesto.",
+    "como": "Una entrevista técnica moderna sustituye acertijos opacos por ejercicios representativos del trabajo diario: refactorización o implementación incremental con tests, depuración de un bug real, revisión de una Pull Request o diseño colaborativo de arquitectura sobre requisitos evolutivos. Cada sesión dura 45-60 minutos, cuenta con una guía estandarizada para el entrevistador y una rúbrica con anclas conductuales (qué distingue un nivel Junior, Mid y Senior en manejo de errores, claridad o trade-offs). El entrevistador registra hechos y código producido antes de emitir una recomendación.",
+    "practicas": [
+      "Evita algoritmos competitivos extremos si el puesto requiere modelado de dominio, APIs, concurrencia práctica o depuración; alinea la prueba con el trabajo real.",
+      "Calibra las preguntas con empleados actuales antes de usarlas con candidatos para verificar tiempos, ambigüedades y señal real.",
+      "Cuida la experiencia del candidato: una entrevista es bidireccional y proyecta directamente la cultura de ingeniería de la empresa."
+    ],
+    "ejemplo": "Rúbrica para ejercicio de API / Pair Programming:\n- Nivel 1 (No): Código acoplado, ignora casos borde y errores HTTP.\n- Nivel 2 (Dudoso): Funciona para el caso feliz, tests frágiles o ausentes.\n- Nivel 3 (Sí): Código modular, manejo explícito de errores y tests unitarios claros.\n- Nivel 4 (Fuerte Sí): Anticipa concurrencia/idempotencia y comunica trade-offs con claridad.",
+    "entrevista": "Diseño entrevistas técnicas estructuradas basadas en escenarios reales del puesto y rúbricas con criterios observables, evaluando criterio, legibilidad y comunicación más allá de memorizar algoritmos."
+  },
+  "Evaluación del desempeño": {
+    "que": "Es el proceso periódico y formal mediante el cual se compara el impacto, las entregas y los comportamientos demostrados por un ingeniero frente a las expectativas explícitas de su nivel (career ladder). Combina autoevaluación, retroalimentación de pares (360) y síntesis del manager.",
+    "para": "Garantiza justicia en promociones, ajustes salariales y detección temprana de brechas de rendimiento, eliminando sorpresas de fin de año. Se ejecuta habitualmente de forma semestral o anual, complementado con revisiones informales continuas.",
+    "como": "El ciclo comienza al inicio del periodo fijando expectativas claras acordes al rol. Durante el semestre, el manager recopila evidencias continuas (brag documents, diseños liderados, resolución de incidentes, mentoría, impacto en métricas) para evitar el sesgo de recencia. Al llegar la evaluación, el ingeniero entrega su autoevaluación, se solicitan reseñas a pares multidisciplinarios (producto, QA, otros equipos) y el manager redacta la valoración basada en hechos observables. Finalmente, los líderes participan en sesiones de calibración cruzada para asegurar que un nivel 'Supera expectativas' signifique lo mismo en todos los equipos.",
+    "practicas": [
+      "Regla de cero sorpresas: ningún problema de desempeño debería mencionarse por primera vez en la evaluación formal; debió tratarse semanas antes en un 1:1.",
+      "Evalúa impacto sostenido y cómo se logró el resultado (colaboración, calidad), no solo volumen de líneas de código o heroísmo ante crisis evitables.",
+      "Fomenta que cada ingeniero mantenga un Brag Document actualizado quincenalmente para documentar logros invisibles como mentoría o prevención de incidentes."
+    ],
+    "ejemplo": "Estructura de evaluación calibrada:\n1. Expectativa del nivel (Senior): Lidera épicas ambiguas de extremo a extremo.\n2. Evidencia: Diseñó RFC-19, coordinó 2 equipos, redujo fallos de pago un 40 %.\n3. Área de mejora: Delegar revisiones rutinarias para enfocarse en estrategia Q3.\n4. Calificación calibrada: Supera expectativas.",
+    "entrevista": "Conduzco evaluaciones basadas en evidencias continuas frente a una matriz de competencias clara, calibradas entre pares y bajo la regla de cero sorpresas."
+  },
+  "Feedback constructivo": {
+    "que": "Es la comunicación específica, oportuna y orientada al crecimiento sobre una conducta observable o un artefacto técnico y su impacto real, cuyo objetivo es reforzar hábitos valiosos o corregir desviaciones sin atacar a la persona.",
+    "para": "Acelera el aprendizaje profesional, evita que pequeños roces de código o actitud escalen en conflictos crónicos y sostiene el estándar técnico del equipo. Se utiliza tras revisiones de código, presentaciones de arquitectura, reuniones tensas o entregas de proyecto.",
+    "como": "El protocolo más efectivo es el modelo SBI (Situation, Behavior, Impact) combinado con el enfoque de Radical Candor (importar personalmente y desafiar directamente). Primero se ubica la Situación exacta (cuándo y dónde ocurrió); luego se describe el Comportamiento concreto y verificable (sin etiquetas de personalidad ni intenciones); después se explica el Impacto objetivo en el equipo, el sistema o el cliente; y finalmente se abre una conversación para escuchar la perspectiva de la otra persona y acordar el cambio siguiente. Se entrega en privado cuando es correctivo y lo más cerca posible del evento.",
+    "practicas": [
+      "Critica el comportamiento o el código, nunca la identidad ni la intención («En la PR faltaron pruebas de borde» vs. «Eres descuidado»).",
+      "Evita el «sándwich de feedback» (elogio falso + crítica + elogio): diluye el mensaje crítico y genera desconfianza hacia los elogios genuinos.",
+      "Pide feedback hacia arriba regularmente («¿Qué podría haber facilitado mejor en la planificación de hoy?») para normalizar la retroalimentación bidireccional."
+    ],
+    "ejemplo": "Modelo SBI:\n- Situación: En la demo de ayer con Producto.\n- Comportamiento: Interrumpiste dos veces a Ana mientras explicaba las limitaciones de latencia.\n- Impacto: El equipo dejó de aportar matices técnicos y la reunión cerró sin alinear riesgos reales.\n- Siguiente paso: ¿Cómo podemos asegurar que todos terminen su punto antes de debatir?",
+    "entrevista": "Doy feedback oportuno en privado usando el modelo SBI y Radical Candor, enfocándome en hechos observables y su impacto para corregir rumbo sin dañar la confianza."
+  },
+  "Gestión de conflictos": {
+    "que": "Es el conjunto de técnicas de mediación y análisis estructurado para abordar desacuerdos interpersonales, técnicos o de prioridades entre miembros o equipos, transformando la fricción improductiva en acuerdos operativos claros.",
+    "para": "Evita la fragmentación del equipo, la comunicación pasivo-agresiva en Code Reviews, los bloqueos inter-equipos y la fuga de talento por ambientes tóxicos. Se aplica cuando dos posturas técnicas quedan estancadas o cuando surgen tensiones de rol y prioridades.",
+    "como": "El proceso comienza detectando señales tempranas (hilos largos en Slack o PRs con tono hostil) y moviendo la discusión a un espacio síncrono seguro. El facilitador separa los hechos de las interpretaciones emocionales y busca los intereses comunes detrás de las posiciones opuestas (p. ej., ambos quieren estabilidad, uno prioriza velocidad y otro seguridad). Se hacen explícitos los criterios de evaluación compartidos (coste, tiempo de entrega, mantenibilidad), se exploran opciones integradoras y se cierra con un acuerdo verificable y un seguimiento a una o dos semanas.",
+    "practicas": [
+      "Mueve los conflictos de texto (Slack/GitHub) a voz o videollamada antes del tercer intercambio tenso: el texto pierde tono y amplifica sesgos hostiles.",
+      "Separa el conflicto de tareas (sano, sobre ideas técnicas) del conflicto relacional (destructivo, sobre egos o ataques personales).",
+      "No tomes partido prematuro ni impongas silencio artificial; la falsa armonía solo entierra el conflicto hasta que explota en un momento crítico."
+    ],
+    "ejemplo": "Guion de mediación 3 pasos:\n1. Alinear meta común: «Ambos buscamos lanzar el checkout sin caídas».\n2. Exponer necesidades: Dev A teme deuda en BD; PM teme perder ventana de campaña.\n3. Acuerdo puente: Lanzar esquema acotado con feature flag y asignar 3 días de refactor en el siguiente sprint.",
+    "entrevista": "Atiendo los conflictos temprano pasando de texto a conversación directa, alineando a las partes en el objetivo común y transformando disputas personales en decisiones basadas en criterios compartidos."
+  },
+  "Gestión del cambio": {
+    "que": "Es la disciplina de planificar, comunicar, ejecutar y consolidar transformaciones técnicas, de procesos o de estructura organizativa minimizando la disrupción operativa y la resistencia humana. Reconoce que el éxito de una migración o metodología depende tanto de la adopción de las personas como de la tecnología.",
+    "para": "Resuelve el fracaso frecuente de nuevas herramientas, reestructuraciones de equipos (p. ej., paso a Squads/Stream-aligned) o adopciones de prácticas como CI/CD y observabilidad. Es esencial siempre que se altere el flujo diario de trabajo de múltiples equipos.",
+    "como": "Modelos como ADKAR (Awareness, Desire, Knowledge, Ability, Reinforcement) o los pasos de Kotter estructuran la transición en fases. Primero se comunica el porqué con datos del problema actual (Awareness) y qué gana cada equipo al cambiar (Desire). Luego se habilita la transición mediante formación práctica, documentación y campeones internos o pilotos en un equipo voluntario (Knowledge y Ability). Finalmente se eliminan los caminos antiguos o fricciones, se miden métricas de adopción y se celebran hitos tempranos para evitar el retroceso a hábitos previos (Reinforcement).",
+    "practicas": [
+      "Nunca hagas un «big bang» obligatorio sin un piloto previo que valide la herramienta en condiciones reales y genere casos de éxito internos.",
+      "Escucha la resistencia como información valiosa: muchas veces revela cuellos de botella reales que la dirección no vio.",
+      "Haz que el camino deseado sea el camino más fácil (golden path / plantillas listas) en lugar de depender de pura fuerza de voluntad o cumplimiento manual."
+    ],
+    "ejemplo": "Plan ADKAR para adoptar Trunk-Based Development:\n- A/D: Mostrar dato de 4 días promedio en conflictos de merge.\n- K/A: Taller práctico de feature flags + piloto de 2 semanas en equipo Checkout.\n- R: Ajustar regla de protección de rama y revisar métrica de tamaño de PR tras 1 mes.",
+    "entrevista": "Gestiono cambios técnicos y de proceso aplicando ADKAR: explico el problema con datos, valido con un equipo piloto, reduzco la fricción mediante herramientas listas y mido la adopción real."
+  },
+  "Influencia sin autoridad": {
+    "que": "Es la capacidad de alinear a otros equipos, pares, líderes o stakeholders hacia una dirección técnica o estrategia común sin tener autoridad jerárquica directa sobre ellos. Se sustenta en la credibilidad técnica, la empatía con los incentivos ajenos y la construcción de coaliciones.",
+    "para": "Es la competencia central de roles como Staff Engineer, Tech Lead, Scrum Master o Product Owner, quienes deben coordinar estándares transversales o dependencias entre áreas sin poder dar órdenes administrativas. Se usa al impulsar arquitecturas compartidas, deuda técnica inter-equipos o cambios de prioridad.",
+    "como": "El mecanismo se basa en reciprocidad, alineamiento de incentivos y prueba social. Primero se escucha a los equipos involucrados para entender sus OKRs, dolores actuales y restricciones antes de proponer una solución. Luego se redacta una propuesta clara (RFC o one-pager) que conecte el cambio técnico con las métricas que importan a cada interlocutor (menos guardias para Ops, menor time-to-market para Producto). Se reclutan aliados tempranos (early adopters) mediante prototipos o mejoras concretas que les ahorren trabajo, generando tracción orgánica antes de escalar la propuesta a toda la organización.",
+    "practicas": [
+      "Gana crédito antes de pedirlo: ayuda primero a resolver un problema urgente del otro equipo y comprenderás su contexto real.",
+      "Traduce tu petición al idioma del incentivo ajeno; nadie adopta un estándar nuevo solo porque es «arquitectónicamente más limpio».",
+      "Evita el «escalado sorpresa» hacia directivos sin haber intentado alinear primero a los pares implicados; erosiona la confianza de forma permanente."
+    ],
+    "ejemplo": "Estrategia para estandarizar trazas OpenTelemetry en 5 equipos:\n1. Entender dolor de cada equipo (tiempo de debug en incidentes).\n2. Crear librería wrapper plug-and-play que requiere <10 líneas de config.\n3. Integrar con 1 equipo voluntario, medir reducción de MTTR (-35 %) y presentar caso al resto.",
+    "entrevista": "Construyo influencia sin autoridad entendiendo primero los incentivos y dolores de otros equipos, validando valor con prototipos útiles y respaldando cada propuesta con resultados medibles."
+  },
+  "Liderazgo técnico": {
+    "que": "Es la capacidad de guiar la dirección arquitectónica, la calidad de ingeniería y la toma de decisiones de un grupo de desarrollo para entregar software confiable que resuelva problemas reales de negocio. Es un conjunto de prácticas y responsabilidades, no necesariamente un cargo jerárquico único.",
+    "para": "Evita la deriva arquitectónica, la acumulación silenciosa de deuda técnica destructiva y la falta de criterio común entre desarrolladores. Se ejerce continuamente en diseño de sistemas, revisiones técnicas, mentoría diaria y traducción entre estrategia de negocio y ejecución técnica.",
+    "como": "Funciona combinando visión sistémica con ejecución pragmática. El líder técnico identifica las decisiones de alto impacto (modelos de datos, límites de servicio, seguridad, observabilidad), facilita que el equipo las evalúe mediante documentos de diseño y garantiza que existan salvaguardas automatizadas (CI/CD, tests, alertas). Al mismo tiempo, multiplica la capacidad del equipo desbloqueando impedimentos complejos, haciendo pair programming estratégico y protegiendo la simplicidad frente a la sobreingeniería.",
+    "practicas": [
+      "Liderar técnicamente no es escribir el código más complejo ni ser el héroe de guardia, sino hacer que todo el equipo entregue mejor código con menos riesgo.",
+      "Equilibra excelencia técnica con pragmatismo de negocio: una arquitectura perfecta que llega seis meses tarde puede matar al producto.",
+      "Multiplica tu impacto mediante estándares claros, automatización y mentoría en lugar de convertirte en revisor obligatorio de cada línea."
+    ],
+    "ejemplo": "Checklist semanal de liderazgo técnico:\n- ¿Qué decisión de arquitectura abierta bloquea al equipo hoy?\n- ¿Qué deuda técnica está frenando más la velocidad de entrega?\n- ¿Qué parte crítica del sistema tiene un solo dueño (Bus Factor = 1)?",
+    "entrevista": "Entiendo el liderazgo técnico como un efecto multiplicador: alinear visión arquitectónica pragmática, elevar los estándares mediante automatización y habilitar a otros ingenieros para decidir con autonomía."
+  },
+  "Mentoría técnica": {
+    "que": "Es la relación estructurada de transferencia de conocimiento, criterio técnico y experiencia práctica entre un ingeniero con mayor trayectoria (mentor) y otro en desarrollo (mentee). A diferencia del coaching puro, el mentor sí comparte recomendaciones, modelos mentales y lecciones aprendidas.",
+    "para": "Acelera la curva de madurez de perfiles junior y mid, reduce el riesgo de errores arquitectónicos repetidos y fortalece la retención interna formando a los próximos referentes técnicos. Se aplica durante el onboarding, cambios de nivel o incursiones en dominios complejos como sistemas distribuidos o rendimiento.",
+    "como": "Se estructura mediante sesiones periódicas (p. ej., cada 2 semanas) combinadas con interacción práctica sobre el trabajo real: pair programming, revisión comentada de diseños o co-autoría de un RFC. En el inicio, mentor y mentee acuerdan metas concretas de aprendizaje (dominar profiling, diseñar APIs resilientes, presentar propuestas técnicas) y las formas de trabajo. El mentor explica el «porqué» detrás de las heurísticas de ingeniería, señala recursos curados y da espacio seguro para equivocarse en problemas controlados antes de pasar el liderazgo de una tarea al mentee.",
+    "practicas": [
+      "Explica el razonamiento y los trade-offs («uso índice compuesto aquí por la selectividad de la consulta»), no solo la corrección sintáctica en una PR.",
+      "Fomenta que el mentee prepare la agenda y traiga hipótesis previas a cada sesión para evitar dependencia pasiva.",
+      "Mentoría vs. Sponsoring: el mentor aconseja en privado; el sponsor recomienda activamente al mentee para proyectos visibles y ascensos."
+    ],
+    "ejemplo": "Plan de mentoría de 8 semanas (Mid -> Senior):\n- Semanas 1-2: Co-revisión de 2 RFCs analizando modos de fallo.\n- Semanas 3-5: El mentee redacta RFC propio con feedback previo del mentor.\n- Semanas 6-8: El mentee lidera la sesión de diseño y coordina la implementación.",
+    "entrevista": "En mentoría técnica enseño modelos mentales y criterios de decisión sobre problemas reales del equipo, transfiriendo progresivamente la autoría de diseños hasta lograr autonomía completa."
+  },
+  "Negociación": {
+    "que": "Es el proceso de diálogo estratégico entre dos o más partes con intereses parcialmente opuestos y parcialmente compartidos para alcanzar un acuerdo mutuamente sostenible sobre alcance, plazos, recursos o arquitectura.",
+    "para": "Resuelve la tensión constante entre fechas agresivas de negocio, capacidad limitada del equipo y requisitos de calidad, seguridad o deuda técnica. Se utiliza al definir roadmaps con Producto, pactar SLAs con clientes internos o negociar recursos con Dirección.",
+    "como": "Siguiendo el método de Harvard, se separa a las personas del problema y se negocia por intereses en lugar de posiciones rígidas («necesitamos 3 semanas» vs. «necesitamos garantizar integridad de pagos antes del pico de tráfico»). Antes de sentarse, el líder prepara su BATNA (Mejor Alternativa a un Acuerdo Negociado) y descompone el trabajo en palancas modificables: alcance, tiempo, calidad operativa o capacidad. En la mesa presenta opciones con consecuencias transparentes («podemos lanzar el viernes con flujo manual de reembolsos, o el miércoles siguiente totalmente automatizado»), permitiendo que la contraparte elija el trade-off.",
+    "practicas": [
+      "Nunca negocies bajando la calidad de pruebas o seguridad a escondidas; haz explícito el coste de deuda técnica y pon fecha de pago en el acuerdo.",
+      "Ofrece siempre 2 o 3 opciones viables con sus impactos claros en lugar de responder con un «no se puede» cerrado.",
+      "Documenta por escrito los acuerdos alcanzados (alcance recortado, supuestos, fecha de revisión) inmediatamente después de la reunión."
+    ],
+    "ejemplo": "Matriz de opciones frente a fecha fija de campaña:\n- Opción A (Fecha fija): Solo pago con tarjeta; transferencia bancaria pasa a Fase 2.\n- Opción B (Alcance completo): +2 semanas de entrega con pruebas de carga.\n- Opción C (Más capacidad): Traer 1 dev senior de plataforma para webhooks (impacta otro proyecto).",
+    "entrevista": "Negocio por intereses y presento opciones claras de alcance, plazo y riesgo técnico para que negocio decida los trade-offs con transparencia sin sacrificar la estabilidad del sistema."
+  },
+  "Onboarding técnico": {
+    "que": "Es el proceso sistemático de integración de un nuevo ingeniero al entorno técnico, arquitectura, herramientas, flujos de entrega y cultura operativa del equipo hasta alcanzar autonomía productiva.",
+    "para": "Reduce drásticamente el tiempo hasta la primera contribución valiosa (Time-to-First-PR y Time-to-Autonomy), disminuye la ansiedad inicial del recién llegado y detecta documentación obsoleta o entornos rotos. Se activa con cada nueva incorporación o rotación interna entre equipos.",
+    "como": "Se estructura típicamente en un plan 30-60-90 días con un Buddy asignado (par del mismo equipo que responde dudas cotidianas sin juicio). En la semana 1, el objetivo es configurar el entorno local en horas (idealmente automatizado con DevContainers o scripts), entender el mapa de servicios y enviar una primera PR pequeña a producción (p. ej., un fix menor o test) para recorrer todo el pipeline CI/CD. En los primeros 30 días realiza tareas guiadas y shadowing de guardia; a los 60 días entrega una funcionalidad acotada; y a los 90 días participa activamente en diseño, revisiones y rotación on-call.",
+    "practicas": [
+      "Usa el onboarding como prueba de ácido de tu documentación: pide al nuevo integrante que actualice cada paso roto que encuentre en el README.",
+      "Asigna un Buddy distinto del Engineering Manager para que exista un espacio informal libre de presión evaluativa.",
+      "Mide métricas como días hasta el primer despliegue a producción y satisfacción a los 30 días para iterar el proceso."
+    ],
+    "ejemplo": "Checklist Semana 1 de Onboarding:\n- Día 1: Accesos SSO/Git/Cloud + entorno local levantado en < 2h.\n- Día 2: Sesión de arquitectura general y lectura de 3 ADRs clave.\n- Día 3-4: Primera PR pequeña mergeada y desplegada con ayuda del Buddy.\n- Día 5: Retrospectiva rápida de fricciones encontradas.",
+    "entrevista": "Diseño onboardings 30-60-90 con Buddy asignado y un primer despliegue guiado en la primera semana, aprovechando los ojos nuevos del integrante para mejorar nuestra documentación y automatización."
+  },
+  "Planes de desarrollo individual (IDP)": {
+    "que": "Un Plan de Desarrollo Individual (IDP) es una hoja de ruta personalizada, co-creada entre un ingeniero y su manager, que define objetivos de crecimiento técnico o de liderazgo a mediano plazo, las brechas de competencias a cubrir y las acciones prácticas para lograrlo.",
+    "para": "Conecta las aspiraciones profesionales del individuo con las necesidades reales del equipo y la empresa, convirtiendo conversaciones vagas sobre «crecer» o «ascender» en compromisos medibles. Es clave para la retención de talento, preparación de promociones y transiciones de rol.",
+    "como": "El proceso inicia evaluando el estado actual frente a la matriz de carrera del siguiente nivel o rol objetivo (por ejemplo, de Senior IC a Staff o a EM). Juntos seleccionan de 1 a 3 focos prioritarios para los próximos 3-6 meses, aplicando habitualmente el marco 70-20-10: 70 % aprendizaje en el trabajo mediante proyectos retadores reales, 20 % feedback, mentoría y shadowing con referentes, y 10 % formación formal (cursos, libros, conferencias). Cada objetivo lleva criterios observables de éxito y se revisa mensualmente en los 1:1 para ajustar oportunidades de proyecto.",
+    "practicas": [
+      "Un IDP pertenece al ingeniero y lo habilita el manager; si el manager lo redacta solo, se convierte en un trámite burocrático sin compromiso.",
+      "Limita el plan a máximo 2 o 3 metas simultáneas; intentar mejorar diez competencias a la vez diluye el foco.",
+      "Vincula cada meta de desarrollo a una oportunidad real en el roadmap del equipo (p. ej., liderar el próximo diseño o coordinar un release complejo)."
+    ],
+    "ejemplo": "IDP - Meta Q2 (Mid -> Senior):\n- Brecha: Falta de experiencia diseñando sistemas tolerantes a fallos.\n- 70 % (Proyecto): Liderar el rediseño de reintentos y DLQ del servicio de notificaciones.\n- 20 % (Social): Revisión quincenal del RFC con el Staff Engineer.\n- 10 % (Formal): Lectura de capítulos de resiliencia en DDIA.",
+    "entrevista": "Co-creo IDPs enfocados en 2 o 3 metas ligadas a la matriz de carrera y al roadmap real del equipo bajo el modelo 70-20-10, haciendo seguimiento mensual en los 1:1."
+  },
+  "Priorización de equipo": {
+    "que": "Es el proceso continuo de ordenar el trabajo técnico y de producto (funcionalidades, bugs, deuda técnica, mejoras de plataforma) según su valor esperado, urgencia, riesgo y costo de ejecución para decidir qué se hace ahora, qué después y qué se descarta.",
+    "para": "Evita que el equipo trabaje en todo a la vez sin terminar nada, equilibra la presión comercial a corto plazo con la salud técnica a largo plazo y maximiza el retorno por hora de ingeniería invertida. Se ejecuta en refinamientos semanales, planificación de sprints y revisiones trimestrales.",
+    "como": "Combina modelos cuantitativos ligeros con alineamiento estratégico de Producto e Ingeniería. Herramientas como RICE (Reach, Impact, Confidence, Effort) o WSJF (Weighted Shortest Job First = Cost of Delay / Duration) permiten comparar iniciativas heterogéneas en la misma escala. Para el trabajo puramente técnico, se asignan cubos de inversión explícitos (por ejemplo: 65 % nuevas capacidades, 20 % estabilidad/deuda, 15 % habilitadores de plataforma) de modo que la deuda técnica no compita en desventaja directa contra funcionalidades visibles en cada ticket individual.",
+    "practicas": [
+      "Priorizar significa decidir qué NO se va a hacer este trimestre; una lista donde todo es «Prioridad 1» equivale a no tener prioridad.",
+      "Traduce la deuda técnica a impacto de negocio (velocidad futura, riesgo de caída, coste cloud) al defender su prioridad frente a Producto.",
+      "Reevalúa las prioridades cuando cambian los datos reales (incidentes, métricas de uso), pero protege el sprint en curso de cambios diarios arbitrarios."
+    ],
+    "ejemplo": "Cálculo WSJF simplificado (escala Fibonacci 1,2,3,5,8):\n- Tarea A (Caché checkout): Valor negocio(8) + Urgencia(5) + Reducción riesgo(3) = 16 / Esfuerzo(2) -> WSJF = 8.0\n- Tarea B (Panel admin interno): Valor(3) + Urgencia(1) + Riesgo(1) = 5 / Esfuerzo(5) -> WSJF = 1.0\nDecisión: Ejecutar A primero.",
+    "entrevista": "Priorizo combinando Cost of Delay frente a esfuerzo (WSJF) y reservas explícitas de capacidad para deuda técnica, asegurando que cada sprint entregue el máximo impacto con bajo WIP."
+  },
+  "Retención de talento": {
+    "que": "Es la capacidad de una organización y sus líderes de mantener comprometidos, motivados y creciendo a sus ingenieros valiosos a largo plazo, minimizando la rotación voluntaria no deseada (regrettable attrition).",
+    "para": "Preserva el conocimiento tácito del dominio y la arquitectura, evita el enorme coste de reclutar y formar reemplazos (a menudo equivalente a varios meses de productividad perdida) y sostiene la estabilidad del equipo. Es una preocupación continua del liderazgo técnico y de gestión.",
+    "como": "Según investigaciones sobre motivación intrínseca (Daniel Pink: Autonomía, Maestría y Propósito) junto con higiene básica (compensación justa y carga sostenible), la retención se gestiona de forma proactiva mediante «Stay Interviews» (entrevistas de permanencia periódicas para detectar frustraciones antes de que llegue una oferta externa). El manager monitorea señales tempranas como desenganche en reuniones, estancamiento técnico, injusticia salarial percibida o conflicto crónico con producto, y actúa ajustando el alcance del rol, el reconocimiento o la rotación de proyectos.",
+    "practicas": [
+      "Las personas raramente se van solo por salario, aunque el salario injusto acelera la salida; los detonantes principales son mal liderazgo, falta de crecimiento y frustración crónica con procesos rotos.",
+      "Revisa la equidad salarial interna proactivamente en lugar de reaccionar únicamente con contraofertas cuando alguien ya presentó su renuncia.",
+      "Realiza entrevistas de salida honestas y agrupa patrones por equipo para corregir problemas sistémicos."
+    ],
+    "ejemplo": "Preguntas clave de Stay Interview (semestral):\n1. ¿Qué parte de tu trabajo actual te da más energía y cuál te desgasta más?\n2. ¿Sientes que estás aprendiendo algo nuevo cada trimestre?\n3. Si pudieras cambiar una sola cosa de cómo operamos en el equipo mañana, ¿cuál sería?",
+    "entrevista": "Trabajo la retención de forma proactiva mediante Stay Interviews, alineando autonomía, retos técnicos y compensación justa para corregir fricciones antes de llegar al escenario de una contraoferta."
+  },
+  "Scrum master": {
+    "que": "Es el rol de liderazgo servicial responsable de facilitar la efectividad del equipo Scrum, asegurar la comprensión práctica del marco empírico (inspección y adaptación) y eliminar impedimentos organizacionales que frenan el flujo de entrega.",
+    "para": "Resuelve disfunciones de colaboración, ceremonias improductivas, falta de visibilidad de bloqueos y presiones externas que rompen el foco del equipo. Es valioso en equipos que adoptan agilidad o en organizaciones con fuertes dependencias entre áreas.",
+    "como": "Lejos de ser un simple secretario que agenda reuniones o mueve tarjetas en Jira, el Scrum Master observa dinámicas del equipo y métricas de flujo (tiempo de ciclo, bloqueos recurrentes, cumplimiento de Definition of Done). Facilita eventos con propósito claro (Daily orientada a desbloqueo, Retrospectiva con acciones verificables, Sprint Review centrada en feedback real), entrena al Product Owner en gestión de backlog basada en valor y colabora con otros equipos o managers para resolver impedimentos estructurales como entornos de pruebas lentos o aprobaciones burocráticas.",
+    "practicas": [
+      "Scrum Master vs. Project Manager tradicional: no asigna tareas ni controla horarios ni exige explicaciones de estatus; habilita la autoorganización del equipo.",
+      "Evita convertir los rituales en teatro ágil: si una Daily dura 35 minutos con reportes al Scrum Master, está mal enfocada.",
+      "Un indicador de éxito del Scrum Master maduro es que el equipo mantiene sus hábitos y retrospectivas efectivas incluso cuando él no está presente."
+    ],
+    "ejemplo": "Antipatrón vs. Práctica de Scrum Master:\n- Antipatrón: «¿Qué hiciste ayer? ¿Terminaste el ticket #104?» (microgestión).\n- Práctica: «Nos quedan 3 días y hay 4 ítems en QA; ¿cómo nos reorganizamos hoy para cerrar el objetivo del sprint?»",
+    "entrevista": "Concibo al Scrum Master como un facilitador de flujo y mejora continua que ataca impedimentos sistémicos y enseña al equipo a inspeccionar y adaptar su proceso, no como un gestor de tickets."
+  },
+  "Seguridad psicológica": {
+    "que": "Es la creencia compartida entre los miembros de un equipo de que pueden asumir riesgos interpersonales —hacer preguntas consideradas básicas, admitir errores, proponer ideas inusuales o disentir respetuosamente— sin temor a ser humillados, ridiculizados o castigados.",
+    "para": "Es el predictor número uno de equipos de alto rendimiento según el Proyecto Aristotle de Google: sin ella, los ingenieros ocultan bugs tempranos, evitan alertar sobre riesgos de calendario y no cuestionan diseños defectuosos. Es crítica en operaciones on-call, revisiones de diseño y postmortems.",
+    "como": "La seguridad psicológica (conceptualizada por Amy Edmondson) se construye mediante modelado explícito del liderazgo: los referentes técnicos admiten públicamente cuando no saben algo o cuando cometieron un fallo, agradecen las preguntas incómodas y responden a los errores con curiosidad analítica en lugar de reproche. Operativamente se institucionaliza con postmortems sin culpa (blameless postmortems), donde se asume que toda persona actuó con la mejor información disponible en ese momento y se investiga cómo el sistema permitió el fallo. Se combina con estándares altos de exigencia técnica para lograr una zona de aprendizaje y alto desempeño.",
+    "practicas": [
+      "Seguridad psicológica NO es ausencia de exigencia ni evitar conversaciones difíciles: baja exigencia + alta seguridad genera confort pasivo; alta exigencia + alta seguridad genera alto rendimiento.",
+      "En revisiones de código o postmortems, sustituye «¿Por qué hiciste esto?» por «¿Qué información o salvaguarda faltó en el proceso?».",
+      "Protege activamente en reuniones a quienes tienen menos rango o hablan menos cuando son interrumpidos."
+    ],
+    "ejemplo": "Matriz de Edmondson:\n- Baja Seguridad + Alta Exigencia = Zona de Ansiedad (ocultamiento de fallos, burnout).\n- Alta Seguridad + Baja Exigencia = Zona de Confort (complacencia).\n- Alta Seguridad + Alta Exigencia = Zona de Aprendizaje (innovación y responsabilidad).",
+    "entrevista": "Fomento la seguridad psicológica modelando vulnerabilidad, haciendo postmortems sin culpa y manteniendo a la vez altos estándares técnicos para que el equipo esté en la zona de aprendizaje y no en la de ansiedad o confort."
+  },
+  "Staff engineer": {
+    "que": "Es un rol de Contribuyente Individual (IC) de nivel senior avanzado cuyo alcance e impacto trascienden a un único equipo para abarcar varios equipos, plataformas o la estrategia técnica de toda la organización, sin asumir gestión directa de personas.",
+    "para": "Resuelve problemas técnicos ambiguos de escala organizacional (migraciones de plataforma, estándares transversales, cuellos de botella de arquitectura multi-equipo) y ofrece una ruta de crecimiento profesional paralela al Engineering Manager. Se justifica cuando la complejidad técnica entre múltiples equipos supera la coordinación local de los Tech Leads.",
+    "como": "Según Will Larson, suele materializarse en cuatro arquetipos: Tech Lead (guía técnica de una iniciativa crítica muy grande), Architect (define visión técnica de un dominio amplio), Solver (desbloquea crisis o problemas técnicos profundos y complejos) y Right Hand (extiende la capacidad técnica de un VP o CTO). Su flujo de trabajo incluye mucho «trabajo pegamento» de alto nivel: alinear voluntades vía RFCs, mentorizar a Tech Leads de varios squads, detectar riesgos sistémicos a 12-18 meses vista y codificar prototipos o bases críticas solo donde genera mayor palanca.",
+    "practicas": [
+      "Staff Engineer no significa «Senior++ que pica código más rápido»: se espera multiplicación de múltiples equipos y claridad en problemas ambiguos.",
+      "Elige conscientemente en qué batallas NO involucrarte; querer revisar todo impide enfocarse en los riesgos estructurales reales.",
+      "Mantén los pies en el código o en la operación real (debugging de incidentes clave, POCs) para evitar convertirte en un «arquitecto de torre de marfil»."
+    ],
+    "ejemplo": "Diferencia de alcance (Senior vs. Staff):\n- Senior: Diseña e implementa el nuevo servicio de facturación de su equipo.\n- Staff: Define la estrategia de consistencia de eventos financieros entre Facturación, Pagos y Contabilidad, alineando a 4 equipos en un RFC común.",
+    "entrevista": "El Staff Engineer multiplica el impacto técnico a nivel multi-equipo resolviendo problemas ambiguos mediante arquitectura pragmática, mentoría de otros líderes e influencia sin autoridad."
+  },
+  "Tech lead": {
+    "que": "Es la responsabilidad (o rol) dentro de un equipo de ingeniería encargada de alinear la dirección técnica, asegurar la calidad arquitectónica y coordinar la ejecución técnica de las entregas del equipo, manteniendo participación directa en el desarrollo.",
+    "para": "Evita que las decisiones de diseño dentro de un squad queden fragmentadas o sin dueño, actúa como puente técnico con Product Management y otros equipos, y desbloquea al equipo frente a incertidumbres de implementación. Existe tanto en equipos pequeños como dentro de squads multidisciplinares.",
+    "como": "El Tech Lead suele dedicar entre un 30 % y 60 % del tiempo a escribir código o revisar cambios clave, y el resto a tareas de multiplicación: refinar historias técnicamente con el PM antes del desarrollo, liderar el diseño de épicas (RFCs/ADRs), revisar decisiones de datos o contratos de API, vigilar métricas de producción/deuda técnica y hacer pairing con compañeros bloqueados. A diferencia del Engineering Manager, no gestiona compensación ni evaluaciones formales de desempeño (aunque aporta feedback técnico), y puede rotar o evolucionar dentro del equipo.",
+    "practicas": [
+      "Evita quedarte siempre con las tareas técnicas más interesantes o críticas; delega diseños complejos a otros miembros para hacer crecer al equipo.",
+      "No intentes ser Tech Lead y Engineering Manager a tiempo completo simultáneamente en un equipo grande: ambos roles sufren cuando superan 5-6 personas.",
+      "Comunica temprano los riesgos técnicos al PM en términos de impacto de usuario y opciones, no solo detalles de implementación."
+    ],
+    "ejemplo": "Distribución equilibrada de un Tech Lead:\n- 50 % Código de alto impacto / Pair programming / Resolución de bloqueos.\n- 25 % Diseño técnico, revisión de PRs críticas y observabilidad.\n- 25 % Alineamiento con PM, otros Tech Leads y refinamiento técnico.",
+    "entrevista": "Como Tech Lead equilibro la contribución técnica directa con el desbloqueo del equipo y la cohesión arquitectónica, colaborando estrechamente con Producto y EM sin acaparar todo el código crítico."
+  },
+  "Toma de decisiones técnicas": {
+    "que": "Es el proceso estructurado de evaluar alternativas arquitectónicas, tecnológicas o de diseño bajo incertidumbre y restricciones reales (tiempo, coste, habilidades del equipo, escala) para elegir una solución defendible y registrar sus compromisos.",
+    "para": "Sustituye las decisiones por moda tecnológica, intuición no contrastada o parálisis de comité por un criterio repetible y auditable. Se aplica al elegir bases de datos, patrones de comunicación, compra vs. desarrollo propio (build vs. buy) o estrategias de migración.",
+    "como": "El flujo parte de definir con precisión el problema, los atributos de calidad prioritarios (latencia, consistencia, operabilidad) y las restricciones del negocio. Luego se clasifican las decisiones según su reversibilidad (Tipo 1 irreversibles vs. Tipo 2 reversibles) para calibrar el tiempo de análisis. Se comparan al menos 2 o 3 alternativas reales en una matriz de trade-offs —incluyendo siempre la opción de «no hacer nada» o usar tecnología aburrida ya dominada (boring technology)—, se valida con pruebas de concepto acotadas si hay riesgo desconocido, decide el DRI y se registra el resultado en un ADR o RFC.",
+    "practicas": [
+      "Aplica la regla de «Choose Boring Technology» (Dan McKinley): tienes un presupuesto limitado de «fichas de innovación»; gástalas donde esté tu ventaja competitiva, no en bases de datos exóticas.",
+      "Evalúa el coste total de propiedad (TCO): operar, monitorear, contratar y depurar la tecnología en 3 años pesa mucho más que lo rápido que fue escribir el primer prototipo.",
+      "Define criterios de salida o revisión antes de ejecutar para saber cuándo pivotar si los supuestos fallan."
+    ],
+    "ejemplo": "Matriz Build vs. Buy (Motor de búsqueda):\n- Criterios: Time-to-market (peso 40 %), Coste a 2 años (30 %), Mantenimiento ops (30 %).\n- Opción A (Managed Search): Rápida, coste medio, bajo mantenimiento -> Ganadora.\n- Opción B (Cluster propio): Lenta, menor coste licencia, alto coste on-call.",
+    "entrevista": "Clasifico las decisiones según su reversibilidad, comparo opciones por atributos de calidad y TCO privilegiando tecnología probada, y documento los trade-offs en ADRs con un responsable claro."
+  },
+  "Trabajo remoto y asíncrono": {
+    "que": "Es el modelo operativo donde los miembros del equipo colaboran distribuidos geográficamente apoyándose principalmente en artefactos escritos, herramientas compartidas y comunicación diferida (asíncrona) en lugar de exigir presencia física o disponibilidad simultánea constante.",
+    "para": "Permite contratar talento sin fronteras geográficas, protege largos bloques de trabajo profundo (deep work) sin interrupciones de pasillo y escala la colaboración entre distintas zonas horarias. Funciona en empresas remote-first, híbridas bien diseñadas y equipos distribuidos globalmente.",
+    "como": "La piedra angular es sustituir la memoria oral por documentación viva («si no está escrito, no existe»): RFCs, hilos estructurados con contexto completo, grabaciones cortas de pantalla (Loom) para demos y tickets autocontenidos. Se establecen reglas explícitas de latencia de comunicación (SLAs: qué requiere llamada inmediata en incidente SEV-1 vs. comentario en 24h en una PR) y una ventana acotada de solapamiento horario (overlap) para ceremonias síncronas o pairing complejo. Asimismo, los líderes crean rituales intencionados de conexión social para compensar la ausencia de charlas espontáneas de oficina.",
+    "practicas": [
+      "Nunca traslades la oficina a Zoom: llenar el calendario de videollamadas destruye las ventajas del trabajo remoto y dispara la fatiga.",
+      "Envía mensajes autocontenidos con contexto, pregunta clara y opciones en un solo bloque en lugar de escribir solo «Hola» y esperar respuesta.",
+      "Evita el sesgo de proximidad en modelos híbridos: si una persona está en remoto, toda la reunión debe tratarse como remota (todos en su pantalla, notas compartidas)."
+    ],
+    "ejemplo": "Protocolo de comunicación del equipo:\n- Urgente/Incidente (respuesta < 10m): Canal #incidents + alerta PagerDuty.\n- Bloqueo de PR (respuesta < 4h): Hilo en GitHub + mención en Slack con enlace.\n- Diseño/Propuesta (respuesta < 48h): Documento RFC con fecha límite de comentarios.",
+    "entrevista": "Opero en remoto priorizando documentación autocontenida y comunicación asíncrona por defecto para proteger el trabajo profundo, reservando las sesiones síncronas para alineamiento complejo, conflictos y vínculo humano."
+  },
+  "Velocity del equipo": {
+    "que": "Es una métrica histórica de planificación ágil que representa el promedio o tendencia de trabajo completado (expresado en Story Points o en conteo de ítems finalizados / throughput) por un equipo estable durante una iteración o sprint.",
+    "para": "Sirve exclusivamente para ayudar al propio equipo a estimar cuánto trabajo puede comprometer en su siguiente sprint o proyectar rangos probables de entrega de un backlog conocido. Nunca debe usarse como métrica de productividad individual ni para comparar equipos distintos.",
+    "como": "Al final de cada sprint, solo se suman los puntos o ítems que cumplen estrictamente la Definition of Done (probados, integrados y listos para producción; trabajo al 90 % suma cero). Tras 3 a 5 sprints con composición de equipo estable, la media móvil o distribución histórica (idealmente usada con simulaciones Monte Carlo sobre throughput en vez de puntos subjetivos) permite estimar fechas con intervalos de confianza (p. ej., 85 % de probabilidad de completar la épica en 4-5 sprints). Si cambia el tamaño del equipo o el dominio, la línea base anterior deja de ser válida y debe recalibrarse.",
+    "practicas": [
+      "Ley de Goodhart: en cuanto la dirección usa la velocity como objetivo o KPI de rendimiento, los equipos inflan estimaciones de puntos y la métrica pierde todo valor.",
+      "Nunca compares la velocity de dos equipos: los puntos son relativos a la escala interna de cada equipo, no una unidad universal de esfuerzo.",
+      "Complementa o sustituye Story Points por métricas de flujo objetivas (Throughput, Cycle Time y métricas DORA) para evitar perder horas discutiendo estimaciones."
+    ],
+    "ejemplo": "Historial de últimos 4 sprints (equipo estable):\n- S10: 24 pts | S11: 28 pts | S12: 22 pts | S13: 26 pts\n- Rango razonable para S14: 22-26 pts (promedio 25).\n- Trabajo sin terminar al final del sprint: 0 pts contados en la velocity.",
+    "entrevista": "Uso la velocity o el throughput únicamente como herramienta interna de previsibilidad para el propio equipo, protegiéndola contra la inflación de puntos de la Ley de Goodhart y combinándola con métricas de flujo."
+  }
+}

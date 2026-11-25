@@ -1,0 +1,158 @@
+{
+  "Burndown - burnup": {
+    "que": "Son gráficos de seguimiento de progreso que relacionan el trabajo frente al tiempo restante en un sprint o lanzamiento. El burndown chart traza el trabajo pendiente hasta llegar a cero, mientras que el burnup chart muestra el trabajo completado acumulado frente a una línea de alcance total.",
+    "para": "Sirven para detectar desviaciones tempranas respecto al plan, visualizar el ritmo real de entrega y evaluar si un sprint o release está en riesgo de no completarse. El burnup resulta especialmente útil cuando el alcance cambia en mitad del proyecto, porque separa visualmente el avance real de las ampliaciones de backlog.",
+    "como": "Al iniciar el sprint o release se suma el esfuerzo comprometido (en puntos de historia o horas) y se traza una línea guía ideal hasta el último día. Cada jornada, tras mover tareas a Done en el tablero, la herramienta (Jira, Linear, Azure Boards) registra un punto nuevo con el trabajo restante (burndown) o completado (burnup). En el burnup se dibuja además una segunda curva superior con el total de puntos del alcance; si entra una historia nueva, la curva superior sube sin distorsionar la pendiente de trabajo terminado. La comparación entre la curva real y la ideal permite ajustar el foco en la Daily o renegociar alcance con el Product Owner antes de que termine la iteración.",
+    "practicas": [
+      "Burndown vs Burnup: usa burndown dentro de un sprint corto de alcance fijo y burnup para épicas o releases donde el scope puede crecer.",
+      "Evita el antipatrón del acantilado al final del sprint: si las historias solo se cierran el último día, el gráfico pierde su capacidad de alerta temprana.",
+      "No midas horas individuales por desarrollador como herramienta de control; usa puntos completados o conteo de ítems cerrados bajo la Definición de Done.",
+      "Interpreta los picos hacia arriba en un burndown como señal de mala descomposición inicial o de trabajo no planificado que entró sin control."
+    ],
+    "ejemplo": "Sprint de 5 días, 40 SP iniciales (línea ideal: -8 SP/día):\nDía 1: restante 36 SP (ideal 32) | Burnup: 4 / 40 SP\nDía 2: restante 28 SP (ideal 24) | Burnup: 12 / 40 SP\nDía 3: entra bug crítico (+6 SP) -> Burndown sube a 26 SP; Burnup muestra 20 / 46 SP",
+    "entrevista": "Mientras el burndown solo muestra cuánto falta y oculta los cambios de alcance, el burnup separa el trabajo completado de la línea de scope total para hacer visibles las ampliaciones sin castigar visualmente el progreso del equipo."
+  },
+  "Ciclo de cambio y release planning": {
+    "que": "El ciclo de cambio abarca el flujo completo desde que surge una solicitud o necesidad de producto hasta que el código llega a producción, se monitoriza y genera nuevo aprendizaje. El release planning es la planificación táctica de mediano plazo que agrupa múltiples sprints o entregas continuas alrededor de hitos funcionales, fechas comerciales y dependencias técnicas.",
+    "para": "Resuelve la desconexión entre la cadencia técnica de los sprints y las expectativas de negocio, marketing, soporte o cumplimiento normativo. Se utiliza para coordinar lanzamientos de varias semanas o trimestres, gestionar riesgos de integración entre equipos y decidir estrategias de despliegue gradual.",
+    "como": "El Product Owner prioriza las épicas del roadmap y estima su tamaño macro junto al equipo usando velocidad histórica o throughput. Se trazan ventanas de release (por ejemplo cada trimestre o bajo demanda continua) identificando dependencias externas, ventanas de congelación o requisitos regulatorios y criterios de aceptación de lanzamiento. Durante la ejecución, cada cambio sigue el ciclo build -> test -> staging -> release -> observe, utilizando feature flags para desacoplar el despliegue técnico (deploy) de la activación comercial (release). Al finalizar cada sprint se recalcula la proyección de fechas según el avance real en producción.",
+    "practicas": [
+      "Desacopla deploy de release usando feature flags y trunk-based development para integrar cambios pequeños sin bloquear lanzamientos grandes.",
+      "Evita tratar el release plan como un contrato rígido estilo cascada; mantén el alcance flexible y actualiza la previsión tras cada sprint review.",
+      "Incluye tareas de estabilización, migraciones de esquema backward-compatible, observabilidad y rollback dentro de la planificación del lanzamiento.",
+      "Release train vs Continuous Delivery: en organizaciones con múltiples equipos acoplados se sincronizan trenes de entrega periódicos; en equipos autónomos conviene publicar cada cambio validado."
+    ],
+    "ejemplo": "Release v2.4 (Q2 - 3 sprints, velocity media 30 SP):\n- Objetivo: Checkout con suscripciones recurrentes\n- Sprint 1: Modelo de datos + migración expand-contract (feature flag OFF)\n- Sprint 2: Pasarela de cobro + webhooks + pruebas E2E en staging\n- Sprint 3: Rollout progresivo (5% -> 25% -> 100%) + alertas SLO",
+    "entrevista": "Un release plan ágil no promete un alcance fijo en una fecha fija: usa la velocidad empírica del equipo para proyectar hitos y se apoya en feature flags y despliegues incrementales para reducir el riesgo de cada entrega."
+  },
+  "Daily - review - retro": {
+    "que": "Son los tres eventos principales de inspección y adaptación dentro de un Sprint en Scrum. La Daily Scrum sincroniza al equipo de desarrollo cada 24 horas; la Sprint Review inspecciona el incremento funcional con los stakeholders; y la Sprint Retrospective evalúa procesos, herramientas y dinámicas humanas del equipo.",
+    "para": "Evitan que el equipo trabaje en silos durante semanas sin detectar bloqueos, previenen construir funcionalidades que no aportan valor al usuario y convierten la mejora continua en un hábito estructurado con acciones concretas.",
+    "como": "La Daily dura un máximo de 15 minutos con foco en el Sprint Goal: se recorre el tablero de derecha a izquierda (lo más cercano a Done) para desbloquear tareas y coordinar el día. La Sprint Review ocurre al cierre del sprint con stakeholders y Product Owner: se demuestra software real funcionando en un entorno cercano a producción, se recoge feedback y se ajusta el Product Backlog. La Sprint Retrospective cierra el ciclo solo con el equipo interno: se analizan métricas y eventos del sprint (por ejemplo con dinámicas Start/Stop/Continue o 4Ls) y se seleccionan 1 o 2 acciones con dueño y plazo para el siguiente sprint.",
+    "practicas": [
+      "No conviertas la Daily en una reunión de reporte de estado para un jefe; es una sesión de coordinación entre pares orientada a cumplir el objetivo del sprint.",
+      "En la Review demuestra software funcional y métricas de impacto reales, nunca diapositivas de lo que casi quedó listo.",
+      "Sprint Review vs Sprint Retrospective: la Review inspecciona el producto junto a negocio; la Retro inspecciona el proceso y la colaboración dentro del equipo.",
+      "Limita la Retro a pocas acciones concretas y verificables; acumular diez promesas vagas garantiza que ninguna se ejecute."
+    ],
+    "ejemplo": "Agenda estándar (Sprint de 2 semanas):\n- Daily: L-V 09:30, 15 min max (revisar tablero de derecha a izquierda)\n- Review: Viernes S2 11:00, 60 min (demo en staging + feedback de negocio)\n- Retro: Viernes S2 15:00, 45 min (datos del sprint -> causas -> 2 action items)",
+    "entrevista": "La Daily adapta el plan diario hacia el Sprint Goal, la Review adapta el producto con el feedback real de los stakeholders sobre software funcionando, y la Retro adapta la forma de trabajar del propio equipo."
+  },
+  "Definición de done": {
+    "que": "La Definición de Done (DoD) es el contrato técnico y de calidad compartido por todo el equipo que establece los criterios mínimos obligatorios para considerar que un incremento de producto está realmente terminado y listo para pasar a producción.",
+    "para": "Elimina la ambigüedad del \"en mi máquina funciona\" y evita acumular deuda oculta como pruebas pendientes, documentación faltante o vulnerabilidades sin revisar. Garantiza transparencia real en el progreso y asegura que la Velocity refleje software potencialmente desplegable.",
+    "como": "El equipo y la organización definen una lista verificable de requisitos que aplica de forma uniforme a todas las historias y bugs del backlog, no a una tarea aislada. Antes de mover una tarjeta a Done, el cambio debe superar los controles automatizados de CI (compilación, linter, pruebas unitarias y de integración, escaneo SAST/dependencias), recibir aprobación en Code Review y quedar integrado en la rama principal o desplegado en staging. Si la DoD exige criterios que no se cumplieron, el ítem no se da por cerrado ni suma puntos en el sprint. Con el tiempo, el equipo endurece la DoD en retrospectivas a medida que mejora su automatización.",
+    "practicas": [
+      "DoD vs Criterios de Aceptación: los criterios de aceptación son reglas de negocio específicas de una historia; la DoD es el estándar de ingeniería transversal a todo el producto.",
+      "Automatiza la mayor parte posible de la DoD en el pipeline de CI/CD para que su cumplimiento no dependa de memoria humana.",
+      "Nunca relajes la DoD en la última jornada del sprint para maquillar la velocidad; es preferible arrastrar trabajo incompleto que enviar código sin validar.",
+      "Incluye requisitos operativos reales: telemetría, logs estructurados, rollback seguro y actualización de documentación o contratos de API."
+    ],
+    "ejemplo": "Checklist DoD:\n[x] Código revisado y aprobado (min. 1 peer review)\n[x] Tests unitarios e integración en verde en CI\n[x] Cobertura en lógica nueva >= 80% y sin alertas críticas de linter/SAST\n[x] Desplegado y validado en entorno staging\n[x] Logs, métricas y documentación OpenAPI actualizados",
+    "entrevista": "La Definición de Done es el umbral único de calidad que convierte código escrito en incremento potencialmente liberable; mientras los criterios de aceptación validan qué hace una historia, la DoD valida cómo está construida."
+  },
+  "Git Flow y ramas": {
+    "que": "Es una estrategia de ramificación en Git basada en ramas de larga duración (`main` para producción y `develop` para integración) combinada con ramas temporales (`feature/*`, `release/*` y `hotfix/*`) para aislar el desarrollo paralelo y los lanzamientos.",
+    "para": "Sirve para estructurar entregas versionadas donde conviven múltiples versiones en soporte o ciclos de QA formales, evitando que código experimental contamine producción. Hoy se compara directamente con estrategias más ligeras como GitHub Flow y Trunk-Based Development (TBD), preferidas en equipos de entrega continua.",
+    "como": "El trabajo nuevo nace en ramas `feature/<ticket>` desde `develop` y se fusiona de vuelta mediante Pull Request al completarse. Cuando se prepara una versión, se crea `release/<x.y.z>` desde `develop` para estabilizar bugs menores y ajustar metadatos sin frenar nuevas funcionalidades; al aprobarse, se fusiona en `main` (con tag semántico) y de vuelta en `develop`. Ante un fallo crítico en producción, se abre `hotfix/<x.y.z>` desde `main` y tras validarse se fusiona tanto en `main` como en `develop`. En contraste, GitHub Flow y Trunk-Based Development eliminan `develop` y `release/*`: se integra frecuentemente en `main` con ramas de vida muy corta (<1-2 días) y feature flags.",
+    "practicas": [
+      "Git Flow vs Trunk-Based Development: usa Git Flow solo si mantienes releases empaquetadas con múltiples versiones soportadas (ej. apps móviles, SDKs o software on-premise); para SaaS con CI/CD elige TBD o GitHub Flow.",
+      "Evita ramas de larga duración sin sincronizar: los merges tardíos provocan conflictos costosos y regresiones difíciles de depurar (merge hell).",
+      "Protege `main` (y `develop` si la usas) con branch protection rules: checks de CI obligatorios, prohibición de force-push y mínimo de aprobaciones.",
+      "Usa `git merge --no-ff` en Git Flow para conservar el historial de cada feature o `squash/rebase` en flujos basados en trunk para mantener un historial lineal."
+    ],
+    "ejemplo": "git checkout -b feature/auth-oauth develop\n# ... commits y PR hacia develop ...\ngit checkout -b release/1.4.0 develop\ngit checkout main && git merge --no-ff release/1.4.0 && git tag -a v1.4.0 -m \"Release 1.4.0\"\ngit checkout develop && git merge --no-ff release/1.4.0",
+    "entrevista": "Git Flow organiza versiones paralelas mediante `main`, `develop`, `release` y `hotfix`, pero introduce sobrecarga de merges; por eso en entrega continua moderna se prefiere Trunk-Based Development con ramas cortas y feature flags."
+  },
+  "Onboarding, feedback y trabajo asíncrono": {
+    "que": "Es el conjunto de prácticas de ingeniería y comunicación orientadas a incorporar nuevos integrantes de forma autónoma, dar retroalimentación técnica accionable y coordinar equipos sin depender de reuniones constantes ni disponibilidad simultánea.",
+    "para": "Reduce el tiempo hasta el primer commit productivo (time-to-first-PR), evita cuellos de botella en equipos distribuidos entre zonas horarias y protege bloques largos de concentración profunda (deep work) necesarios para diseñar y programar.",
+    "como": "El onboarding se apoya en documentación viva (`README`, ADRs, diagramas de arquitectura) y entornos reproducibles en un comando (DevContainers, Nix, Docker Compose) más un buddy asignado y un primer ticket acotado. El trabajo asíncrono reemplaza preguntas efímeras por artefactos escritos permanentes: RFCs para decisiones de diseño, Pull Requests con contexto completo (qué, por qué, capturas y plan de pruebas) y mensajes estructurados con toda la información necesaria para responder sin ida y vuelta. El feedback técnico sigue reglas claras de objetividad, empatía y puntualidad, separando sugerencias opcionales de bloqueantes reales (por ejemplo usando Conventional Comments).",
+    "practicas": [
+      "Elimina el conocimiento tribal: si durante el onboarding alguien pregunta algo que no está documentado, la respuesta debe quedar escrita en el repositorio.",
+      "Aplica comunicación \"no hello\" y mensajes completos: incluye contexto, logs, lo que ya intentaste y la pregunta concreta en un solo envío.",
+      "En feedback de código o desempeño, critica el artefacto y su impacto técnico, nunca a la persona, y diferencia bloqueantes de nitpicks.",
+      "Reserva la comunicación síncrona para ambigüedad alta, conflictos delicados, incidentes de producción o sesiones de diseño colaborativo."
+    ],
+    "ejemplo": "# Conventional Comments en PR asíncrono:\nsuggestion (non-blocking): Podríamos extraer esta validación a un helper compartido.\nissue (blocking): Falta validar el timeout de red; en picos puede agotar el pool.\npraise: Muy limpio el test parametrizado de casos borde.",
+    "entrevista": "Escalar un equipo distribuido exige pasar de coordinación síncrona basada en memoria oral a flujos asíncronos basados en artefactos escritos —entornos reproducibles, RFCs, ADRs y PRs autocontenidas— reservando las reuniones solo para alta ambigüedad."
+  },
+  "Pair - mob programming": {
+    "que": "Son técnicas de desarrollo colaborativo en tiempo real donde dos personas (pair programming) o todo un equipo pequeño (mob/ensemble programming) trabajan simultáneamente sobre el mismo problema y código en un único entorno compartido.",
+    "para": "Sirven para elevar la calidad del diseño desde el primer minuto, eliminar esperas de Code Review, acelerar el onboarding y disolver silos de conocimiento (bus factor = 1) en módulos críticos o complejos.",
+    "como": "En pair programming se asignan dos roles complementarios que rotan cada 15-30 minutos: el Driver escribe código y atiende detalles tácticos de sintaxis e implementación, mientras el Navigator revisa la dirección arquitectónica, casos borde, pruebas y legibilidad. En mob programming todo el equipo se reúne ante una pantalla compartida (presencial o vía IDE colaborativo): un único Driver teclea únicamente las ideas que el resto del grupo (Navigators) acuerda en voz alta, rotando el teclado en ciclos cortos con temporizador (por ejemplo cada 10-15 minutos). La técnica suele combinarse con TDD estilo Ping-Pong: una persona escribe el test que falla, la otra lo hace pasar y refactorizan juntos.",
+    "practicas": [
+      "Pair/Mob vs Trabajo individual + PR: usa colaboración en vivo para arquitectura compleja, debugging difícil, TDD u onboarding; trabaja en solitario en tareas mecánicas o bien definidas.",
+      "Rota el rol de Driver con estricta frecuencia para evitar que una persona domine el teclado o que el resto desconecte su atención.",
+      "En mob programming aplica la regla \"para que una idea pase de tu cabeza a la pantalla debe pasar por las manos de otra persona\" para nivelar voces senior y junior.",
+      "Programa descansos regulares (Pomodoro o similar): la colaboración continua exige más energía cognitiva que programar en solitario."
+    ],
+    "ejemplo": "Flujo Ping-Pong Pairing (ciclo de ~20 min):\n1. Persona A (Driver) escribe test unitario que falla (Red).\n2. Se intercambia el teclado (o sesión Live Share).\n3. Persona B implementa la solución mínima para pasar el test (Green).\n4. Ambos refactorizan el diseño (Refactor) y Persona B escribe el siguiente test.",
+    "entrevista": "El pair y el mob programming cambian el control de calidad de una revisión tardía en Pull Request a una revisión continua en tiempo real, reduciendo retrabajo, defectos y silos de conocimiento en problemas de alta complejidad."
+  },
+  "Product Owner, Scrum Master y equipo": {
+    "que": "Son las tres responsabilidades que conforman un Scrum Team multidisciplinario y autoorganizado: el Product Owner maximiza el valor del producto, el Scrum Master facilita la efectividad del marco y el equipo (Developers) construye el incremento entregable.",
+    "para": "Separan explícitamente la toma de decisiones sobre qué aporta valor de negocio, cómo se construye técnicamente y cómo se eliminan los impedimentos organizativos, evitando conflictos de prioridades y microgestión.",
+    "como": "El Product Owner gestiona y ordena el Product Backlog según retorno de valor, riesgo y estrategia, actuando como voz única frente a stakeholders para que el equipo no reciba órdenes contradictorias. El Scrum Master no es un jefe ni un secretario administrativo: entrena al equipo y a la organización en prácticas ágiles, protege el foco del sprint frente a interrupciones externas y ayuda a destrabar impedimentos sistémicos. Los Developers (ingenieros, QA, diseño, etc.) poseen colectivamente todas las habilidades necesarias para transformar ítems del backlog en incrementos terminados, estiman el esfuerzo real, deciden la arquitectura y se comprometen con el Sprint Goal.",
+    "practicas": [
+      "Mantén un único Product Owner con autoridad real para priorizar; un PO por comité o sin poder de decisión bloquea el flujo.",
+      "Evita confundir Scrum Master con Project Manager tradicional: su éxito se mide por la autonomía y salud del flujo del equipo, no por asignar tareas.",
+      "El equipo debe ser cross-functional: depender de equipos externos de QA, DBA o Ops en cada historia rompe el ciclo de entrega dentro del sprint.",
+      "Equipos ideales suelen tener hasta ~10 personas (regla de las dos pizzas) para mantener la comunicación ágil sin sobrecarga de coordinación."
+    ],
+    "ejemplo": "Matriz de responsabilidades en un sprint:\n- Product Owner: Define \"Qué y Por qué\" (prioridad del backlog y Sprint Goal).\n- Developers: Definen \"Cuánto y Cómo\" (estimación, diseño técnico, código y tests).\n- Scrum Master: Optimiza el sistema (facilita eventos, elimina bloqueos, protege foco).",
+    "entrevista": "En Scrum no existe jerarquía de mando sino equilibrio de responsabilidades: el Product Owner responde por el valor del producto, los Developers por la calidad y viabilidad técnica del incremento, y el Scrum Master por la eficacia del proceso."
+  },
+  "Product backlog": {
+    "que": "Es la lista única, ordenada y viva de todo el trabajo conocido necesario para evolucionar un producto, incluyendo nuevas funcionalidades, mejoras técnicas, corrección de defectos y exploración arquitectónica.",
+    "para": "Centraliza todas las demandas sobre el producto en una sola fuente de verdad, evitando listas paralelas por departamento y asegurando que el equipo trabaje siempre en lo más valioso en cada momento.",
+    "como": "Cada entrada del Product Backlog (PBI) suele expresarse como historia de usuario, tarea técnica o spike de investigación, acompañada de una descripción, valor esperado y criterios de aceptación. El backlog sigue un ciclo continuo de refinamiento (Backlog Refinement): los ítems cercanos a ejecutarse se descomponen en piezas pequeñas, claras y estimables, mientras que los ítems lejanos permanecen en granularidad gruesa (épicas). El Product Owner ordena la lista considerando valor de negocio, costo de demora, dependencias y riesgo técnico. Al iniciar el Sprint Planning, el equipo extrae los ítems superiores hasta cubrir su capacidad y conforma el Sprint Backlog.",
+    "practicas": [
+      "Aplica el criterio INVEST a los ítems listos para sprint: Independientes, Negociables, Valiosos, Estimables, Pequeños (Small) y Testeables.",
+      "Incluye deuda técnica y mejoras de plataforma dentro del mismo backlog junto a las features, en lugar de esconderlas en una lista separada que nunca se prioriza.",
+      "Mantén el backlog podado y acotado: un backlog con 500 tickets antiguos sin revisar genera ruido y falsa sensación de control.",
+      "Usa criterios DEEP para gestionarlo: Detallado apropiadamente, Estimado, Emergente y Priorizado."
+    ],
+    "ejemplo": "Estructura de un PBI refinado:\n- ID: PBI-142 | Tipo: Historia | Prioridad: Alta | Estimación: 3 SP\n- Título: Exportar factura mensual en PDF\n- Criterios de aceptación:\n  1. Descarga PDF con desglose de impuestos y número fiscal.\n  2. Tiempo de generación < 3 s para hasta 500 líneas.",
+    "entrevista": "El Product Backlog no es un documento cerrado de requisitos sino una cola viva ordenada por valor y riesgo: los ítems de arriba están finamente refinados y listos para entrar a sprint, mientras los de abajo permanecen abiertos al aprendizaje."
+  },
+  "Sprint": {
+    "que": "Es una iteración de duración fija (timebox) —generalmente de 1 a 4 semanas— durante la cual un equipo Scrum colabora para alcanzar un objetivo concreto (Sprint Goal) produciendo un incremento utilizable de producto.",
+    "para": "Acota el riesgo técnico y de negocio a ventanas cortas e idénticas, permitiendo inspeccionar software real con frecuencia, recibir retroalimentación temprana y mantener una cadencia predecible sin caer en entregas interminables.",
+    "como": "Cada sprint arranca inmediatamente después del anterior con la Sprint Planning, donde Product Owner y Developers acuerdan el Sprint Goal y seleccionan del Product Backlog los ítems que conforman el Sprint Backlog más su plan técnico inicial. Durante el sprint el objetivo no cambia y la Definición de Done no se reduce; el equipo se sincroniza diariamente para ajustar su plan de ejecución. Si surge un trabajo imprevisto, se evalúa si pone en riesgo el Sprint Goal y el PO decide si reemplaza otro ítem equivalente o espera al siguiente sprint. El ciclo concluye con la Sprint Review sobre el incremento logrado y la Sprint Retrospective.",
+    "practicas": [
+      "Elige una duración consistente (2 semanas es el estándar más extendido) y no la extiendas jamás para \"terminar lo que faltaba\"; el timebox protege la transparencia.",
+      "Define un Sprint Goal coherente en lugar de convertir el sprint en una bolsa de tickets sin relación entre sí.",
+      "Sprint vs Iteración continua (Kanban): Scrum fija lotes temporales para alinear inspección y cadencia; Kanban prioriza flujo continuo sin cortes artificiales.",
+      "Reserva capacidad realista para bugs emergentes, revisiones de PR y mantenimiento operativo en lugar de planificar al 100% de la capacidad teórica."
+    ],
+    "ejemplo": "Cadencia de Sprint de 2 semanas (10 días hábiles):\n- Día 1 (AM): Sprint Planning -> Sprint Goal: \"Permitir login SSO con Google\"\n- Días 1-9: Ejecución + Daily (15 min) + Refinement (1h a mitad de sprint)\n- Día 10: Sprint Review (demo) + Sprint Retrospective -> Inicio inmediato Sprint N+1",
+    "entrevista": "Un Sprint es una caja de tiempo fija orientada a un Sprint Goal que limita el riesgo a unas pocas semanas y garantiza un incremento verificable al cierre, sin extender fechas ni sacrificar la Definición de Done."
+  },
+  "Tablero Kanban y WIP": {
+    "que": "Un tablero Kanban es una herramienta visual que representa las etapas del flujo de trabajo en columnas de estado por las que transitan las tarjetas de tarea. El WIP (Work In Progress) limit es el número máximo de ítems permitidos simultáneamente en una columna o en todo el tablero.",
+    "para": "Visibiliza cuellos de botella, evita la sobrecarga de multitarea (context switching) y acorta el tiempo total de entrega (lead time y cycle time) aplicando la Ley de Little: a menor trabajo concurrente para una misma capacidad de salida, más rápido sale cada ítem.",
+    "como": "El flujo real del equipo se modela en columnas explícitas (por ejemplo `Backlog`, `Ready`, `In Progress`, `Code Review`, `QA/Staging`, `Done`), definiendo políticas claras de paso entre una y otra. El sistema funciona bajo modelo pull: un desarrollador solo toma una nueva tarjeta hacia la derecha cuando la columna destino tiene espacio disponible bajo su límite WIP. Si una columna alcanza su límite (por ejemplo `Code Review [max 3]`), nadie abre nuevos desarrollos en esa ruta; el equipo colabora para revisar y vaciar el cuello de botella antes de iniciar trabajo nuevo. Las métricas clave dejan de ser estimaciones subjetivas y pasan a ser Lead Time, Cycle Time y Throughput.",
+    "practicas": [
+      "Aplica la regla \"Stop starting, start finishing\": prioriza cerrar tareas ya abiertas en columnas derechas antes de tomar tarjetas nuevas del backlog.",
+      "No fijes límites WIP arbitrarios muy altos que nunca se alcancen; ajústalos cerca del tamaño del equipo (ej. N o N+1 en ejecución, menor en revisión).",
+      "Kanban vs Scrum: Kanban no requiere sprints ni estimación en puntos obligatoria; funciona excelente en equipos de soporte, SRE, plataforma o entrega continua.",
+      "Mide la antigüedad de las tarjetas en curso (Work Item Age) para detectar ítems estancados antes de que disparen el Cycle Time."
+    ],
+    "ejemplo": "Tablero Kanban con límites WIP:\n| Ready (5) | In Progress [3] | Review [2] | Staging [2] | Done |\n| T-108     | T-105           | T-101      | T-99        | T-98 |\n| T-109     | T-106           | T-102      |             |      |\n|           | T-107 (blocked) |            |             |      |\n-> Review llena (2/2): el equipo prioriza revisar T-101/T-102 antes de mover T-105.",
+    "entrevista": "Limitar el WIP convierte el tablero de un simple panel informativo en un sistema pull que reduce el cambio de contexto, expone los cuellos de botella al instante y disminuye el Cycle Time según la Ley de Little."
+  },
+  "Velocity": {
+    "que": "La Velocity es una métrica empírica propia de Scrum que mide la cantidad promedio de trabajo —generalmente expresada en Story Points (SP)— que un equipo completa cumpliendo su Definición de Done durante un sprint.",
+    "para": "Sirve exclusivamente como herramienta interna de planificación y previsión para que el equipo estime cuánta carga puede asumir en el siguiente sprint y proyecte rangos realistas de fechas en el roadmap.",
+    "como": "Al cierre de cada sprint se suman únicamente los puntos de las historias que cumplieron por completo la Definición de Done; las historias parcialmente terminadas suman 0 puntos en ese sprint y se reestiman o continúan en el siguiente. Tras 3 a 5 sprints estables se calcula una media móvil o rango (por ejemplo entre 24 y 30 SP por sprint) descartando valores atípicos por vacaciones o incidentes graves. Cuando cambia la composición del equipo, la tecnología o el tamaño de la plantilla, la velocidad histórica deja de ser válida y debe recalibrarse durante varios sprints.",
+    "practicas": [
+      "Nunca compares la Velocity entre dos equipos distintos: los Story Points son una escala relativa interna de cada equipo, no una unidad universal.",
+      "Prohíbe usar la Velocity como KPI de productividad o meta gerencial: presionarla provoca inflación artificial de puntos (Goodhart's Law) y recorte de calidad.",
+      "Velocity vs Throughput: la Velocity suma puntos estimados por sprint; el Throughput cuenta ítems completados por unidad de tiempo sin necesidad de estimación relativa.",
+      "Usa promedios móviles de los últimos 3-5 sprints en lugar del mejor sprint histórico para evitar compromisos optimistas crónicos."
+    ],
+    "ejemplo": "Historial de 4 sprints:\n- Sprint 10: 24 SP completados (4 SP quedaron incompletos -> 0 sumados)\n- Sprint 11: 28 SP completados\n- Sprint 12: 26 SP completados\n- Sprint 13: 30 SP completados\n-> Velocity media móvil (últimos 4): (24+28+26+30)/4 = 27 SP/sprint",
+    "entrevista": "La Velocity mide el ritmo histórico de entrega real de un equipo para calibrar su propia capacidad futura, nunca para comparar equipos ni evaluar rendimiento individual."
+  }
+}

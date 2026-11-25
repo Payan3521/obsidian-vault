@@ -1,0 +1,140 @@
+{
+  "Descomposiciones (LU, QR, SVD)": {
+    "que": "Son factorizaciones que expresan una matriz como el producto de dos o tres matrices con estructura especial, como matrices triangulares, ortogonales o diagonales. Permiten transformar problemas algebraicos costosos o numéricamente frágiles en pasos directos, estables y reutilizables, formando el núcleo de librerías como LAPACK y BLAS.",
+    "para": "Resuelven distintos problemas según la estructura de los datos: LU acelera la resolución repetida de sistemas lineales con la misma matriz, QR resuelve mínimos cuadrados evitando pérdida de precisión y SVD habilita la reducción de dimensionalidad, compresión y cálculo de pseudoinversas en matrices rectangulares o singulares.",
+    "como": "La descomposición LU aplica eliminación gaussiana con pivoteo parcial (PA = LU) para obtener una matriz triangular inferior L y una superior U en O(n³), resolviendo luego cada vector nuevo en O(n²) mediante sustitución hacia adelante y hacia atrás. La factorización QR expresa A = QR (Q ortonormal y R triangular superior) mediante reflexiones de Householder o rotaciones de Givens, manteniendo estabilidad en coma flotante. La SVD factoriza cualquier matriz A de m×n como UΣVᵀ, donde U y V contienen vectores singulares ortonormales y Σ los valores singulares no negativos ordenados, calculada reduciendo primero a forma bidiagonal y aplicando iteración QR implícita.",
+    "practicas": [
+      "Usa LU con pivoteo parcial (scipy.linalg.lu_factor) si debes resolver Ax = b para múltiples vectores b con la misma matriz A; si A es simétrica definida positiva, prefiere Cholesky (LLᵀ) porque cuesta la mitad de operaciones.",
+      "Prefiere QR mediante transformaciones de Householder frente a Gram-Schmidt clásico: este último pierde ortogonalidad por errores de redondeo cuando las columnas están casi alineadas.",
+      "Recurre a SVD ante matrices rectangulares, de rango deficiente o mal condicionadas: truncar valores singulares pequeños actúa como regularización y permite obtener la pseudoinversa de Moore-Penrose.",
+      "Evita formar explícitamente AᵀA para resolver mínimos cuadrados si el número de condición κ(A) es alto, ya que eleva el condicionamiento a κ(A)²; QR y SVD conservan los dígitos de precisión."
+    ],
+    "ejemplo": "import numpy as np\nA = np.array([[3.0, 1.0], [1.0, 2.0], [1.0, 1.0]])\nQ, R = np.linalg.qr(A)\nU, S, Vt = np.linalg.svd(A, full_matrices=False)\n# Aproximación óptima de rango 1 (compresión)\nA_rank1 = np.outer(U[:, 0], Vt[0, :]) * S[0]",
+    "entrevista": "LU optimiza la resolución repetida de sistemas cuadrados, QR aporta estabilidad ortogonal en mínimos cuadrados sin elevar al cuadrado el número de condición y SVD descompone cualquier matriz revelando su rango efectivo y direcciones principales."
+  },
+  "Determinantes": {
+    "que": "El determinante es una función escalar definida exclusivamente sobre matrices cuadradas que asocia a cada matriz A un número real o complejo denotado det(A). Geométricamente mide el factor de escala orientado del volumen (o área en 2D) inducido por la transformación lineal asociada, siendo negativo cuando invierte la orientación del espacio.",
+    "para": "En análisis matemático y teoría sirve para caracterizar la invertibilidad de una matriz (det(A) ≠ 0), formular el polinomio característico det(A - λI) = 0 para hallar eigenvalores y calcular cambios de variables en integrales mediante el jacobiano. En software numérico productivo casi nunca se usa para verificar singularidad por sus problemas de escala en coma flotante.",
+    "como": "Para matrices 2×2 se evalúa directamente como ad - bc, pero en dimensiones mayores la expansión recursiva por cofactores de Laplace tiene complejidad factorial O(n!) e inviable en cómputo. En la práctica se factoriza mediante eliminación gaussiana con pivoteo parcial (PA = LU) en O(n³): el determinante resulta de multiplicar los elementos de la diagonal de U por (-1)ᵖ, donde p es el número de permutaciones de filas en P. Cumple la propiedad multiplicativa det(AB) = det(A)det(B) y es invariante bajo transposición.",
+    "practicas": [
+      "No compruebes `det(A) == 0` para decidir si una matriz es singular en producción: una matriz perfectamente invertible puede tener determinante 10⁻¹⁰⁰ (ej. 0.1·I₁₀₀) o desbordar float64; usa `matrix_rank` o el número de condición.",
+      "Descarta la regla de Cramer y la expansión por cofactores para sistemas de orden mayor a 4×4 debido a su costo O(n!) frente a O(n³) de la factorización LU.",
+      "En modelos probabilísticos (verosimilitud de gaussianas multivariadas o flujos normalizadores), utiliza `np.linalg.slogdet` para trabajar en escala logarítmica y evitar underflow u overflow."
+    ],
+    "ejemplo": "import numpy as np\nA = np.array([[4.0, 2.0], [1.0, 3.0]])\nsign, logdet = np.linalg.slogdet(A)\ndet_A = sign * np.exp(logdet)  # 10.0, seguro contra overflow/underflow",
+    "entrevista": "El determinante mide el cambio de volumen y orientación de una transformación lineal, aunque en código numérico evito usarlo para detectar singularidad y prefiero `slogdet`, el número de condición o la SVD."
+  },
+  "Eigenvalores y eigenvectores": {
+    "que": "Un eigenvector (vector propio) de una matriz cuadrada A es un vector no nulo v cuya dirección permanece invariante tras aplicar la transformación, escalándose únicamente por un factor llamado eigenvalor (valor propio) λ según la ecuación Av = λv. Representan los ejes intrínsecos de acción de un operador lineal.",
+    "para": "Sirven para desacoplar ecuaciones diferenciales y sistemas dinámicos lineales, analizar estabilidad y convergencia en cadenas de Markov (como PageRank), extraer componentes principales (PCA) diagonalizando la matriz de covarianza y calcular potencias de matrices Aᵏ eficientemente.",
+    "como": "Los eigenvalores se corresponden con las raíces del polinomio característico det(A - λI) = 0, y para cada λᵢ los eigenvectores conforman el espacio nulo de (A - λᵢI). Como no existe solución cerrada por radicales para grados ≥ 5 (teorema de Abel-Ruffini), librerías como LAPACK reducen primero A a forma de Hessenberg (o tridiagonal si es simétrica) y aplican el algoritmo QR iterativo con desplazamientos de Wilkinson. Cuando A posee una base completa de eigenvectores se diagonaliza como A = PDP⁻¹; si además es simétrica real, el teorema espectral garantiza eigenvalores reales y eigenvectores ortogonales (A = QΛQᵀ).",
+    "practicas": [
+      "Usa siempre rutinas especializadas para matrices simétricas o hermíticas (`np.linalg.eigh` en vez de `eig`): garantizan eigenvalores reales ordenados, eigenvectores ortogonales y son mucho más rápidas y estables.",
+      "No confundas la descomposición espectral (PDP⁻¹) con la SVD (UΣVᵀ): la espectral solo aplica a matrices cuadradas diagonalizables, mientras que la SVD existe para toda matriz.",
+      "En grafos o matrices enormes y dispersas donde solo importan los k mayores eigenvalores (ej. PageRank o clustering espectral), emplea métodos de Krylov como Lanczos o Arnoldi (`scipy.sparse.linalg.eigs`).",
+      "Ten precaución con matrices no normales o defectivas (menos eigenvectores independientes que su dimensión), pues perturbaciones minúsculas de coma flotante alteran fuertemente sus eigenvalores."
+    ],
+    "ejemplo": "import numpy as np\nC = np.array([[2.0, 1.0], [1.0, 2.0]])  # Matriz simétrica\nvals, vecs = np.linalg.eigh(C)       # vals=[1., 3.], columnas ortonormales\nassert np.allclose(C @ vecs[:, 1], vals[1] * vecs[:, 1])",
+    "entrevista": "Los eigenvectores definen las direcciones invariantes de una matriz y los eigenvalores su factor de escala, siendo la herramienta espectral detrás de PCA, PageRank y el análisis de estabilidad de sistemas dinámicos."
+  },
+  "Espacios vectoriales y bases": {
+    "que": "Un espacio vectorial sobre un cuerpo escalar (típicamente ℝ o ℂ) es un conjunto cerrado bajo suma de vectores y multiplicación por escalar que satisface los ocho axiomas de linealidad. Una base es un subconjunto mínimo de vectores linealmente independientes que genera todo el espacio, asignando coordenadas únicas a cada elemento.",
+    "para": "Permiten formalizar la redundancia en conjuntos de características (dependencia lineal), identificar la dimensionalidad intrínseca de un conjunto de datos y cambiar de sistema de representación (como bases de Fourier, wavelets o espacios latentes) para comprimir información o simplificar operadores.",
+    "como": "Todas las combinaciones lineales ∑ cᵢvᵢ de un conjunto forman su subespacio generado (span); los vectores son linealmente independientes si la única combinación que produce el vector cero tiene todos sus coeficientes nulos. Todas las bases de un mismo espacio comparten la misma cardinalidad, denominada dimensión. Todo vector x se expresa de manera única como x = Bc respecto a la matriz de base B, y el cambio hacia otra base B' aplica la matriz invertible (B')⁻¹B. Toda matriz A de m×n induce cuatro subespacios fundamentales: espacio columna, espacio fila, núcleo y núcleo izquierdo.",
+    "practicas": [
+      "Elimina o regulariza características con colinealidad (columnas linealmente dependientes o casi dependientes) antes de entrenar modelos lineales para evitar soluciones inestables e ininterpretables.",
+      "Trabaja con bases ortonormales siempre que puedas: obtener las coordenadas de un vector respecto a una base Q cuesta simples productos punto (c = Qᵀx), evitando resolver sistemas lineales.",
+      "Distingue la dimensión del espacio ambiente (número de columnas brutas) de la dimensión intrínseca del subespacio de los datos para aplicar reducción de dimensionalidad sin pérdida útil."
+    ],
+    "ejemplo": "import numpy as np\n# Expresar vector en una base B no estándar\nB = np.array([[1.0, 1.0], [0.0, 1.0]])\nx_std = np.array([5.0, 2.0])\ncoords_B = np.linalg.solve(B, x_std)  # [3.0, 2.0] -> 3*[1,0] + 2*[1,1]",
+    "entrevista": "Un espacio vectorial define el dominio donde operan las combinaciones lineales y una base establece un sistema mínimo de ejes independientes para representar cualquier vector mediante coordenadas únicas."
+  },
+  "Mínimos cuadrados": {
+    "que": "Es un método de optimización que calcula el vector x̂ que minimiza la norma euclidiana al cuadrado del residuo ‖Ax - b‖₂² en un sistema sobredeterminado (m > n) sin solución exacta. Geométricamente encuentra la mejor aproximación de b dentro del espacio columna de A.",
+    "para": "Es la técnica fundamental detrás de la regresión lineal y polinómica, la calibración de sensores, el ajuste de curvas con ruido experimental, la triangulación en visión por computadora y la estimación de parámetros en ciencia de datos cuando hay más observaciones que incógnitas.",
+    "como": "El error r = b - Ax̂ alcanza su mínimo cuando es ortogonal a cada columna de A, condición que genera las ecuaciones normales: Aᵀ(b - Ax̂) = 0, equivalentes a AᵀAx̂ = Aᵀb. Si A tiene columnas independientes, la solución algebraica es (AᵀA)⁻¹Aᵀb, pero numéricamente se prefiere factorizar A = QR y despejar Rx̂ = Qᵀb por sustitución regresiva, o aplicar SVD para obtener x̂ = VΣ⁺Uᵀb. Cuando existen variables colineales o sobreajuste se añade penalización L₂ (Ridge), modificando el sistema a (AᵀA + λI)x̂ = Aᵀb.",
+    "practicas": [
+      "Usa `np.linalg.lstsq(A, b, rcond=None)` (SVD) o factorización QR en vez de resolver las ecuaciones normales `(A.T @ A) @ x = A.T @ b`: formar AᵀA eleva al cuadrado el número de condición y degrada la precisión.",
+      "Centra y estandariza las columnas de la matriz de diseño A al ajustar polinomios o variables en distintas escalas para mejorar el condicionamiento numérico.",
+      "Ten en cuenta que minimizar la norma L₂ amplifica cuadráticamente los residuos grandes: ante outliers severos usa regresión robusta (pérdida de Huber o norma L₁).",
+      "Si el sistema es subdeterminado (n > m) o tiene colinealidad exacta, usa regularización Ridge o la solución de norma mínima que entrega la pseudoinversa."
+    ],
+    "ejemplo": "import numpy as np\nt = np.array([0.0, 1.0, 2.0, 3.0])\ny = np.array([1.1, 2.9, 5.2, 6.8])\nA = np.column_stack([t, np.ones_like(t)])\nm, c = np.linalg.lstsq(A, y, rcond=None)[0]  # Ajuste lineal y = m*t + c",
+    "entrevista": "Mínimos cuadrados proyecta el vector objetivo sobre el espacio columna de la matriz de diseño para minimizar el error cuadrático, resolviéndose en producción mediante QR o SVD para evitar el mal condicionamiento de AᵀA."
+  },
+  "Producto punto y normas": {
+    "que": "El producto punto (o producto interno estándar en ℝⁿ) asocia a dos vectores un escalar dado por uᵀv = ∑ uᵢvᵢ, cuantificando su alineación direccional. Una norma ‖v‖ es una función que asigna una longitud no negativa a cada vector cumpliendo positividad, homogeneidad absoluta y desigualdad triangular.",
+    "para": "Constituyen el aparato métrico básico en software: calculan similitud coseno entre embeddings en motores de búsqueda y RAG, definen funciones de pérdida y términos de regularización (L₁ para dispersión, L₂ para pesos suaves) en machine learning, y acotan perturbaciones numéricas mediante normas matriciales.",
+    "como": "El producto punto satisface uᵀv = ‖u‖₂‖v‖₂ cos(θ) y la desigualdad de Cauchy-Schwarz |uᵀv| ≤ ‖u‖₂‖v‖₂, definiendo la ortogonalidad cuando uᵀv = 0. Las normas vectoriales más comunes son la euclidiana ‖v‖₂ = √(vᵀv), la norma Manhattan ‖v‖₁ = ∑ |vᵢ| y la norma infinito ‖v‖∞ = max |vᵢ|. En matrices destacan la norma de Frobenius ‖A‖F = √(∑ aᵢⱼ²) y la norma espectral inducida ‖A‖₂ = σ_max(A), que acota la máxima amplificación de longitud que puede producir A sobre un vector unitario.",
+    "practicas": [
+      "Normaliza tus embeddings a norma unitaria (‖v‖₂ = 1) al indexarlos en bases vectoriales para que la similitud coseno se reduzca a un único producto punto (`u @ v`) sin raíces ni divisiones en tiempo de consulta.",
+      "Elige regularización L₁ (Lasso) cuando necesites selección automática de variables (pesos exactamente en cero) y L₂ (Ridge) cuando prefieras estabilidad numérica y diferenciabilidad en el origen.",
+      "Calcula normas con `np.linalg.norm` o `math.hypot` en lugar de `sqrt(sum(x**2))` ingenuo, evitando overflow o underflow intermedio en coma flotante."
+    ],
+    "ejemplo": "import numpy as np\nu = np.array([1.0, 2.0, 3.0])\nv = np.array([2.0, 0.0, 4.0])\ncos_sim = (u @ v) / (np.linalg.norm(u) * np.linalg.norm(v))\nl1 = np.linalg.norm(u, ord=1)  # 6.0",
+    "entrevista": "El producto punto define geometría, ángulos y ortogonalidad, mientras que las normas cuantifican longitud y error; juntos sustentan desde la búsqueda semántica por similitud coseno hasta la regularización L₁/L₂."
+  },
+  "Proyecciones ortogonales": {
+    "que": "Una proyección ortogonal es una transformación lineal idempotente y simétrica (P² = P, Pᵀ = P) que mapea un vector b sobre un subespacio S de modo que el residuo b - Pb sea perpendicular a todo vector de S. Proporciona el punto de S más cercano a b en distancia euclidiana.",
+    "para": "Permiten aproximar señales y eliminar ruido fuera de un subespacio de interés, construir bases ortonormales (Gram-Schmidt), derivar el método de mínimos cuadrados en estadística y descomponer la varianza total en componentes independientes mediante el teorema de Pitágoras generalizado.",
+    "como": "La proyección de b sobre una única recta generada por a es p = ((aᵀb)/(aᵀa))·a, con matriz de rango uno P = aaᵀ/(aᵀa). Para proyectar sobre el espacio columna de una matriz A de columnas independientes, imponer Aᵀ(b - Ax̂) = 0 conduce al proyector P = A(AᵀA)⁻¹Aᵀ. Cuando el subespacio se representa mediante una base ortonormal Q (QᵀQ = I), la fórmula se colapsa a P = QQᵀ y la proyección se calcula directamente como Q(Qᵀb) sin invertir matrices.",
+    "practicas": [
+      "No construyas la matriz cuadrada P = QQᵀ de tamaño m×m en memoria si m es grande; evalúa `Q @ (Q.T @ b)` asociando desde la derecha para reducir el costo de O(m²) a O(mk).",
+      "Evita calcular `A @ inv(A.T @ A) @ A.T` en código numérico: ortonormaliza primero las columnas de A con QR o SVD y proyecta usando la base Q.",
+      "Verifica propiedades clave en pruebas unitarias de proyectores ortogonales: son idempotentes (P² = P), simétricos (Pᵀ = P) y sus únicos eigenvalores son 0 y 1."
+    ],
+    "ejemplo": "import numpy as np\nA = np.array([[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])\nb = np.array([2.0, 3.0, 4.0])\nQ, _ = np.linalg.qr(A)\np = Q @ (Q.T @ b)\nassert np.allclose(A.T @ (b - p), 0.0)  # Error ortogonal al subespacio",
+    "entrevista": "Una proyección ortogonal halla la mejor aproximación de un vector dentro de un subespacio haciendo perpendicular el error residual, reduciendo el cálculo a Q(Qᵀb) cuando contamos con una base ortonormal."
+  },
+  "Rango e inversa de matrices": {
+    "que": "El rango de una matriz A es la dimensión del subespacio generado por sus columnas (igual al de sus filas), cuantificando cuánta información independiente contiene. La inversa A⁻¹ existe solo para matrices cuadradas de rango completo y es la matriz única tal que AA⁻¹ = A⁻¹A = I.",
+    "para": "El rango determina si un sistema lineal tiene solución única, infinitas o ninguna, y permite comprimir modelos masivos mediante aproximaciones de bajo rango (como LoRA en LLMs o factorización matricial en recomendaciones). La inversa revierte transformaciones lineales en gráficos 3D y derivaciones algebraicas.",
+    "como": "Teóricamente el rango equivale al número de pivotes no nulos tras la eliminación gaussiana, pero en aritmética finita se determina contando los valores singulares mayores que una tolerancia dependiente del épsilon de máquina mediante SVD. Una matriz cuadrada n×n es invertible (no singular) si y solo si su rango es n, su núcleo es {0} y det(A) ≠ 0. Para matrices rectangulares o singulares, la pseudoinversa de Moore-Penrose A⁺ = VΣ⁺Uᵀ generaliza la inversa entregando la solución de mínima norma.",
+    "practicas": [
+      "Nunca resuelvas un sistema calculando `np.linalg.inv(A) @ b`: usa `np.linalg.solve(A, b)`, que es aproximadamente tres veces más rápido y evita errores numéricos de inversión explícita.",
+      "Calcula el rango con `np.linalg.matrix_rank(A)` (basado en SVD con tolerancia automática) en lugar de contar pivotes de eliminación gaussiana sujetos a ruido de ~10⁻¹⁶.",
+      "Inspecciona el número de condición κ(A) = σ_max/σ_min: si κ(A) ≈ 10ᵏ, perderás cerca de k dígitos significativos de precisión al resolver sistemas en float64.",
+      "Usa factorizaciones de bajo rango (AB con rango r ≪ min(m,n)) para reducir memoria y cómputo de O(mn) a O(r(m+n)) cuando la matriz tenga redundancia estructural."
+    ],
+    "ejemplo": "import numpy as np\nA = np.array([[2.0, 1.0], [4.0, 2.0]])  # Dependencia lineal\nrank = np.linalg.matrix_rank(A)       # 1 -> singular, sin inversa\nA_pinv = np.linalg.pinv(A)            # Pseudoinversa\nx = A_pinv @ np.array([3.0, 6.0])     # Solución de mínima norma L2",
+    "entrevista": "El rango mide la dimensionalidad real e independiente de una matriz y decide su invertibilidad; en la práctica evalúo el rango vía SVD, uso `solve` en lugar de `inv` y vigilo el número de condición."
+  },
+  "Sistemas de ecuaciones lineales": {
+    "que": "Un sistema de ecuaciones lineales es un conjunto de m restricciones lineales simultáneas sobre n incógnitas, expresado matricialmente como Ax = b. Su conjunto solución puede ser vacío (inconsistente), un único punto (rango completo) o un subespacio afín infinito cuando existen variables libres.",
+    "para": "Modelan flujos en redes y circuitos, análisis estructural por elementos finitos, interpolación mediante splines, equilibrio económico y cada iteración de métodos de Newton en optimización no lineal, constituyendo el núcleo operativo de la computación científica.",
+    "como": "Las soluciones siguen la estructura x = x_p + x_h, combinando una solución particular x_p con el espacio nulo ker(A). En sistemas densos moderados se aplica eliminación gaussiana con pivoteo parcial (PA = LU) en O(n³) seguida de sustitución regresiva en O(n²). Cuando A es grande y dispersa (mayoría de ceros, típico en mallas 3D o grafos), LU destruye la escasez por llenado de memoria (fill-in), por lo que se emplean métodos iterativos como Gradiente Conjugado (para matrices simétricas definidas positivas) o GMRES, basados únicamente en productos matriz-vector Av.",
+    "practicas": [
+      "Elige el solver según la estructura de A: Cholesky para simétricas definidas positivas, algoritmo de Thomas en O(n) para tridiagonales y Gradiente Conjugado o GMRES precondicionados para sistemas grandes y dispersos.",
+      "Asegura el uso de pivoteo parcial al aplicar eliminación gaussiana para no dividir entre valores cercanos a cero que amplifiquen el error de redondeo.",
+      "Verifica tanto el residuo ‖Ax - b‖₂ como el número de condición κ(A): un residuo diminuto no implica que x̂ esté cerca del valor exacto si A está mal condicionada."
+    ],
+    "ejemplo": "import numpy as np\nA = np.array([[3.0, 2.0, -1.0], [2.0, -2.0, 4.0], [-1.0, 0.5, -1.0]])\nb = np.array([1.0, -2.0, 0.0])\nx = np.linalg.solve(A, b)  # Internamente ejecuta LAPACK dgesv (LU)\nresiduo = np.linalg.norm(A @ x - b)",
+    "entrevista": "La estrategia para resolver Ax = b depende de la matriz: aplico LU o Cholesky en sistemas densos pequeños o medianos, y métodos iterativos como Gradiente Conjugado o GMRES cuando la matriz es grande y dispersa."
+  },
+  "Transformaciones lineales": {
+    "que": "Una transformación lineal T: V → W es una aplicación entre espacios vectoriales que preserva la suma y el producto escalar: T(u + v) = T(u) + T(v) y T(cv) = cT(v). En dimensión finita, toda transformación lineal se representa de forma única mediante una matriz A tal que T(x) = Ax respecto a bases fijadas.",
+    "para": "Sustentan las tuberías de gráficos 3D (rotaciones, escalados y proyecciones en GPU), las capas densas y convolucionales de redes neuronales y las transformadas de señales como la DFT. Permiten describir y componer manipulaciones espaciales complejas mediante álgebra matricial uniforme.",
+    "como": "Las columnas de la matriz asociada A se obtienen evaluando T sobre cada vector de la base estándar (A[:, j] = T(eⱼ)). Componer sucesivas transformaciones T₂(T₁(x)) equivale a multiplicar sus matrices en orden inverso (A₂A₁)x, operación asociativa pero no conmutativa. Dos subespacios fundamentales caracterizan a T: su núcleo ker(A) (vectores colapsados a cero) y su imagen col(A) (salidas alcanzables), vinculados por el teorema rango-nulidad: dim(ker(A)) + rango(A) = n.",
+    "practicas": [
+      "En gráficos 3D y robótica emplea coordenadas homogéneas (matrices 4×4) para expresar traslaciones (transformaciones afines) junto con rotaciones y escalados dentro de una sola multiplicación matricial.",
+      "Cuida el orden de multiplicación (R·S ≠ S·R) y confirma si tu motor gráfico utiliza vectores columna (Ax) o vectores fila (xA).",
+      "En redes neuronales recuerda que apilar capas lineales sin activaciones no lineales colapsa algebraicamente en una sola matriz W_eq = W₂W₁ sin aumentar capacidad de modelado.",
+      "Usa matrices ortogonales para rotaciones puras (preservan distancias y ángulos) y cuaterniones al interpolar orientaciones para evitar gimbal lock."
+    ],
+    "ejemplo": "import numpy as np\nR = np.array([[0.0, -1.0], [1.0, 0.0]])  # Rotación 90° antihoraria\nS = np.array([[2.0, 0.0], [0.0, 1.0]])   # Escalado X por 2\nT = S @ R  # Primero rota, luego escala (sobre vector columna)\nprint(T @ np.array([1.0, 0.0]))  # [0.0, 1.0]",
+    "entrevista": "Toda transformación lineal en dimensión finita corresponde a multiplicar por una matriz cuyas columnas muestran dónde aterrizan los vectores de la base, permitiéndonos componer efectos geométricos o capas neuronales mediante productos matriciales."
+  },
+  "Vectores y matrices": {
+    "que": "Un vector es un arreglo ordenado de n escalares que representa una magnitud direccional en ℝⁿ o un punto en un espacio de características. Una matriz m×n es un arreglo bidimensional de escalares que almacena datos tabulares, grafos o codifica operadores lineales.",
+    "para": "Son las estructuras de datos primarias en machine learning (tensores 1D y 2D), gráficos por computadora, simulaciones físicas y procesamiento de imágenes. Expresar algoritmos mediante operaciones vectoriales y matriciales permite eliminar bucles lentos y aprovechar instrucciones SIMD en CPU y paralelismo masivo en GPU.",
+    "como": "La suma y el escalado operan elemento a elemento en O(mn), mientras que el producto matricial C = A_{m×k} B_{k×n} calcula cada entrada Cᵢⱼ como el producto punto entre la fila i de A y la columna j de B en O(mnk). A diferencia de los escalares, el producto matricial no es conmutativo (AB ≠ BA) y admite divisores de cero. En hardware real, librerías BLAS (como DGEMM) dividen las matrices en sub-bloques (tiling) ajustados a las cachés L1/L2 para saturar las unidades de cómputo y evitar cuellos de botella de memoria.",
+    "practicas": [
+      "Vectoriza cálculos con NumPy o PyTorch en vez de iterar con bucles `for` en Python; delegarás el cómputo a rutinas compiladas BLAS/cuBLAS con aceleración de órdenes de magnitud.",
+      "Respeta la disposición en memoria (row-major en C/NumPy frente a column-major en Fortran/Julia) al recorrer matrices grandes para maximizar aciertos de caché.",
+      "Distingue claramente entre multiplicación matricial (`@`) y producto elemento a elemento (`*`), vigilando las reglas de broadcasting para prevenir errores silenciosos de forma.",
+      "Emplea formatos dispersos (CSR/CSC en `scipy.sparse`) cuando >90% de las entradas sean cero, evitando agotar la RAM con matrices densas."
+    ],
+    "ejemplo": "import numpy as np\nX = np.ones((3, 4))                    # Lote de 3 muestras, 4 features\nW = np.arange(8.0).reshape(4, 2)       # Matriz de pesos\nY = X @ W                              # (3, 2) producto matricial\nZ = X * 2.0                            # (3, 4) escalado elemento a elemento",
+    "entrevista": "Vectores y matrices unifican la representación algebraica de datos y transformaciones con estructuras de memoria diseñadas para explotar paralelismo SIMD/GPU y localidad de caché vía BLAS."
+  }
+}

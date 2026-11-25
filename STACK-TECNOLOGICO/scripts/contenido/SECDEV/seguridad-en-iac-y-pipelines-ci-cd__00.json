@@ -1,0 +1,392 @@
+{
+  "Argo CD security": {
+    "que": "Conjunto de controles de endurecimiento y gobernanza aplicados sobre Argo CD para proteger el controlador GitOps que sincroniza manifiestos declarativos hacia clústeres de Kubernetes. Abarca aislamiento por proyectos, control de acceso (RBAC), autenticación federada, integridad de repositorios y restricción de qué recursos pueden desplegarse y dónde.",
+    "para": "Resuelve el riesgo de que un compromiso del plano de control de Argo CD o de un repositorio conectado permita escalar privilegios o desplegar cargas maliciosas en todos los clústeres gestionados. Se aplica siempre que Argo CD administra múltiples equipos, entornos (dev/prod) o clústeres desde una única instancia.",
+    "como": "Argo CD opera con el `argocd-repo-server` (renderiza manifiestos Helm/Kustomize), el `argocd-application-controller` (reconcilia el estado en el clúster usando ServiceAccounts) y el `argocd-server` (API/UI). La seguridad se articula definiendo `AppProject` con `sourceRepos`, `destinations` y listas blancas/negras (`clusterResourceWhitelist`, `namespaceResourceBlacklist`) que el controlador evalúa antes de aplicar cambios. La autenticación se delega vía OIDC/SSO con grupos mapeados a políticas Casbin en `argocd-rbac-cm`, deshabilitando el usuario local `admin`. Además, se verifica la firma GPG de commits en el proyecto y se aíslan Config Management Plugins (CMP) para evitar ejecución arbitraria de binarios en el repo-server.",
+    "practicas": [
+      "Deshabilitar la cuenta `admin` tras el despliegue inicial (`admin.enabled: false`) y usar OIDC con RBAC de mínimo privilegio mediante `AppProject`.",
+      "Evitar el uso de comodines `*` en `sourceRepos` y `destinations` de `AppProject`; un proyecto sin restricciones permite que cualquier `Application` apunte a `kube-system`.",
+      "Separar instancias o al menos `AppProject` por nivel de criticidad (no mezclar cargas de sandbox con clústeres de producción compartiendo el mismo `repo-server` sin aislamiento).",
+      "Argo CD RBAC vs Kubernetes RBAC: Argo CD RBAC controla quién puede operar sobre objetos `Application` en la UI/API, pero es el ServiceAccount del `application-controller` quien ejecuta `apply` en el API Server."
+    ],
+    "ejemplo": "apiVersion: argoproj.io/v1alpha1\nkind: AppProject\nmetadata:\n  name: pagos-prod\nspec:\n  sourceRepos: ['https://github.com/org/pagos-gitops.git']\n  destinations:\n    - namespace: 'pagos'\n      server: 'https://k8s-prod.internal'\n  clusterResourceWhitelist: []",
+    "entrevista": "En Argo CD la seguridad depende de acotar el radio de explosión con AppProjects estrictos, RBAC vía OIDC y plugins CMP aislados, porque el controlador suele tener permisos de escritura elevados sobre el clúster."
+  },
+  "Branch protection": {
+    "que": "Mecanismo de control de integridad y gobernanza en plataformas Git que restringe quién y bajo qué condiciones puede modificar ramas críticas como `main` o `release/*`. Impide escrituras directas, sobreescrituras de historial (`force-push`) y eliminaciones accidentales o maliciosas.",
+    "para": "Evita que un desarrollador o un token comprometido introduzca código sin revisión ni pruebas automatizadas directamente en la rama que alimenta despliegues a producción. Se utiliza de forma obligatoria en cualquier repositorio corporativo o proyecto con entregas automatizadas.",
+    "como": "El servidor Git (GitHub, GitLab, Bitbucket) intercepta cada operación `git receive-pack` (push) o fusión de Pull/Merge Request en el servidor remoto antes de actualizar la referencia (`refs/heads/main`). Evalúa una matriz de políticas asociadas al patrón de la rama: rechazo de `force-push`, bloqueo de pushes directos que no provengan de un PR/MR aprobado, verificación de firmas criptográficas de commits y comprobación del estado exitoso de los webhooks de CI (`status checks`). Solo cuando todas las condiciones se satisfacen y la rama está actualizada respecto a la base, el servidor avanza el puntero de la referencia.",
+    "practicas": [
+      "Habilitar `Include administrators` / aplicar las reglas también a administradores para evitar bypasses accidentales o abuso de cuentas privilegiadas.",
+      "Bloquear `force-push` y borrado de ramas en `main` y ramas de release para preservar la trazabilidad forense del historial.",
+      "Combinar Branch protection con `Required status checks` estrictos (`Require branches to be up to date before merging`) para evitar fusiones con resultados de CI obsoletos.",
+      "Error típico: proteger solo `main` pero dejar desprotegidas ramas `release/*` o tags `v*` desde los que se disparan pipelines de publicación."
+    ],
+    "ejemplo": "gh api -X PUT /repos/org/app/branches/main/protection \\\n  -F required_status_checks='{\"strict\":true,\"contexts\":[\"ci/test\",\"ci/sast\"]}' \\\n  -F enforce_admins=true \\\n  -F required_pull_request_reviews='{\"required_approving_review_count\":2}' \\\n  -F allow_force_pushes=false",
+    "entrevista": "La protección de ramas convierte el repositorio Git en un punto de control de cumplimiento al garantizar que ningún cambio llegue a producción sin revisión humana, checks de seguridad verdes e historial inmutable."
+  },
+  "Build reproducibility": {
+    "que": "Propiedad de un proceso de compilación determinista por la cual, dado exactamente el mismo código fuente, árbol de dependencias y configuración de build, se genera un artefacto binario idéntico bit a bit (mismo digest SHA-256) en cualquier máquina o momento.",
+    "para": "Permite verificar de forma independiente que un binario distribuido o imagen de contenedor corresponde fielmente al código fuente auditado, sin puertas traseras inyectadas por un servidor de CI comprometido. Es fundamental en cadenas de suministro críticas (SLSA, software open-source y entornos regulados).",
+    "como": "La reproducibilidad se logra eliminando fuentes de no determinismo durante la compilación y el empaquetado. Se fijan las versiones del compilador y dependencias mediante digests (`lockfiles`, imágenes base por `@sha256`), se fija la marca temporal de compilación mediante la variable de entorno estándar `SOURCE_DATE_EPOCH`, se normalizan rutas de sistema en símbolos de depuración (p. ej. `-trimpath` en Go o `-ffile-prefix-map` en GCC/Clang) y se ordenan determinísticamente las entradas de archivos `tar`/`zip`/`jar` y permisos (`umask`). Dos entornos independientes (o un verificador externo) compilan el commit y comparan el hash resultante.",
+    "practicas": [
+      "Definir `SOURCE_DATE_EPOCH` con el timestamp del commit (`git log -1 --format=%ct`) y usar flags como `-trimpath` o `--reproducible` según el toolchain.",
+      "Construir dentro de contenedores efímeros fijados por digest SHA-256 para evitar fugas de variables de entorno, locale o rutas del host.",
+      "Error típico: usar `COPY . .` y timestamps actuales al construir imágenes OCI, lo que altera el hash de las capas aunque el binario compilado sea idéntico.",
+      "Reproducibilidad vs Firma de artefactos: la firma demuestra quién emitió el artefacto (y cuándo), mientras la reproducibilidad permite demostrar qué código lo produjo sin confiar ciegamente en el builder."
+    ],
+    "ejemplo": "export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)\nCGO_ENABLED=0 GOOS=linux GOARCH=amd64 \\\n  go build -trimpath -ldflags=\"-s -w -buildid=\" -o app ./cmd/app\nsha256sum app",
+    "entrevista": "Un build reproducible elimina la confianza ciega en el servidor de compilación, porque cualquiera puede recompilar el mismo commit y comprobar que el hash SHA-256 resultante es idéntico bit a bit."
+  },
+  "Cache poisoning": {
+    "que": "Ataque sobre sistemas de integración continua donde un actor no confiable contamina la caché compartida de builds (dependencias, artefactos intermedios o capas de contenedor) para que ejecuciones posteriores privilegiadas consuman código o binarios manipulados.",
+    "para": "Comprender este vector permite aislar adecuadamente las cachés entre ramas no confiables (forks o PRs) y ramas protegidas (`main`, `release`), evitando robo de secretos de producción y compromiso de artefactos firmados durante la compilación.",
+    "como": "Los sistemas de CI suelen indexar cachés por una clave derivada de archivos como `package-lock.json` o `go.sum` usando `actions/cache` o caches de GitLab CI. Si un PR proveniente de un fork o rama sin privilegios puede escribir en la misma clave de caché (o en un prefijo `restore-keys` compartido) que usa un workflow posterior en `main`, el atacante sube un binario o paquete malicioso bajo esa clave. Cuando el workflow privilegiado en `main` restaura la caché y ejecuta pruebas, compiladores o scripts de post-instalación, ejecuta el payload en un entorno con acceso a secretos de despliegue o tokens OIDC.",
+    "practicas": [
+      "Aislar el ámbito de caché por rama o contexto de confianza: los PRs de forks solo deben tener acceso de lectura a la caché de `main`, nunca de escritura sobre ella.",
+      "Evitar `restore-keys` demasiado amplias en workflows que manejan secretos o publican artefactos; en pipelines de release, preferir builds limpios sin caché compartida.",
+      "Incluir un hash del entorno o contexto de confianza en la clave y verificar integridad criptográfica de dependencias restauradas cuando sea posible.",
+      "Error típico: compartir caché de Docker Buildx o `node_modules` entre el workflow `pull_request` (código no revisado) y el workflow `push` a `main`."
+    ],
+    "ejemplo": "# Inseguro si PRs pueden escribir y main restaura por prefijo:\n- uses: actions/cache@v4\n  with:\n    path: ~/.npm\n    key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}\n    # En GitHub Actions, las cachés se aíslan por rama padre,\n    # pero workflows con pull_request_target rompen ese aislamiento.",
+    "entrevista": "El cache poisoning en CI convierte un PR no privilegiado en ejecución remota dentro de `main`, por lo que los pipelines de release deben evitar cachés escribibles por ramas no confiables."
+  },
+  "Checkov": {
+    "que": "Escáner de análisis estático open-source (desarrollado por Bridgecrew/Prisma Cloud) diseñado para detectar configuraciones inseguras y violaciones de cumplimiento en archivos de Infraestructura como Código (IaC) antes de su despliegue.",
+    "para": "Sirve para identificar de forma temprana errores como buckets S3 públicos, cifrado deshabilitado, puertos de administración expuestos o contenedores privilegiados en Terraform, CloudFormation, Kubernetes, Helm, Dockerfiles y Bicep. Se ejecuta en local (pre-commit) y como gate automatizado en pipelines de CI.",
+    "como": "Checkov parsea los archivos declarativos en un árbol de sintaxis/modelo de recursos y construye un grafo de dependencias entre ellos (Graph-based scanning), lo que le permite evaluar relaciones entre bloques (p. ej., si un bucket S3 tiene asociada una `aws_s3_bucket_public_access_block`). Sobre ese grafo evalúa cientos de políticas integradas (`CKV_*`) escritas en Python y reglas personalizadas declaradas en YAML o Python, generando reportes en consola, JSON, JUnit o formato SARIF para integración con GitHub Code Scanning.",
+    "practicas": [
+      "Exportar resultados en formato SARIF en CI para centralizar hallazgos en la pestaña Security de GitHub o plataformas ASPM.",
+      "Usar `--soft-fail` solo durante la fase de adopción inicial; pasar a bloqueo (`hard fail`) en reglas de severidad HIGH/CRITICAL y cambios nuevos.",
+      "Documentar y justificar excepciones puntuales inline (`#checkov:skip=CKV_AWS_20:Justificación`) en lugar de deshabilitar reglas globalmente.",
+      "Checkov vs tfsec/Trivy: Checkov destaca por su análisis multi-framework (Terraform, Bicep, ARM, Helm, K8s) basado en grafos y reglas YAML sencillas; Trivy/tfsec destaca por velocidad en Go y correlación de CVEs en el mismo binario."
+    ],
+    "ejemplo": "checkov -d ./infra/terraform \\\n  --framework terraform \\\n  --check CKV_AWS_19,CKV_AWS_20,CKV_AWS_145 \\\n  --output sarif --output-file-path ./reports/",
+    "entrevista": "Checkov construye un grafo de relaciones sobre múltiples formatos de IaC para detectar misconfigurations contextuales antes de que `terraform apply` o `kubectl` toquen el entorno."
+  },
+  "Code owners": {
+    "que": "Archivo de configuración declarativa (`CODEOWNERS`) versionado en el repositorio que asigna automáticamente usuarios o equipos responsables de revisar cambios según rutas de archivos, directorios o extensiones.",
+    "para": "Garantiza que modificaciones en áreas críticas —como workflows `.github/workflows/`, módulos de Terraform de red/IAM, políticas OPA o código de autenticación— no puedan fusionarse sin la aprobación explícita del equipo especialista (p. ej. AppSec o Platform Engineering).",
+    "como": "El archivo se ubica en `.github/CODEOWNERS`, `.gitlab/CODEOWNERS` o en la raíz del repositorio y sigue una sintaxis de patrones tipo `.gitignore` emparejada con handles (`@org/secops`). Al abrir o actualizar un Pull/Merge Request, la plataforma calcula el diff de rutas modificadas y aplica la última regla coincidente del archivo para asignar revisores. Cuando se combina con la regla de protección de ramas `Require review from Code Owners`, el botón de merge permanece bloqueado hasta obtener la aprobación válida de al menos un miembro de cada equipo propietario afectado.",
+    "practicas": [
+      "Proteger el propio archivo `CODEOWNERS` y las carpetas `.github/workflows/` o `.gitlab-ci.yml` asignándolos al equipo de seguridad o plataforma.",
+      "Asignar equipos (`@org/appsec-team`) en lugar de usuarios individuales para evitar cuellos de botella por vacaciones o rotación.",
+      "Error típico: crear reglas `CODEOWNERS` sin activar la opción `Require review from Code Owners` en Branch Protection, dejándolo solo como sugerencia informativa.",
+      "Validar la sintaxis de `CODEOWNERS` en CI, ya que un patrón mal formado o un equipo sin permisos de escritura en el repo puede invalidar silenciosamente la protección."
+    ],
+    "ejemplo": "# .github/CODEOWNERS\n*                       @org/core-maintainers\n/.github/workflows/     @org/devsecops @org/platform-eng\n/infra/iam/             @org/cloud-security\nCODEOWNERS              @org/devsecops",
+    "entrevista": "El archivo CODEOWNERS aplica el principio de separación de funciones dentro de Git al exigir aprobación obligatoria de seguridad o plataforma cuando se tocan rutas sensibles como pipelines o IAM."
+  },
+  "Commit firmado": {
+    "que": "Confirmación Git que incluye una firma criptográfica incrustada en su cabecera (`gpgsig`), generada con una clave privada GPG, SSH o X.509 (Sigstore gitsign) perteneciente al autor que creó el commit o tag.",
+    "para": "Resuelve la suplantación de identidad en Git, ya que por defecto `git config user.name` y `user.email` pueden falsificarse libremente en cualquier máquina. Se utiliza para garantizar autoría verificable y no repudio en repositorios críticos y cadenas GitOps.",
+    "como": "Al ejecutar `git commit -S`, Git serializa el objeto commit (árbol, padres, autor, fecha y mensaje) y lo pasa a `gpg`, `ssh-keygen -Y sign` o `gitsign`. La firma resultante en ASCII armor se inserta en el campo `gpgsig` del objeto commit antes de calcular su hash SHA-1/SHA-256. La plataforma remota (GitHub/GitLab) compara esa firma contra las claves públicas registradas en la cuenta del usuario (o contra el log de transparencia Rekor en Sigstore) para mostrar el estado `Verified`, y opcionalmente rechaza commits sin firma mediante reglas de protección.",
+    "practicas": [
+      "Preferir firma con claves SSH (`gpg.format = ssh`) o certificados efímeros OIDC (`gitsign`) frente a claves GPG de larga duración difíciles de rotar.",
+      "Activar `Require signed commits` en Branch Protection solo después de configurar `Web-based commit signing` o bots con clave registrada, para no bloquear merges desde la UI.",
+      "Error típico: olvidar firmar los tags de release (`git tag -s`), dejando el disparo de pipelines de publicación sin verificación criptográfica.",
+      "Commit firmado vs Artifact signing: firmar el commit autentica la autoría del código fuente, mientras firmar el artefacto autentica el binario producido por el pipeline."
+    ],
+    "ejemplo": "git config --global gpg.format ssh\ngit config --global user.signingkey ~/.ssh/id_ed25519_signing.pub\ngit config --global commit.gpgsign true\ngit commit -S -m \"feat: habilita validacion OIDC\"\ngit log --show-signature -1",
+    "entrevista": "Firmar commits evita que cualquiera suplante `user.email` en Git y aporta no repudio criptográfico desde el código fuente hasta el controlador GitOps."
+  },
+  "Container scanning en CI": {
+    "que": "Proceso automatizado dentro del pipeline de integración continua que inspecciona imágenes OCI/Docker construidas antes de su publicación en un registry para detectar vulnerabilidades conocidas (CVEs), secretos expuestos y configuraciones inseguras del `Dockerfile`.",
+    "para": "Evita desplegar en producción imágenes con paquetes del sistema operativo desactualizados (p. ej., `openssl`, `glibc` en Debian/Alpine), librerías de aplicación vulnerables o ejecución como `root`. Se integra inmediatamente después del paso `docker build` y antes de `docker push`.",
+    "como": "Herramientas como Trivy, Grype o Snyk Container desensamblan el manifiesto y el tarball de cada capa (`layer.tar`) de la imagen OCI sin necesidad de ejecutar el contenedor. Extraen el inventario de paquetes del SO (`/var/lib/dpkg`, `/lib/apk/db`, RPM DB) y manifiestos de lenguaje (`package-lock.json`, binarios Go/Rust con metadatos de módulos), generando un SBOM interno que correlacionan contra bases de datos de vulnerabilidades (NVD, OSV, advisories de distros). Si hallan CVEs que superan el umbral definido (`CRITICAL`/`HIGH`) y tienen parche disponible (`--ignore-unfixed`), el job falla y bloquea el push al registry.",
+    "practicas": [
+      "Escanear la imagen localmente en el runner (`image.tar` o daemon local) antes de hacer `push` al registry de producción, no solo después.",
+      "Usar imágenes base mínimas (`distroless`, `chainguard`, `alpine` o `scratch`) y builds multi-stage para reducir drásticamente la superficie de CVEs del sistema operativo.",
+      "Combinar `--severity CRITICAL,HIGH` con `--ignore-unfixed` en el gate bloqueante para evitar fatiga de alertas por vulnerabilidades sin parche del proveedor.",
+      "Complementar el escaneo en CI con re-escaneo continuo en el registry, ya que un CVE nuevo puede afectar a una imagen construida semanas atrás."
+    ],
+    "ejemplo": "docker build -t app:${GITHUB_SHA} .\ntrivy image --exit-code 1 --severity CRITICAL,HIGH \\\n  --ignore-unfixed --format sarif -o trivy-results.sarif \\\n  app:${GITHUB_SHA}",
+    "entrevista": "El escaneo de contenedores en CI inspecciona capa por capa los paquetes del SO y dependencias de la imagen antes del push para frenar CVEs críticos y reducir la superficie con imágenes mínimas o distroless."
+  },
+  "DAST en CI": {
+    "que": "Pruebas dinámicas de seguridad de aplicaciones (Dynamic Application Security Testing) ejecutadas automáticamente en el pipeline contra una instancia desplegada o efímera de la aplicación en tiempo de ejecución, simulando ataques reales desde el exterior.",
+    "para": "Detecta vulnerabilidades que solo se manifiestan al ejecutarse el código y su configuración real —como cabeceras HTTP ausentes, CORS permisivo, fallos de autenticación/autorización, XSS reflejado o inyecciones SQL— complementando al análisis estático (SAST).",
+    "como": "El pipeline despliega la aplicación en un entorno efímero (Docker Compose, Review App en Kubernetes o servicio en runner) y lanza un proxy/crawler activo como OWASP ZAP o Nuclei contra la URL expuesta. En modo baseline o API scan (ingiriendo especificaciones OpenAPI/Swagger o colecciones Postman), la herramienta rastrea endpoints, envía payloads maliciosos controlados en parámetros, cabeceras y cuerpos JSON, e inspecciona códigos de respuesta, tiempos y reflexiones en el DOM para identificar fallos sin acceder al código fuente.",
+    "practicas": [
+      "Ejecutar escaneos rápidos (ZAP Baseline o API scan con OpenAPI) en Pull Requests contra entornos efímeros, dejando escaneos activos completos (Full Scan) para pipelines nocturnos en staging.",
+      "Proporcionar autenticación de prueba (tokens JWT o scripts de login) al escáner; un DAST sin autenticar apenas cubre la pantalla de login.",
+      "Error típico: apuntar el DAST en CI contra entornos productivos o bases de datos compartidas, provocando corrupción de datos o denegación de servicio.",
+      "SAST vs DAST: SAST analiza código fuente en reposo (caja blanca, rápido, falsos positivos contextuales), mientras DAST prueba la app viva (caja negra, valida configuraciones y runtime, más lento)."
+    ],
+    "ejemplo": "docker run --rm --network host \\\n  -v \"$(pwd):/zap/wrk:rw\" ghcr.io/zaproxy/zaproxy:stable \\\n  zap-api-scan.py -t http://localhost:8080/openapi.json \\\n  -f openapi -r zap_report.html",
+    "entrevista": "DAST en CI valida la aplicación viva en un entorno efímero mediante fuzzing y análisis HTTP guiado por OpenAPI, capturando fallos de runtime y configuración que SAST no puede ver."
+  },
+  "Dependabot": {
+    "que": "Servicio nativo de GitHub para la gestión automatizada de dependencias que monitoriza manifiestos de proyectos, alerta sobre vulnerabilidades conocidas y abre Pull Requests para actualizar paquetes y GitHub Actions.",
+    "para": "Reduce la ventana de exposición ante vulnerabilidades en dependencias de terceros (CVEs) y evita que la deuda de actualización acumule saltos de versión mayores difíciles de parchear. Se emplea por defecto en repositorios alojados en GitHub.",
+    "como": "Dependabot opera en tres módulos: `Dependabot alerts` (compara periódicamente el grafo de dependencias del repositorio contra la GitHub Advisory Database mediante el Dependency Graph), `Dependabot security updates` (abre automáticamente un PR con el incremento mínimo seguro cuando aparece un CVE) y `Dependabot version updates` (ejecuta un runner periódico según `.github/dependabot.yml` para mantener paquetes y `github-actions` al día, actualizando manifiestos y lockfiles).",
+    "practicas": [
+      "Configurar el ecosistema `github-actions` en `.github/dependabot.yml` para actualizar automáticamente los commit SHAs de las actions fijadas.",
+      "Usar `groups` en `dependabot.yml` para consolidar actualizaciones menores/parche en un solo PR semanal y evitar fatiga de revisiones.",
+      "Restringir el acceso a secretos en workflows disparados por PRs de Dependabot: GitHub los trata como forks (sin acceso a secretos de repo y `GITHUB_TOKEN` de solo lectura).",
+      "Error típico: habilitar auto-merge ciego en PRs de Dependabot sin una suite de tests sólida ni revisión de changelogs ante cambios mayores."
+    ],
+    "ejemplo": "version: 2\nupdates:\n  - package-ecosystem: \"github-actions\"\n    directory: \"/\"\n    schedule: { interval: \"weekly\" }\n  - package-ecosystem: \"npm\"\n    directory: \"/\"\n    schedule: { interval: \"daily\" }\n    groups: { minor-and-patch: { update-types: [\"minor\", \"patch\"] } }",
+    "entrevista": "Dependabot automatiza tanto las alertas contra la Advisory Database como los PRs de remediación en código y GitHub Actions, ejecutando sus PRs sin privilegios de secretos por defecto."
+  },
+  "Dependency pinning": {
+    "que": "Práctica de fijar de forma exacta e inmutable las versiones de dependencias de software, imágenes de contenedores, herramientas de build y acciones CI mediante identificadores criptográficos (hashes SHA-256 o commit SHAs completos) o lockfiles estrictos.",
+    "para": "Mitiga ataques a la cadena de suministro donde un mantenedor comprometido o un atacante reescribe una etiqueta mutable (como `latest`, `@v4` o un rango `^1.2.0`) para distribuir código malicioso de forma silenciosa a todos los pipelines.",
+    "como": "En lugar de resolver dinámicamente rangos semánticos en cada ejecución del pipeline, se consulta un archivo de bloqueo verificado (`npm ci` con `package-lock.json` que incluye hashes `integrity: sha512-...`, `pip install --require-hashes`, `go.sum`), se referencian imágenes OCI por su manifest digest (`image@sha256:...`) y en GitHub Actions se referencia el commit SHA de 40 caracteres (`uses: actions/checkout@<40-hex-sha> # v4.2.2`). Cualquier alteración de un byte en el artefacto remoto invalida el hash y aborta la descarga o ejecución.",
+    "practicas": [
+      "Fijar todas las GitHub Actions de terceros por commit SHA completo de 40 caracteres con un comentario de versión legible al lado, nunca solo por tag (`@v3`).",
+      "En CI usar comandos de instalación estricta (`npm ci`, `poetry install --no-root`, `yarn --immutable`, `pip install --require-hashes`) que fallen si el lockfile no coincide.",
+      "Referenciar imágenes base en `Dockerfile` por digest `@sha256:...` combinado con tag para evitar mutaciones silenciosas en Docker Hub.",
+      "Trampa común: fijar dependencias sin automatizar su actualización (Dependabot/Renovate), lo que congela CVEs conocidos y convierte el pinning en deuda de seguridad."
+    ],
+    "ejemplo": "# GitHub Actions fijado por commit SHA + Dockerfile por digest\n- uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2\n\n# En Dockerfile:\nFROM gcr.io/distroless/static-debian12@sha256:c0f429e16b13e583da7e5a6ec20dd656d325d88e6819cafe0adb0828976529dc",
+    "entrevista": "El dependency pinning sustituye etiquetas mutables como `@v4` o `:latest` por hashes SHA inmutables y lockfiles verificados para impedir que un compromiso upstream inyecte código sin cambiar tu repositorio."
+  },
+  "Deployment gate": {
+    "que": "Punto de control automatizado o manual dentro del flujo de entrega continua (CD) que evalúa políticas de seguridad, calidad y aprobaciones antes de autorizar el paso de un artefacto hacia un entorno objetivo, especialmente producción.",
+    "para": "Impide que compilaciones con vulnerabilidades críticas, ausencia de firma, fallos en pruebas DAST/IaC o sin autorización del responsable lleguen a sistemas productivos. Actúa como barrera final entre CI y CD.",
+    "como": "Al intentar promover un artefacto hacia un entorno protegido (p. ej. `Environment: production` en GitHub Actions, etapas manuales en GitLab o Verification/Policy gates en Argo Rollouts/OPA), el orquestador detiene el job y ejecuta un conjunto de validaciones: verificación de firma criptográfica (`cosign verify`), evaluación de políticas Rego/OPA sobre reportes SARIF/SBOM o métricas de Checkov, comprobación de aprobadores designados (`Required reviewers`) y ventanas de despliegue permitidas. Solo si todas las aserciones devuelven `allow`, se desbloquean los secretos o el rol OIDC del entorno destino.",
+    "practicas": [
+      "Vincular los deployment gates a entornos protegidos para que el token OIDC o secreto de producción no se emita hasta superar todas las comprobaciones y aprobaciones.",
+      "Combinar gates técnicos automáticos (firma Cosign válida, 0 CVEs críticos con fix, sin secretos detectados) con aprobación humana para producción.",
+      "Evitar gates basados únicamente en la existencia de un check verde genérico sin verificar la provenance del artefacto que realmente se va a desplegar.",
+      "Establecer un procedimiento de emergencia (break-glass) auditado para parches críticos cuando los gates bloquean por indisponibilidad externa."
+    ],
+    "ejemplo": "jobs:\n  deploy-prod:\n    needs: [build-and-sign, trivy-scan]\n    environment:\n      name: production\n      url: https://app.ejemplo.com\n    steps:\n      - run: cosign verify --certificate-identity-regexp=... \"$IMAGE_DIGEST\"",
+    "entrevista": "Un deployment gate condiciona el acceso a las credenciales y al entorno de producción al cumplimiento verificable de controles de seguridad, firma de artefactos y aprobación humana."
+  },
+  "Drift detection": {
+    "que": "Proceso automatizado de comparación continua entre el estado real de la infraestructura en ejecución (en la nube o clúster Kubernetes) y el estado deseado definido en los archivos de Infraestructura como Código (Terraform, GitOps).",
+    "para": "Permite descubrir cambios manuales realizados fuera del pipeline ('ClickOps'), configuraciones inseguras aplicadas de emergencia en consola (como abrir un Security Group `0.0.0.0/0`), eliminaciones accidentales o modificaciones maliciosas persistentes.",
+    "como": "El motor de drift ejecuta periódicamente (vía cron en CI, Terraform Cloud o controladores continuos como Driftctl/Argo CD) una lectura de solo lectura del estado vivo a través de las APIs del proveedor cloud o del API Server de Kubernetes. Contrasta los atributos actuales con el `terraform.tfstate` o con los manifiestos renderizados de Git. Cuando detecta divergencias en propiedades críticas (reglas IAM, políticas de red, cifrado, tags), genera alertas al equipo de seguridad/plataforma o, en modelos GitOps con `selfHeal`, revierte automáticamente el recurso al estado declarado.",
+    "practicas": [
+      "Ejecutar `terraform plan -detailed-exitcode` en un job programado de solo lectura usando un rol IAM restringido a lectura (`ReadOnlyAccess` acotado) para alertar por código de salida `2`.",
+      "Habilitar `selfHeal: true` en Argo CD para entornos críticos de modo que cualquier `kubectl edit` manual sea revertido al estado de Git.",
+      "Error típico: almacenar secretos dinámicos o contadores de réplicas gestionados por HPA dentro del manifiesto observado sin `ignoreDifferences` o `lifecycle.ignore_changes`, generando falsos positivos constantes.",
+      "Drift detection vs IaC scanning: el escaneo IaC revisa el código antes de aplicar; la detección de drift vigila que la realidad en producción no haya divergido tras el despliegue."
+    ],
+    "ejemplo": "terraform init -input=false\nterraform plan -refresh-only -detailed-exitcode -no-color\n# Exit code 0 = sin drift, 1 = error, 2 = drift detectado",
+    "entrevista": "La detección de drift garantiza que la seguridad declarada en Git no sea evadida por cambios manuales en consola o alteraciones en runtime, alertando o autoreparando cualquier divergencia."
+  },
+  "Environment separation": {
+    "que": "Principio arquitectónico de aislamiento estricto entre entornos de desarrollo, pruebas/staging y producción a nivel de cuentas cloud, clústeres, redes, datos, identidades y credenciales de pipeline.",
+    "para": "Contiene el radio de explosión ante compromisos en pipelines de pruebas o en entornos de baja criticidad, impidiendo que un atacante que comprometa `dev` salte lateralmente a datos o cargas de `prod` o exfiltre secretos productivos.",
+    "como": "La separación se implementa asignando cuentas AWS/proyectos GCP/suscripciones Azure independientes por entorno, con VPCs sin peering innecesario y backends de estado Terraform aislados. En CI/CD, cada entorno se modela como un `Environment` protegido con políticas propias: los secretos y los roles OIDC de `staging` solo pueden asumirse desde ramas de integración o PRs aprobados, mientras que la relación de confianza (`sub` claim) del rol IAM de `production` exige exclusivamente `environment:production` o `ref:refs/heads/main`, además de gates de aprobación manual.",
+    "practicas": [
+      "Nunca compartir el mismo ServiceAccount, rol IAM o clave KMS entre staging y producción, ni siquiera con prefijos de nombre distintos.",
+      "Aislar los `tfstate` de Terraform en buckets y cuentas separadas por entorno para evitar que un error en `dev` destruya o lea secretos del estado de `prod`.",
+      "Prohibir volcar datos reales de producción (PII) sin anonimizar en entornos `dev` o `staging` que tienen controles de acceso más laxos.",
+      "Separar runners de CI por nivel de confianza: los runners que ejecutan código de PRs en `dev` no deben tener conectividad de red hacia el plano de control de `prod`."
+    ],
+    "ejemplo": "# Política de confianza IAM OIDC restringida por entorno\n\"Condition\": {\n  \"StringEquals\": {\n    \"token.actions.githubusercontent.com:aud\": \"sts.amazonaws.com\",\n    \"token.actions.githubusercontent.com:sub\": \"repo:org/app:environment:production\"\n  }\n}",
+    "entrevista": "La separación de entornos aisla cuentas, datos, estados Terraform y claims OIDC para asegurar que un fallo o compromiso en desarrollo jamás pueda escalar ni tocar producción."
+  },
+  "GITHUB_TOKEN least privilege": {
+    "que": "Práctica de restringir los alcances del token efímero `GITHUB_TOKEN` generado automáticamente por GitHub Actions en cada ejecución de workflow mediante el bloque explícito `permissions`.",
+    "para": "Minimiza el impacto si una acción de terceros comprometida o una inyección en el workflow intenta modificar código en el repositorio, aprobar PRs, publicar paquetes o manipular issues usando el token de la ejecución.",
+    "como": "Al iniciar un job, GitHub crea un token de instalación de GitHub App de vida limitada cuya lista de permisos por defecto a nivel de organización/repositorio puede ser `read-all` o `write-all` en configuraciones heredadas. Al declarar `permissions: read-all` o `permissions: {}` en la raíz del workflow y otorgar permisos específicos únicamente en el job que los necesita (p. ej. `contents: read`, `id-token: write`, `security-events: write`), el backend de GitHub emite un token JWT acotado exactamente a esos scopes, rechazando con HTTP 403 cualquier otra llamada a la API REST/GraphQL.",
+    "practicas": [
+      "Configurar el valor por defecto de la organización/repositorio a `Read repository contents and packages permissions` en Settings -> Actions -> General.",
+      "Declarar `permissions: {}` (cero permisos) al inicio de cada archivo `.github/workflows/*.yml` y habilitar scopes granulares solo a nivel de `job`.",
+      "Usar `id-token: write` únicamente en el job de despliegue/firma y nunca en jobs que ejecutan tests sobre código externo no revisado.",
+      "Error típico: olvidar definir `permissions` en workflows nuevos porque el repositorio heredó `Read and write permissions`, dejando el repo expuesto ante cualquier acción comprometida."
+    ],
+    "ejemplo": "permissions: {}\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+    "entrevista": "Aplicar least privilege al `GITHUB_TOKEN` declarando `permissions: {}` por defecto y otorgando scopes por job impide que una action comprometida escriba código o manipule releases."
+  },
+  "GitHub Actions security": {
+    "que": "Conjunto de prácticas de diseño defensivo y hardening aplicadas a workflows (`.github/workflows/*.yml`), acciones reutilizables, triggers y gestión de credenciales en GitHub Actions.",
+    "para": "Previene los vectores de ataque propios de GitHub Actions —como inyección de scripts en expresiones `${{ }}`, abuso de `pull_request_target`, compromiso de actions de terceros y exfiltración de secretos— protegiendo la integridad del repositorio y la nube.",
+    "como": "El motor de Actions evalúa las expresiones `${{ github.event.* }}` como interpolación literal de texto antes de pasar el script al shell (`bash`/`pwsh`), por lo que valores controlados por atacantes (título del PR, nombre de rama) provocan ejecución arbitraria de comandos si no se pasan por variables de entorno (`env:`). Asimismo, el trigger `pull_request_target` corre en el contexto de la rama base con acceso a secretos y token de escritura; si hace checkout del `head` del PR externo (`ref: ${{ github.event.pull_request.head.sha }}`) y ejecuta código/tests de ese PR, concede control total al atacante. El hardening combina `permissions` mínimos, pinning por SHA, uso de variables `env:` y separación de workflows no privilegiados (`pull_request`) y privilegiados (`workflow_run`).",
+    "practicas": [
+      "Nunca interpolar directamente `${{ github.event.pull_request.title }}` o `head.ref` dentro de un bloque `run:`; asignarlo siempre primero a una variable `env:` y citarla en bash (`\"$TITLE\"`).",
+      "Evitar `pull_request_target` combinado con `actions/checkout` de `github.event.pull_request.head`; usar el patrón de dos pasos (`pull_request` sin secretos -> artefacto -> `workflow_run` que solo lee el artefacto sin ejecutar código del PR).",
+      "Fijar todas las acciones externas por commit SHA completo y habilitar políticas de organización que solo permitan acciones verificadas o aprobadas.",
+      "Configurar `persist-credentials: false` en `actions/checkout` cuando los pasos posteriores no necesiten hacer `git push` para no dejar el token en `.git/config`."
+    ],
+    "ejemplo": "- name: Inspeccionar titulo de forma segura\n  env:\n    PR_TITLE: ${{ github.event.pull_request.title }}\n  run: |\n    echo \"Título recibido: $PR_TITLE\"\n- uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n  with:\n    persist-credentials: false",
+    "entrevista": "Asegurar GitHub Actions exige fijar actions por SHA, pasar inputs no confiables por variables `env:` para evitar script injection, restringir `GITHUB_TOKEN` y no mezclar `pull_request_target` con checkout de forks."
+  },
+  "GitLab CI security": {
+    "que": "Conjunto de configuraciones y controles en GitLab CI/CD (`.gitlab-ci.yml`, Runners y ajustes de proyecto/grupo) destinados a proteger variables secretas, tokens de job, artefactos y entornos de ejecución frente a código no confiable.",
+    "para": "Evita que usuarios externos en Merge Requests de forks, scripts de terceros o jobs de entornos bajos lean secretos de producción, abusen del `CI_JOB_TOKEN` para acceder a otros repositorios o contaminen runners compartidos.",
+    "como": "GitLab inyecta variables de entorno y un `CI_JOB_TOKEN` efímero en cada job según su rama y entorno. La seguridad se refuerza marcando variables sensibles como `Protected` (solo se inyectan en ramas/tags protegidos), `Masked` (ocultas en logs con requisitos de formato) y restringiendo el `Environment scope` (`prod/*`). Además, se habilita la allowlist del `CI_JOB_TOKEN` (`Limit access to this project`) para impedir que un job en el proyecto A clone o consulte el proyecto B sin permiso explícito, se configuran runners dedicados por tag/grupo para ramas protegidas y se evita habilitar pipelines de Merge Request de forks en runners con privilegios.",
+    "practicas": [
+      "Marcar los secretos críticos como `Protected` y `Masked` (o mejor aún, sustituir secretos estáticos por `id_tokens` OIDC hacia Vault/AWS/GCP).",
+      "Activar la allowlist de `CI_JOB_TOKEN` en Settings -> CI/CD -> Token Access para prevenir movimientos laterales entre proyectos del mismo grupo.",
+      "Separar runners con `protected: true` para ramas de despliegue y deshabilitar `privileged: true` (Docker-in-Docker) usando alternativas rootless como Kaniko o Buildah.",
+      "Error típico: confiar en `Masked` como única defensa; si el secreto tiene menos de 8 caracteres o caracteres no soportados, o si un script lo codifica en Base64 (`echo $SECRET | base64`), aparece en los logs."
+    ],
+    "ejemplo": "deploy_prod:\n  stage: deploy\n  id_tokens:\n    VAULT_ID_TOKEN:\n      aud: https://vault.ejemplo.com\n  rules:\n    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\n  tags: [\"protected-prod-runner\"]\n  environment: production",
+    "entrevista": "En GitLab CI la seguridad se apoya en variables Protected/Masked o `id_tokens` OIDC, allowlists estrictas para `CI_JOB_TOKEN` y separación de runners protegidos sin modo Docker privilegiado."
+  },
+  "GitOps security": {
+    "que": "Modelo de seguridad para operación y despliegue continuo donde todo el estado deseado de infraestructura y aplicaciones reside versionado declarativamente en Git y un controlador dentro del clúster sincroniza cambios mediante arquitectura pull.",
+    "para": "Elimina la necesidad de exponer credenciales de administrador del clúster Kubernetes (kubeconfig) hacia plataformas externas de CI, reduciendo la superficie de ataque y garantizando auditabilidad completa de cada cambio.",
+    "como": "En GitOps, el pipeline CI termina al construir, escanear, firmar la imagen OCI y actualizar un tag/digest en el repositorio de manifiestos (o abrir un PR automatizado). Dentro del clúster destino, un agente como Argo CD o Flux CD consulta el repositorio Git por HTTPS/SSH en modo solo lectura (pull), verifica opcionalmente firmas GPG/Cosign de commits e imágenes y aplica el diff localmente vía API Server. De este modo, el flujo de red es saliente desde el clúster hacia Git y ningún runner CI externo posee permisos de escritura sobre Kubernetes.",
+    "practicas": [
+      "Separar el repositorio de código fuente de la aplicación del repositorio de manifiestos GitOps para tener historiales, permisos y `CODEOWNERS` diferenciados.",
+      "Exigir commits firmados y revisión obligatoria en el repositorio GitOps, ya que Git pasa a ser el plano de control real de producción.",
+      "Complementar el controlador GitOps con Admission Controllers (Kyverno o OPA Gatekeeper) dentro del clúster como última línea de defensa ante manifiestos inseguros.",
+      "GitOps (Pull) vs CI Push: en CI Push un runner comprometido tiene acceso directo al clúster; en GitOps el daño se contiene si los manifiestos pasan por PR protegido y Admission Policies."
+    ],
+    "ejemplo": "# Flujo GitOps seguro (conceptual):\n# 1. CI compila -> Trivy/Cosign firma -> actualiza digest en repo GitOps vía PR\n# 2. Revisión + Branch Protection en repo GitOps\n# 3. Flux/Argo CD (dentro del clúster) verifica firma y hace pull + apply",
+    "entrevista": "GitOps mejora la seguridad de despliegue al cambiar el modelo push por pull: el pipeline de CI nunca toca el clúster ni guarda kubeconfigs, y todo cambio queda auditado y protegido en Git."
+  },
+  "Hardened runner": {
+    "que": "Agente ejecutor de CI/CD endurecido a nivel de sistema operativo, kernel y red —como StepSecurity Harden-Runner o runners efímeros con filtrado eBPF— que monitoriza y restringe en tiempo real el comportamiento de los procesos durante un job.",
+    "para": "Detecta y bloquea ataques activos durante la compilación (como scripts `postinstall` maliciosos de npm, acciones de terceros comprometidas o exfiltración de secretos por DNS/HTTPS) que las herramientas estáticas previas no logran frenar.",
+    "como": "Al inicio del job, el hardened runner (o una acción privilegiada con acceso al host/kernel antes de ejecutar pasos externos) carga sensores eBPF o reglas `iptables`/proxy DNS para interceptar syscalls (`execve`, `open`, `connect`) y tráfico saliente de red. En modo `audit`, registra cada dominio contactado y archivo modificado; en modo `block` con `allowed-endpoints`, descarta cualquier conexión TCP/UDP hacia dominios fuera de la lista blanca y alerta si se alteran archivos fuente tras el checkout (previniendo manipulación de código previa a la compilación).",
+    "practicas": [
+      "Ejecutar primero en modo `audit` para construir una línea base exacta de los endpoints legítimos del build y luego cambiar a `egress-policy: block`.",
+      "Colocar el paso de `harden-runner` como el primer step absoluto del job, antes incluso de `actions/checkout`, para capturar todo el ciclo de vida.",
+      "Combinar runners efímeros (destruidos al terminar cada job) con filtrado de egresos para impedir persistencia entre ejecuciones.",
+      "Trampa común: permitir comodines amplios en `allowed-endpoints` como `*.github.com` o `*.s3.amazonaws.com`, que pueden usarse para exfiltrar secretos hacia repositorios o buckets del atacante."
+    ],
+    "ejemplo": "steps:\n  - name: Harden the runner\n    uses: step-security/harden-runner@c6295a65d1254861815972266d5933fd6e532bdf\n    with:\n      egress-policy: block\n      allowed-endpoints: >\n        github.com:443\n        registry.npmjs.org:443",
+    "entrevista": "Un hardened runner actúa como un EDR/firewall de egreso por eBPF dentro del job de CI, bloqueando en tiempo real la exfiltración de secretos y la alteración de código por dependencias comprometidas."
+  },
+  "Helm security": {
+    "que": "Conjunto de controles para asegurar el empaquetado, distribución, gestión de valores y renderizado de Helm charts usados para desplegar aplicaciones en Kubernetes.",
+    "para": "Mitiga riesgos de supply chain en charts de terceros, exposición de secretos en texto plano dentro de ConfigMaps o `values.yaml` versionados en Git y despliegue de manifiestos con configuraciones privilegiadas ocultas tras plantillas Go.",
+    "como": "Helm renderiza plantillas Go combinadas con archivos `values.yaml` para generar manifiestos YAML que se envían al API Server de Kubernetes (almacenando el historial de releases en Secrets dentro del namespace en Helm v3). Para asegurarlo, se firman los paquetes `.tgz` con claves PGP generando archivos `.prov` (`helm package --sign` / `helm verify`), o se distribuyen en registries OCI firmados con Cosign. En CI, antes del despliegue, se expanden todas las plantillas mediante `helm template` y la salida YAML completa se pasa por escáneres IaC (Checkov, Trivy, Kubescape), mientras que los secretos se delegan a External Secrets Operator o Sealed Secrets.",
+    "practicas": [
+      "Nunca escanear solo los archivos fuente `templates/*.yaml` sin renderizar; ejecutar `helm template` con los `values-prod.yaml` reales y analizar el YAML resultante.",
+      "Fijar versiones exactas de charts externos, verificar su procedencia (`.prov` o firma OCI) y fijar `image.digest` en lugar de tags mutables.",
+      "Evitar guardar contraseñas o claves API en `values.yaml` o pasarlas con `--set` en logs visibles de CI; usar referencias a secretos externos gestionados en el clúster.",
+      "Restringir el RBAC de quien ejecuta `helm install/upgrade` al namespace objetivo y recordar que los Secrets de release de Helm (`sh.helm.release.v1.*`) contienen los values renderizados."
+    ],
+    "ejemplo": "helm template mi-app ./charts/mi-app -f values-prod.yaml > rendered.yaml\ntrivy config --exit-code 1 --severity HIGH,CRITICAL rendered.yaml\nhelm verify ./mi-app-1.4.2.tgz",
+    "entrevista": "La seguridad en Helm exige verificar la firma del chart, mantener secretos fuera de `values.yaml` y auditar siempre el resultado de `helm template` antes de aplicarlo al clúster."
+  },
+  "IaC security": {
+    "que": "Disciplina y conjunto de prácticas para verificar, endurecer y gobernar la seguridad de definiciones declarativas de infraestructura (Terraform, CloudFormation, Bicep, Pulumi, Ansible y manifiestos Kubernetes) a lo largo de todo su ciclo de vida.",
+    "para": "Resuelve el problema de aprovisionar fallos de seguridad a escala y en segundos ('misconfigurations as code'), desplazando la detección hacia la izquierda (shift-left) en el IDE, pre-commit y CI antes de que los recursos existan en producción.",
+    "como": "El ciclo de IaC security integra cuatro capas: 1) linting y SAST de IaC en local/PR (Checkov, Trivy, tfsec, KICS) sobre el código y sobre planes compilados (`terraform show -json tfplan`); 2) Policy-as-Code en pipelines y admisión (OPA/Conftest, Sentinel) para imponer reglas corporativas de arquitectura y etiquetado; 3) gestión segura del estado y secretos (estado cifrado en reposo, sin credenciales hardcoded, uso de gestores externos); y 4) detección continua de drift tras el despliegue.",
+    "practicas": [
+      "Escanear tanto el código fuente IaC como el artefacto de plan (`tfplan.json`) para evaluar variables resueltas en tiempo de ejecución.",
+      "Centralizar módulos IaC aprobados y endurecidos en un registro interno ('golden modules') para que los equipos hereden cifrado, logs y RBAC por defecto.",
+      "Error típico: guardar secretos de bases de datos o tokens en archivos `.tfvars` dentro de Git o confiar en que Terraform oculta `sensitive = true` (los valores siguen en texto plano dentro del `tfstate`).",
+      "Combinar prevención en CI (PR checks) con prevención en runtime (SCPs de AWS, Azure Policy, Kyverno) por defensa en profundidad."
+    ],
+    "ejemplo": "terraform plan -out=tfplan.binary\nterraform show -json tfplan.binary > tfplan.json\nconftest test tfplan.json --policy ./policies/iac/",
+    "entrevista": "IaC security combina módulos seguros por defecto, escaneo estático y Policy-as-Code sobre planes resueltos en CI, además de cifrado estricto del `tfstate` y controles preventivos en el proveedor cloud."
+  },
+  "Immutable infrastructure": {
+    "que": "Paradigma de operación donde los servidores, contenedores e instancias de infraestructura nunca se actualizan ni modifican in-place tras su despliegue; ante cualquier cambio de código, parche o configuración, se construye una imagen nueva desde cero y se reemplaza la anterior.",
+    "para": "Elimina la deriva de configuración ('configuration drift'), impide la persistencia de malware o backdoors en disco tras un compromiso y garantiza entornos consistentes, reproducibles y fáciles de revertir mediante reemplazo azul/verde.",
+    "como": "El pipeline toma un código o definición base, aplica parches y empaqueta una imagen inmutable (AMI mediante Packer, imagen OCI en contenedor) que pasa por escaneo y firma criptográfica. En producción, el orquestador (Auto Scaling Groups, Kubernetes Deployment) lanza réplicas nuevas a partir de esa imagen con sistema de archivos raíz de solo lectura (`readOnlyRootFilesystem: true`), deshabilita accesos SSH/exec interactivos y drena el tráfico de las instancias antiguas antes de terminarlas. Cualquier estado persistente se desacopla en almacenamiento externo o bases de datos gestionadas.",
+    "practicas": [
+      "Desactivar SSH en máquinas virtuales y `kubectl exec` en producción por defecto, forzando depuración mediante logs centralizados y métricas.",
+      "Configurar contenedores con `readOnlyRootFilesystem: true` y volúmenes `emptyDir` acotados para `/tmp` si la aplicación requiere escritura temporal.",
+      "Error típico: llamar 'inmutable' a una infraestructura que descarga paquetes o scripts remotos en el arranque (`user-data` / `entrypoint.sh`), rompiendo la verificabilidad de la imagen.",
+      "Combinar infraestructura inmutable con rotación frecuente de instancias/nodos (p. ej. TTL de 24-72h) para reducir la ventana de persistencia de amenazas en memoria."
+    ],
+    "ejemplo": "securityContext:\n  readOnlyRootFilesystem: true\n  allowPrivilegeEscalation: false\n  runAsNonRoot: true\nvolumeMounts:\n  - name: tmp\n    mountPath: /tmp",
+    "entrevista": "La infraestructura inmutable erradica el drift y dificulta la persistencia de atacantes porque toda actualización reemplaza la instancia por una imagen nueva, escaneada, firmada y con sistema de archivos de solo lectura."
+  },
+  "Kubernetes manifest security": {
+    "que": "Conjunto de reglas y buenas prácticas de endurecimiento aplicadas a los archivos YAML declarativos de Kubernetes (`Pod`, `Deployment`, `Role`, `NetworkPolicy`, `Ingress`) para reducir privilegios de ejecución y aislar cargas de trabajo.",
+    "para": "Previene escapes de contenedor hacia el nodo anfitrión, movimientos laterales entre namespaces, agotamiento de recursos (DoS) y abuso de permisos excesivos contra el API Server de Kubernetes.",
+    "como": "Los manifiestos definen el contrato de seguridad que el `kubelet` y el runtime de contenedores (containerd/CRI-O) aplican al crear el pod. Mediante `securityContext` se exige `runAsNonRoot: true`, `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, `capabilities: { drop: [\"ALL\"] }` y perfiles `seccompProfile: RuntimeDefault`. En paralelo, se limitan `resources` (CPU/memoria), se deshabilita el montaje innecesario del token de ServiceAccount (`automountServiceAccountToken: false`) y se definen `NetworkPolicy` restrictivas. Estas reglas se validan en CI (Kyverno CLI, Trivy, Kubeconform) y se refuerzan en el clúster con Pod Security Admission (`restricted`).",
+    "practicas": [
+      "Alinear todos los manifiestos de aplicación con el perfil `restricted` de Pod Security Standards (PSS), evitando `privileged: true`, `hostNetwork`, `hostPID` y `hostPath`.",
+      "Configurar `automountServiceAccountToken: false` en pods que no interactúan con la API de Kubernetes para evitar el robo del token si la app sufre RCE/SSRF.",
+      "Eliminar todas las capabilities Linux (`drop: [\"ALL\"]`) y añadir únicamente la mínima necesaria (p. ej. `NET_BIND_SERVICE` si no se usan puertos >1024).",
+      "Definir siempre `NetworkPolicy` con denegación por defecto (default-deny ingress/egress) en cada namespace."
+    ],
+    "ejemplo": "spec:\n  automountServiceAccountToken: false\n  securityContext:\n    runAsNonRoot: true\n    seccompProfile: { type: RuntimeDefault }\n  containers:\n  - name: api\n    securityContext:\n      allowPrivilegeEscalation: false\n      capabilities: { drop: [\"ALL\"] }",
+    "entrevista": "Asegurar manifiestos de Kubernetes implica aplicar el perfil restricted —sin root, sin capabilities, rootfs de solo lectura, sin automount de tokens y con NetworkPolicies— validado tanto en CI como en el Admission Controller."
+  },
+  "OIDC in CI": {
+    "que": "Mecanismo de federación de identidades basado en OpenID Connect mediante el cual un proveedor de CI/CD (GitHub Actions, GitLab CI, CircleCI) emite tokens JWT firmados de corta duración para que el job obtenga credenciales temporales en proveedores cloud o gestores de secretos sin almacenar secretos estáticos.",
+    "para": "Elimina el mayor riesgo operativo en CI/CD: guardar llaves estáticas de larga duración (`AWS_ACCESS_KEY_ID`, JSON keys de GCP o tokens de Vault) dentro del repositorio o plataforma CI, donde pueden filtrarse o quedar sin rotación.",
+    "como": "El proveedor cloud (AWS IAM, GCP Workload Identity, Azure Entra ID, HashiCorp Vault) se configura para confiar en el emisor OIDC del CI (p. ej. `https://token.actions.githubusercontent.com`) descargando sus claves públicas desde `/.well-known/openid-configuration` y `jwks`. Cuando corre un job con permiso `id-token: write`, el runner solicita al proveedor CI un JWT firmado con claims específicos (`iss`, `aud`, `sub` con repo/rama/entorno). El job envía ese JWT a `sts:AssumeRoleWithWebIdentity` (o equivalente); el cloud verifica la firma, valida las condiciones del `sub` y devuelve credenciales temporales válidas únicamente por minutos.",
+    "practicas": [
+      "Restringir estrictamente la condición `sub` (y `aud`) en la política de confianza cloud a repositorio + rama o entorno (`repo:org/app:environment:prod`); nunca usar `repo:org/*`.",
+      "Acotar la duración máxima de la sesión temporal (p. ej. 15-30 minutos) al tiempo real del job.",
+      "Error típico: validar solo el claim `repository_owner` o aceptar `pull_request` en el rol de producción, permitiendo que cualquier repo de la org o un PR externo asuma el rol.",
+      "Preferir OIDC también para autenticar hacia registries privados, HashiCorp Vault y Sigstore Fulcio (firma keyless)."
+    ],
+    "ejemplo": "- uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502\n  with:\n    role-to-assume: arn:aws:iam::123456789012:role/github-deploy-prod\n    aws-region: eu-west-1",
+    "entrevista": "OIDC en CI sustituye secretos estáticos de larga duración por JWTs efímeros ligados criptográficamente al repositorio, rama y entorno, reduciendo a minutos la ventana de cualquier credencial."
+  },
+  "Pipeline security": {
+    "que": "Arquitectura de seguridad integral aplicada al diseño, infraestructura y ejecución de flujos CI/CD (desde el trigger en el repositorio hasta el despliegue del artefacto), tratándolos como sistemas críticos de nivel producción.",
+    "para": "Protege el 'eslabón maestro' de la entrega de software: si un atacante compromete el pipeline de CI/CD, puede inyectar código malicioso en artefactos firmados, robar secretos cloud y desplegar directamente en todos los entornos.",
+    "como": "La seguridad del pipeline aplica defensa en profundidad en cuatro planos: 1) Plano de entrada: protección de ramas, firma de commits, `CODEOWNERS` y validación de triggers/inputs no confiables; 2) Plano de ejecución: runners efímeros y endurecidos, aislamiento entre cargas no confiables y privilegiadas, y control de egresos de red; 3) Plano de identidad: eliminación de secretos estáticos vía OIDC y mínimo privilegio de tokens (`GITHUB_TOKEN`, `CI_JOB_TOKEN`); y 4) Plano de artefactos: pinning de dependencias/acciones, generación de SBOM, provenance SLSA y firma verificable en el despliegue.",
+    "practicas": [
+      "Tratar cualquier pipeline con capacidad de despliegue o firma como un sistema Tier-0 equivalente a producción en controles de acceso y auditoría.",
+      "Separar los workflows que ejecutan código no revisado (tests de PRs) de los workflows con acceso a secretos, escritura en ramas o publicación de artefactos.",
+      "Auditar logs de ejecución de CI/CD de forma centralizada y habilitar alertas ante modificaciones en archivos `.github/workflows/` o `.gitlab-ci.yml`.",
+      "Aplicar el marco SLSA (Supply-chain Levels for Software Artifacts) y las guías OWASP CI/CD Top 10 como lista de verificación periódica."
+    ],
+    "ejemplo": "# Principios clave de Pipeline Security (OWASP CI/CD Top 10):\n# - Flujo de control: Branch Protection + CODEOWNERS en definiciones CI\n# - Identidad: OIDC + Tokens least privilege\n# - Ejecución: Runners efímeros aislados + Egress filtering\n# - Integridad: Pinning por SHA + SLSA Provenance + Firma Cosign",
+    "entrevista": "La seguridad del pipeline exige tratar el CI/CD como infraestructura Tier-0: aislar ejecuciones no confiables, eliminar secretos estáticos con OIDC, fijar dependencias y firmar los artefactos generados."
+  },
+  "Reglas de protección de ramas": {
+    "que": "Configuraciones y conjuntos de políticas (como GitHub Repository Rulesets o GitLab Protected Branches) que codifican con granularidad qué operaciones están permitidas o bloqueadas sobre referencias Git específicas.",
+    "para": "Estandariza y fuerza de manera centralizada (a nivel de repositorio u organización) los requisitos de calidad, seguridad y revisión antes de aceptar cambios en ramas protegidas o etiquetas de versión.",
+    "como": "A diferencia de reglas sueltas por rama, los Rulesets modernos evalúan múltiples reglas acumulativas sobre patrones `fnmatch` de ramas y tags (p. ej. `refs/heads/main`, `refs/tags/v*`), permitiendo incluso un modo `Evaluate` (dry-run) antes de activar el bloqueo (`Active`). Cuando un usuario intenta un `git push` o merge de PR, el servidor evalúa la intersección de todas las reglas activas: número mínimo de aprobaciones, descarte de aprobaciones obsoletas tras nuevos commits, resolución obligatoria de conversaciones, linealidad del historial (`no merge commits`), commits firmados, checks requeridos y lista explícita de actores con permiso de bypass (como bots de release).",
+    "practicas": [
+      "Usar Rulesets a nivel de organización en lugar de configurar rama por rama manualmente en cientos de repositorios.",
+      "Activar `Dismiss stale pull request approvals when new commits are pushed` para evitar que un atacante obtenga aprobación y luego añada código malicioso antes del merge.",
+      "Proteger también los tags de release (`refs/tags/v*`) para impedir que alguien borre o mueva un tag ya publicado y dispare un redespliegue manipulado.",
+      "Usar el modo `Evaluate` al desplegar reglas nuevas en la organización para medir impacto antes de pasar a `Active`."
+    ],
+    "ejemplo": "# Parámetros clave en un Ruleset de rama protegida:\n# target: refs/heads/main, refs/heads/release/*, refs/tags/v*\n# rules: [deletion, non_fast_forward, required_signatures,\n#         pull_request(min_approvals=2, dismiss_stale=true,\n#         require_code_owner_review=true), required_status_checks]",
+    "entrevista": "Las reglas de protección de ramas —especialmente mediante Rulesets organizacionales— aseguran la gobernanza uniforme sobre ramas y tags, descartando aprobaciones obsoletas y acotando estrictamente los bypasses."
+  },
+  "Renovate": {
+    "que": "Herramienta open-source (mantenida por Mend) de automatización de actualizaciones de dependencias multiplataforma que soporta decenas de gestores de paquetes, Dockerfiles, Terraform, Helm y pipelines CI.",
+    "para": "Mantiene actualizadas las dependencias y sus lockfiles reduciendo vulnerabilidades y deuda técnica con gran control operativo, especialmente en organizaciones con múltiples plataformas Git (GitLab, GitHub, Bitbucket) o stacks heterogéneos.",
+    "como": "Renovate se ejecuta como bot alojado o como job self-hosted en CI según un archivo `renovate.json`. Escanea el repositorio usando 'managers' específicos (incluidos `customManagers` por expresiones regulares para cualquier versión declarada en YAML/scripts), consulta los registries upstream para descubrir nuevas versiones o digests SHA y aplica reglas de `packageRules` para agrupar, programar horarios, esperar una ventana de madurez (`minimumReleaseAge`) antes de proponer paquetes recién publicados y abrir PRs/MRs con notas de cambio e indicadores de confianza (Merge Confidence).",
+    "practicas": [
+      "Configurar `minimumReleaseAge` (p. ej. `'3 days'`) para dar margen a que la comunidad detecte y retire paquetes recién publicados comprometidos antes de abrir PRs.",
+      "Usar `pinDigests: true` en Dockerfiles y GitHub Actions para que Renovate sustituya automáticamente tags mutables por digests SHA-256 y los mantenga al día.",
+      "Aprovechar `packageRules` para agrupar dependencias relacionadas (p. ej. ecosistema AWS SDK o linter) y configurar `automerge` solo en parches/digests con tests sólidos.",
+      "Renovate vs Dependabot: Dependabot es cero-configuración dentro de GitHub y tiene integración nativa con Advisory Database; Renovate ofrece soporte multiplataforma, `customManagers` por regex, pinning de digests y `minimumReleaseAge`."
+    ],
+    "ejemplo": "{\n  \"$schema\": \"https://docs.renovatebot.com/renovate-schema.json\",\n  \"extends\": [\"config:recommended\", \"helpers:pinGitHubActionDigests\"],\n  \"minimumReleaseAge\": \"3 days\",\n  \"packageRules\": [\n    { \"matchUpdateTypes\": [\"digest\", \"patch\"], \"groupName\": \"patches\" }\n  ]\n}",
+    "entrevista": "Renovate destaca frente a alternativas básicas por su soporte multiplataforma, su capacidad para fijar digests SHA automáticamente y controles anti-supply-chain como `minimumReleaseAge`."
+  },
+  "Required reviews": {
+    "que": "Control de revisión por pares en flujos de Pull Request / Merge Request que bloquea la integración de código hasta que un número mínimo de revisores independientes autorizados apruebe los cambios.",
+    "para": "Mitiga riesgos de código malicioso interno (insider threat), errores lógicos críticos y cambios inadvertidos de seguridad al garantizar que ninguna persona pueda introducir código en producción unilateralmente ('four-eyes principle').",
+    "como": "Al configurarse en la protección de rama, el servidor Git contabiliza las revisiones con estado `APPROVED` emitidas por usuarios con acceso de escritura distintos al autor del PR (`Prevent approval by author`) y excluye cuentas no autorizadas. Si se habilita `Require approval of the most recent push` (GitLab/GitHub), cualquier nuevo commit en la rama del PR invalida las aprobaciones previas (o impide que el último autor apruebe su propio cambio), obligando a una nueva verificación sobre el diff final antes de habilitar el merge.",
+    "practicas": [
+      "Activar `Require approval of the most recent reviewable push` y `Dismiss stale approvals` para evitar el truco de aprobar un cambio inocuo y luego inyectar un commit malicioso.",
+      "Combinar `Required reviews` (p. ej. mínimo 1 o 2 aprobaciones) con `CODEOWNERS` para que cambios sensibles requieran además un especialista.",
+      "Error típico: permitir que los autores aprueben sus propios PRs o usar cuentas de servicio compartidas para auto-aprobar cambios sin verificación criptográfica.",
+      "En repositorios pequeños donde un desarrollador trabaja solo ocasionalmente, preferir un flujo de emergencia auditado antes que desactivar el control globalmente."
+    ],
+    "ejemplo": "# Regla recomendada en GitHub Branch Protection / Ruleset:\nrequired_approving_review_count: 2\ndismiss_stale_reviews: true\nrequire_code_owner_reviews: true\nrequire_last_push_approval: true",
+    "entrevista": "Las required reviews aplican el principio de cuatro ojos y, combinadas con invalidación de aprobaciones ante nuevos pushes, impiden que una sola persona o cuenta comprometida introduzca cambios sin auditoría."
+  },
+  "SAST en CI": {
+    "que": "Análisis estático de seguridad de aplicaciones (Static Application Security Testing) integrado en el pipeline CI que inspecciona código fuente, bytecode o binarios en reposo sin ejecutarlos para localizar patrones de vulnerabilidad.",
+    "para": "Detecta de forma temprana fallos de implementación como inyecciones SQL/Command, XSS, deserialización insegura, uso de algoritmos criptográficos débiles o SSRF en cada Pull Request, cuando corregirlos es rápido y económico.",
+    "como": "Motores como Semgrep, CodeQL o SonarQube parsean el código fuente generando un Árbol de Sintaxis Abstracta (AST) y, en herramientas avanzadas, grafos de flujo de datos (Dataflow / Taint Analysis). El analizador rastrea si una entrada controlada por el usuario (`source`, p. ej. `req.query.id`) fluye hasta una función peligrosa (`sink`, p. ej. `db.query()` o `exec()`) sin pasar por una función de saneamiento/parametrización (`sanitizer`). Los hallazgos se emiten en formato SARIF para comentarse directamente en las líneas del PR o fallar el check si superan el umbral definido.",
+    "practicas": [
+      "Ejecutar reglas rápidas y de alta señal (p. ej. Semgrep en modo diff-aware sobre archivos cambiados) de forma bloqueante en PRs, dejando análisis profundos de flujo completo (CodeQL) en paralelo o en `main`.",
+      "Ajustar y personalizar las reglas (`taint rules` para sanitizers propios de la empresa) para reducir falsos positivos que destruyen la confianza de los desarrolladores.",
+      "Error típico: activar SAST en modo bloqueante con todas las reglas experimentales desde el día uno en un monolito heredado, paralizando los despliegues.",
+      "SAST vs SCA: SAST analiza vulnerabilidades escritas en tu propio código fuente; SCA busca CVEs conocidos en librerías externas que importas."
+    ],
+    "ejemplo": "semgrep scan --config p/owasp-top-ten --config p/secrets \\\n  --sarif --output semgrep.sarif \\\n  --error --severity ERROR",
+    "entrevista": "SAST en CI utiliza análisis de AST y taint tracking entre sources y sinks sobre el código fuente en reposo; la clave para que funcione es priorizar reglas de alta señal en PRs y ajustar los falsos positivos."
+  },
+  "SCA en CI": {
+    "que": "Análisis de Composición de Software (Software Composition Analysis) automatizado en el pipeline de CI que inventaria dependencias directas y transitivas de terceros, detecta vulnerabilidades conocidas (CVEs), verifica licencias y genera SBOMs.",
+    "para": "Permite controlar el riesgo de la enorme proporción de código externo presente en aplicaciones modernas, bloqueando librerías con CVEs críticos explotables o licencias incompatibles (p. ej. GPL en software propietario) antes de liberar el artefacto.",
+    "como": "La herramienta de SCA (Trivy, Grype, Snyk, OWASP Dependency-Check, npm/pip audit) inspecciona los archivos de bloqueo y manifiestos (`package-lock.json`, `pom.xml`, `go.sum`, `poetry.lock`) o los metadatos compilados para construir el árbol completo de dependencias transitivas. Luego cruza los identificadores (`purl` o CPE) contra bases de datos de advisories (OSV, NVD, GHSA). Algunas herramientas avanzadas realizan análisis de alcanzabilidad (reachability) mediante grafos de llamadas para distinguir si la función vulnerable de la librería realmente es invocada por la aplicación, generando además un SBOM en formato CycloneDX o SPDX.",
+    "practicas": [
+      "Analizar siempre a partir de lockfiles completos (no solo `package.json` o `requirements.txt` sin versiones resueltas) para capturar dependencias transitivas.",
+      "Priorizar la remediación usando criterios de riesgo real: disponibilidad de parche, score EPSS / catálogo CISA KEV y alcanzabilidad en código.",
+      "Exportar un SBOM (CycloneDX o SPDX) por cada build de release y adjuntarlo como artefacto/atestación para poder responder rápido ante futuros zero-days (estilo Log4Shell).",
+      "Error típico: olvidar auditar dependencias de desarrollo/build que se ejecutan en el runner de CI y también pueden comprometer el pipeline."
+    ],
+    "ejemplo": "trivy fs --scanners vuln,license \\\n  --severity CRITICAL,HIGH --ignore-unfixed \\\n  --format cyclonedx --output sbom.cdx.json .",
+    "entrevista": "SCA en CI resuelve el árbol completo de dependencias transitivas desde los lockfiles para frenar CVEs críticos y conflictos de licencia, generando un SBOM que permite reaccionar en minutos ante nuevos zero-days."
+  }
+}

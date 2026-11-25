@@ -8,8 +8,8 @@ tags: [secdev, guia-completa, plan]
 > Objetivo: que cada nodo de `SECDEV/` deje de ser un stub y se convierta en una guía de estudio
 > utilizable: instalación, comandos, configuración segura, errores comunes y ejercicios.
 
-El mapa SECDEV tiene **1073 nodos**. Escribir 1073 guías profundas de una vez
-no es posible hacerlo bien. Se trabaja por **oleadas**, priorizando los 27 nodos ⭐ del núcleo.
+El mapa SECDEV tiene **1173 nodos**. Escribir 1173 guías profundas de una vez
+no es posible hacerlo bien. Se trabaja por **oleadas**, priorizando los 32 nodos ⭐ del núcleo.
 
 > **Estado actual:** fase de mapa **cerrada**; las guías detalladas están **en pausa** y se harán una por una.
 
@@ -58,7 +58,7 @@ python3 /home/payan/Descargas/stack_enginnering/generar_secdev.py
 
 | Métrica | Valor |
 |---|---|
-| Nodos del mapa | **1073** |
-| Categorías | **28** |
-| Núcleo ⭐ | **27** |
+| Nodos del mapa | **1173** |
+| Categorías | **29** |
+| Núcleo ⭐ | **32** |
 | Guías completas | **0** (pendientes) |

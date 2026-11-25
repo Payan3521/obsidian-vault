@@ -1,0 +1,392 @@
+{
+  "A-B testing de modelos": {
+    "que": "El A/B testing de modelos es un experimento controlado en producción donde el tráfico real de usuarios se divide aleatoriamente entre una variante de control (modelo o prompt actual, A) y una o más variantes candidatas (B). Permite medir el impacto causal de un cambio de modelo, hiperparámetros o arquitectura sobre métricas de negocio y calidad antes de un despliegue completo.",
+    "para": "Resuelve la brecha entre las métricas de laboratorio (evaluación offline) y el comportamiento real de los usuarios bajo cargas, latencias y entradas imprevistas. Se utiliza antes de promover un modelo candidato al 100 % del tráfico cuando existen riesgos de regresión en conversión, retención, satisfacción o coste por inferencia.",
+    "como": "Un router o API gateway (como Envoy, Istio o un proxy de inferencia) asigna de forma determinista cada usuario o sesión a la variante A o B mediante hashing consistente del ID de usuario para evitar inconsistencias en la experiencia. Ambas variantes procesan peticiones reales en paralelo mientras se registran trazas con el identificador de variante, latencia, tokens consumidos y eventos de feedback implícito o explícito (clics, aceptación de respuesta, pulgar arriba/abajo). Al alcanzar el tamaño muestral calculado por análisis de potencia estadística, se aplican pruebas de hipótesis (t-test, Mann-Whitney U o prueba chi-cuadrado) corrigiendo por comparaciones múltiples si hay más de dos variantes.",
+    "practicas": [
+      "Fija el tamaño muestral y la duración mínima antes de iniciar el experimento para evitar el problema de peeking (detener la prueba prematuramente al ver significancia temporal).",
+      "Asigna por usuario o sesión (sticky routing) y no por petición individual; de lo contrario, un usuario vería estilos de respuesta cambiantes dentro de una misma conversación.",
+      "A/B testing vs Shadow deployment: en shadow deployment el modelo B recibe una copia del tráfico pero su respuesta no llega al usuario (ideal para validar latencia y estabilidad); en A/B testing el usuario sí interactúa con B, permitiendo medir métricas de negocio.",
+      "Incluye métricas guardrail (latencia P95, tasa de error HTTP, coste por sesión y tasa de toxicidad) junto a la métrica objetivo para abortar automáticamente si se degradan."
+    ],
+    "ejemplo": "import hashlib\n\ndef asignar_variante(user_id: str, porcentaje_b: int = 10) -> str:\n    bucket = int(hashlib.sha256(user_id.encode()).hexdigest(), 16) % 100\n    return \"modelo_B\" if bucket < porcentaje_b else \"modelo_A\"\n\n# En producción, el router registra: trace_id, variante, latencia_ms, aceptacion_usuario",
+    "entrevista": "El A/B testing de modelos demuestra causalidad en producción mediante asignación aleatoria persistente por usuario y pruebas de significancia con guardrails operativos."
+  },
+  "Accuracy": {
+    "que": "La accuracy (exactitud) es la proporción de predicciones correctas respecto al total de muestras evaluadas en una tarea de clasificación o selección discreta. Matemáticamente equivale a (TP + TN) / (TP + TN + FP + FN), midiendo el acierto global sin distinguir entre tipos de error.",
+    "para": "Sirve como línea base rápida para comparar modelos en conjuntos de datos balanceados donde todos los errores tienen el mismo coste. Se emplea habitualmente en benchmarks de opción múltiple (como MMLU), clasificación binaria equilibrada o verificación de coincidencia exacta (Exact Match) en respuestas cerradas.",
+    "como": "Durante la evaluación, el modelo genera una etiqueta predicha y_hat para cada entrada x del dataset de prueba con etiqueta real y. Un comparador acumula los verdaderos positivos (TP), verdaderos negativos (TN), falsos positivos (FP) y falsos negativos (FN) en una matriz de confusión. Finalmente divide la suma de la diagonal principal (aciertos totales) entre el número total de instancias N.",
+    "practicas": [
+      "Nunca uses accuracy como métrica única en datasets desbalanceados: si el 99 % de las transacciones son legítimas, un clasificador trivial que siempre predice 'legítimo' obtiene 99 % de accuracy y 0 % de detección de fraude.",
+      "Accuracy vs F1 score: accuracy pondera por igual todas las clases según su frecuencia; F1 score se enfoca en el equilibrio entre precisión y exhaustividad de la clase positiva.",
+      "Complementa siempre la accuracy con la matriz de confusión por clase o usa Balanced Accuracy (promedio del recall de cada clase) cuando las clases tienen soporte desigual.",
+      "En LLM con salidas de texto libre, especifica si mides Exact Match tras normalización (minúsculas, sin puntuación) o accuracy mediante un mapeo estricto de etiquetas."
+    ],
+    "ejemplo": "from sklearn.metrics import accuracy_score, balanced_accuracy_score\n\ny_true = [0, 0, 0, 0, 1]  # 80% clase 0, 20% clase 1\ny_pred = [0, 0, 0, 0, 0]  # Modelo trivial\n\nprint(\"Accuracy:\", accuracy_score(y_true, y_pred))           # 0.80 (engañoso)\nprint(\"Balanced Acc:\", balanced_accuracy_score(y_true, y_pred))  # 0.50",
+    "entrevista": "La accuracy mide el porcentaje global de aciertos, pero resulta engañosa en datos desbalanceados o cuando falsos positivos y falsos negativos tienen costes asimétricos."
+  },
+  "Alertas de calidad de IA": {
+    "que": "Las alertas de calidad de IA son notificaciones automatizadas disparadas por sistemas de observabilidad cuando métricas funcionales, semánticas o de seguridad de un modelo superan un umbral crítico en producción o en pipelines continuos. Actúan como sistema de detección temprana ante degradaciones silenciosas que no generan errores HTTP 500.",
+    "para": "Sirven para reducir el tiempo medio de detección (MTTD) cuando un cambio en los datos de entrada, una actualización de un proveedor de LLM externo o un problema en el índice vectorial degrada las respuestas. Se usan en operaciones de MLOps y LLMOps para activar rollbacks, conmutar a modelos de respaldo o escalar al equipo de guardia.",
+    "como": "Un colector de telemetría (OpenTelemetry, Langfuse, Arize o Prometheus) ingiere trazas de inferencia en tiempo real y ejecuta evaluadores ligeros o cálculos estadísticos sobre ventanas temporales deslizantes (ej. cada 15 minutos o cada 1000 peticiones). El motor de alertas evalúa reglas estáticas (tasa de alucinación > 5 %), tasas de cambio respecto a una línea base histórica o detectores de anomalías (Z-score, EWMA). Al cumplirse la condición durante el periodo de histéresis configurado, envía un webhook a PagerDuty, Slack o dispara un circuit breaker en el gateway.",
+    "practicas": [
+      "Configura alertas basadas en ventanas temporales y volumen mínimo de muestras para evitar falsos positivos por ráfagas pequeñas (fatiga de alertas).",
+      "Separa alertas de severidad crítica (fuga de PII, toxicidad, caída masiva de groundedness) con notificación inmediata, de advertencias de deriva gradual enviadas a revisión diaria.",
+      "Adjunta siempre un enlace a las trazas de ejemplo afectadas y al hash de versión del prompt, modelo e índice RAG para acelerar el diagnóstico.",
+      "Evita alertar únicamente por latencia o código HTTP: un LLM puede responder en 400 ms con HTTP 200 devolviendo una alucinación completa."
+    ],
+    "ejemplo": "alert: HighHallucinationRate\nexpr: |\n  sum(rate(llm_eval_faithfulness_below_threshold_total[15m]))\n  / sum(rate(llm_requests_total[15m])) > 0.05\nfor: 10m\nlabels:\n  severity: critical\nannotations:\n  summary: \"Tasa de infidelidad RAG supera el 5% en los últimos 10 min\"",
+    "entrevista": "Las alertas de calidad de IA monitorizan fallos silenciosos como alucinaciones o pérdida de groundedness en ventanas deslizantes para reaccionar antes de que afecten al negocio."
+  },
+  "Aseguramiento de calidad de IA": {
+    "que": "El aseguramiento de calidad de IA (AI QA) es la disciplina de ingeniería que combina pruebas deterministas, evaluaciones estadísticas, validación de seguridad y monitorización continua para garantizar que un sistema probabilístico cumpla sus requisitos de fiabilidad. Adapta el QA tradicional de software a salidas no deterministas y dependientes de contexto.",
+    "para": "Resuelve la imposibilidad de validar sistemas de IA únicamente con aserciones exactas tipo assertEqual, ya que múltiples respuestas válidas pueden expresarse de formas distintas. Se aplica durante todo el ciclo de vida: curación de datasets, validación de prompts/modelos antes del merge, pruebas de red teaming y vigilancia post-despliegue.",
+    "como": "AI QA estructura capas complementarias de verificación: primero pruebas unitarias de esquema y formato (JSON válido, cumplimiento de guardrails, ausencia de PII), seguidas de suites de evaluación offline sobre conjuntos dorados (golden datasets) con métricas semánticas y rúbricas automatizadas. En integración continua aplica puertas de calidad que bloquean regresiones respecto al baseline y pruebas adversarias contra prompt injection. Finalmente, cierra el bucle convirtiendo incidentes reales de producción en nuevos casos de regresión dentro del dataset de evaluación.",
+    "practicas": [
+      "Trata prompts, configuraciones de chunking, pesos LoRA y rúbricas de evaluación como artefactos versionados bajo las mismas reglas de revisión que el código fuente.",
+      "Separa las pruebas deterministas rápidas (latencia, formato JSON, filtros regex) de las evaluaciones costosas basadas en LLM-as-a-judge.",
+      "Alimenta continuamente el golden set con casos fallidos en producción (data flywheel) para evitar que los mismos fallos reaparezcan.",
+      "AI QA vs QA tradicional: el QA clásico verifica comportamiento determinista sobre especificaciones fijas; el AI QA mide distribuciones de probabilidad y tolerancias estadísticas sobre casos representativos."
+    ],
+    "ejemplo": "# Pirámide de AI QA en pipeline\n1. Determinista (ms): jsonschema.validate(output, schema)\n2. Semántica (s):     cosine_sim(emb_pred, emb_ref) >= 0.82\n3. Juez LLM (min):    judge.score(rubrica=\"exactitud_y_tono\") >= 4/5\n4. Red Teaming:       tasa_exito_jailbreak == 0%",
+    "entrevista": "El aseguramiento de calidad de IA reemplaza las aserciones binarias clásicas por un sistema multicapa de guardrails deterministas, evals estadísticos sobre golden sets y retroalimentación desde producción."
+  },
+  "BLEU": {
+    "que": "BLEU (Bilingual Evaluation Understudy) es una métrica automática de evaluación de generación de texto basada en la precisión de coincidencia de n-gramas (palabras consecutivas de longitud 1 a 4) entre una salida candidata y una o varias referencias humanas. Produce una puntuación entre 0 y 1 (o 0 a 100) ponderada por una penalización por brevedad.",
+    "para": "Sirve para evaluar rápidamente sistemas de traducción automática y tareas de generación altamente acotadas léxicamente donde el orden y la selección exacta de palabras importan. Hoy se usa principalmente en evaluación rápida de regresión en NMT (Neural Machine Translation) o como señal auxiliar de bajo coste computacional.",
+    "como": "El algoritmo tokeniza el texto candidato y las referencias, calcula la precisión modificada (clipped precision) para n-gramas de tamaño 1 a N (generalmente N=4) limitando cada coincidencia al máximo número de veces que aparece en alguna referencia para evitar trampas por repetición. Luego calcula la media geométrica de esas precisiones (usando suavizado en n-gramas sin coincidencias en frases cortas) y la multiplica por la Brevity Penalty (BP = exp(1 - r/c) si c <= r), que castiga traducciones demasiado cortas.",
+    "practicas": [
+      "Calcula siempre BLEU a nivel de corpus (corpus BLEU) y no como promedio simple de frases individuales, ya que los 4-gramas suelen ser cero en oraciones cortas.",
+      "Usa implementaciones estandarizadas como SacreBLEU que fijan la tokenización; comparar puntuaciones BLEU con distintos tokenizadores invalida la comparativa.",
+      "BLEU vs ROUGE: BLEU mide precisión (qué parte de lo generado está en la referencia, ideal en traducción); ROUGE mide principalmente recall (qué parte de la referencia fue cubierta, ideal en resumen).",
+      "No uses BLEU para evaluar creatividad, diálogo abierto o razonamiento en LLMs: dos respuestas semánticamente idénticas con sinónimos obtendrán BLEU cercano a cero."
+    ],
+    "ejemplo": "import sacrebleu\n\nrefs = [[\"El modelo procesa los datos en tiempo real.\"]]\nhyp = [\"El sistema procesa los datos en tiempo real.\"]\nscore = sacrebleu.corpus_bleu(hyp, refs)\nprint(f\"SacreBLEU: {score.score:.2f}\")",
+    "entrevista": "BLEU mide la precisión léxica de n-gramas con penalización por brevedad; es útil como baseline barato en traducción con SacreBLEU, pero ciego a la semántica y paráfrasis."
+  },
+  "Concept drift": {
+    "que": "El concept drift (deriva conceptual) ocurre cuando cambia la relación estadística subyacente entre las variables de entrada X y la variable objetivo Y, es decir, cambia la distribución condicional P(Y|X) aunque la distribución de las entradas P(X) permanezca idéntica. Significa que las reglas del mundo que el modelo aprendió han dejado de ser válidas.",
+    "para": "Sirve para diagnosticar por qué un modelo pierde precisión en producción aun cuando los perfiles demográficos o formatos de entrada no hayan variado. Es crítico en detección de fraude, scoring crediticio, sistemas de recomendación, precios dinámicos y clasificación de soporte ante cambios regulatorios o de comportamiento humano.",
+    "como": "En un escenario con etiquetas reales retrasadas o inmediatas, el detector compara el flujo de errores del modelo (tasa de error en ventana reciente frente a ventana histórica) mediante algoritmos como ADWIN (Adaptive Windowing), DDM (Drift Detection Method) o Page-Hinkley. Cuando el error o la divergencia en P(Y|X) supera un umbral estadístico significativo, se señala el cambio de concepto. En respuesta, el pipeline dispara un reentrenamiento ponderando datos recientes o descartando muestras obsoletas anteriores al punto de cambio.",
+    "practicas": [
+      "Distingue Concept drift vs Data drift: si cambia lo que entra (P(X)) es data drift; si para la misma entrada X la respuesta correcta Y cambió (P(Y|X)) es concept drift.",
+      "Diseña mecanismos de recolección de ground truth retrasado (etiquetas humanas o eventos de negocio confirmados a 7/30 días), porque sin Y real no puedes confirmar concept drift directamente.",
+      "Aplica ventanas deslizantes o decaimiento exponencial de pesos al reentrenar para que patrones antiguos (ej. hábitos previos a una pandemia o nueva ley) no contaminen el nuevo modelo.",
+      "Clasifica el tipo de deriva (abrupta, gradual, incremental o recurrente/estacional) para elegir entre conmutar modelos estacionales o reentrenar en continuo."
+    ],
+    "ejemplo": "# Ejemplo conceptual de Concept Drift:\n# Antes de 2026: X = {gasto_online: 500€, hora: 03:00} -> Y = Fraude (90%)\n# Tras expansión global: misma X -> Y = Compra legítima desde otro huso horario (85%)\n# P(X) estable, pero P(Y|X) se invirtió -> requiere reentrenamiento con etiquetas nuevas.",
+    "entrevista": "El concept drift es el cambio en P(Y|X) donde las mismas entradas pasan a significar salidas distintas, exigiendo capturar etiquetas reales y reentrenar con datos recientes."
+  },
+  "Consenso de jueces": {
+    "que": "El consenso de jueces es una técnica de evaluación que combina las calificaciones o preferencias de múltiples evaluadores independientes (humanos o modelos LLM-as-a-judge de distintas familias) para obtener una puntuación agregada fiable y medir su grado de acuerdo. Reduce el sesgo individual de un solo evaluador y cuantifica la ambigüedad de la rúbrica.",
+    "para": "Sirve para validar datasets dorados, calibrar jueces automáticos frente a anotadores humanos y resolver evaluaciones subjetivas (estilo, utilidad, seguridad) donde un único juez presenta alta varianza o sesgos sistemáticos. Se usa antes de confiar en un pipeline automático de evaluación en CI/CD.",
+    "como": "Cada muestra del conjunto de evaluación se envía de forma ciega a K evaluadores (por ejemplo, 3 anotadores humanos o un panel de LLMs heterogéneos como GPT, Claude y Gemini con orden aleatorizado de opciones para mitigar sesgo de posición). Se agrega la decisión mediante votación mayoritaria, promedio ponderado o modelos de Dawid-Skene que estiman la fiabilidad de cada juez. Paralelamente, se calcula el acuerdo inter-anotador (IAA) con Cohen's kappa (2 jueces), Fleiss' kappa (K jueces categóricos) o Krippendorff's alpha (escalas ordinales o datos faltantes).",
+    "practicas": [
+      "Exige un acuerdo mínimo (por ejemplo, Cohen's kappa >= 0.7 o Krippendorff's alpha >= 0.67) entre humanos antes de automatizar esa rúbrica con un LLM: si los humanos no coinciden, la rúbrica está mal definida.",
+      "Cuando uses paneles de LLMs (PoLL, Panel of LLM Evaluators), mezcla familias de modelos distintas para neutralizar el sesgo de autopreferencia (self-enhancement bias).",
+      "Aleatoriza siempre la posición A/B en comparaciones por pares (position swapping) y descarta o marca como empate si el veredicto cambia al invertir el orden.",
+      "Usa calibración iterativa: revisa los desacuerdos fuertes en sesiones de adjudicación para refinar ejemplos frontera en la guía de anotación."
+    ],
+    "ejemplo": "from sklearn.metrics import cohen_kappa_score\n\njuez_humano_1 = [1, 0, 1, 1, 0, 1, 0, 1]\njuez_humano_2 = [1, 0, 1, 0, 0, 1, 0, 1]\nkappa = cohen_kappa_score(juez_humano_1, juez_humano_2)\nprint(f\"Acuerdo inter-anotador (Cohen's kappa): {kappa:.2f}\")  # 0.75",
+    "entrevista": "El consenso de jueces combina evaluadores independientes y mide su acuerdo estadístico (kappa o alpha) para eliminar sesgos individuales y validar que la rúbrica es reproducible."
+  },
+  "Correctitud factual": {
+    "que": "La correctitud factual (factual correctness) mide si las afirmaciones generadas por un sistema de IA coinciden con hechos objetivos verificables en el mundo real o en una fuente de verdad autorizada (ground truth). A diferencia de la coherencia gramatical, evalúa la veracidad externa del contenido emitido.",
+    "para": "Sirve para garantizar que asistentes informativos, sistemas médicos, legales, financieros o motores de respuesta no inventen datos, fechas, cifras o citas erróneas. Es fundamental en tareas intensivas en conocimiento tanto en modelos sin contexto externo (paramétrico) como en sistemas aumentados con búsqueda.",
+    "como": "Los pipelines modernos (como FActScore o evaluadores basados en NLI/LLM) descomponen primero la respuesta generada en afirmaciones atómicas independientes (atomic claims). Cada afirmación se contrasta contra una respuesta de referencia verificada, una base de conocimiento estructurada o documentos recuperados mediante verificación de implicación lógica (entailment) o búsqueda web. La puntuación final suele expresarse como la fracción de afirmaciones atómicas verificadas como verdaderas sobre el total de afirmaciones emitidas.",
+    "practicas": [
+      "Descompón respuestas largas en hechos atómicos antes de puntuar: una respuesta con cuatro datos ciertos y una fecha inventada no debe aprobarse globalmente sin penalización.",
+      "Correctitud factual vs Faithfulness: faithfulness verifica fidelidad al contexto recuperado (aunque el contexto esté desactualizado); correctitud factual verifica verdad respecto al mundo real o ground truth.",
+      "No evalúes correctitud factual con similitud coseno de embeddings: 'La capital es París' y 'La capital no es París' tienen altísima similitud vectorial pero veracidad opuesta.",
+      "Exige que el modelo responda 'No dispongo de datos suficientes' cuando la incertidumbre sea alta en lugar de forzar una respuesta factualmente arriesgada."
+    ],
+    "ejemplo": "# Descomposición en atomic claims (estilo FActScore)\nrespuesta = \"Python 3.12 fue creado por Guido van Rossum en 1991.\"\nclaims = [\n  (\"Python 3.12 fue creado por Guido van Rossum\", False),  # Steering council\n  (\"Python fue creado en 1991\", True)\n]\nfactual_precision = sum(v for _, v in claims) / len(claims)  # 0.50",
+    "entrevista": "La correctitud factual verifica la veracidad externa frente al ground truth descomponiendo la salida en afirmaciones atómicas, algo que las métricas de similitud textual no capturan."
+  },
+  "Dashboard de evaluación": {
+    "que": "Un dashboard de evaluación es una interfaz visual centralizada que consolida métricas históricas y en tiempo real de calidad, coste, latencia, seguridad y deriva de modelos y aplicaciones de IA. Permite comparar versiones (prompts, modelos, pipelines RAG) y correlacionar experimentos offline con el comportamiento online.",
+    "para": "Resuelve la dispersión de logs, hojas de cálculo y resultados de pruebas aisladas en equipos multidisciplinares de ML, producto y seguridad. Se usa para tomar decisiones de promoción a producción, investigar regresiones por segmento de usuarios y auditar el cumplimiento de SLAs.",
+    "como": "Herramientas como Langfuse, Arize Phoenix, Weights & Biases, MLflow o Grafana consultan un almacén analítico (ClickHouse, PostgreSQL, BigQuery) donde se indexan las trazas, evaluaciones por lote y feedback humano. El frontend agrega series temporales por versión de modelo, desglosa distribuciones de puntuaciones (ej. faithfulness por categoría de consulta) y ofrece vistas de drill-down desde un gráfico agregado hasta el prompt exacto, contexto recuperado y salida fallida.",
+    "practicas": [
+      "Incluye siempre vistas por cohorte o segmento (idioma, tipo de intención, longitud de contexto), ya que los promedios globales ocultan fallos graves en nichos críticos.",
+      "Muestra juntas las cuatro dimensiones de trade-off: calidad (eval score), velocidad (latencia P50/P95), coste (USD por 1k peticiones) y seguridad (tasa de violación de guardrails).",
+      "Habilita comparación lado a lado (diff visual) entre la versión en producción y el candidato sobre exactamente el mismo slice de evaluación.",
+      "Vincula cada punto anómalo del gráfico con las trazas brutas subyacentes; un número rojo sin capacidad de inspección no es accionable."
+    ],
+    "ejemplo": "# Vistas esenciales de un Dashboard de Evaluación\n- Tendencia diaria: Faithfulness, Correctitud, Tasa de Alucinación\n- Matriz de regresión: Prompt v1.4 vs v1.5 (ganancias/pérdidas por categoría)\n- Trade-off Pareto: Calidad vs Coste/Token y Latencia P95\n- Drill-down: Filtro -> score < 0.5 -> Inspección de trace_id y spans RAG",
+    "entrevista": "Un dashboard de evaluación efectivo cruza calidad, coste, latencia y seguridad por versión y segmento, permitiendo hacer drill-down directo desde una métrica degradada hasta la traza fallida."
+  },
+  "Data drift": {
+    "que": "El data drift (deriva de datos o covariate shift) es el cambio estadístico en la distribución de las variables de entrada P(X) en producción respecto a la distribución de entrenamiento o referencia, mientras que la relación P(Y|X) permanece estable. En LLMs incluye cambios en longitud de prompts, idiomas, temas consultados o estructura de documentos.",
+    "para": "Sirve para anticipar la caída de rendimiento de un modelo antes incluso de disponer de etiquetas reales de salida. Se utiliza en monitorización preventiva para detectar nuevos segmentos de usuarios, cambios en sensores o APIs upstream corruptas que alimentan entradas fuera de distribución (OOD).",
+    "como": "El sistema de monitorización extrae periódicamente una ventana de entradas de producción y la compara contra el dataset de referencia (training baseline). Para variables numéricas aplica pruebas como Kolmogorov-Smirnov (KS), Population Stability Index (PSI) o distancia de Wasserstein; para categóricas usa Chi-cuadrado o divergencia Jensen-Shannon. En datos no estructurados (texto o imágenes), proyecta las entradas a embeddings y mide la distancia entre centroides (MMD, Maximum Mean Discrepancy) o deriva en clústeres temáticos.",
+    "practicas": [
+      "Mide primero la calidad de esquema e integridad (nulos, rangos imposibles, codificación rota) antes de correr pruebas estadísticas complejas; muchos 'drifts' son bugs de ETL.",
+      "Data drift vs Concept drift: el data drift afecta a P(X) y puede detectarse sin etiquetas; el concept drift afecta a P(Y|X) y requiere observar errores o etiquetas reales.",
+      "Ajusta las pruebas estadísticas al tamaño muestral: con millones de filas, el test KS detectará diferencias minúsculas sin impacto real; combina p-valor con tamaño del efecto como PSI (>0.2 alerta).",
+      "En aplicaciones generativas, monitoriza la deriva semántica de los embeddings de preguntas de usuario para descubrir nuevos casos de uso no cubiertos por tu base de conocimiento."
+    ],
+    "ejemplo": "from scipy.stats import ks_2samp\n\n# Compara longitud de tokens de entrada: baseline vs producción\nstat, p_value = ks_2samp(train_token_lens, prod_token_lens)\nif p_value < 0.01 and stat > 0.1:\n    print(f\"Alerta de Data Drift detectado (KS={stat:.3f})\")",
+    "entrevista": "El data drift mide cambios en la distribución de entradas P(X) usando pruebas como PSI, KS o distancia en embeddings, permitiendo detectar entradas fuera de distribución sin esperar etiquetas."
+  },
+  "Deriva de datos": {
+    "que": "La deriva de datos es la denominación en español de data drift (covariate shift): la alteración progresiva o repentina en las propiedades estadísticas de los datos de entrada que recibe un modelo en producción frente a los datos con los que fue entrenado o validado.",
+    "para": "Sirve para vigilar la validez del dominio operativo de un modelo cuando cambian las fuentes de ingesta, el comportamiento del usuario, la estacionalidad o las transformaciones previas del pipeline. Permite disparar recalibraciones, ampliación del corpus o alertas de ingeniería de datos.",
+    "como": "Un proceso programado o en streaming perfila cada característica de entrada (media, cuantiles, cardinalidad, tasa de nulos o distribución de embeddings) y calcula métricas de distancia contra un perfil base almacenado en un feature store o registro de artefactos. Si el Population Stability Index (PSI) supera umbrales convencionales (0.1 leve, 0.25 significativo) o la divergencia KL/JS crece de forma sostenida, el monitor emite un evento de deriva hacia el sistema de observabilidad.",
+    "practicas": [
+      "Establece un periodo base representativo (ej. un ciclo completo semanal o mensual) para no confundir estacionalidad normal (Black Friday, fines de semana) con deriva anómala.",
+      "Prioriza la vigilancia sobre las features con mayor importancia (SHAP o feature importance del modelo), evitando ruido por columnas irrelevantes.",
+      "Documenta los contratos de datos (data contracts) con equipos upstream para distinguir cambios intencionados de esquema de degradaciones orgánicas.",
+      "No dispares reentrenamientos automáticos ciegamente solo por deriva de datos; valida si la deriva realmente impacta en la confianza o precisión del modelo."
+    ],
+    "ejemplo": "# Umbrales estándar de Population Stability Index (PSI)\n# PSI < 0.10 : Sin deriva relevante\n# 0.10 <= PSI < 0.25 : Deriva moderada (investigar)\n# PSI >= 0.25 : Deriva severa (revisar pipeline / reentrenar)\npsi_score = sum((p - q) * math.log(p / q) for p, q in zip(prod_bins, base_bins))",
+    "entrevista": "La deriva de datos vigila desviaciones en las entradas respecto al baseline mediante PSI, divergencias o contratos de datos, priorizando las variables de mayor impacto predictivo."
+  },
+  "Deriva del modelo": {
+    "que": "La deriva del modelo es la denominación en español de model drift: la degradación sostenida de la capacidad predictiva o de la calidad generativa de un modelo ya desplegado a medida que transcurre el tiempo en un entorno cambiante.",
+    "para": "Sirve para controlar el envejecimiento inevitable de modelos en producción y justificar ciclos de reentrenamiento, ajuste de prompts o sustitución de arquitectura. Es el indicador de nivel superior que traduce cambios estadísticos en pérdida real de valor técnico o de negocio.",
+    "como": "El sistema recolecta predicciones, puntuaciones de confianza/entropía y, cuando están disponibles, etiquetas reales o evaluaciones de calidad (humanas o de jueces automáticos). Compara métricas clave (F1, AUC-ROC, RMSE, tasa de alucinación o satisfacción) en ventanas móviles contra el rendimiento registrado en el lanzamiento. Cuando la caída supera el presupuesto de degradación definido, el orquestador (Kubeflow, Airflow o Dagster) lanza un pipeline de reentrenamiento o evaluación de actualización.",
+    "practicas": [
+      "Monitoriza tanto la degradación del rendimiento (si tienes ground truth) como la deriva de las predicciones P(y_hat) (cambio brusco en la tasa de positivos o negativas) como proxy inmediato.",
+      "En sistemas basados en APIs de LLM propietarias, considera también la deriva del proveedor: cambios silenciosos en el checkpoint remoto bajo el mismo alias de modelo.",
+      "Usa versionado inmutable (fechas exactas de modelo o hashes de pesos) para aislar si la deriva proviene del entorno o de una actualización del binario/endpoint.",
+      "Define de antemano el criterio de reentrenamiento y la estrategia de rollback si el modelo reentrenado no supera al campeón actual."
+    ],
+    "ejemplo": "# Regla de detección de deriva de rendimiento en ventana móvil\nbaseline_f1 = 0.91\nrolling_7d_f1 = compute_f1(y_true_last_7d, y_pred_last_7d)\nif baseline_f1 - rolling_7d_f1 > 0.04:\n    trigger_retraining_pipeline(reason=\"model_drift_f1_drop\")",
+    "entrevista": "La deriva del modelo mide la pérdida de rendimiento predictivo o generativo a lo largo del tiempo por cambios del entorno o del proveedor, guiando cuándo reentrenar o actualizar."
+  },
+  "Detección de deriva": {
+    "que": "La detección de deriva es el conjunto de técnicas estadísticas, algorítmicas y de aprendizaje no supervisado orientadas a identificar automáticamente cuándo las distribuciones de entrada, salida, embeddings o errores de un modelo cambian de manera significativa respecto a su referencia.",
+    "para": "Resuelve el problema de detectar degradaciones en tiempo útil sin inspección manual continua de miles de peticiones diarias. Se utiliza como módulo central dentro de plataformas de observabilidad ML/LLM (Evidently, NannyML, WhyLogs, Fiddler) para decidir alertas y reentrenamientos.",
+    "como": "El detector opera comparando una ventana de referencia W_ref contra una ventana actual W_curr. En modo supervisado (con etiquetas) algoritmos como ADWIN, DDM o EDDM detectan cambios en la tasa de error online. En modo no supervisado (sin etiquetas) se ejecutan pruebas univariantes por feature (KS, Wasserstein, Chi-cuadrado), pruebas multivariantes basadas en reconstrucción (error de un autoencoder o PCA) o clasificadores de dominio (adversarial validation: entrenar un clasificador para distinguir W_ref de W_curr; si el AUC > 0.65 existe deriva clara).",
+    "practicas": [
+      "Cuando tengas muchas variables (alta dimensionalidad), aplica corrección de Bonferroni o FDR (False Discovery Rate) para evitar falsas alarmas por múltiples pruebas simultáneas.",
+      "Usa Adversarial Validation o reducción dimensional con MMD sobre embeddings para capturar derivas multivariantes que las pruebas univariantes columna por columna pasan por alto.",
+      "Combina detección no supervisada (rápida pero con falsos positivos) con estimación de rendimiento (como CBPE de NannyML) para estimar si la deriva realmente daña la métrica objetivo.",
+      "Calibra la ventana de comparación: ventanas demasiado cortas sufren ruido; ventanas demasiado largas tardan en detectar caídas bruscas."
+    ],
+    "ejemplo": "# Adversarial validation para detección multivariante de deriva\nX = concat([X_ref, X_prod])\ny_domain = [0]*len(X_ref) + [1]*len(X_prod)\nauc = cross_val_score(RandomForestClassifier(), X, y_domain, scoring=\"roc_auc\").mean()\n# Si auc > 0.70, el clasificador distingue fácilmente producción de referencia -> hay deriva",
+    "entrevista": "La detección de deriva combina tests estadísticos (KS, Wasserstein, ADWIN) y métodos multivariantes como MMD o adversarial validation con corrección por pruebas múltiples."
+  },
+  "Evals en CI-CD": {
+    "que": "Los evals en CI/CD consisten en ejecutar automáticamente suites de evaluación de IA dentro del pipeline de integración y despliegue continuo (GitHub Actions, GitLab CI) cada vez que cambia un prompt, código de orquestación, configuración RAG o modelo base. Funcionan como equivalente a las pruebas de integración y regresión en ingeniería de software clásica.",
+    "para": "Sirve para impedir que cambios aparentemente inofensivos (modificar una instrucción del system prompt, ajustar el top_k del retriever o cambiar de temperatura) introduzcan regresiones silenciosas antes de llegar a producción. Se usa en cada pull request y antes de liberar versiones a entornos de staging o producción.",
+    "como": "Al abrir un PR, el runner de CI descarga un dataset versionado (con DVC, Hugging Face Datasets o Git LFS) dividido en un smoke set rápido y un regression set completo. Ejecuta la aplicación contra entradas fijas (idealmente con temperatura=0 y semilla determinista o caché de respuestas para abaratar pruebas), calcula métricas deterministas y de jueces LLM, compara los resultados frente a los de la rama main y publica un informe comparativo en el PR aplicando la puerta de calidad.",
+    "practicas": [
+      "Divide los evals en dos niveles: una suite rápida (< 2 minutos, ~30-50 casos críticos) en cada commit/PR y una suite exhaustiva nocturna o previa al release para controlar costes y tiempos.",
+      "Versiona tanto el dataset de evaluación como la versión del juez LLM: si cambias el modelo juez a la vez que el prompt, no sabrás qué causó la variación de puntuación.",
+      "Incluye casos de borde y fallos históricos reales (regression tests) etiquetados por severidad, impidiendo que un promedio global alto oculte la rotura de un flujo crítico.",
+      "Ejecuta varias repeticiones (ej. pass@k o promedio de 3 corridas) en prompts sensibles para medir varianza estocástica en lugar de confiar en una sola ejecución."
+    ],
+    "ejemplo": "# .github/workflows/ai-evals.yml\non: [pull_request]\njobs:\n  run-evals:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: pytest tests/evals/ --eval-dataset data/golden_v3.jsonl\n      - run: python scripts/check_quality_gate.py --min-faithfulness 0.85",
+    "entrevista": "Los evals en CI/CD automatizan pruebas de regresión sobre datasets dorados versionados en cada PR, separando suites rápidas de smoke testing de suites completas nocturnas."
+  },
+  "Evaluación RAG": {
+    "que": "La evaluación RAG (Retrieval-Augmented Generation) es el proceso especializado de medir por separado y en conjunto las dos etapas de un sistema RAG: la recuperación de contexto (retrieval) y la generación de respuesta condicionada a ese contexto (generation). Permite aislar si un fallo proviene de la búsqueda documental o del razonamiento del LLM.",
+    "para": "Resuelve el problema clásico de diagnóstico en sistemas RAG donde una mala respuesta puede deberse a que el vector database no encontró el fragmento correcto o a que el LLM lo ignoró o tergiversó. Se utiliza al ajustar estrategias de chunking, modelos de embeddings, re-rankers o prompts de síntesis.",
+    "como": "Frameworks como Ragas, TruLens o DeepEval evalúan la tríada RAG sobre tuplas (pregunta, contextos_recuperados, respuesta, ground_truth). Para el retriever calculan Context Precision (los fragmentos relevantes están arriba), Context Recall (toda la información necesaria del ground truth fue recuperada), Recall@k, MRR y NDCG. Para el generador miden Faithfulness (fidelidad de la respuesta al contexto sin inventos) y Answer Relevance (si la respuesta contesta realmente a la pregunta sin rodeos).",
+    "practicas": [
+      "Evalúa retriever y generador de forma desacoplada: si Context Recall es bajo, cambiar a un LLM más grande no arreglará el sistema.",
+      "Prueba primero el retriever con consultas sintéticas y consultas reales con errores tipográficos o jerga interna para validar búsqueda híbrida (BM25 + vectorial + reranker).",
+      "Mide Context Precision para detectar contaminación del contexto (lost in the middle): traer 20 chunks irrelevantes suele empeorar la generación aunque el chunk correcto esté incluido.",
+      "Incluye casos negativos donde la respuesta NO exista en la base documental para verificar que el sistema sabe abstenerse."
+    ],
+    "ejemplo": "from ragas import evaluate\nfrom ragas.metrics import faithfulness, answer_relevancy, context_recall, context_precision\n\nresult = evaluate(\n    dataset=eval_dataset,\n    metrics=[context_precision, context_recall, faithfulness, answer_relevancy]\n)\nprint(result)",
+    "entrevista": "Evaluar un RAG exige aislar retrieval (Context Recall, Precision, MRR) de generación (Faithfulness, Answer Relevance) porque un fallo de búsqueda no se corrige cambiando de LLM."
+  },
+  "Evaluación comparativa": {
+    "que": "La evaluación comparativa (pairwise o side-by-side evaluation / benchmarking) consiste en enfrentar directamente dos o más modelos, prompts o configuraciones sobre las mismas entradas para determinar cuál produce mejores salidas relativas en lugar de asignar únicamente notas absolutas aisladas.",
+    "para": "Sirve para tomar decisiones de selección entre modelos candidatos (ej. modelo open-weight fine-tuned vs API propietaria) o variantes de prompt cuando las escalas absolutas del 1 al 5 sufren compresión o calibración inconsistente. Es la base de plataformas tipo Chatbot Arena (LMSYS) y flujos de alineamiento por preferencias.",
+    "como": "Dado un conjunto de prompts, se generan respuestas pareadas (A y B) de manera ciega. Un evaluador humano o un LLM juez recibe ambas salidas en orden aleatorizado (para anular el sesgo de orden) y emite un veredicto: A mejor, B mejor o empate. Cuando hay múltiples modelos compitiendo en torneos no exhaustivos, los resultados se agregan mediante sistemas de clasificación estadística como Elo o el modelo de Bradley-Terry con intervalos de confianza por bootstrap.",
+    "practicas": [
+      "Prefiere evaluación comparativa por pares frente a puntuación absoluta (1-5) para detectar mejoras sutiles de calidad o estilo donde los jueces suelen dar siempre '4/5'.",
+      "Aplica siempre permutación simétrica (evaluar A vs B y B vs A): solo cuenta una victoria si es consistente en ambos órdenes; si se contradice, regístralo como empate.",
+      "Controla el sesgo de longitud (verbosity bias): tanto humanos como jueces LLM tienden a preferir respuestas más largas aunque contengan relleno; normaliza o penaliza verbosidad innecesaria.",
+      "Usa modelos Bradley-Terry con bootstrapping en lugar de Elo secuencial puro cuando necesites rankings estables independientes del orden de los enfrentamientos."
+    ],
+    "ejemplo": "# Verificación consistente contra sesgo de posición\nv1 = judge(prompt, resp_a=out_A, resp_b=out_B)  # Ej: \"A\"\nv2 = judge(prompt, resp_a=out_B, resp_b=out_A)  # Debe decir \"B\" para confirmar out_A\nveredicto = \"A\" if (v1 == \"A\" and v2 == \"B\") else (\"B\" if (v1 == \"B\" and v2 == \"A\") else \"Empate\")",
+    "entrevista": "La evaluación comparativa reduce la ambigüedad de las escalas absolutas enfrentando salidas a ciegas con permutación de orden y agregación mediante Bradley-Terry o Elo."
+  },
+  "Evaluación continua": {
+    "que": "La evaluación continua es la práctica operativa de ejecutar evaluaciones de calidad de forma ininterrumpida a lo largo de todo el ciclo de vida del sistema: en desarrollo local, en CI/CD, en pre-producción y sobre muestreo constante de tráfico real en producción. Convierte la evaluación en un flujo permanente y no en un hito puntual previo al lanzamiento.",
+    "para": "Resuelve la degradación inevitable de los sistemas de IA en producción causada por cambios en usuarios, datos y modelos externos. Garantiza que las métricas de calidad estén siempre actualizadas y que los fallos descubiertos en el mundo real retroalimenten continuamente los conjuntos de prueba.",
+    "como": "El ciclo se apoya en un bucle cerrado (evaluation flywheel): las trazas de producción se muestrean (por ejemplo, 5 % aleatorio más el 100 % de sesiones con feedback negativo o alta latencia), se anotan mediante evaluadores asíncronos (jueces LLM o heurísticas) y se almacenan en el observabilidad/tracking. Periódicamente, los casos de baja puntuación pasan a revisión humana, se etiquetan y se incorporan al golden dataset versionado que ejecutan los pipelines de CI/CD en cada cambio futuro.",
+    "practicas": [
+      "Combina muestreo estratificado en producción (sobremuestreando casos con baja confianza, reintentos del usuario o feedback negativo) para maximizar la detección con menor coste.",
+      "Mantén la paridad entre las métricas de evaluación offline y online para poder correlacionar si subir un punto en CI se traduce en mejora real para el usuario.",
+      "Establece un proceso periódico de curación de datasets (limpiar ejemplos obsoletos o ambiguos) para que el golden set no se quede anclado en el pasado.",
+      "Evaluación continua vs Evaluación offline puntual: la offline valida una foto fija antes del release; la continua mantiene un pulso vivo y retroalimenta nuevos casos."
+    ],
+    "ejemplo": "# Bucle de Evaluación Continua (Flywheel)\n[Producción] --(muestreo + errores)--> [Evals Asíncronos]\n     ^                                        |\n     |                                (triage humano)\n[CI/CD Gate] <---(git push/PR)--- [Golden Dataset vN+1]",
+    "entrevista": "La evaluación continua cierra el ciclo entre producción y CI/CD muestreando trazas reales, puntuándolas de forma asíncrona y convirtiendo fallos reales en nuevas pruebas de regresión."
+  },
+  "Evaluación de IA": {
+    "que": "La evaluación de IA es el proceso sistemático y reproducible de medir el desempeño, fiabilidad, seguridad, eficiencia y alineación de un modelo o sistema basado en IA frente a objetivos técnicos y de negocio definidos. Abarca desde pruebas estadísticas clásicas hasta evaluación de capacidades generativas y agentes.",
+    "para": "Sirve para tomar decisiones basadas en evidencia en lugar de 'vibe checking' (probar manualmente cuatro ejemplos y asumir que funciona). Permite comparar arquitecturas, justificar costes de modelos más capaces, certificar requisitos de cumplimiento normativo y detectar riesgos antes del despliegue.",
+    "como": "Comienza definiendo la taxonomía de criterios y casos de uso críticos (exactitud, latencia, seguridad, formato, uso de herramientas) junto con un dataset representativo estratificado. Luego selecciona métodos de puntuación adecuados a cada dimensión: métricas deterministas/matemáticas, similitud semántica, ejecución en sandbox (pass@k para código), jueces LLM calibrados o revisión humana. Finalmente, agrega resultados en informes con intervalos de confianza y desglose por categorías para decidir iteraciones.",
+    "practicas": [
+      "Huye del 'vibe checking': documenta siempre el conjunto de prueba, la versión exacta del sistema evaluado y la metodología de puntuación.",
+      "Evalúa el sistema completo (end-to-end: retriever + prompt + herramientas + guardrails), no solo los benchmarks públicos del modelo base (MMLU, HumanEval), que rara vez predicen rendimiento en tu dominio.",
+      "Previene la contaminación de datos (data contamination): asegúrate de que tus conjuntos de prueba privados no estén filtrados en los datos de entrenamiento públicos.",
+      "Incluye siempre evaluación de capacidades negativas (cuándo debe rechazar, pedir aclaración o decir 'no lo sé')."
+    ],
+    "ejemplo": "# Matriz mínima de evaluación de un sistema de IA\n- Capacidad central: Exactitud / Faithfulness / Tasa de éxito de tarea (agentes)\n- Robustez y seguridad: Jailbreaks, PII leakage, alucinación ante falta de datos\n- Operación: Latencia P95, coste por resolución exitosa, estabilidad de formato JSON",
+    "entrevista": "Evaluar IA es sustituir el vibe checking por mediciones reproducibles end-to-end del sistema completo sobre datasets representativos, cubriendo calidad, seguridad y coste."
+  },
+  "Evaluación en producción": {
+    "que": "La evaluación en producción es la medición directa de la calidad, seguridad y utilidad de un sistema de IA utilizando tráfico, datos y reacciones reales de los usuarios finales en el entorno vivo. Captura aspectos imposibles de simular en laboratorio, como intenciones ambiguas, ruido real y fricción de experiencia de usuario.",
+    "para": "Sirve para validar que las mejoras observadas en laboratorio se traducen en valor real y para detectar fallos emergentes derivados de datos reales imprevistos. Se aplica continuamente tras el despliegue mediante telemetría asíncrona, señales de usuario y despliegues progresivos (canary releases).",
+    "como": "Al procesar cada petición en vivo, el sistema emite asíncronamente la traza completa (entrada, contexto recuperado, llamadas a herramientas, respuesta y metadatos) hacia un bus de eventos o plataforma de observabilidad sin bloquear la latencia del usuario. Workers en segundo plano ejecutan evaluadores automatizados (clasificadores de toxicidad, detectores de PII, jueces LLM ligeros) y cruzan los resultados con señales implícitas (usuario copia la respuesta, abandona la sesión, reformula la pregunta dos veces) y explícitas (votos o correcciones).",
+    "practicas": [
+      "Ejecuta los evaluadores pesados (LLM-as-a-judge) siempre de forma asíncrona fuera del camino crítico (critical path) para no añadir segundos de latencia al usuario.",
+      "Explota señales implícitas de insatisfacción (repregunta inmediata, escalado a agente humano, edición manual del texto generado) ya que menos del 5 % de usuarios suele pulsar el botón de feedback explícito.",
+      "Anonimiza o enmascara datos sensibles (PII) antes de enviar trazas de producción a evaluadores externos o plataformas de terceros.",
+      "Despliega cambios riesgosos con canary releases (1 % -> 5 % -> 25 % -> 100 %) ligados a rollback automático ante anomalías."
+    ],
+    "ejemplo": "# Señales de evaluación en producción\nsignals = {\n  \"explicita\": user_thumbs_down,              # Baja cobertura, alta precisión\n  \"implicita\": user_rephrased_within_30s,     # Alta cobertura, señal de fallo\n  \"async_eval\": async_faithfulness_score      # Coste controlado por muestreo\n}",
+    "entrevista": "La evaluación en producción mide el desempeño real mediante evaluadores asíncronos fuera del critical path combinados con señales implícitas del usuario y canary rollbacks."
+  },
+  "Evaluación humana": {
+    "que": "La evaluación humana es el proceso de revisión y calificación de salidas de modelos de IA realizado por personas (anotadores capacitados o expertos de dominio) siguiendo guías y rúbricas explícitas. Constituye el estándar de oro (gold standard) para medir matices de tono, utilidad, veracidad compleja y alineamiento.",
+    "para": "Sirve para calibrar y validar evaluadores automáticos, construir conjuntos de prueba dorados y auditar casos de alto riesgo (salud, derecho, finanzas) donde ningún juez automático es suficientemente fiable. Se utiliza en fases iniciales de diseño de métricas, en validación de lanzamientos mayores y en adjudicación de discrepancias.",
+    "como": "Los diseñadores del estudio redactan un protocolo de anotación con definiciones operativas, ejemplos positivos, negativos y casos límite. Las muestras se distribuyen a múltiples anotadores mediante herramientas como Argilla, Label Studio o Prolific en formato ciego (sin revelar qué modelo generó qué respuesta). Se calcula el acuerdo inter-anotador (IAA), se resuelven discrepancias mediante un revisor sénior (adjudication) y se verifica la correlación (Spearman/Pearson o Cohen's kappa) entre el veredicto humano y las métricas automáticas.",
+    "practicas": [
+      "Invierte en guías de anotación precisas con ejemplos límite claros; la mayoría de desacuerdos humanos nacen de instrucciones vagas, no de mala fe del anotador.",
+      "Evalúa con expertos de dominio (médicos, abogados, ingenieros) en tareas especializadas; los crowdsourcers genéricos suelen fallar en veracidad técnica profunda y premian respuestas elocuentes pero erróneas.",
+      "Introduce preguntas de control (honeypots o attention checks) para detectar anotadores fatigados o automatizados.",
+      "Usa la evaluación humana estratégicamente para calibrar tu LLM-as-a-judge (medir alineamiento juez-humano > 85 %) en lugar de intentar evaluar manualmente cada cambio diario."
+    ],
+    "ejemplo": "# Flujo de calibración Humano -> Juez Automático\n1. Experto etiqueta 200 muestras con rúbrica binaria (Pass/Fail)\n2. Se mide IAA entre 2 expertos (objetivo: kappa >= 0.75)\n3. Se ajusta el prompt del LLM-juez hasta lograr F1/kappa >= 0.80 vs consenso humano",
+    "entrevista": "La evaluación humana es el estándar de oro para crear golden sets y calibrar jueces automáticos mediante rúbricas claras, expertos de dominio y control de acuerdo inter-anotador."
+  },
+  "Evaluación offline": {
+    "que": "La evaluación offline es la verificación de modelos o pipelines de IA ejecutada en un entorno controlado previo al despliegue, utilizando datasets históricos estáticos o sintéticos con respuestas esperadas o rúbricas fijas. Opera de forma aislada del tráfico y de los usuarios reales.",
+    "para": "Sirve para iterar rápidamente sobre prompts, hiperparámetros, arquitecturas o estrategias de recuperación sin exponer a usuarios a regresiones ni esperar días para acumular tráfico. Se usa en desarrollo local, experimentación de ML y puertas de calidad en CI/CD.",
+    "como": "Un script o runner de evaluación carga un dataset versionado (ej. archivo JSONL en DVC o tabla en un experiment tracker), invoca el modelo o grafo de agente bajo prueba para cada entrada y almacena las predicciones resultantes. Posteriormente ejecuta evaluadores deterministas, estadísticos o basados en LLM sobre el lote completo, generando métricas agregadas e informes por categoría que se registran junto al commit hash para garantizar reproducibilidad.",
+    "practicas": [
+      "Asegura una división estricta entre datos de desarrollo (para ajustar prompts/pesos) y test holdout (solo para validación final) para evitar sobreajuste al dataset de evaluación.",
+      "Evaluación offline vs Evaluación online: la offline es rápida, reproducible y segura pero estática (no captura interacciones multiturno espontáneas ni latencia real); ambas son complementarias.",
+      "Versiona los datasets con identificadores inmutables y guarda todas las predicciones brutas de cada corrida para poder re-puntuarlas si mejoras una métrica sin re-inferir el modelo.",
+      "Cuida que el dataset offline cubra la distribución real de dificultad y casos raros (long tail), no solo ejemplos limpios o sintéticos fáciles."
+    ],
+    "ejemplo": "# Ejecución reproducible de evaluación offline\npython eval_runner.py \\\n  --dataset datasets/support_qa_v4.jsonl \\\n  --model-version gpt-4o-2024-08-06 \\\n  --prompt-sha a91f3c2 \\\n  --out results/run_2026_11.json",
+    "entrevista": "La evaluación offline proporciona iteración rápida y reproducible sobre datasets estáticos versionados antes de desplegar, complementando —pero nunca sustituyendo— la evaluación online."
+  },
+  "Evaluación online": {
+    "que": "La evaluación online es la evaluación realizada con usuarios reales interactuando en vivo con el sistema de IA, midiendo tanto el comportamiento del modelo como la respuesta humana y el impacto de negocio en condiciones reales de red, concurrencia y contexto dinámico.",
+    "para": "Sirve para validar hipótesis que no pueden medirse en estático, como sesiones conversacionales multiturno adaptativas, impacto en conversión, retención, tiempo de resolución o fatiga de usuario. Se utiliza mediante experimentos A/B, tests multi-armed bandit o despliegues canary.",
+    "como": "El sistema enruta un porcentaje controlado de usuarios hacia la nueva versión mediante feature flags o balanceadores inteligentes. Durante la interacción registra eventos de telemetría vinculados por un correlation_id: tiempos de respuesta, uso de herramientas, tasa de aceptación de sugerencias, tasa de abandono o KPIs de negocio. Un motor de experimentación analiza la significancia estadística entre cohortes y aplica criterios de parada temprana si se violan umbrales de seguridad o latencia.",
+    "practicas": [
+      "No pases a evaluación online sin haber superado antes una evaluación offline rigurosa y pruebas de seguridad; los usuarios reales no deben ser tus primeros testers.",
+      "Evaluación online vs Evaluación offline: la online mide métricas de negocio e interacción real con sesgos ambientales (hora del día, estacionalidad); la offline mide calidad aislada reproducible.",
+      "Considera el efecto novedad (novelty effect): los usuarios pueden interactuar más con una función nueva los primeros días solo por curiosidad antes de estabilizarse.",
+      "Implementa feature flags desacoplados del despliegue de código para desactivar variantes degradadas en segundos sin redeploy."
+    ],
+    "ejemplo": "# Métricas típicas de Evaluación Online (ej. copiloto de código)\n- Acceptance Rate: % de sugerencias aceptadas con Tab\n- Survival Rate: % de código sugerido que sigue intacto tras 1 hora\n- Task Completion Time: reducción real del tiempo de cierre de PR",
+    "entrevista": "La evaluación online mide el impacto real en métricas de comportamiento y negocio con usuarios en vivo mediante A/B testing o canary releases, validando si las mejoras offline importan."
+  },
+  "F1 score": {
+    "que": "El F1 score es la media armónica entre la precision (exactitud de las predicciones positivas) y el recall (capacidad de encontrar todos los positivos reales), definido como 2 * (Precision * Recall) / (Precision + Recall). Oscila entre 0 y 1 y penaliza fuertemente cualquier desequilibrio extremo entre ambas métricas.",
+    "para": "Sirve para evaluar clasificadores y sistemas de extracción (NER, detección de spam, fraude, clasificación de intenciones) especialmente cuando las clases están desbalanceadas y tanto los falsos positivos como los falsos negativos son relevantes. También se usa en QA extractivo (SQuAD) comparando tokens solapados entre respuesta predicha y referencia.",
+    "como": "A partir de la matriz de confusión se calcula Precision = TP / (TP + FP) y Recall = TP / (TP + FN). Al usar la media armónica en lugar de la aritmética, un modelo con Precision=1.0 y Recall=0.02 obtiene F1 ≈ 0.039 (no 0.51), forzando un equilibrio real. En clasificación multiclase se agrega mediante Macro-F1 (promedio simple entre clases, da igual peso a clases raras), Micro-F1 (agrega TP/FP/FN globales, equivale a accuracy en monoetiqueta) o Weighted-F1 (ponderado por soporte).",
+    "practicas": [
+      "Elige Macro-F1 cuando todas las clases importen por igual aunque una sea minoritaria (ej. detectar fallos raros); usa Micro-F1 o Weighted-F1 si el peso debe seguir el volumen de tráfico.",
+      "Si el coste de falsos negativos supera claramente al de falsos positivos (ej. cribado médico o detección de toxicidad crítica), usa F_beta (con beta=2 para priorizar recall; beta=0.5 para priorizar precision).",
+      "Recuerda que el F1 depende de un umbral de decisión fijo (ej. 0.5); si quieres evaluar la separación del modelo independiente del umbral, acompáñalo de PR-AUC.",
+      "Accuracy vs F1 score: F1 ignora los verdaderos negativos (TN), lo que lo hace ideal cuando la clase negativa es masiva y trivial."
+    ],
+    "ejemplo": "from sklearn.metrics import f1_score, classification_report\n\ny_true = [1, 0, 1, 1, 0, 0, 0, 1]\ny_pred = [1, 0, 0, 1, 0, 1, 0, 1]\nprint(\"F1 binario:\", f1_score(y_true, y_pred))            # 0.75\nprint(\"Macro F1:\", f1_score(y_true, y_pred, average=\"macro\"))",
+    "entrevista": "El F1 score es la media armónica de precision y recall que penaliza extremos en datasets desbalanceados, usando Macro-F1 para proteger clases minoritarias o F-beta si los errores son asimétricos."
+  },
+  "Faithfulness": {
+    "que": "La faithfulness (fidelidad) mide el grado en que todas las afirmaciones de una respuesta generada por un LLM están estrictamente respaldadas e inferidas a partir del contexto proporcionado (por ejemplo, los documentos recuperados en un sistema RAG), sin añadir información externa ni contradecir la fuente.",
+    "para": "Sirve para detectar y cuantificar alucinaciones extrínsecas o invenciones del modelo en aplicaciones RAG, resúmenes de documentos y análisis de expedientes donde el modelo debe ceñirse estrictamente a la evidencia entregada y no a su memoria paramétrica.",
+    "como": "El evaluador (implementado en frameworks como Ragas o DeepEval mediante NLI o LLM-as-a-judge) toma la respuesta generada y la divide en un conjunto de afirmaciones atómicas C. Para cada afirmación c_i en C, verifica si puede deducirse lógicamente (entailment) de los fragmentos de contexto recuperados K. Finalmente calcula Faithfulness = |afirmaciones respaldadas por K| / |total de afirmaciones en la respuesta|.",
+    "practicas": [
+      "Faithfulness vs Correctitud factual: si el documento de contexto dice erróneamente 'El límite es 100 €' y el LLM responde 'El límite es 100 €', tiene faithfulness=1.0 aunque factualmente sea falso en el mundo real.",
+      "Faithfulness vs Answer Relevance: un modelo que responde 'No lo sé' o repite un párrafo irrelevante del contexto puede tener alta fidelidad pero nula utilidad; evalúa ambas juntas.",
+      "Instruye explícitamente en el system prompt a citar el ID del fragmento fuente por cada afirmación; esto facilita tanto la auditoría humana como la verificación automática.",
+      "Ten cuidado con el conocimiento previo del LLM: modelos muy capaces suelen completar detalles omitidos del contexto usando su entrenamiento previo, rompiendo la fidelidad en datos privados cambiantes."
+    ],
+    "ejemplo": "# Fórmula de Faithfulness (estilo Ragas)\n# Contexto K: \"El servidor X soporta TLS 1.3 y corre en puerto 8443.\"\n# Respuesta:  \"El servidor X usa TLS 1.3 en el puerto 8443 y requiere mTLS.\"\n# Claims: [\"usa TLS 1.3\" (Soportado), \"puerto 8443\" (Soportado), \"requiere mTLS\" (No en K)]\nfaithfulness = 2 / 3  # 0.67 -> alucinación detectada sobre mTLS",
+    "entrevista": "La faithfulness mide qué fracción de las afirmaciones atómicas generadas se deduce estrictamente del contexto recuperado, siendo la métrica clave contra alucinaciones en RAG."
+  },
+  "Groundedness": {
+    "que": "El groundedness (anclaje o fundamentación) mide hasta qué punto la salida generada por un modelo está anclada, sustentada y verificable en fuentes de evidencia específicas (documentos recuperados, resultados de herramientas o registros de base de datos) en lugar de generarse libremente desde los pesos paramétricos.",
+    "para": "Sirve para garantizar trazabilidad y auditabilidad en copilotos empresariales, asistentes legales, médicos o de soporte técnico, asegurando que cada dato presentado al usuario tenga respaldo documental explícito y citas verificables.",
+    "como": "El pipeline de evaluación (como en Vertex AI Grounding, Azure AI Evaluation o TruLens) extrae afirmaciones o frases clave de la respuesta generada y ejecuta modelos de Natural Language Inference (NLI), LLM jueces o alineamiento por citas contra los fragmentos de entrada o resultados de APIs/herramientas. A diferencia de enfoques puramente binarios, muchas plataformas devuelven una puntuación de 0 a 1 (o escala 1-5) junto con un mapa de cobertura que resalta qué frases exactas carecen de sustento en la evidencia.",
+    "practicas": [
+      "Groundedness vs Faithfulness: en la práctica suelen solaparse fuertemente; faithfulness enfatiza la no-invención lógica en RAG por afirmación atómica, mientras groundedness suele abarcar el anclaje completo a fuentes, citas y salidas de herramientas.",
+      "Verifica la validez de las citas generadas (citation precision/recall): un LLM puede inventar una URL o atribuir una frase cierta al documento equivocado.",
+      "Combina groundedness con verificación de abstención: un sistema bien anclado debe declarar ausencia de evidencia cuando las fuentes no responden la consulta.",
+      "Evalúa el groundedness también en respuestas que resumen salidas de herramientas SQL o APIs en agentes, donde los LLMs tienden a redondear o alterar números."
+    ],
+    "ejemplo": "# Evaluación de Groundedness en un agente con herramienta SQL\n# Tool output: [{\"producto\": \"A\", \"ventas\": 1420}]\n# Respuesta LLM: \"El producto A vendió 1,420 unidades, liderando el trimestre.\"\n# Resultado: \"1,420 unidades\" -> grounded (1.0)\n#            \"liderando el trimestre\" -> ungrounded (no hay datos de otros productos)",
+    "entrevista": "El groundedness verifica que cada afirmación y cita de la respuesta esté anclada en evidencia observada (documentos o salidas de herramientas), garantizando trazabilidad y control de alucinaciones."
+  },
+  "Informe de evaluación": {
+    "que": "Un informe de evaluación es un documento técnico estructurado (generado automáticamente en HTML/Markdown/PDF o como artefacto de CI) que resume la metodología, el dataset usado, los resultados métricos desglosados, los ejemplos de fallo y una recomendación explícita de aprobación o rechazo de un modelo o versión.",
+    "para": "Sirve como registro auditable y puente de comunicación entre ingenieros de IA, QA, producto y equipos de cumplimiento o seguridad antes de autorizar un lanzamiento. Permite comparar objetivamente versiones a lo largo del tiempo y conservar evidencia para auditorías regulatorias (como el EU AI Act).",
+    "como": "Al concluir una suite de evaluación, un generador de reportes consolida los JSON de resultados contra la línea base anterior. Calcula métricas agregadas con intervalos de confianza, genera tablas comparativas por segmento (deltas positivos y regresiones), adjunta matrices de confusión o muestras representativas de los peores errores y evalúa las reglas de la puerta de calidad para emitir un veredicto (PASS/FAIL). El artefacto se archiva en el registro de experimentos (MLflow, W&B) o como comentario en el PR.",
+    "practicas": [
+      "Incluye siempre la ficha técnica exacta de reproducibilidad: ID del modelo/checkpoint, hash del prompt, versión del dataset, temperatura y semilla.",
+      "Muestra intervalos de confianza o desviación estándar entre corridas; un delta de +0.5 % sin significancia estadística no justifica cambiar un modelo estable.",
+      "Destaca los peores casos de fallo (worst-case analysis) y regresiones en categorías críticas, no solo promedios favorables.",
+      "Adapta una sección ejecutiva resumida (veredicto, riesgo, impacto en coste/latencia) separada del anexo técnico detallado."
+    ],
+    "ejemplo": "## Informe de Evaluación: Asistente v2.3 vs v2.2 (Baseline)\n- Dataset: golden_support_es_v4 (N=500) | Juez: gpt-4o-2024-08-06\n- Faithfulness: 0.91 (+0.04) | Latencia P95: 1.42s (+0.18s) | Coste: $0.004/req\n- Regresiones críticas: 0 | Seguridad/PII: 100% PASS\n- Decisión: APROBADO PARA CANARY 10%",
+    "entrevista": "Un informe de evaluación documenta de forma reproducible métricas con intervalos de confianza, regresiones por segmento y ejemplos de fallo para respaldar decisiones de despliegue y auditoría."
+  },
+  "MRR": {
+    "que": "MRR (Mean Reciprocal Rank) es una métrica de evaluación de ranking y recuperación de información que mide la rapidez con la que aparece el primer resultado relevante en una lista ordenada de resultados. Se define como el promedio de 1 / rango_primer_relevante a lo largo de todas las consultas.",
+    "para": "Sirve para evaluar motores de búsqueda, retrievers de RAG, sistemas de recomendación y autocompletado donde al usuario o al modelo le basta con encontrar al menos un documento o respuesta correcta lo más arriba posible. Es especialmente útil cuando existe una única respuesta principal esperada por consulta.",
+    "como": "Para cada consulta q_i en un conjunto de Q consultas, se inspecciona la lista ordenada de documentos devueltos [d_1, d_2, ..., d_k] hasta encontrar la posición rank_i del primer elemento relevante. El Reciprocal Rank de esa consulta es 1 / rank_i (si está en posición 1 vale 1.0; en posición 2 vale 0.5; en posición 3 vale 0.333; si no aparece en top-k vale 0). Finalmente, MRR = (1 / |Q|) * suma(1 / rank_i).",
+    "practicas": [
+      "MRR vs Recall@k: Recall@k te dice si el documento correcto apareció en los primeros k resultados sin importar el orden; MRR penaliza fuertemente si bajó del puesto 1 al puesto 5.",
+      "MRR vs NDCG: usa MRR cuando solo importa dónde cae el primer resultado válido (ej. búsqueda de una FAQ exacta); usa NDCG cuando hay múltiples documentos relevantes con distintos grados de relevancia.",
+      "En RAG, monitoriza el MRR antes y después de añadir un modelo Cross-Encoder reranker: un buen reranker debe disparar el MRR aunque el Recall@20 ya fuera alto.",
+      "Especifica siempre el corte k (MRR@k, por ejemplo MRR@10) para que las comparaciones entre sistemas sean justas."
+    ],
+    "ejemplo": "# Q1: relevante en pos 1 -> RR = 1/1 = 1.0\n# Q2: relevante en pos 3 -> RR = 1/3 = 0.333\n# Q3: no está en top-5  -> RR = 0.0\nrr = [1.0, 1/3, 0.0]\nmrr_at_5 = sum(rr) / len(rr)  # 0.444",
+    "entrevista": "MRR mide el inverso de la posición del primer resultado relevante, siendo la métrica ideal para evaluar si un retriever o reranker coloca la evidencia correcta en primer lugar."
+  },
+  "Model drift": {
+    "que": "El model drift (deriva del modelo) es la pérdida gradual o repentina de rendimiento predictivo o de calidad de un modelo de machine learning o IA generativa tras su despliegue en producción, provocada porque los supuestos estadísticos con los que se construyó dejan de reflejar la realidad operativa.",
+    "para": "Sirve para conceptualizar y diagnosticar el deterioro del retorno técnico de modelos en producción a lo largo del tiempo. Permite distinguir si el problema radica en cambios en las entradas (data drift), cambios en el significado del objetivo (concept drift) o cambios externos en dependencias y APIs.",
+    "como": "El ciclo de vida en producción compara continuamente la distribución de predicciones, la calibración de probabilidades y las métricas reales de error contra la línea base validada durante el entrenamiento. Cuando se observa una divergencia persistente (como caída de AUC, incremento de errores de calibración ECE o aumento de tasas de rechazo/alucinación), los sistemas de MLOps disparan alertas, análisis de causa raíz entre data vs concept drift y flujos automatizados de reentrenamiento o rollback.",
+    "practicas": [
+      "Monitoriza la deriva de las predicciones (Prediction Drift) como señal de alerta temprana cuando las etiquetas reales tardan semanas en llegar.",
+      "Distingue entre deriva por entorno (cambia el comportamiento del usuario o mercado) y deriva por código/dependencia (cambia el formato de una tabla upstream o un modelo API externo).",
+      "Mantén siempre un modelo champion en producción y evalúa los reentrenamientos periódicos como challengers en modo shadow antes de sustituirlo.",
+      "Registra la calibración de confianza junto al acierto: un modelo que sigue teniendo 80 % de confianza cuando su acierto cayó al 50 % es peligroso en sistemas de decisión automática."
+    ],
+    "ejemplo": "# Taxonomía operativa de Model Drift\nModel Drift\n ├── Data Drift (cambia P(X): nuevos usuarios, sensores, idioma)\n ├── Concept Drift (cambia P(Y|X): nuevas reglas, fraude distinto)\n └── Upstream/Provider Drift (bugs ETL, cambio de weights en API LLM)",
+    "entrevista": "El model drift engloba la degradación del modelo en producción por cambios en P(X), en P(Y|X) o en dependencias externas, mitigándose mediante monitorización de predicciones y pipelines champion-challenger."
+  },
+  "Monitorización de modelos": {
+    "que": "La monitorización de modelos es la instrumentación continua de modelos y aplicaciones de IA en producción para capturar, almacenar y analizar telemetría operativa (latencia, memoria, tokens), estadística (deriva de entradas/salidas) y funcional (calidad, alucinaciones, seguridad).",
+    "para": "Resuelve la falta de visibilidad que deja un sistema de IA una vez desplegado, donde los fallos más costosos no lanzan excepciones de software sino respuestas erróneas o sesgadas. Se usa para garantizar SLAs, controlar costes de inferencia y alimentar la mejora continua.",
+    "como": "Un SDK de instrumentación (como OpenTelemetry con convenciones semánticas GenAI, Langfuse, Arize o Prometheus) envuelve las llamadas de inferencia, embeddings y herramientas capturando trazas jerárquicas (spans). Los eventos fluyen de forma no bloqueante a un collector y un backend de series temporales y trazas. Sobre esos datos corren cálculos continuos de métricas de infraestructura (latencia P99, GPU utilization, error rate), métricas de negocio y evaluadores de deriva o calidad que alimentan dashboards y alertas.",
+    "practicas": [
+      "Instrumenta trazas distribuidas completas (trace -> retrieval span -> rerank span -> LLM span -> tool span) para localizar exactamente qué componente introduce latencia o errores.",
+      "Monitoriza las cuatro señales clave adaptadas a IA: latencia (TTFT y tiempo total), tráfico/tokens, errores (incluidos fallos de parseo JSON y guardrails) y saturación/coste.",
+      "Establece presupuestos y límites por tenant o usuario (token rate limiting) en el monitoreo de costes para detectar bucles infinitos en agentes autónomos.",
+      "Asegura el cumplimiento de privacidad (scrubbing de PII y secretos) en la capa de ingestión de logs antes de persistir prompts y respuestas."
+    ],
+    "ejemplo": "# Instrumentación conceptual con OpenTelemetry GenAI\nwith tracer.start_as_current_span(\"rag_chat\") as span:\n    span.set_attribute(\"gen_ai.request.model\", \"claude-sonnet\")\n    docs = retrieve(query)  # span hijo con score y num_docs\n    resp = generate(query, docs)\n    span.set_attribute(\"gen_ai.usage.output_tokens\", resp.usage.output)",
+    "entrevista": "La monitorización de modelos extiende la observabilidad tradicional mediante trazas por span (retrieval, LLM, tools), control de TTFT/tokens, deriva estadística y scrubbing de PII."
+  },
+  "Métricas de evaluación": {
+    "que": "Las métricas de evaluación son medidas cuantitativas o cualitativas estandarizadas que traducen el comportamiento de un sistema de IA en valores comparables para juzgar su desempeño en tareas específicas (clasificación, regresión, ranking, generación de texto o ejecución agéntica).",
+    "para": "Sirven para establecer criterios objetivos de éxito, comparar candidatos sin sesgos subjetivos y alinear el desarrollo técnico con los objetivos del negocio. Su elección determina directamente qué optimiza el equipo y qué fallos se detectan.",
+    "como": "Se seleccionan según la naturaleza de la salida y la disponibilidad de referencias. En tareas estructuradas se calculan funciones matemáticas exactas sobre etiquetas (Accuracy, F1, AUC, MAE/RMSE). En recuperación se miden métricas de orden y cobertura (Recall@k, MRR, NDCG). En generación abierta se combinan métricas léxicas (BLEU, ROUGE), probabilidad de lenguaje (Perplejidad), similitud en espacio vectorial (BERTScore) y evaluadores basados en modelos (Faithfulness, rúbricas LLM-as-a-judge) o tasas de éxito funcional (pass@k en código).",
+    "practicas": [
+      "Nunca optimices una sola métrica (Ley de Goodhart): combinar métricas de calidad con métricas guardrail (latencia, coste, longitud, toxicidad) evita soluciones degeneradas.",
+      "Alinea la métrica técnica con el coste real del error en negocio: si un falso negativo cuesta 100 veces más que un falso positivo, no uses Accuracy sino F-beta o utilidad esperada.",
+      "Verifica periódicamente que las métricas automáticas (como BERTScore o jueces LLM) mantengan correlación positiva con el juicio de usuarios o expertos humanos.",
+      "Usa métricas de proceso y resultado en agentes: no midas solo si acertó el resultado final, sino cuántos pasos y llamadas a herramientas necesitó (eficiencia de trayectoria)."
+    ],
+    "ejemplo": "# Selección rápida de métricas por tarea\n- Clasificación balanceada -> Accuracy / ROC-AUC\n- Clasificación desbalanceada -> PR-AUC / F1 / F-beta\n- Retrieval / Búsqueda -> Recall@k, MRR, NDCG\n- Generación RAG -> Context Recall + Faithfulness + Answer Relevance\n- Generación de código -> pass@k en sandbox ejecutando tests unitarios",
+    "entrevista": "Las métricas de evaluación deben elegirse según la tarea y la asimetría de errores del negocio, combinando métricas de calidad, cobertura/ranking y guardrails para evitar la Ley de Goodhart."
+  }
+}

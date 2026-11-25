@@ -1,0 +1,132 @@
+{
+  "SAST": {
+    "que": "Static Application Security Testing (SAST) es una técnica de análisis de caja blanca que examina código fuente, bytecode o binarios sin ejecutar la aplicación para detectar vulnerabilidades de seguridad. Opera construyendo representaciones intermedias del programa y evaluando reglas de flujo de datos, patrones sintácticos y grafos de control.",
+    "para": "Detecta fallos introducidos durante el desarrollo —como inyecciones SQL, XSS, deserialización insegura, secretos codificados o uso de criptografía débil— en etapas tempranas del SDLC (shift-left). Se emplea directamente en el IDE del desarrollador, en ganchos pre-commit y en pipelines de CI/CD antes de compilar o desplegar el artefacto.",
+    "como": "El analizador tokeniza y parsea el código fuente para generar un Árbol de Sintaxis Abstracta (AST), a partir del cual construye un Grafo de Flujo de Control (CFG) y un Grafo de Dependencias de Datos (DDG). Sobre estas estructuras aplica análisis de contaminación (taint analysis) para rastrear si una entrada no confiable (source) alcanza una función peligrosa (sink) sin atravesar una función de saneamiento o validación (sanitizer). Además ejecuta concordancia estructural sobre el AST y análisis interprocedural para seguir llamadas entre funciones y módulos. Finalmente mapea cada hallazgo a identificadores CWE y genera reportes estándar como SARIF para integrarlos en pull requests.",
+    "practicas": [
+      "Configurar quality gates en CI bloqueando únicamente hallazgos de severidad alta o crítica con alta confianza para evitar la fatiga de alertas.",
+      "Complementar SAST con DAST y SCA: SAST no ve vulnerabilidades en tiempo de ejecución, configuraciones de despliegue ni CVEs en dependencias externas compiladas.",
+      "Declarar sanitizers y validadores propios de la arquitectura interna para reducir falsos positivos recurrentes.",
+      "Error típico: activar todas las reglas por defecto sobre un repositorio legado y bloquear la rama principal, lo que fomenta supresiones indiscriminadas (nosec)."
+    ],
+    "ejemplo": "# Integración SAST con exportación SARIF en GitHub Actions\n- name: Run SAST (Semgrep)\n  run: semgrep scan --config p/owasp-top-ten --sarif -o sast.sarif\n- name: Upload SARIF\n  uses: github/codeql-action/upload-sarif@v3\n  with:\n    sarif_file: sast.sarif",
+    "entrevista": "SAST aporta visibilidad temprana de fallos de flujo de datos y patrones inseguros sin necesidad de levantar la aplicación, pero exige afinar fuentes, sumideros y sanitizadores para equilibrar cobertura y falsos positivos."
+  },
+  "SCA": {
+    "que": "Software Composition Analysis (SCA) es la disciplina orientada a inventariar los componentes de código abierto y de terceros presentes en una aplicación, junto con sus dependencias transitivas, vulnerabilidades conocidas y licencias. Evalúa tanto manifiestos y lockfiles como artefactos empaquetados o imágenes.",
+    "para": "Mitiga el riesgo de la cadena de suministro de software, dado que la mayor parte del código en producción proviene de librerías externas susceptibles a CVEs explotables o incompatibilidades legales de licencia (p. ej., GPL en software propietario). Se usa de forma continua en repositorios, pipelines CI/CD y registros de artefactos para alertar o bloquear builds vulnerables.",
+    "como": "El escáner inspecciona manifiestos (package.json, pom.xml, pyproject.toml), lockfiles (package-lock.json, poetry.lock) o metadatos internos en paquetes JAR y wheels para reconstruir el árbol completo de dependencias directas y transitivas. Normaliza cada componente a un identificador estándar como PURL (Package URL) o CPE y genera un inventario SBOM en formatos como CycloneDX o SPDX. Luego consulta bases de vulnerabilidades (NVD, GitHub Advisory Database, OSV) comparando rangos de versiones mediante semver o reglas del ecosistema. Los motores avanzados añaden análisis de alcanzabilidad (reachability analysis) mediante grafos de llamadas para determinar si el código vulnerable es realmente invocado por la aplicación.",
+    "practicas": [
+      "Analizar siempre los lockfiles deterministas y no solo manifiestos con rangos abiertos (^ o >=), garantizando paridad entre lo auditado y lo desplegado.",
+      "Priorizar la remediación combinando alcanzabilidad en código y señales como EPSS o CISA KEV antes de actualizar ciegamente cada CVE alto en código muerto.",
+      "Generar y almacenar un SBOM por cada release para responder ante zero-days de cadena de suministro sin recompilar todos los servicios.",
+      "SCA vs SAST: SCA busca CVEs conocidos y riesgos de licencia en componentes de terceros; SAST analiza fallos lógicos y de flujo en el código propio."
+    ],
+    "ejemplo": "# Generar SBOM CycloneDX y auditar vulnerabilidades con Syft + Grype\nsyft dir:. -o cyclonedx-json=sbom.cdx.json\ngrype sbom:./sbom.cdx.json --fail-on high",
+    "entrevista": "SCA no consiste solo en listar CVEs de librerías externas; su valor real está en auditar lockfiles deterministas, generar SBOMs por artefacto y priorizar parches según alcanzabilidad real del código vulnerable."
+  },
+  "Security regression testing": {
+    "que": "El security regression testing es un conjunto de pruebas automatizadas y repetibles diseñadas para verificar que vulnerabilidades ya corregidas no reaparezcan tras cambios de código, refactors o fusiones de ramas. Convierte cada incidente o hallazgo resuelto en una aserción permanente dentro de la suite de pruebas.",
+    "para": "Impide que errores críticos de autenticación, autorización (IDOR/BOLA), inyección o configuración segura vuelvan a introducirse silenciosamente durante la entrega continua. Se ejecuta en pipelines de CI/CD ante cada pull request o release como red de seguridad determinista frente a regresiones.",
+    "como": "Tras remediar una vulnerabilidad detectada por pentesting, bug bounty o análisis estático, el equipo abstrae el vector de ataque en una prueba unitaria, de integración o de API (con pytest, JUnit, Playwright o plantillas de Nuclei). El test envía explícitamente el payload malicioso o reproduce la secuencia de abuso —por ejemplo, acceder con un token de usuario distinto o un rol inferior— y valida que la respuesta devuelva el código esperado (401, 403 o 400) sin filtrar datos ni alterar estado. Estas pruebas se integran en la suite obligatoria de CI para bloquear cualquier merge que las rompa. Opcionalmente corren también en entornos efímeros tras el despliegue para confirmar que el comportamiento seguro se conserva con la configuración real de red.",
+    "practicas": [
+      "Exigir un test de regresión específico por cada vulnerabilidad crítica o de negocio corregida antes de cerrar el ticket de remediación.",
+      "Combinar negative testing (entradas malformadas) con abuse case testing (flujos válidos usados de forma maliciosa, como saltar pasos en un pago).",
+      "Mantener los tests rápidos e independientes del estado global para ejecutarlos en cada commit sin depender de escáneres DAST lentos.",
+      "Error típico: validar solo el caso positivo ('el usuario autorizado accede') tras corregir un fallo de autorización, omitiendo probar que un usuario ajeno recibe 403."
+    ],
+    "ejemplo": "# Test de regresión para prevenir retorno de IDOR en endpoint de facturas\ndef test_prevent_idor_invoice_access(client, user_a_token, user_b_invoice_id):\n    resp = client.get(\n        f\"/api/v1/invoices/{user_b_invoice_id}\",\n        headers={\"Authorization\": f\"Bearer {user_a_token}\"}\n    )\n    assert resp.status_code == 403",
+    "entrevista": "El security regression testing transforma cada vulnerabilidad descubierta en una prueba automatizada permanente en CI, garantizando que un refactor futuro no reintroduzca un fallo que ya costó esfuerzo detectar y parchar."
+  },
+  "Semgrep": {
+    "que": "Semgrep es una herramienta de análisis estático (SAST) rápida y multi-lenguaje que detecta vulnerabilidades, errores y antipatrones mediante reglas declarativas basadas en sintaxis estructurada. A diferencia de grep textual, entiende la estructura sintáctica de cada lenguaje sin requerir obligatoriamente compilar el proyecto.",
+    "para": "Sirve para detectar fallos comunes (OWASP Top 10), exposición de secretos y desviaciones respecto a estándares internos de codificación segura directamente en pull requests. Resulta especialmente valiosa cuando se necesita redactar reglas personalizadas en minutos para proteger APIs, frameworks o invariantes propios de la organización.",
+    "como": "Su motor central (semgrep-core, escrito en OCaml) utiliza gramáticas Tree-sitter para parsear archivos fuente hacia un AST genérico unificado para más de treinta lenguajes. Las reglas en YAML emplean metavariables ($VAR), operadores de elipsis (...) y combinadores booleanos (patterns, pattern-either, pattern-not) para emparejar subárboles estructurales sin depender de formato ni comentarios. En modo taint (mode: taint), rastrea flujo de datos intraprocedural —e interprocedural/interarchivo en su motor Pro— conectando pattern-sources, pattern-sanitizers y pattern-sinks. Finalmente soporta autofixes declarativos y exportación de resultados en JSON o SARIF.",
+    "practicas": [
+      "Crear reglas internas (guardrails) que prohíban primitivas inseguras (como subprocess con shell=True) y sugieran el helper seguro aprobado por el equipo.",
+      "Ejecutar escaneos diferenciales (--baseline-commit o semgrep ci) en repositorios extensos para reportar únicamente hallazgos introducidos en el PR actual.",
+      "Acompañar cada regla personalizada con casos de prueba anotados (# ruleid: y # ok:) validados mediante semgrep --test.",
+      "Semgrep vs CodeQL: Semgrep es mucho más ágil y no exige compilación previa, ideal para feedback inmediato en PRs; CodeQL ofrece análisis semántico profundo sobre bases de datos compiladas."
+    ],
+    "ejemplo": "rules:\n  - id: python-exec-shell-true\n    languages: [python]\n    severity: ERROR\n    message: \"Evita shell=True en subprocess; pasa una lista de argumentos.\"\n    patterns:\n      - pattern: subprocess.$FUNC(..., shell=True, ...)",
+    "entrevista": "Semgrep combina la sencillez de escribir reglas en YAML sobre el AST con análisis de taint ligero, permitiendo implantar guardrails de seguridad adaptados al código de la empresa en cuestión de horas."
+  },
+  "Snyk": {
+    "que": "Snyk es una plataforma de seguridad orientada al desarrollador que integra análisis de dependencias (Snyk Open Source), SAST (Snyk Code), contenedores (Snyk Container) e infraestructura como código (Snyk IaC). Se apoya en una base de vulnerabilidades curada y enriquecida con inteligencia de explotación y rutas de remediación.",
+    "para": "Centraliza la detección y priorización de riesgos en todo el ciclo de desarrollo, desde extensiones en el IDE hasta la monitorización continua de proyectos ya desplegados. Se adopta para reducir el ruido de alertas mediante análisis de alcanzabilidad y automatizar pull requests con actualizaciones mínimas seguras.",
+    "como": "La CLI (snyk) o la integración con el repositorio Git analiza manifiestos y lockfiles, construye el grafo de dependencias y lo contrasta por API frente a la Snyk Vulnerability DB. Para código propio, Snyk Code aplica análisis semántico simbólico e inferencia entrenada sobre commits históricos de seguridad para modelar flujos de datos en tiempo real. En imágenes OCI, Snyk Container inspecciona capas identificando paquetes de sistema operativo (dpkg, apk, rpm) y librerías de aplicación, sugiriendo imágenes base con menor exposición. Cuando existe corrección disponible, calcula la ruta mínima de actualización (upgrade path) o abre PRs automáticos en GitHub o GitLab.",
+    "practicas": [
+      "Ejecutar snyk monitor sobre la rama principal para recibir avisos inmediatos cuando surjan nuevos CVEs sobre código ya en producción sin esperar al siguiente build.",
+      "Versionar un archivo .snyk en el repositorio para documentar excepciones temporales (ignore) con fecha de expiración y justificación auditada.",
+      "Priorizar la cola de remediación filtrando por alcanzabilidad (Reachable) y madurez del exploit antes de abordar alertas teóricas.",
+      "Snyk vs Dependabot/Renovate: Dependabot y Renovate automatizan la actualización periódica de versiones; Snyk añade SAST propio, contenedores, IaC y priorización por alcanzabilidad."
+    ],
+    "ejemplo": "# Auditar dependencias bloqueando solo severidad alta con actualización disponible\nsnyk auth \"$SNYK_TOKEN\"\nsnyk test --severity-threshold=high --fail-on=upgradable\nsnyk container test myapp:1.4.0 --file=Dockerfile",
+    "entrevista": "El valor diferencial de Snyk frente a escáneres aislados está en su base de vulnerabilidades curada, el cálculo de rutas mínimas de actualización y la correlación unificada entre dependencias, código propio, contenedores e IaC."
+  },
+  "SonarQube": {
+    "que": "SonarQube es una plataforma de inspección continua centrada en calidad de código (mantenibilidad, fiabilidad, cobertura y duplicación) que incluye análisis SAST y detección de Security Hotspots. Opera con una arquitectura cliente-servidor respaldada por histórico de métricas y Quality Gates configurables.",
+    "para": "Permite gobernar la deuda técnica y los fallos básicos de seguridad de múltiples repositorios desde una consola centralizada bajo la filosofía 'Clean as You Code'. Se integra en CI/CD para impedir que código nuevo con vulnerabilidades detectables, bugs o baja cobertura llegue a producción.",
+    "como": "Durante el pipeline de CI se ejecuta sonar-scanner (o plugins para Maven, Gradle y .NET), que parsea el código fuente y, en lenguajes compilados como Java o C#, consume artefactos compilados y reportes de cobertura (JaCoCo, lcov) para construir modelos de control y flujo de datos interprocedural. El scanner envía el snapshot al servidor SonarQube vía API REST, donde el Compute Engine procesa métricas, compara contra la rama base o período de New Code y evalúa el Quality Gate. La plataforma distingue entre Vulnerabilities —confirmadas mediante reglas de taint analysis— y Security Hotspots —fragmentos sensibles al contexto que requieren evaluación manual para dictaminar si son seguros o riesgosos.",
+    "practicas": [
+      "Configurar Quality Gates estrictos sobre New Code (cero nuevas vulnerabilidades y 100% de hotspots revisados) en lugar de bloquear entregas por deuda heredada.",
+      "Usar SonarLint en el IDE en Connected Mode contra el servidor SonarQube para sincronizar reglas y evitar fallos antes del commit.",
+      "No descartar Security Hotspots por inercia: requieren análisis del contexto por parte del desarrollador o AppSec para marcarse como Safe o Fixed.",
+      "SonarQube vs Semgrep/CodeQL: SonarQube destaca como plataforma corporativa unificada de calidad y SAST en lenguajes clásicos (Java, C#, JS/TS), aunque su taint analysis avanzado suele requerir ediciones comerciales."
+    ],
+    "ejemplo": "sonar-scanner \\\n  -Dsonar.projectKey=payments-api \\\n  -Dsonar.sources=src \\\n  -Dsonar.host.url=https://sonar.example.com \\\n  -Dsonar.qualitygate.wait=true",
+    "entrevista": "SonarQube unifica calidad de software y seguridad bajo Quality Gates enfocados en código nuevo, separando vulnerabilidades confirmadas por taint analysis de Security Hotspots que exigen revisión contextual."
+  },
+  "Verificación de fix": {
+    "que": "La verificación de fix (retesting) es el proceso técnico formal mediante el cual el equipo de seguridad o QA comprueba que la corrección aplicada a una vulnerabilidad elimina por completo el riesgo original sin introducir regresiones ni variantes elusivas. Marca el paso de un hallazgo desde 'remediado por desarrollo' hasta 'cerrado y verificado'.",
+    "para": "Evita cierres prematuros basados únicamente en la confirmación verbal del desarrollador o en parches superficiales como listas negras fáciles de eludir o validaciones solo en frontend. Se ejecuta una vez desplegada la corrección en un entorno de staging equivalente a producción o al revisar el pull request de remediación.",
+    "como": "El validador recupera el reporte original, su Prueba de Concepto (PoC) y la causa raíz documentada, e inspecciona el diff del commit para confirmar si el arreglo corrige el origen (p. ej., consultas parametrizadas) o solo filtra un carácter concreto. A continuación reproduce el exploit original contra el entorno parcheado y diseña pruebas de evasión o bypass mediante codificaciones alternativas, condiciones de carrera, cambio de método HTTP o manipulación de cabeceras. También verifica endpoints hermanos o versiones anteriores de la API que compartan el mismo módulo o lógica vulnerable. Si todas las variantes quedan bloqueadas de forma segura y el flujo legítimo sigue funcionando, adjunta la evidencia técnica y garantiza que exista un test de regresión antes de cerrar el hallazgo.",
+    "practicas": [
+      "Revisar el diff de código fuente del parche (enfoque white-box) cuando esté accesible, sin limitarse a relanzar exactamente el PoC del reporte.",
+      "Probar técnicas de bypass y rutas paralelas: un arreglo en /api/v1/user suele dejar expuesto /api/v2/user o un resolver equivalente en GraphQL.",
+      "Exigir evidencia reproducible (petición/respuesta HTTP, commit SHA y entorno probado) para sostener auditorías de cumplimiento o cierres de bug bounty.",
+      "Error típico: aceptar una validación añadida en JavaScript del navegador o una regla temporal en el WAF como solución definitiva sin corregir el backend."
+    ],
+    "ejemplo": "Checklist de retesting (Hallazgo #412 - SQLi en /search):\n1. Revisar diff: f-string reemplazada por prepared statement en search_repo.py.\n2. Re-ejecutar PoC original (?q=' OR 1=1--) -> sin alteración de consulta.\n3. Probar bypass (doble URL-encode, cuerpo JSON) -> rechazado.\n4. Verificar patrón similar en /export -> seguro. Estado: VERIFIED_FIXED.",
+    "entrevista": "Verificar un fix no consiste solo en repetir el PoC original y observar que falla; implica auditar que el parche ataca la causa raíz, intentar bypasses y comprobar que el fallo no sobrevive en rutas paralelas."
+  },
+  "Vulnerability disclosure policy": {
+    "que": "Una Vulnerability Disclosure Policy (VDP) es una política pública y formal que define el canal, las reglas de actuación, el alcance y las garantías legales bajo las cuales investigadores externos o usuarios pueden reportar fallos de seguridad a una organización. Establece el marco operativo de la divulgación coordinada (Coordinated Vulnerability Disclosure) sin implicar necesariamente recompensas económicas.",
+    "para": "Elimina la incertidumbre legal y operativa cuando un tercero descubre una vulnerabilidad en servicios expuestos, evitando que el aviso se pierda en soporte genérico o derive en una publicación pública sin margen de corrección. Constituye un requisito fundamental en estándares como ISO/IEC 29147 y marcos regulatorios actuales.",
+    "como": "La organización publica la política en una ruta estándar legible por humanos y sistemas automatizados (/.well-known/security.txt conforme a RFC 9116), detallando canales de contacto cifrados (clave PGP), activos dentro y fuera de alcance, pruebas prohibidas (denegación de servicio, ingeniería social, exfiltración masiva) y tiempos objetivo de respuesta. Incorpora habitualmente una cláusula de Safe Harbor que compromete a la empresa a no emprender acciones legales contra quienes investiguen de buena fe respetando los límites definidos. Internamente, los avisos alimentan un flujo PSIRT de triaje, reproducción, cálculo de severidad, remediación y coordinación de embargo (por ejemplo, ventanas de 90 días) antes de divulgar detalles técnicos.",
+    "practicas": [
+      "Publicar y mantener vigente /.well-known/security.txt siguiendo RFC 9116, incluyendo fecha de expiración (Expires), enlace a la política y clave PGP activa.",
+      "Redactar una cláusula de Safe Harbor inequívoca para dar certidumbre jurídica a los investigadores que actúan dentro del alcance autorizado.",
+      "Definir SLAs realistas de acuse de recibo y triaje y cumplirlos, evitando que el silencio operativo empuje al investigador a divulgar sin coordinación.",
+      "VDP vs Bug Bounty: una VDP es el canal legal y operativo base para recibir reportes voluntarios; un programa de Bug Bounty añade incentivos monetarios sobre esa misma estructura."
+    ],
+    "ejemplo": "# Archivo /.well-known/security.txt (RFC 9116)\nContact: mailto:security@example.com\nEncryption: https://example.com/.well-known/pgp-key.txt\nPolicy: https://example.com/security/vdp\nPreferred-Languages: es, en\nExpires: 2027-06-30T23:59:00z",
+    "entrevista": "Una VDP es el pilar de la divulgación coordinada: ofrece a investigadores externos un canal claro vía security.txt, alcance explícito y protección Safe Harbor antes incluso de plantear un programa de Bug Bounty."
+  },
+  "Web vulnerability scanner": {
+    "que": "Un web vulnerability scanner es una herramienta automatizada de análisis dinámico (DAST) de caja negra que interactúa con aplicaciones web en ejecución mediante peticiones HTTP/HTTPS para descubrir fallos de seguridad explotables. Evalúa desde debilidades de configuración TLS y cabeceras hasta inyecciones, XSS y gestión insegura de sesiones.",
+    "para": "Identifica vulnerabilidades que únicamente emergen con la aplicación desplegada y conectada a su infraestructura real (proxies inversos, políticas CORS, cookies sin HttpOnly, paneles administrativos expuestos). Se utiliza en entornos de staging previos a producción, auditorías periódicas y fases iniciales de reconocimiento activo durante pentests.",
+    "como": "Partiendo de una URL semilla, el escáner realiza una fase de descubrimiento mediante spidering clásico (parseo de enlaces y formularios HTML), navegadores headless para aplicaciones SPA que renderizan rutas en JavaScript, o importando definiciones OpenAPI/Postman. Con el inventario de superficie construido (endpoints, parámetros query, cuerpos JSON y cabeceras), ejecuta análisis pasivo inspeccionando respuestas (ausencia de CSP, exposición de versiones, secretos en respuestas) y análisis activo inyectando payloads mutados (comillas SQL, vectores XSS, sondas out-of-band/OAST para SSRF o XXE ciego). Por último correlaciona anomalías —errores de motor SQL, reflexión sin escape o latencias provocadas en inyecciones ciegas— para emitir alertas con evidencia de petición y respuesta.",
+    "practicas": [
+      "Configurar mecanismos de autenticación (tokens JWT, cookies o scripts de login) para que el escáner cubra áreas privadas y no solo la portada pública.",
+      "Alimentar la herramienta con especificaciones OpenAPI/Swagger o tráfico capturado de pruebas E2E, ya que el crawling automático suele omitir rutas de APIs REST o GraphQL.",
+      "Lanzar escaneos activos únicamente contra entornos aislados de QA/staging o bajo ventanas controladas, porque los payloads mutados pueden alterar datos o saturar servicios.",
+      "Error típico: interpretar un reporte limpio de un escáner web como garantía de seguridad total; su cobertura es baja en lógica de negocio, IDOR/BOLA y flujos multi-paso."
+    ],
+    "ejemplo": "# Escaneo dinámico contra API usando especificación OpenAPI con OWASP ZAP\ndocker run --rm -v \"$(pwd):/zap/wrk/:rw\" ghcr.io/zaproxy/zaproxy:stable \\\n  zap-api-scan.py -t https://staging.example.com/openapi.json \\\n  -f openapi -r zap-report.html",
+    "entrevista": "Un web vulnerability scanner detecta con rapidez fallos de superficie, cabeceras e inyecciones clásicas en entornos reales, pero requiere autenticación y contratos OpenAPI para cubrir la aplicación y no reemplaza pruebas manuales de autorización o lógica de negocio."
+  },
+  "pip-audit": {
+    "que": "pip-audit es una herramienta oficial de código abierto mantenida bajo el ecosistema PyPA (Python Packaging Authority) para realizar análisis de composición de software (SCA) en proyectos Python. Audita paquetes instalados en un entorno o listados en archivos de dependencias buscando vulnerabilidades conocidas.",
+    "para": "Detecta de forma temprana librerías Python con CVEs o avisos de seguridad publicados antes de construir imágenes de contenedor o desplegar servicios a producción. Se utiliza tanto en local como en pasos ligeros de CI/CD donde se busca una auditoría nativa del ecosistema Python sin depender de plataformas comerciales.",
+    "como": "pip-audit inspecciona el entorno Python activo (mediante importlib.metadata o el resolutor de pip) o lee archivos como requirements.txt, pyproject.toml o lockfiles fijados. Extrae el nombre normalizado y la versión exacta de cada paquete instalado y realiza consultas en lote contra la API de vulnerabilidades de PyPI o la base abierta OSV (Open Source Vulnerabilities), manteniendo caché local para reducir latencia. Compara las versiones detectadas frente a los rangos afectados de cada aviso y reporta identificadores CVE, PYSEC o GHSA junto con las versiones corregidas disponibles. Adicionalmente permite aplicar actualizaciones compatibles con --fix y exportar resultados en JSON, CycloneDX o SARIF.",
+    "practicas": [
+      "Ejecutar pip-audit dentro del mismo virtualenv de ejecución o contra lockfiles con versiones fijadas (==) y hashes para evitar discrepancias de resolución.",
+      "Exportar el inventario con -f cyclonedx-json para alimentar sistemas centrales de gestión de SBOMs y seguimiento continuo de vulnerabilidades.",
+      "Usar --ignore-vuln únicamente de forma temporal y documentada en CI cuando un aviso carezca de versión parcheada o no afecte al uso real del proyecto.",
+      "pip-audit vs OWASP Dependency-Check: pip-audit es mantenido por PyPA, consulta fuentes nativas (PyPI/OSV) sin falsos positivos de emparejamiento por CPE y requiere configuración mínima."
+    ],
+    "ejemplo": "# Auditar dependencias fijadas con descripción y generar SBOM CycloneDX\npip-audit -r requirements.txt --strict --desc\npip-audit -r requirements.txt -f cyclonedx-json -o python-sbom.cdx.json",
+    "entrevista": "pip-audit es la herramienta nativa de PyPA para SCA en Python: consulta directamente PyPI y OSV sobre versiones exactas del entorno o lockfiles y genera SBOMs CycloneDX con mínima fricción en CI."
+  }
+}

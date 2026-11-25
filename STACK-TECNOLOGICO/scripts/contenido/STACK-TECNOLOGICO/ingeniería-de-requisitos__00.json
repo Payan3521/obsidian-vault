@@ -1,0 +1,392 @@
+{
+  "ATAM": {
+    "que": "ATAM (Architecture Tradeoff Analysis Method) es un método formal desarrollado por el Software Engineering Institute (SEI) para evaluar arquitecturas de software frente a múltiples requisitos de atributos de calidad antes de escribir código o escalar un sistema. No mide si una arquitectura es correcta en abstracto, sino los riesgos, compromisos (tradeoffs) y puntos de sensibilidad respecto a las metas del negocio.",
+    "para": "Sirve para detectar incompatibilidades tempranas entre requisitos no funcionales conflictivos, como latencia baja frente a cifrado fuerte o consistencia estricta frente a disponibilidad. Se aplica en fases iniciales de diseño arquitectónico o antes de migraciones críticas donde revertir decisiones resulta prohibitivamente costoso.",
+    "como": "El proceso se divide en cuatro fases ejecutadas por un equipo evaluador externo, arquitectos y stakeholders. Primero se presentan los drivers de negocio y la arquitectura candidata; luego se construye un árbol de utilidad (utility tree) que traduce los atributos de calidad en escenarios concretos priorizados por importancia y dificultad. En la fase analítica se evalúa cada enfoque arquitectónico frente a los escenarios prioritarios identificando puntos de sensibilidad (parámetros que alteran un atributo), puntos de tradeoff (decisiones que mejoran un atributo y degradan otro), riesgos y no-riesgos. Finalmente se consolidan los hallazgos en un informe accionable que guía la mitigación o rediseño.",
+    "practicas": [
+      "Priorizar el árbol de utilidad junto con stakeholders reales; evaluar todos los escenarios por igual diluye el análisis en casos triviales.",
+      "Documentar explícitamente los tradeoffs (ej. replicación síncrona mejora RPO pero aumenta latencia de escritura) en lugar de prometer cumplimiento simultáneo sin costo.",
+      "ATAM vs. CBAM: ATAM identifica riesgos y tradeoffs técnicos; CBAM (Cost Benefit Analysis Method) añade el cálculo económico de retorno sobre la inversión para elegir entre estrategias.",
+      "Error típico: realizar ATAM solo con el equipo de desarrollo, omitiendo a negocio, seguridad u operaciones, lo que invalida las prioridades del árbol de utilidad."
+    ],
+    "ejemplo": "Utility Tree (extracto):\nAtributo: Rendimiento -> Latencia de lectura\n  Escenario: P95 < 120 ms con 5000 req/s en pico [Importancia: Alta, Riesgo: Alto]\nAtributo: Seguridad -> Confidencialidad\n  Escenario: Cifrado TLS 1.3 + AES-256-GCM en tránsito y reposo [Importancia: Alta, Riesgo: Medio]\nTradeoff detectado: TLS termination en cada microservicio añade ~4 ms por salto; mitigación: mTLS con pooling de conexiones persistentes.",
+    "entrevista": "Uso ATAM para validar arquitecturas con stakeholders mediante un árbol de utilidad y escenarios medibles, haciendo explícitos los puntos de sensibilidad y tradeoffs antes de comprometer la implementación."
+  },
+  "Accesibilidad como requisito": {
+    "que": "La accesibilidad como requisito es un requisito no funcional (y frecuentemente legal) que exige que un sistema software sea operable, perceptible, comprensible y robusto para personas con discapacidades visuales, auditivas, motoras o cognitivas, así como compatible con tecnologías de asistencia como lectores de pantalla y navegación por teclado. Se especifica de forma verificable mediante estándares como WCAG 2.2 (niveles A, AA, AAA) y WAI-ARIA.",
+    "para": "Resuelve la exclusión de usuarios y elimina barreras técnicas en interfaces web, móviles y de escritorio, además de evitar sanciones regulatorias en sectores públicos, financieros y de consumo masivo. Debe definirse desde la fase de requisitos y diseño porque añadir soporte semántico y contraste tras completar la UI multiplica el esfuerzo de refactorización.",
+    "como": "Se traduce en criterios concretos vinculados a los cuatro principios POUR de WCAG: Perceptible (alternativas textuales, contraste mínimo 4.5:1 en texto normal), Operable (navegación completa por teclado sin trampas de foco, tiempos ajustables), Comprensible (etiquetas claras, mensajes de error descriptivos) y Robusto (HTML semántico y atributos ARIA válidos). En el ciclo de desarrollo se integra en criterios de aceptación, auditorías automatizadas en CI/CD con motores como axe-core o Lighthouse, y pruebas manuales con lectores de pantalla (NVDA, VoiceOver) y tabulación.",
+    "practicas": [
+      "Definir el nivel objetivo explícito (ej. 'Cumplimiento WCAG 2.2 Nivel AA en todos los flujos críticos') en los criterios de aceptación, nunca 'hacer la web accesible'.",
+      "Preferir elementos HTML nativos (<button>, <nav>, <label>) antes que <div> con roles ARIA; una mala implementación de ARIA empeora la experiencia en lectores de pantalla.",
+      "Combinar linters y pruebas automatizadas en CI con pruebas manuales de teclado y lector de pantalla, ya que las herramientas automáticas solo detectan ~30-40% de las barreras reales.",
+      "Error común: validar contraste únicamente en estado reposo e ignorar estados :focus, :hover, disabled o alertas dinámicas (aria-live)."
+    ],
+    "ejemplo": "RNF-ACC-01 (WCAG 2.2 AA):\n- Todos los flujos de autenticación y checkout deben ser 100% operables vía teclado (Tab/Shift+Tab/Enter/Esc) con indicador de foco visible (contraste >= 3:1).\n- Contraste texto/fondo >= 4.5:1 (>= 3:1 texto grande).\n- Validación CI: 0 violaciones críticas/serias en `axe-core` sobre vistas principales.",
+    "entrevista": "Trato la accesibilidad como un requisito no funcional medible desde la definición de historias, especificando conformidad WCAG 2.2 AA y combinando HTML semántico, pruebas automáticas con axe-core y validación manual por teclado y lector de pantalla."
+  },
+  "Análisis de requisitos": {
+    "que": "El análisis de requisitos es la actividad de la ingeniería de requisitos encargada de examinar, descomponer, modelar, depurar y verificar los datos obtenidos durante la elicitación para transformarlos en un conjunto consistente, completo, factible y sin ambigüedades. Actúa como puente entre las necesidades expresadas en lenguaje de negocio y la especificación técnica formal.",
+    "para": "Sirve para detectar contradicciones entre stakeholders, descubrir requisitos implícitos u omitidos, evaluar la viabilidad técnica y económica y acotar el alcance real antes de diseñar e implementar. Reduce drásticamente el retrabajo causado por malentendidos tardíos.",
+    "como": "A partir de notas de entrevistas, workshops y documentos existentes, el analista clasifica los elementos en requisitos funcionales, no funcionales y restricciones del dominio. Luego aplica técnicas de modelado (diagramas de flujo, modelos de dominio, máquinas de estado, casos de uso o descomposición en épicas) para revelar huecos lógicos y dependencias. Paralelamente ejecuta comprobaciones de calidad: elimina ambigüedades lingüísticas, resuelve conflictos mediante negociación y priorización, verifica viabilidad con arquitectura y asigna identificadores únicos para mantener trazabilidad hacia su origen.",
+    "practicas": [
+      "Separar el 'qué' (problema y comportamiento observable) del 'cómo' (decisión de implementación como elegir Redis o un microservicio concreto).",
+      "Buscar activamente casos borde, estados de error, concurrencia y reglas de negocio tácitas que los usuarios dan por sentadas.",
+      "Elicitación vs. Análisis: la elicitación recopila necesidades brutas desde las fuentes; el análisis las estructura, resuelve contradicciones y valida consistencia y factibilidad.",
+      "Evitar términos subjetivos ('rápido', 'intuitivo', 'seguro') sustituyéndolos por métricas verificables o descomponiéndolos en atributos concretos."
+    ],
+    "ejemplo": "Requisito bruto: 'El usuario debe poder cancelar su pedido rápidamente.'\nResultado del análisis:\n- Regla de negocio: Cancelación permitida solo si estado in ['PENDIENTE', 'PAGADO'] y antes del despacho.\n- Efecto secundario: Emitir reembolso asíncrono y liberar reserva de inventario.\n- Métrica RNF: Confirmación síncrona en < 1.5 s (P95).",
+    "entrevista": "En el análisis de requisitos convierto necesidades ambiguas en modelos consistentes y verificables, detectando conflictos entre stakeholders, casos borde y restricciones no funcionales antes de pasar al diseño."
+  },
+  "Casos de uso": {
+    "que": "Un caso de uso es una técnica estructurada de especificación funcional que describe las interacciones paso a paso entre un actor (persona o sistema externo) y el sistema bajo diseño para lograr un objetivo concreto de negocio. Incluye flujos principales, flujos alternativos y flujos de excepción con sus precondiciones y postcondiciones.",
+    "para": "Sirve para capturar comportamiento completo de extremo a extremo, especialmente en flujos transaccionales complejos, integraciones entre sistemas o dominios regulados donde las historias de usuario breves resultan insuficientes para reflejar variantes y errores.",
+    "como": "Cada caso de uso define un identificador, actor principal y secundarios, disparador (trigger), precondiciones obligatorias y postcondiciones de éxito o fallo. El núcleo es el escenario principal de éxito: una secuencia numerada de pasos actor-sistema hasta alcanzar la meta. A partir de cada paso se ramifican flujos alternativos (caminos válidos distintos) y flujos de excepción (errores de validación, timeouts, caídas de pasarela), garantizando cobertura exhaustiva de estados y facilitando la derivación directa de casos de prueba.",
+    "practicas": [
+      "Redactar pasos desde la perspectiva observable externa ('El sistema valida el saldo' en lugar de 'El servicio llama a SELECT balance FROM...').",
+      "Casos de uso vs. Historias de usuario: los casos de uso documentan de forma exhaustiva flujos principales y excepciones como especificación viva del sistema; las historias son unidades incrementales de entrega orientadas a conversación y valor.",
+      "Combinar la vista visual (diagrama UML de casos de uso para fronteras y actores) con la plantilla textual detallada; el diagrama por sí solo carece de valor operativo.",
+      "No confundir un paso individual ('Ingresar contraseña') con un caso de uso completo; un caso de uso debe aportar valor de negocio observable al actor."
+    ],
+    "ejemplo": "CU-04: Realizar Transferencia Bancaria\nActor: Cliente autenticado | Precondición: Sesión MFA activa.\nFlujo principal:\n1. Cliente selecciona cuenta origen, destino y monto.\n2. Sistema valida fondos y límites diarios.\n3. Sistema solicita confirmación OTP.\n4. Cliente confirma; sistema ejecuta débito/crédito atómico y emite comprobante.\nExcepción 2a: Fondos insuficientes -> Sistema muestra error ERR_SALDO y aborta.",
+    "entrevista": "Uso casos de uso cuando necesito especificar flujos completos con precondiciones, caminos alternativos y manejo explícito de excepciones que sirven directamente para diseñar arquitectura y suites de prueba."
+  },
+  "Criterios de aceptación": {
+    "que": "Los criterios de aceptación son el conjunto de condiciones explícitas, verificables y binarias (pasa/no pasa) que una historia de usuario o requisito debe satisfacer para ser considerada completada y aceptada por el Product Owner y el equipo de QA. Definen los límites del alcance funcional y las reglas clave de validación.",
+    "para": "Eliminan la interpretación subjetiva sobre cuándo una funcionalidad está terminada, alinean a desarrollo, producto y QA antes de programar y sirven como base directa para pruebas automatizadas de aceptación (BDD/ATDD).",
+    "como": "Se redactan durante el refinamiento del backlog junto al equipo multidisciplinario usando formatos estructurados como lista de reglas verificables o sintaxis Gherkin (Given-When-Then). Cada escenario establece el contexto inicial (Given), la acción disparadora (When) y el resultado observable esperado (Then), cubriendo tanto el camino feliz como errores, permisos y límites de entrada. En ejecución, estos criterios se traducen en pruebas E2E o de integración en frameworks como Cucumber, Playwright o JUnit.",
+    "practicas": [
+      "Escribir criterios independientes de la implementación UI concreta ('el usuario queda autenticado' en vez de 'se guarda JWT en localStorage') para evitar tests frágiles.",
+      "Incluir siempre casos negativos, permisos insuficientes y valores límite, no solo el flujo exitoso.",
+      "Criterios de aceptación vs. Definition of Done (DoD): los criterios son específicos de cada historia o requisito; la DoD es el estándar transversal de calidad del equipo para cualquier incremento (tests, code review, CI verde).",
+      "Si una historia requiere más de 6-8 escenarios complejos, es señal de que debe dividirse en historias más pequeñas."
+    ],
+    "ejemplo": "Feature: Aplicar cupón de descuento\n  Scenario: Cupón válido en carrito elegible\n    Given un carrito con subtotal de 100 USD y cupón \"PROMO20\" activo\n    When el cliente aplica el cupón \"PROMO20\"\n    Then el descuento calculado es 20 USD y el total pasa a 80 USD\n  Scenario: Cupón expirado\n    Given un cupón con fecha de expiración anterior a hoy\n    When el cliente intenta aplicarlo\n    Then el sistema rechaza el cupón con el mensaje \"Cupón expirado\"",
+    "entrevista": "Defino criterios de aceptación verificables en formato Given-When-Then cubriendo casos felices, bordes y errores para alinear a producto, desarrollo y QA antes de escribir la primera línea de código."
+  },
+  "Definition of Ready": {
+    "que": "La Definition of Ready (DoR) es un acuerdo explícito de equipo que establece los requisitos mínimos de claridad, detalle, estimación y ausencia de bloqueos que un ítem del backlog debe cumplir antes de ser seleccionado para un sprint o iteración de desarrollo.",
+    "para": "Evita iniciar trabajo con historias ambiguas, dependencias externas sin resolver o diseños faltantes, reduciendo interrupciones en mitad del sprint, estimaciones fallidas y retrabajo.",
+    "como": "Durante las sesiones de refinamiento (backlog grooming), el Product Owner y el equipo de ingeniería evalúan cada historia candidata frente al checklist de la DoR: objetivo de negocio claro, criterios de aceptación definidos, dependencias técnicas o de terceros identificadas, prototipos o contratos API disponibles y tamaño acorde al criterio INVEST para caber en una iteración. Solo cuando cumple todos los puntos, la historia pasa al estado 'Ready' y puede entrar en Sprint Planning.",
+    "practicas": [
+      "Mantener la DoR como una guía pragmática y no como una puerta burocrática rígida (stage-gate) que impida abordar spikes exploratorios.",
+      "DoR vs. DoD: la DoR controla la entrada al sprint (¿está listo para construirse?); la Definition of Done controla la salida hacia producción (¿está listo para entregarse?).",
+      "Revisar periódicamente la DoR en retrospectivas si el equipo sigue encontrando bloqueos recurrentes durante el sprint (ej. falta de accesos o datos de prueba).",
+      "Error común: exigir especificaciones técnicas exhaustivas en la DoR anulando la colaboración emergente entre desarrolladores durante el sprint."
+    ],
+    "ejemplo": "Checklist DoR del equipo:\n[x] Historia redactada con valor de usuario y tamaño <= 5 story points\n[x] Criterios de aceptación en Given-When-Then revisados por QA y Dev\n[x] Contrato OpenAPI o mockups de Figma enlazados\n[x] Dependencias con otros equipos desbloqueadas\n[x] Requisitos de seguridad/telemetría identificados",
+    "entrevista": "Uso la Definition of Ready como filtro colaborativo en refinamiento para asegurar criterios claros, dependencias despejadas y alcance acotado antes del Sprint Planning, evitando que la ambigüedad bloquee la ejecución."
+  },
+  "Documento de requerimientos": {
+    "que": "Un documento de requerimientos (como un BRD —Business Requirements Document— o PRD —Product Requirements Document—) es el artefacto formal que consolida las necesidades del negocio, objetivos del proyecto, alcance, restricciones, usuarios objetivo y requisitos de alto nivel de una iniciativa software.",
+    "para": "Alinea a dirección, producto, negocio y equipos técnicos sobre qué problema se va a resolver, para quién y con qué criterios de éxito, sirviendo de contrato de referencia y base para derivar especificaciones detalladas o épicas.",
+    "como": "Se elabora tras la fase inicial de descubrimiento y elicitación mediante secciones estandarizadas: resumen ejecutivo, contexto y métricas objetivo (KPIs/OKRs), personas y casos de uso principales, alcance incluido y excluido (out of scope), requisitos funcionales y no funcionales clave, dependencias, riesgos y supuestos. A diferencia de la especificación técnica (SRS), prioriza el lenguaje del dominio de negocio y se versiona en herramientas colaborativas (Confluence, Notion, Git/Markdown) con aprobación explícita de los sponsors.",
+    "practicas": [
+      "Incluir siempre una sección explícita de 'Fuera de alcance' (Out of Scope); evita la expansión descontrolada del proyecto (scope creep).",
+      "Documento de requerimientos (PRD/BRD) vs. SRS: el PRD/BRD responde al 'por qué' y 'qué valor' busca negocio y producto; el SRS detalla con rigor técnico verificable 'qué debe hacer el sistema' y sus interfaces.",
+      "Tratarlo como documento vivo con control de versiones y registro de decisiones, no como un PDF estático olvidado tras el kick-off.",
+      "Vincular cada requerimiento de alto nivel con métricas medibles de éxito para validar tras el lanzamiento si el producto resolvió el problema."
+    ],
+    "ejemplo": "# PRD: Pagos con Billetera Digital v1.2\n1. Objetivo: Reducir abandono en checkout del 34% al 24% en Q3.\n2. Alcance IN: Pago con token único, reembolso total.\n3. Alcance OUT: Pagos recurrentes / suscripciones (Fase 2).\n4. Requisitos clave: RF-01 Checkout 1-clic; RNF-01 Latencia < 800 ms.\n5. Riesgos: Caída de proveedor PSP -> Fallback a tarjeta.",
+    "entrevista": "Estructuro el documento de requerimientos (PRD/BRD) alrededor de objetivos medibles, alcance explícito IN/OUT y restricciones clave, manteniéndolo versionado como contrato vivo entre negocio e ingeniería."
+  },
+  "Entrevistas con stakeholders": {
+    "que": "Las entrevistas con stakeholders son una técnica directa y cualitativa de elicitación de requisitos basada en conversaciones planificadas (estructuradas, semiestructuradas o abiertas) entre el analista o Product Owner y las personas interesadas en el sistema, como usuarios finales, patrocinadores, expertos de dominio u operadores.",
+    "para": "Permiten descubrir necesidades reales, flujos de trabajo tácitos, puntos de dolor, prioridades políticas y restricciones regulatorias o de negocio que rara vez aparecen en manuales o solicitudes escritas.",
+    "como": "Comienzan preparando una guía de entrevista adaptada al perfil del entrevistado: preguntas abiertas para explorar contexto y dolores ('¿Qué ocurre cuando falla el cierre diario?') y preguntas cerradas para confirmar reglas o cifras concretas. Durante la sesión se practica escucha activa, se solicitan ejemplos reales o artefactos (hojas de cálculo, pantallas actuales) y se evitan preguntas capciosas. Posteriormente se redacta un acta de síntesis y se envía al entrevistado para validación escrita y trazabilidad hacia el registro de requisitos.",
+    "practicas": [
+      "Aplicar la regla de los '5 Porqués' para distinguir entre la solución que pide el stakeholder ('quiero exportar a Excel') y el problema raíz ('necesito conciliar facturas manualmente').",
+      "Combinar entrevistas individuales con observación contextual (shadowing) cuando el usuario no sabe verbalizar pasos automáticos de su rutina diaria.",
+      "Entrevistas vs. Workshops: las entrevistas capturan visiones confidenciales o profundas sin presión grupal; los workshops resuelven conflictos y construyen consenso entre áreas.",
+      "Error clásico: preguntar '¿Qué quiere que haga el sistema?' en lugar de investigar cómo trabaja hoy y qué decisiones toma con la información."
+    ],
+    "ejemplo": "Guía semiestructurada (Operaciones):\n1. Contexto: ¿Cuál es la primera tarea al iniciar turno y qué herramientas abre?\n2. Fricción: ¿Qué paso genera más errores manuales o retrabajo semanal?\n3. Excepciones: Cuando un envío llega sin código válido, ¿qué protocolo sigue?\n4. Impacto: Si automatizamos este paso, ¿cómo mediría el éxito en 30 días?",
+    "entrevista": "Conduzco entrevistas semiestructuradas enfocadas en flujos reales, excepciones y causa raíz de los problemas antes de discutir soluciones, validando siempre las conclusiones por escrito con el stakeholder."
+  },
+  "Especificación de requisitos": {
+    "que": "La especificación de requisitos es el proceso y el resultado de documentar de forma precisa, estructurada, verificable y sin ambigüedades los requisitos funcionales, no funcionales y de interfaz que el sistema debe cumplir, siguiendo estándares como ISO/IEC/IEEE 29148.",
+    "para": "Proporciona la referencia autoritativa para arquitectos, desarrolladores, testers y equipos de cumplimiento regulatorio, garantizando que todos construyan y verifiquen exactamente el mismo sistema.",
+    "como": "Una vez analizados los requisitos, cada ítem recibe un identificador único, prioridad, fuente y versión, redactándose mediante patrones sintácticos estandarizados como EARS (Easy Approach to Requirements Syntax: 'While <precondición>, when <evento>, the <sistema> shall <respuesta>') o modelos formales (contratos OpenAPI, diagramas de estado, tablas de decisión). La especificación vincula cada requisito con sus criterios de verificación (inspección, demostración, análisis o prueba) y mantiene relaciones de trazabilidad bidireccional hacia objetivos de negocio y casos de prueba.",
+    "practicas": [
+      "Cumplir las características de calidad de ISO/IEC/IEEE 29148: cada requisito debe ser necesario, singular, completo, consistente, factible, no ambiguo y verificable.",
+      "Usar una única obligación por requisito ('shall' / 'debe'); agrupar múltiples condiciones en un párrafo dificulta la trazabilidad y las pruebas.",
+      "Definir condiciones cuantitativas en lugar de adverbios vagos ('99.95% mensual' en lugar de 'alta disponibilidad').",
+      "Acompañar el texto con modelos visuales o contratos de interfaz (JSON Schema, máquinas de estado) donde el lenguaje natural resulte propenso a doble interpretación."
+    ],
+    "ejemplo": "Patrón EARS:\nID: REQ-AUTH-012 | Prioridad: Alta | Verificación: Prueba automatizada\n\"When a user submits 5 consecutive invalid login attempts within 15 minutes,\n the Authentication Service shall lock the account for 30 minutes and emit\n an `AccountLocked` audit event within 2 seconds.\"",
+    "entrevista": "Especifico requisitos atómicos, singulares y verificables usando estructuras como EARS y estándares ISO/IEC/IEEE 29148, asociando a cada uno su método de prueba y trazabilidad."
+  },
+  "Gestión de cambios de requisitos": {
+    "que": "La gestión de cambios de requisitos es el proceso sistemático para recibir, registrar, evaluar el impacto, aprobar o rechazar, comunicar y versionar las modificaciones propuestas a los requisitos ya acordados durante el ciclo de vida del proyecto.",
+    "para": "Controla el scope creep (expansión descontrolada del alcance), evita cambios informales 'de pasillo' que rompen estimaciones o arquitecturas y mantiene sincronizados código, pruebas, documentación y expectativas del negocio.",
+    "como": "Toda solicitud de cambio (Change Request) se registra formalmente indicando motivo, solicitante y requisitos afectados. A continuación se ejecuta un análisis de impacto usando la matriz de trazabilidad para cuantificar efecto en arquitectura, esfuerzo, coste, cronograma, riesgos y pruebas existentes. En entornos tradicionales o regulados un Change Control Board (CCB) aprueba o rechaza la solicitud; en entornos ágiles el Product Owner reprioriza el backlog intercambiando alcance equivalente (trade-off de sprint/release). Tras aprobarse, se actualiza la línea base, se notifican los equipos y se versiona el cambio.",
+    "practicas": [
+      "Nunca aceptar cambios fuera de flujo sin analizar antes su impacto técnico y en pruebas; un cambio 'pequeño' en UI suele alterar validaciones, esquema de datos y reportes.",
+      "Aplicar el principio de intercambio en ágil: si entra un requisito urgente de 8 puntos en un lanzamiento cerrado, otro de tamaño equivalente debe salir o moverse la fecha.",
+      "Mantener historial auditable (quién pidió qué, cuándo y por qué se aprobó) mediante herramientas como Jira, Azure DevOps o ADRs/PRs en Git.",
+      "Distinguir entre aclaración de detalle (sin cambio de alcance) y cambio real de requisito o regla de negocio."
+    ],
+    "ejemplo": "Change Request CR-2026-08:\n- Requisito afectado: REQ-PAY-03 (añadir pago diferido en 3 cuotas).\n- Impacto técnico: +2 endpoints PSP, migración tabla `payments`, 12 casos de prueba.\n- Esfuerzo: 13 story points (~1 sprint).\n- Decisión CCB/PO: Aprobado para Release 2.1; se difiere REQ-REP-09.",
+    "entrevista": "Gestiono cambios mediante análisis de impacto apoyado en trazabilidad, haciendo explícito el costo en alcance, tiempo o calidad antes de actualizar la línea base o repriorizar el backlog."
+  },
+  "Ingeniería de requisitos": {
+    "que": "La ingeniería de requisitos (RE, Requirements Engineering) es la disciplina sistemática de la ingeniería de software dedicada a descubrir, analizar, especificar, validar y gestionar las necesidades, restricciones y comportamientos que un sistema debe satisfacer a lo largo de todo su ciclo de vida.",
+    "para": "Resuelve la principal causa de fracaso en proyectos de software: construir el producto equivocado o con supuestos incompatibles entre negocio e ingeniería. Minimiza costos de corrección al detectar errores conceptuales antes de implementar.",
+    "como": "Opera como un proceso iterativo y continuo compuesto por cinco actividades principales: elicitación (recolección desde stakeholders, usuarios y sistemas existentes), análisis y negociación (estructuración, detección de conflictos y priorización), especificación (documentación en artefactos como SRS, historias o modelos), validación (confirmación de que refleja la necesidad real mediante prototipos o revisiones) y gestión (trazabilidad, versionado y control de cambios). Se adapta tanto a ciclos predictivos (líneas base formales) como a entregas continuas ágiles (refinamiento continuo del backlog).",
+    "practicas": [
+      "Tratar los requisitos como un flujo continuo de aprendizaje y refinamiento, no como una fase única que se congela para siempre el día 1.",
+      "Involucrar desde el inicio a arquitectura, QA, seguridad y operaciones además de negocio para capturar RNF y restricciones reales.",
+      "Mantener trazabilidad ligera pero viva entre metas de negocio, requisitos, diseño y tests automatizados.",
+      "Error grave: confundir ingeniería de requisitos con 'tomar nota de lo que pide el cliente'; su rol es cuestionar, modelar y verificar."
+    ],
+    "ejemplo": "Ciclo continuo de RE:\n1. Elicitación (Entrevistas, User Research)\n2. Análisis (Modelado, conflictos, RNF)\n3. Especificación (SRS / Historias + Criterios Given-When-Then)\n4. Validación (Prototipos, Walkthroughs)\n5. Gestión (Trazabilidad, Registro y Control de cambios)",
+    "entrevista": "Entiendo la ingeniería de requisitos como un proceso iterativo de descubrimiento, análisis, especificación, validación y gestión continua que alinea objetivos de negocio con decisiones verificables de arquitectura y pruebas."
+  },
+  "Kano model": {
+    "que": "El modelo Kano es un marco de priorización de requisitos y funcionalidades de producto creado por Noriaki Kano que clasifica las características según cómo su presencia o ausencia impacta de forma no lineal en la satisfacción del usuario.",
+    "para": "Evita asumir que todas las funcionalidades aportan satisfacción proporcional al esfuerzo. Permite balancear el backlog entre estabilidad básica obligatoria, mejoras competitivas de rendimiento y diferenciadores innovadores.",
+    "como": "El método aplica cuestionarios con pares de preguntas por cada funcionalidad: una funcional ('¿Cómo te sientes si el sistema tiene X?') y una disfuncional ('¿Cómo te sientes si el sistema NO tiene X?'), con respuestas en escala de cinco opciones ('Me gusta', 'Lo espero', 'Soy neutral', 'Puedo tolerarlo', 'No me gusta'). Cruzando ambas respuestas en la tabla de evaluación Kano se clasifica cada requisito en categorías: Básicos/Must-be (si faltan generan fuerte insatisfacción, si están son neutros), Lineales/Performance (más es mejor), Atractivos/Delighters (sorprenden positivamente pero no se esperan), Indiferentes (no aportan valor) o Inversos (molestan). Con el tiempo, los Delighters tienden a convertirse en Básicos.",
+    "practicas": [
+      "Cubrir primero los requisitos Básicos (seguridad, guardado fiable, disponibilidad) antes de invertir en Delighters; un sistema vistoso que falla en lo básico fracasa.",
+      "Combinar Kano con métricas de coste/esfuerzo: los requisitos Indiferentes deben descartarse aunque sean fáciles de programar.",
+      "Kano vs. MoSCoW: MoSCoW decide qué entra en un lanzamiento según urgencia/capacidad; Kano mide la psicología y retorno de satisfacción del cliente.",
+      "Reevaluar periódicamente las categorías, ya que funciones diferenciadoras de hace dos años (ej. SSO o modo oscuro) hoy suelen ser expectativas básicas."
+    ],
+    "ejemplo": "Evaluación Kano para app bancaria:\n- Básico (Must-be): Transferencias sin duplicidad ni pérdida de saldo.\n- Lineal (Performance): Tiempo de carga de movimientos (< 300 ms vs 2 s).\n- Atractivo (Delighter): Categorización automática inteligente de gastos.\n- Indiferente: Cambiar fuente tipográfica del menú.",
+    "entrevista": "Aplico el modelo Kano mediante encuestas funcional/disfuncional para distinguir requisitos básicos no negociables de atributos lineales y diferenciadores, evitando gastar ingeniería en funcionalidades indiferentes."
+  },
+  "Matriz de trazabilidad": {
+    "que": "Una matriz de trazabilidad de requisitos (RTM, Requirements Traceability Matrix) es una tabla o grafo relacional que vincula bidireccionalmente cada requisito con su origen de negocio, componentes de diseño/arquitectura, elementos de código y casos de prueba que lo verifican.",
+    "para": "Garantiza que ningún requisito quede huérfano sin implementar o probar, que no se desarrolle código sin justificación de negocio (gold plating) y permite calcular al instante el impacto de cualquier cambio o fallo en producción.",
+    "como": "Cada requisito recibe un ID único e inmutable y se enlaza en doble dirección: trazabilidad hacia adelante (requisito -> diseño -> módulo/PR -> caso de prueba -> resultado de ejecución) y hacia atrás (caso de prueba o cambio -> requisito -> objetivo/stakeholder). En prácticas modernas de ingeniería no se mantiene manualmente en hojas de cálculo, sino automatizada vinculando IDs de issues (Jira/Linear) en commits y Pull Requests, etiquetas en pruebas automatizadas (BDD/Pytest/JUnit) y pipelines de CI/CD que generan reportes de cobertura por requisito.",
+    "practicas": [
+      "Automatizar la trazabilidad mediante convenciones en commits, PRs y etiquetas de tests; las hojas de Excel manuales quedan obsoletas en semanas.",
+      "Exigir trazabilidad bidireccional completa en dominios regulados (fintech, salud/FDA, automoción ISO 26262, aviación DO-178C).",
+      "Verificar dos métricas clave en la RTM: requisitos sin tests asignados (brecha de cobertura) y tests que fallan mapeados a requisitos críticos de negocio.",
+      "Mantener granularidad adecuada: trazar a nivel de requisito/historia y suite de verificación, no por cada línea de código."
+    ],
+    "ejemplo": "| Req ID     | Origen        | Módulo / PR | Test ID        | Estado |\n|------------|---------------|-------------|----------------|--------|\n| REQ-SEC-01 | ISO-27001 A.9 | auth#412    | test_mfa_totp  | PASS   |\n| REQ-PAY-04 | PRD-Pagos     | pay#509     | test_idempot   | PASS   |\n| REQ-REP-02 | Finanzas      | rep#118     | (Sin test E2E) | GAP    |",
+    "entrevista": "Mantengo una matriz de trazabilidad bidireccional automatizada entre tickets, PRs y tests etiquetados para detectar requisitos sin cobertura y evaluar en segundos el impacto de cambios o regresiones."
+  },
+  "MoSCoW": {
+    "que": "MoSCoW es una técnica de priorización categórica de requisitos que clasifica cada ítem dentro de un marco temporal fijo (timebox, release o sprint) en cuatro niveles: Must have (obligatorio), Should have (importante), Could have (deseable) y Won't have this time (descartado para esta entrega).",
+    "para": "Sirve para alinear expectativas entre negocio y equipo técnico bajo restricciones fijas de tiempo y presupuesto, asegurando que las funcionalidades críticas estén garantizadas mientras el alcance secundario actúa como amortiguador flexible.",
+    "como": "En una sesión de priorización con Product Owner y stakeholders clave, cada requisito se evalúa frente a una pregunta de impacto: si el lanzamiento fracasa o es ilegal sin él, es Must; si aporta alto valor pero existe una alternativa temporal (workaround), es Should; si mejora la experiencia con bajo esfuerzo y puede omitirse sin daño grave, es Could; si queda fuera de esta ventana temporal, pasa a Won't. Como regla empírica (DSDM), el esfuerzo de los Must no debe superar el ~60% del presupuesto/capacidad del timebox para dejar margen de contingencia con Should y Could.",
+    "practicas": [
+      "Limitar los 'Must have' al ~60% de la capacidad real; si el 95% del backlog es 'Must', la priorización ha fracasado y no hay margen ante imprevistos.",
+      "Tratar explícitamente el grupo 'Won't have this time' como una decisión de aplazamiento negociada, no como eliminación definitiva.",
+      "MoSCoW vs. WSJF/RICE: MoSCoW es rápido y excelente para negociar alcance de una fecha fija; WSJF o RICE son superiores cuando se ordena un flujo continuo por coste de retraso y esfuerzo.",
+      "Evitar que los stakeholders clasifiquen sus propios deseos como Must obligándolos a justificar el impacto si ese ítem saliera del lanzamiento."
+    ],
+    "ejemplo": "Release 1.0 (Capacidad: 100 pts):\n- Must (55 pts): Login MFA, catálogo, pago con tarjeta, factura PDF.\n- Should (25 pts): Recuperación de carrito abandonado, filtros avanzados.\n- Could (20 pts): Tema oscuro, historial exportable CSV.\n- Won't (this release): Pago con criptomonedas, app nativa iOS.",
+    "entrevista": "Uso MoSCoW para negociar entregas con fecha fija manteniendo los 'Must have' en torno al 60% de la capacidad, de modo que los 'Should' y 'Could' protejan la fecha ante imprevistos técnicos."
+  },
+  "Negociación de requisitos": {
+    "que": "La negociación de requisitos es el proceso estructurado de resolución de conflictos mediante el cual los stakeholders y el equipo técnico alcanzan acuerdos realistas sobre alcance, prioridad, plazos, presupuesto y nivel de atributos de calidad cuando existen demandas incompatibles.",
+    "para": "Resuelve choques inevitables entre áreas (por ejemplo, marketing exige lanzamiento inmediato, seguridad exige auditoría completa y finanzas recorta infraestructura) antes de que deriven en deuda técnica oculta o fracaso del proyecto.",
+    "como": "El proceso inicia identificando conflictos explícitos detectados en el análisis (contradicciones funcionales, restricciones de presupuesto o tradeoffs de calidad). Se reúnen las partes afectadas con datos objetivos: estimaciones de esfuerzo, análisis de riesgo, costo de retraso y opciones alternativas (enfoques incrementales, degradación controlada o workarounds temporales). Siguiendo metodologías como Win-Win (Boehm), se exploran condiciones de victoria mutua, se documentan concesiones mutuas y se registran los compromisos aprobados en el registro de requisitos y Architecture Decision Records.",
+    "practicas": [
+      "Centrar la discusión en intereses y métricas objetivas ('reducir fraude en un 40%'), nunca en posiciones rígidas o jerarquías.",
+      "Presentar siempre 2 o 3 alternativas técnicas con su coste y riesgo asociado ('Opción A en 2 semanas sin caché; Opción B en 5 semanas con P99 < 50 ms') en lugar de decir simplemente 'no se puede'.",
+      "Documentar explícitamente qué se sacrifica y quién asume el riesgo cuando negocio decide lanzar recortando un atributo no funcional.",
+      "Error frecuente: el equipo técnico absorbe conflictos sin escalarlos, intentando cumplir requisitos incompatibles mediante horas extra o recortando pruebas en silencio."
+    ],
+    "ejemplo": "Conflicto: Legal exige retención inmutable 7 años; Producto pide lanzamiento en 3 semanas.\nAcuerdo negociado (Win-Win):\n- Fase 1 (Semana 3): Escritura append-only en S3 Object Lock (cumple legal desde día 1).\n- Fase 2 (Semana 6): Panel UI de consulta histórica para auditores (workaround temporal vía script SQL/Athena).",
+    "entrevista": "Abordo la negociación de requisitos exponiendo tradeoffs objetivos de tiempo, coste y riesgo con alternativas incrementales, buscando acuerdos Win-Win documentados en lugar de comprometer la calidad en silencio."
+  },
+  "Priorización de requisitos": {
+    "que": "La priorización de requisitos es el proceso continuo de ordenar y asignar importancia relativa a los requisitos o elementos del backlog en función de su valor de negocio, urgencia, riesgo técnico, dependencias y coste de implementación.",
+    "para": "Permite maximizar el retorno de inversión y reducir riesgos tempranamente dado que los recursos de ingeniería, tiempo y presupuesto son siempre finitos, asegurando que el equipo trabaje primero en lo más valioso o crítico.",
+    "como": "Combina criterios cuantitativos y cualitativos evaluados entre Product Owner, arquitectura y stakeholders. Según el contexto se emplean matrices de Valor vs. Esfuerzo, MoSCoW para lanzamientos acotados, Kano para impacto en satisfacción, o modelos numéricos como RICE (Reach, Impact, Confidence / Effort) y WSJF de SAFe (Cost of Delay / Job Size). Durante la evaluación se ajustan dependencias técnicas (habilitadores arquitectónicos necesarios antes de features visibles) y requisitos de cumplimiento normativo no negociables.",
+    "practicas": [
+      "Priorizar también deuda técnica, seguridad y habilitadores arquitectónicos dentro del mismo flujo; dejarlos en listas separadas garantiza que nunca se atiendan.",
+      "Evitar priorizar solo por 'la voz más alta en la sala' (HiPPO); exigir métricas explícitas como Cost of Delay o impacto en retención.",
+      "Revisar las prioridades de forma periódica (en cada refinamiento o cambio de mercado), porque el valor de un requisito decae o cambia con el tiempo.",
+      "Identificar requisitos de alto riesgo técnico temprano ('fail fast') para validarlos antes de construir funcionalidades dependientes."
+    ],
+    "ejemplo": "Cálculo WSJF = (Valor Negocio + Criticidad Tiempo + Reducción Riesgo) / Tamaño\n- Feature A (Checkout 1-clic): (8 + 8 + 3) / 5 = 3.8  -> Prioridad 1\n- Feature B (Reportes PDF):     (5 + 2 + 1) / 3 = 2.67 -> Prioridad 2\n- Feature C (Banner promo):     (3 + 5 + 1) / 8 = 1.12 -> Prioridad 3",
+    "entrevista": "Priorizo requisitos balanceando valor de negocio, urgencia, riesgo técnico y esfuerzo mediante modelos como WSJF o RICE, integrando dependencias arquitectónicas y cumplimiento en un backlog único."
+  },
+  "Product owner": {
+    "que": "El Product Owner (PO) es el rol responsable de maximizar el valor del producto generado por el equipo de desarrollo, actuando como dueño único de la gestión, ordenación y claridad del Product Backlog en marcos ágiles como Scrum.",
+    "para": "Centraliza la toma de decisiones de producto para evitar prioridades contradictorias provenientes de múltiples áreas, conectando la estrategia de negocio y las necesidades del usuario con la ejecución diaria de ingeniería.",
+    "como": "El Product Owner sintetiza información de stakeholders, user research, métricas de uso y restricciones técnicas para formular la visión de producto y transformarla en épicas, historias de usuario y criterios de aceptación. Dirige el refinamiento continuo del backlog asegurando que los ítems próximos cumplan la Definition of Ready, negocia alcance y fechas con patrocinadores, participa en las Sprint Reviews validando el incremento entregado frente a las metas de negocio y decide cuándo liberar valor a producción.",
+    "practicas": [
+      "Un producto debe tener un único Product Owner con autoridad real para decir 'no'; un PO sin poder de decisión se convierte en un mero secretario de pedidos.",
+      "Product Owner vs. Project Manager / Business Analyst: el PO responde por el retorno y qué construir en el producto a largo plazo; el BA profundiza en análisis detallado y el PM gestiona cronogramas, presupuestos y coordinación.",
+      "Explicar el 'por qué' y el problema a resolver, dejando al equipo técnico decidir el 'cómo' arquitectónico.",
+      "Dedicar tiempo constante a usuarios reales y telemetría de producción, no solo a reuniones internas con gerencia."
+    ],
+    "ejemplo": "Responsabilidades diarias del PO:\n1. Backlog: Ordenar ítems por WSJF/objetivo del trimestre.\n2. Refinamiento: Definir criterios de aceptación y resolver dudas de dominio.\n3. Stakeholders: Comunicar roadmap y negociar tradeoffs de alcance.\n4. Validación: Verificar métricas post-release (adopción, conversión, errores).",
+    "entrevista": "El Product Owner maximiza el valor del producto manteniendo un backlog único y priorizado, traduciendo necesidades de usuarios y negocio en criterios verificables con autoridad real para negociar alcance."
+  },
+  "Quality attribute scenario": {
+    "que": "Un Quality Attribute Scenario (QAS, escenario de atributo de calidad) es una plantilla formal propuesta por el SEI (Bass, Clements, Kazman) para especificar requisitos no funcionales de forma completamente concreta, medible y comprobable mediante seis partes estructuradas.",
+    "para": "Elimina la ambigüedad crónica de los requisitos no funcionales ('el sistema debe ser rápido, seguro y escalable'), convirtiéndolos en especificaciones exactas que permiten diseñar tácticas arquitectónicas y ejecutar pruebas automatizadas.",
+    "como": "Cada escenario se redacta rellenando seis campos obligatorios: 1) Fuente del estímulo (usuario, atacante, fallo de nodo), 2) Estímulo (petición concurrente, inyección SQL, caída de zona), 3) Artefacto afectado (API Gateway, base de datos, sistema completo), 4) Entorno (operación normal, pico de tráfico, modo degradado), 5) Respuesta (cómo reacciona el sistema) y 6) Medida de la respuesta (métrica cuantitativa exacta, como latencia P99, RTO/RPO o porcentaje de rechazo). Estos escenarios alimentan directamente métodos como ATAM y suites de pruebas de carga o caos.",
+    "practicas": [
+      "Definir siempre el 'Entorno' explícitamente; cumplir 100 ms en reposo es trivial, pero el requisito real suele ser bajo carga pico o durante reindexación.",
+      "Asegurar que la 'Medida de la respuesta' incluya unidad, percentil o ventana temporal (ej. P95, MTTR, req/s).",
+      "Priorizar QAS solo para los atributos críticos del negocio; redactar decenas de escenarios secundarios genera documentación inútil.",
+      "Usar los QAS como pruebas ejecutables en pipelines (k6 para rendimiento, Chaos Mesh para disponibilidad)."
+    ],
+    "ejemplo": "Escenario QAS de Disponibilidad:\n- Fuente: Proveedor cloud (fallo de hardware)\n- Estímulo: Caída abrupta de una zona de disponibilidad (AZ)\n- Artefacto: Clúster primario de pagos\n- Entorno: Operación normal con 2,000 tx/min\n- Respuesta: Conmutación automática a réplica en AZ secundaria sin pérdida de transacciones confirmadas\n- Medida: RTO <= 30 segundos y RPO = 0.",
+    "entrevista": "Especifico los requisitos no funcionales como Quality Attribute Scenarios de 6 partes para transformar adjetivos vagos en estímulos concretos, entornos definidos y métricas verificables automáticamente."
+  },
+  "Registro de requisitos": {
+    "que": "El registro de requisitos (Requirements Register o catálogo vivo de requisitos) es el repositorio centralizado y estructurado que almacena cada requisito individual del sistema junto con sus metadatos de estado, prioridad, origen, responsable, versión y vínculos de trazabilidad.",
+    "para": "Evita que los requisitos queden dispersos en correos, chats, actas o diapositivas, proporcionando una única fuente de verdad auditable para planificar, estimar, probar y gestionar cambios.",
+    "como": "Se implementa habitualmente sobre herramientas ALM/issue trackers (Jira, Azure DevOps, Polarion, Jama) o repositorios versionados en Git (YAML/Markdown/ReqIF). Cada entrada incluye un identificador único, título, descripción o enlace a especificación, tipo (funcional, RNF, restricción), fuente/stakeholder, estado del ciclo de vida (Propuesto, Analizado, Aprobado, Implementado, Verificado, Rechazado), prioridad y enlaces a historias, diseño y tests. Los flujos de trabajo de la herramienta controlan qué roles pueden aprobar transiciones de estado.",
+    "practicas": [
+      "Mantener identificadores inmutables (nunca reutilizar el ID de un requisito eliminado) para preservar la integridad histórica y de auditoría.",
+      "Definir estados claros del ciclo de vida de un requisito para distinguir rápidamente qué está aprobado frente a qué sigue siendo un borrador o propuesta.",
+      "Registro de requisitos vs. SRS: el registro es la base de datos gestionable e indexada de ítems individuales y sus estados; el SRS es la vista documental formal generada o consolidada para lectura y firma.",
+      "Evitar duplicar información entre el registro y documentos estáticos; generar vistas desde una sola fuente."
+    ],
+    "ejemplo": "Entrada YAML en registro versionado:\n- id: REQ-SEC-014\n  tipo: RNF-Seguridad\n  titulo: Rotación automática de claves JWT\n  fuente: Comité Seguridad (Acta 2026-03)\n  estado: Aprobado\n  prioridad: Must\n  verificacion: test_jwks_rotation\n  version: 1.1",
+    "entrevista": "Centralizo los requisitos en un registro único con IDs inmutables, ciclo de vida de estados y metadatos de origen y verificación, evitando requisitos dispersos en correos o actas sueltas."
+  },
+  "Requerimientos funcionales": {
+    "que": "Los requerimientos funcionales (RF) especifican las acciones, servicios, reglas de negocio, entradas, transformaciones y salidas concretas que un sistema software debe ejecutar para satisfacer las necesidades de sus usuarios y sistemas externos.",
+    "para": "Definen exactamente qué hace el sistema (su comportamiento observable), diferenciándolo de cómo de rápido, seguro o disponible lo hace (atributos no funcionales), y constituyen el núcleo del alcance funcional a desarrollar y probar.",
+    "como": "Se descubren analizando procesos de negocio, flujos de usuario e integraciones externas, y se expresan mediante casos de uso, historias de usuario, contratos de API o sentencias 'shall/debe'. Cada requerimiento funcional describe un disparador o entrada válida, el procesamiento o regla de validación aplicable (cálculos, transiciones de estado, permisos) y la respuesta o efecto secundario esperado (persistencia, notificación, código HTTP). Se validan mediante pruebas funcionales unitarias, de integración y end-to-end.",
+    "practicas": [
+      "Describir comportamiento observable externo y reglas de negocio, sin acoplar el requisito a una tecnología o estructura de tablas concreta.",
+      "Incluir siempre el manejo de entradas inválidas y excepciones como parte del comportamiento funcional completo.",
+      "RF vs. RNF: el RF responde '¿qué función realiza el sistema?' (ej. emitir factura electrónica); el RNF responde '¿con qué calidad lo hace?' (ej. emitirla en < 500 ms con disponibilidad 99.9%).",
+      "Asegurar que cada RF tenga reglas de validación de datos explícitas (tipos, rangos, obligatoriedad y unicidad)."
+    ],
+    "ejemplo": "RF-ORD-05: Cálculo de impuestos en checkout\n- Entrada: Carrito con ítems, dirección de envío y tipo de cliente.\n- Regla: Aplicar IVA según país/estado de destino; eximir si VAT ID es válido.\n- Salida: Desglose de base imponible, impuesto aplicado y total persistido en la orden.",
+    "entrevista": "Redacto requerimientos funcionales centrados en entradas, reglas de negocio, transiciones de estado y salidas verificables, manteniéndolos desacoplados de la implementación y complementados por sus RNF asociados."
+  },
+  "Requisitos de disponibilidad": {
+    "que": "Los requisitos de disponibilidad son requisitos no funcionales que definen la proporción de tiempo o peticiones durante la cual un sistema debe permanecer operativo y accesible para atender solicitudes válidas, junto con los límites aceptables de tiempo de recuperación y pérdida de datos ante fallos.",
+    "para": "Guían el diseño de redundancia, failover, copias de seguridad y arquitectura multi-zona/multi-región para alinear la resiliencia técnica con el impacto económico o reputacional de cada minuto de caída.",
+    "como": "Se cuantifican mediante métricas concretas: porcentaje de uptime o tasa de éxito de peticiones (ej. 99.9% equivale a ~43.8 minutos de caída mensual; 99.99% a ~4.38 minutos), MTBF (Mean Time Between Failures), MTTR (Mean Time To Recovery), RTO (Recovery Time Objective: tiempo máximo para restaurar el servicio) y RPO (Recovery Point Objective: pérdida máxima tolerable de datos). Estas cifras determinan mecanismos como réplicas activo-activo o activo-pasivo, health checks, circuit breakers, backups automatizados con pruebas de restauración y ventanas de mantenimiento sin corte (zero-downtime deployments).",
+    "practicas": [
+      "Recordar la regla de multiplicación en serie: si un flujo depende de 3 servicios independientes al 99.9%, la disponibilidad compuesta cae a ~99.7% (0.999^3).",
+      "Exigir siempre RTO y RPO junto al porcentaje de disponibilidad; un sistema puede levantarse rápido (RTO bajo) pero haber perdido horas de transacciones (RPO alto).",
+      "No pedir '99.999%' por inercia: pasar de 99.9% a 99.999% dispara exponencialmente el costo de infraestructura multi-región y la complejidad operativa.",
+      "Incluir pruebas periódicas de failover y restauración de backups como criterio de validación del requisito."
+    ],
+    "ejemplo": "RNF-DISP-01 (Servicio Core de Pagos):\n- Disponibilidad mensual: >= 99.95% medida por éxito de peticiones válidas (SLI).\n- RTO <= 60 segundos ante caída de zona de disponibilidad.\n- RPO = 0 (replicación síncrona de transacciones confirmadas).\n- Despliegues: Blue/Green o Rolling sin interrupción de tráfico.",
+    "entrevista": "Especifico la disponibilidad mediante SLIs claros, RTO y RPO alineados al coste de negocio de una caída, considerando la disponibilidad compuesta de todas las dependencias críticas."
+  },
+  "Requisitos de escalabilidad": {
+    "que": "Los requisitos de escalabilidad son requisitos no funcionales que definen la capacidad de un sistema para mantener sus objetivos de rendimiento y disponibilidad cuando aumenta (o disminuye) la carga de trabajo, el volumen de datos o la concurrencia de usuarios al añadir recursos.",
+    "para": "Previenen colapsos en momentos de crecimiento orgánico o picos estacionales (Black Friday, campañas, cierres contables) y condicionan decisiones tempranas como diseño stateless, particionamiento de datos (sharding) y procesamiento asíncrono.",
+    "como": "Se especifican indicando la carga base, la carga proyectada (en usuarios concurrentes, RPS, eventos/seg o terabytes de datos), la tasa de crecimiento esperada y el comportamiento deseado bajo escalado (p. ej. mantener latencia P95 constante al duplicar nodos). Diferencian entre escalado vertical (scale-up: más CPU/RAM en un nodo, limitado por hardware) y escalado horizontal (scale-out: añadir instancias detrás de balanceadores, colas o bases de datos particionadas), además de tiempos de elasticidad (auto-scaling warm-up) ante picos súbitos.",
+    "practicas": [
+      "Separar escalabilidad de carga (concurrencia/RPS) de escalabilidad de volumen (crecimiento histórico de tablas e índices en 3-5 años).",
+      "Rendimiento vs. Escalabilidad: un sistema puede ser rápido para 10 usuarios (buen rendimiento) y colapsar con 500 por un bloqueo global (mala escalabilidad).",
+      "Definir el tiempo de reacción del autoescalado (ej. soportar salto de 500 a 5,000 RPS en < 2 minutos) y no solo el máximo teórico.",
+      "Identificar desde el requisito si los picos son graduales o explosivos (thundering herd), pues los últimos requieren colas, caché o precalentamiento."
+    ],
+    "ejemplo": "RNF-ESC-02:\n- Carga normal: 400 req/s; pico estacional esperado: 6,000 req/s.\n- Requisito: El servicio API debe escalar horizontalmente de forma automática manteniendo latencia P95 <= 250 ms y tasa de error < 0.1%.\n- Volumen de datos: Soportar crecimiento de 50 millones de registros/año sin degradar consultas indexadas > 15%.",
+    "entrevista": "Defino la escalabilidad especificando el crecimiento esperado en tráfico y volumen de datos junto con la estabilidad de latencia deseada, distinguiendo crecimiento gradual de picos súbitos que exigen diseño stateless y elasticidad."
+  },
+  "Requisitos de rendimiento": {
+    "que": "Los requisitos de rendimiento (performance) son requisitos no funcionales que cuantifican la rapidez y eficiencia con la que un sistema responde a estímulos o procesa carga de trabajo bajo condiciones definidas de operación y recursos.",
+    "para": "Garantizan una experiencia de usuario fluida, cumplen contratos con sistemas consumidores y dimensionan adecuadamente la capacidad de cómputo y red antes de que aparezcan cuellos de botella en producción.",
+    "como": "Se expresan mediante métricas estadísticas precisas evitando promedios engañosos: tiempo de respuesta/latencia por percentiles (P50, P95, P99, TTFB), throughput (peticiones por segundo, transacciones/minuto o mensajes/segundo), tiempos de procesos batch y límites de consumo de recursos (CPU, memoria, I/O, ancho de banda). Todo requisito de rendimiento especifica el perfil de carga asociado y se verifica con pruebas automatizadas de carga, estrés y resistencia (soak tests) usando herramientas como k6, JMeter o Gatling.",
+    "practicas": [
+      "Usar percentiles (P95, P99) en lugar de promedios: una media de 150 ms puede ocultar que el 5% de los usuarios esperan más de 8 segundos.",
+      "Indicar siempre las condiciones de medición (ej. 'medido en el API Gateway con base de datos de 10M de filas y 1,000 usuarios concurrentes').",
+      "Diferenciar entre latencia percibida en UI (Core Web Vitals: LCP, INP, CLS) y latencia de backend o throughput de pipelines asíncronos.",
+      "Incluir presupuesto de errores y pruebas de regresión de rendimiento en CI/CD para detectar consultas N+1 antes de desplegar."
+    ],
+    "ejemplo": "RNF-PERF-01 (Búsqueda de catálogo):\n- Latencia API: P50 <= 80 ms, P95 <= 200 ms, P99 <= 450 ms.\n- Throughput sostenido: >= 1,500 req/s bajo dataset de 2M productos.\n- Frontend Web Vitals: LCP <= 2.5 s, INP <= 200 ms en conexión 4G móvil.\n- Verificación: Suite k6 ejecutada en staging previo a release.",
+    "entrevista": "Especifico el rendimiento con percentiles de latencia (P95/P99), throughput objetivo y consumo de recursos bajo un perfil de carga explícito, validándolo con pruebas automatizadas tipo k6 antes de liberar."
+  },
+  "Requisitos de seguridad": {
+    "que": "Los requisitos de seguridad son requisitos no funcionales y restricciones arquitectónicas que protegen la confidencialidad, integridad y disponibilidad (tríada CIA) de los activos de información, además de garantizar autenticación, autorización, trazabilidad (auditoría) y no repudio frente a amenazas.",
+    "para": "Previenen brechas de datos, accesos no autorizados, fraudes y paradas por ataques, y evitan el antipatrón de intentar añadir controles de seguridad como parche superficial al final del proyecto.",
+    "como": "Derivan del modelado de amenazas (STRIDE) y estándares verificables como OWASP ASVS o NIST SSDF. Se formulan especificando controles obligatorios: identidad y acceso (OAuth 2.1/OIDC, MFA, RBAC/ABAC con mínimo privilegio), protección de datos (TLS 1.3 en tránsito, cifrado AES-256 en reposo y gestión de secretos/KMS), validación estricta de entradas y protección contra inyecciones/CSRF, limitación de tasa (rate limiting) y logs de auditoría inmutables sin exposición de PII o credenciales. Su cumplimiento se verifica mediante SAST, DAST, análisis de dependencias (SCA) y pruebas de penetración.",
+    "practicas": [
+      "Usar el estándar OWASP ASVS (Nivel 1, 2 o 3 según criticidad) como lista base concreta en lugar de redactar requisitos vagos como 'el sistema debe ser seguro'.",
+      "Incorporar requisitos negativos o 'casos de abuso' (misuse cases): qué debe rechazar el sistema cuando un atacante intenta manipular tokens o IDs (IDOR/BOLA).",
+      "Exigir explícitamente qué NO debe registrarse en logs (contraseñas, tokens Bearer, CVV, datos sensibles en claro).",
+      "Requisitos de seguridad vs. Legales: la seguridad define los controles técnicos de protección; lo legal define las obligaciones jurídicas y sanciones ante incumplimiento."
+    ],
+    "ejemplo": "RNF-SEC-03 (Autorización API - OWASP ASVS 4.1):\n- Cada endpoint privado debe verificar firma JWT (RS256/EdDSA) y autorización a nivel de recurso (anti-BOLA) en backend.\n- Contraseñas almacenadas con Argon2id (m >= 19 MiB, t >= 2).\n- Bloqueo/rate-limit: máx. 10 intentos/min por IP/cuenta en `/auth/login`.",
+    "entrevista": "Derivo los requisitos de seguridad desde el modelado de amenazas (STRIDE) y OWASP ASVS, especificando controles verificables de identidad, autorización por recurso, cifrado y auditoría desde el backlog inicial."
+  },
+  "Requisitos legales y normativos": {
+    "que": "Los requisitos legales y normativos (compliance) son restricciones obligatorias impuestas por leyes, reglamentos sectoriales o estándares contractuales externos que condicionan cómo el software recopila, procesa, almacena, transfiere y audita datos y transacciones.",
+    "para": "Evitan multas millonarias, bloqueo de operación en mercados regulados y responsabilidades civiles o penales, asegurando que el diseño técnico incorpore cumplimiento desde la base (compliance by design).",
+    "como": "Se identifican mapeando la jurisdicción y el sector del producto con equipos legales y de cumplimiento: privacidad de datos (RGPD/GDPR, CCPA, LGPD), pagos con tarjeta (PCI-DSS), salud (HIPAA), controles financieros/corporativos (SOX, PSD2/SCA) o regulación de IA (EU AI Act). Cada norma se descompone en requisitos técnicos verificables: consentimiento granular, derecho al olvido (borrado o anonimización verificable en backups/analítica), residencia geográfica de datos, plazos mínimos de retención inmutable de registros y trazabilidad de accesos.",
+    "practicas": [
+      "Involucrar a Legal/DPO desde el descubrimiento; descubrir tras construir un data lake que los datos no pueden salir de la UE obliga a rediseñar la topología cloud.",
+      "Resolver tempranamente conflictos inherentes (ej. derecho al olvido de GDPR frente a obligación fiscal de conservar facturas 5-10 años) separando datos identificativos de registros contables.",
+      "Documentar explícitamente la fuente normativa (artículo o cláusula) en la trazabilidad para facilitar auditorías externas.",
+      "No asumir que usar un proveedor cloud certificado (ej. AWS con PCI-DSS) hace automáticamente conforme a la aplicación construida encima (modelo de responsabilidad compartida)."
+    ],
+    "ejemplo": "RNF-LEG-02 (GDPR Art. 17 - Derecho de supresión):\n- Al solicitar eliminación de cuenta, el sistema debe anonimizar PII en BD principal, índices de búsqueda y eventos analíticos en <= 30 días.\n- Excepción legal: Conservar ID fiscal de facturas emitidas en almacenamiento aislado durante 7 años.\n- Residencia: Datos de ciudadanos UE persistidos exclusivamente en región `eu-west-1`.",
+    "entrevista": "Traduzco regulaciones como GDPR, PCI-DSS o HIPAA en requisitos técnicos tempranos de residencia de datos, anonimización, retención y auditoría, resolviendo conflictos normativos con Legal antes del diseño de datos."
+  },
+  "Service level agreement (SLA)": {
+    "que": "Un Service Level Agreement (SLA) es un contrato formal entre un proveedor de servicio y sus clientes que establece los niveles comprometidos de disponibilidad, rendimiento o soporte, junto con los métodos de medición y las penalizaciones o créditos de servicio aplicables si se incumplen.",
+    "para": "Formaliza expectativas comerciales y jurídicas con clientes externos o internos, protege al proveedor frente a reclamos ambiguos y define el margen técnico necesario (SLO) para operar sin incumplir el contrato.",
+    "como": "En ingeniería moderna (SRE) el SLA se sustenta en una jerarquía precisa: SLI (Service Level Indicator: métrica real medida, como tasa de respuestas HTTP exitosas < 300 ms), SLO (Service Level Objective: meta interna más exigente que el SLA, ej. 99.95%, que deja un error budget para desplegar cambios y absorber incidentes) y el SLA (compromiso contractual más conservador, ej. 99.9%, con exclusiones por fuerza mayor o fallos del cliente y tabla de compensaciones). El monitoreo continuo compara el SLI contra el SLO para disparar alertas de consumo acelerado del presupuesto de error antes de violar el SLA.",
+    "practicas": [
+      "Fijar siempre el SLO interno más estricto que el SLA contractual (ej. SLO 99.95% para proteger un SLA de 99.9%) y nunca prometer un SLA superior al de tus proveedores críticos (cloud/PSP).",
+      "Definir con exactitud qué se excluye del cálculo (mantenimientos programados notificados, ataques DDoS mitigados, errores 4xx del cliente) y cómo se mide la ventana (mensual vs. anual).",
+      "SLA vs. SLO vs. SLI: el SLI es lo que mides, el SLO es tu objetivo interno de ingeniería y el SLA es la promesa contractual con consecuencias económicas.",
+      "Evitar métricas internas opacas en el SLA; el cliente solo confía en indicadores observables desde el borde del servicio."
+    ],
+    "ejemplo": "Jerarquía SLA/SLO/SLI:\n- SLI: `(peticiones_2xx_5xx_validas_bajo_400ms / total_peticiones_validas) * 100`\n- SLO interno: >= 99.95% en ventana móvil de 28 días (Error budget: ~20 min).\n- SLA contractual: >= 99.9% mensual; si < 99.9% crédito del 10% en factura; si < 99.0% crédito del 25%.",
+    "entrevista": "Diferencio SLI, SLO y SLA: mido SLIs observables, opero con SLOs internos más estrictos y un error budget para innovar con seguridad, y reservo el SLA para el compromiso contractual conservador."
+  },
+  "Software requirements specification (SRS)": {
+    "que": "Una Software Requirements Specification (SRS) es el documento técnico estructurado y formal (estandarizado originalmente por IEEE 830 y evolucionado en ISO/IEC/IEEE 29148) que describe de manera completa, consistente y verificable todos los requisitos funcionales, no funcionales y de interfaces externas de un sistema software.",
+    "para": "Sirve como contrato técnico autoritativo entre cliente/producto y el equipo de ingeniería (arquitectura, desarrollo y QA), especialmente indispensable en sistemas críticos, contratos a precio cerrado, licitaciones o entornos altamente regulados.",
+    "como": "Sigue una estructura normalizada que abarca: 1) Introducción (propósito, alcance, definiciones, referencias), 2) Descripción general (perspectiva del producto, clases de usuarios, entorno operativo, restricciones, supuestos y dependencias) y 3) Requisitos específicos (interfaces externas de usuario, hardware, software y comunicaciones; requisitos funcionales detallados por módulo o caso de uso; requisitos de calidad/RNF medibles; reglas de base de datos y cumplimiento). Cada ítem en el SRS lleva identificador único, criterio de verificación y línea base versionada.",
+    "practicas": [
+      "Adaptar la profundidad del SRS al riesgo del proyecto: en productos ágiles de bajo riesgo puede ser un documento vivo conciso + backlog enlazado, mientras en sistemas médicos o financieros requiere rigor formal completo.",
+      "Incluir siempre la sección de interfaces externas (APIs, formatos de archivo, protocolos) y restricciones de entorno operativo; suelen ser fuente de fallos en integración.",
+      "SRS vs. SDD (Software Design Description): el SRS describe qué debe hacer el sistema y qué restricciones cumple; el SDD describe la arquitectura interna y módulos diseñados para lograrlo.",
+      "Validar el SRS mediante inspecciones formales (walkthroughs) entre QA, arquitectura y negocio antes de aprobar su línea base."
+    ],
+    "ejemplo": "Estructura ISO/IEC/IEEE 29148 (resumen):\n1. Introducción (Propósito, Alcance, Glosario)\n2. Descripción General (Contexto, Actores, Restricciones, Supuestos)\n3. Requisitos Específicos:\n   3.1 Interfaces Externas (REST API, Webhook PSP, UI)\n   3.2 Requisitos Funcionales (RF-001..RF-N)\n   3.3 Requisitos No Funcionales (Rendimiento, Seguridad, Disponibilidad)\n4. Matriz de Verificación y Trazabilidad",
+    "entrevista": "Uso el SRS bajo ISO/IEC/IEEE 29148 cuando el riesgo, regulación o contrato exigen una línea base técnica completa que integre interfaces externas, requisitos funcionales y RNF verificables sin mezclar decisiones de diseño interno."
+  },
+  "Stakeholder": {
+    "que": "Un stakeholder (parte interesada) es cualquier individuo, grupo u organización que afecta, es afectado o percibe que puede ser afectado por el sistema software, su proceso de desarrollo o su operación en producción.",
+    "para": "Identificar y gestionar correctamente a los stakeholders evita descubrir tarde requisitos ocultos de áreas ignoradas (como soporte, legal, operaciones o auditores) que pueden bloquear la puesta en producción del sistema.",
+    "como": "En la fase inicial de elicitación se realiza un mapeo sistemático de stakeholders (usuarios finales, patrocinadores/sponsors, Product Owners, equipo de desarrollo, QA, SRE/operaciones, seguridad/CISO, departamento legal, soporte al cliente y reguladores externos). Luego se analizan mediante una matriz Poder vs. Interés (o Influencia vs. Impacto) para definir la estrategia de comunicación y participación de cada grupo: gestionar de cerca a quienes tienen alto poder e interés, mantener satisfechos a quienes tienen alto poder pero bajo interés operativo, informar regularmente a interesados sin poder directo y monitorear al resto.",
+    "practicas": [
+      "No limitar el concepto de stakeholder al 'cliente que paga' o al usuario final; los equipos de soporte, SRE y cumplimiento normativo aportan RNF críticos.",
+      "Identificar a los 'stakeholders negativos' o usuarios afectados que podrían resistirse al sistema (por miedo a perder control o cambiar su flujo) para involucrarlos pronto.",
+      "Stakeholder vs. Usuario final: todo usuario final es un stakeholder, pero muchos stakeholders clave (finanzas, legal, reguladores) nunca usarán la interfaz del sistema.",
+      "Actualizar el mapa de stakeholders ante cambios organizacionales o expansión a nuevos mercados."
+    ],
+    "ejemplo": "Matriz Poder / Interés:\n- Alto Poder + Alto Interés -> Gestionar de cerca: VP Producto, CISO, Cliente piloto.\n- Alto Poder + Bajo Interés -> Mantener satisfecho: Comité Legal, Finanzas.\n- Bajo Poder + Alto Interés -> Mantener informado: Agentes de Soporte, Usuarios Power.\n- Bajo Poder + Bajo Interés -> Monitorear: Áreas administrativas indirectas.",
+    "entrevista": "Realizo un mapeo temprano de stakeholders con una matriz Poder/Interés incluyendo perfiles no usuarios como SRE, Seguridad y Legal, para no descubrir restricciones bloqueantes al borde del lanzamiento."
+  },
+  "User research": {
+    "que": "User research (investigación de usuarios) es el conjunto de métodos empíricos cualitativos y cuantitativos empleados para comprender los comportamientos, necesidades reales, modelos mentales, contexto de uso y frustraciones de los usuarios antes y durante el diseño de un producto software.",
+    "para": "Sustituye las suposiciones internas ('creemos que el usuario quiere X') por evidencia observable, reduciendo el riesgo de construir funcionalidades que nadie adopta o flujos con alta tasa de abandono.",
+    "como": "Combina técnicas generativas (exploratorias) y evaluativas según la madurez del problema. En fases tempranas aplica entrevistas contextuales, shadowing (observación en el entorno real de trabajo), estudios de diario y análisis de embudos/telemetría para descubrir necesidades latentes y Jobs-to-be-Done. Con esa evidencia construye personas, mapas de empatía o Customer Journey Maps que alimentan la ideación. Posteriormente valida hipótesis con pruebas de usabilidad moderadas o no moderadas sobre prototipos, card sorting para arquitectura de información y experimentos A/B en producción.",
+    "practicas": [
+      "Observar lo que los usuarios hacen, no solo creer lo que dicen que harían en una encuesta hipotética; el comportamiento real suele contradecir la opinión declarada.",
+      "Triangular métodos cualitativos (por qué ocurre algo, 5-8 usuarios por segmento suelen revelar la mayoría de fallos graves de usabilidad) con datos cuantitativos (cuántos usuarios abandonan en analítica).",
+      "User research vs. Entrevistas con stakeholders de negocio: negocio aporta estrategia, metas y restricciones; user research investiga la fricción real de quien opera el producto.",
+      "Convertir hallazgos en insights accionables vinculados al backlog, evitando informes largos que nadie lee."
+    ],
+    "ejemplo": "Plan de investigación (Flujo de Onboarding):\n1. Cuantitativo: Analítica muestra 42% de abandono en paso 3 (verificación DNI).\n2. Cualitativo: 6 pruebas de usabilidad moderadas + grabaciones de sesión.\n3. Hallazgo: Usuarios móviles no entienden el formato requerido sin ejemplo visual.\n4. Requisito derivado: Añadir máscara de entrada y captura automática OCR.",
+    "entrevista": "Combino user research cualitativo (observación contextual y pruebas de usabilidad) con telemetría cuantitativa para validar hipótesis reales de usuario antes de comprometer capacidad de ingeniería."
+  },
+  "Validación de requisitos": {
+    "que": "La validación de requisitos es el proceso de comprobar que los requisitos especificados reflejan fielmente las necesidades reales de los stakeholders, son consistentes entre sí, técnicamente viables, completos y verificables antes de invertir esfuerzo pleno en su construcción.",
+    "para": "Responde a la pregunta '¿estamos construyendo el producto correcto?', detectando omisiones, malentendidos y requisitos imposibles o contradictorios en la etapa donde corregirlos cuesta hasta diez veces menos que en producción.",
+    "como": "Se ejecuta aplicando múltiples técnicas complementarias sobre el SRS, los prototipos o el backlog refinado. Incluye revisiones e inspecciones formales (peer reviews y walkthroughs con negocio, QA y arquitectura), validación con prototipos interactivos o wireframes frente a usuarios reales, generación temprana de casos de prueba (si un requisito no puede traducirse en un test concreto, falla la validación), comprobación automática de consistencia en modelos y verificación de cumplimiento con listas de chequeo de calidad (completitud, singularidad, no ambigüedad).",
+    "practicas": [
+      "Verificación vs. Validación: la validación comprueba que especificaste el sistema correcto para el usuario ('building the right system'); la verificación comprueba que el software implementado cumple la especificación ('building the system right').",
+      "Pedir a QA que redacte casos de prueba a partir del requisito durante la validación; es el filtro más rápido para detectar ambigüedades y casos borde omitidos.",
+      "Usar prototipos clicables de baja o media fidelidad para validar flujos complejos en lugar de esperar aprobación sobre texto denso.",
+      "No delegar la validación únicamente en el equipo técnico; sin la firma o confirmación activa de stakeholders y usuarios clave, los supuestos erróneos pasan intactos."
+    ],
+    "ejemplo": "Checklist de Validación (pre-implementación):\n[x] Consistencia: ¿Contradice algún otro RF/RNF existente?\n[x] Realismo: ¿Es viable con el presupuesto y stack actuales?\n[x] Verificabilidad: ¿Puede QA escribir un test automático que diga PASS/FAIL?\n[x] Aceptación usuario: ¿Validado sobre prototipo en walkthrough?",
+    "entrevista": "Valido los requisitos antes de implementar mediante walkthroughs con stakeholders, prototipos y redacción temprana de criterios de prueba con QA, asegurando que construimos el sistema correcto antes de verificar cómo lo construimos."
+  }
+}

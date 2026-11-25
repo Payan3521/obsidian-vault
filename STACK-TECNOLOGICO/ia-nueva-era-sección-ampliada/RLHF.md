@@ -2,20 +2,25 @@
 titulo: "RLHF"
 categoria:
   - "17. IA — nueva era (sección ampliada)"
+  - "59. Fine-tuning y adaptación avanzada"
 tags:
   - "mapa-tecnologico"
   - "nivel-conocer"
   - "ia-nueva-era-sección-ampliada"
+  - "fine-tuning-y-adaptación-avanzada"
 nivel: conocer
 estrella: false
 relacionado_con:
-  - "[[Cuándo usar prompt vs RAG vs fine-tuning]]"
   - "[[DPO]]"
-  - "[[Datasets de entrenamiento]]"
   - "[[LoRA - QLoRA]]"
   - "[[PEFT]]"
-  - "[[Regresiones de modelo]]"
   - "[[SFT]]"
+  - "[[Adaptación de dominio]]"
+  - "[[Adapter]]"
+  - "[[Adapters]]"
+  - "[[Ajuste por instrucciones]]"
+  - "[[Continued pretraining]]"
+  - "[[Cuándo usar prompt vs RAG vs fine-tuning]]"
 ---
 
 # RLHF
@@ -24,17 +29,20 @@ relacionado_con:
 
 ## Contexto en el mapa
 
-➕ [[SFT]], ➕ [[LoRA - QLoRA]], ➕ [[PEFT]], ➕ [[RLHF]], ➕ [[DPO]], ➕ [[Datasets de entrenamiento]], ➕ [[Cuándo usar prompt vs RAG vs fine-tuning]], ➕ [[Regresiones de modelo]].
+**Técnicas:** [[Instruction tuning]], [[Ajuste por instrucciones]], [[Continued pretraining]], [[Preentrenamiento continuo]], [[Domain adaptation]], [[Adaptación de dominio]], [[Model merging]], [[Fusión de modelos]], [[Weight averaging]], [[Adapter]], [[Adapters]], [[RLAIF]], [[GRPO]], [[Reward model]], [[Modelo de recompensa]], [[Preference optimization]], [[Optimización por preferencias]], [[Knowledge distillation]], [[SFT]], [[DPO]], [[RLHF]], [[PEFT]], [[LoRA - QLoRA]].
 
 ## Relaciones
 
-- [[Cuándo usar prompt vs RAG vs fine-tuning]]
 - [[DPO]]
-- [[Datasets de entrenamiento]]
 - [[LoRA - QLoRA]]
 - [[PEFT]]
-- [[Regresiones de modelo]]
 - [[SFT]]
+- [[Adaptación de dominio]]
+- [[Adapter]]
+- [[Adapters]]
+- [[Ajuste por instrucciones]]
+- [[Continued pretraining]]
+- [[Cuándo usar prompt vs RAG vs fine-tuning]]
 
 ## Mis notas
 

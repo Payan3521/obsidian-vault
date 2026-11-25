@@ -1,0 +1,392 @@
+{
+  "ARP spoofing": {
+    "que": "Técnica de ataque en redes locales (capa 2) mediante la cual un atacante envía respuestas ARP (Address Resolution Protocol) falsificadas para asociar su propia dirección MAC con la dirección IP de otro host legítimo, habitualmente la puerta de enlace predeterminada. Aprovecha que ARP es un protocolo sin estado y sin autenticación que acepta actualizaciones no solicitadas.",
+    "para": "Permite al atacante posicionarse como intermediario (Man-in-the-middle) en una LAN para interceptar, inspeccionar, modificar o bloquear el tráfico entre dos nodos (como un servidor de aplicaciones y su gateway). En entornos AppSec y DevSecOps, demuestra por qué no debe confiarse en la red local como zona segura ni enviar credenciales o tokens sin cifrar dentro del mismo segmento.",
+    "como": "En una red Ethernet, cuando un host necesita resolver una IP a una MAC envía una petición ARP broadcast y almacena la respuesta en su caché ARP. El atacante envía paquetes ARP Reply gratuitos (gratuitous ARP) de forma periódica hacia la víctima indicando que la IP del router corresponde a la MAC del atacante, y simultáneamente engaña al router asociando la IP de la víctima con la misma MAC atacante. Con el reenvío de paquetes (IP forwarding) activado en su equipo, el atacante reenvía el tráfico real para no cortar la conectividad mientras lo captura con herramientas como tcpdump o Wireshark. Si desactiva el reenvío, provoca una denegación de servicio (DoS) al descartar los paquetes.",
+    "practicas": [
+      "Habilitar Dynamic ARP Inspection (DAI) junto con DHCP Snooping en switches gestionados para validar enlaces IP-MAC contra una tabla confiable.",
+      "Usar cifrado extremo a extremo (TLS, mTLS, SSH) incluso en redes internas o clústeres, ya que el cifrado neutraliza la lectura de tráfico aunque exista envenenamiento ARP.",
+      "Segmentar cargas sensibles en VLANs dedicadas o aplicar aislamiento de puertos (Private VLAN / Port Security) para limitar el dominio de difusión (broadcast domain).",
+      "ARP spoofing vs DNS spoofing: el primero opera en capa 2 dentro de la misma subred física/VLAN, mientras que el segundo manipula resoluciones de nombres en capa 7 y puede afectar redes remotas."
+    ],
+    "ejemplo": "# Detección rápida de MAC duplicadas en tabla ARP Linux\narp -n | awk '{print $3}' | sort | uniq -d\n\n# Inspección de respuestas ARP gratuitas sospechosas con tcpdump\ntcpdump -i eth0 -nn arp and 'arp[6:2] == 2'",
+    "entrevista": "El ARP spoofing explota la falta de autenticación en capa 2 para desviar tráfico dentro de una LAN, por lo que mitigarlo requiere controles en switch como DAI y cifrado obligatorio en tránsito como mTLS incluso en redes internas."
+  },
+  "Activos expuestos a Internet": {
+    "que": "Cualquier sistema, servicio, API, puerto, dirección IP pública, subdominio o cubo de almacenamiento perteneciente a una organización que resulta accesible desde redes públicas externas. Forman el perímetro visible y directamente atacable de la infraestructura tecnológica.",
+    "para": "Identificar y gobernar estos activos es fundamental para evitar brechas originadas por servicios olvidados (shadow IT), entornos de pruebas expuestos sin autenticación o paneles administrativos accesibles públicamente. Sirve como inventario base para priorizar parches, endurecimiento y monitorización continua en DevSecOps.",
+    "como": "Los activos quedan expuestos al asignar IPs públicas en proveedores cloud (como Elastic IPs o Load Balancers), publicar registros DNS (A, AAAA, CNAME) o configurar reglas de firewall/Security Groups abiertas a 0.0.0.0/0. El descubrimiento continuo combina la enumeración pasiva (registros de Certificate Transparency como crt.sh, DNS pasivo, APIs cloud) con escaneos activos externos (Nmap, Masscan) y motores de indexación como Shodan. Cada activo detectado se clasifica por criticidad, propietario, servicio expuesto y estado de cifrado o autenticación antes de integrarlo en el ciclo de remediación.",
+    "practicas": [
+      "Automatizar el inventario cruzando APIs del proveedor cloud (AWS Config, GCP Asset Inventory) con escaneos externos periódicos para detectar desvíos de configuración (drift).",
+      "Prohibir la exposición directa a Internet de bases de datos, colas de mensajería, métricas (/metrics) y consolas de administración; exigir VPN, bastión o proxy de identidad.",
+      "Asociar cada registro DNS y carga pública a un propietario y entorno mediante etiquetas (tags) para evitar instancias huérfanas sin parches.",
+      "Error típico: eliminar una máquina virtual pero olvidar el registro DNS apuntando a la IP liberada, habilitando ataques de subdomain takeover."
+    ],
+    "ejemplo": "# Buscar IPs públicas abiertas a 0.0.0.0/0 en Security Groups con AWS CLI\naws ec2 describe-security-groups \\\n  --filters Name=ip-permission.cidr,Values=0.0.0.0/0 \\\n  --query 'SecurityGroups[*].[GroupId,GroupName,IpPermissions[*].FromPort]'",
+    "entrevista": "Mantener un inventario vivo y automatizado de activos expuestos a Internet evita que instancias de prueba o puertos olvidados se conviertan en el vector de entrada más fácil para un atacante externo."
+  },
+  "Anycast": {
+    "que": "Esquema de enrutamiento y direccionamiento de red en el que una misma dirección IP pública es anunciada simultáneamente mediante BGP desde múltiples ubicaciones geográficas distintas. El tráfico del cliente es dirigido de forma automática al nodo topológicamente más cercano según las tablas de enrutamiento de Internet.",
+    "para": "Se utiliza principalmente en redes de entrega de contenido (CDN), servidores DNS autoritativos/recursivos y servicios de mitigación DDoS para reducir la latencia y absorber grandes volúmenes de tráfico malicioso distribuyéndolos entre decenas o cientos de puntos de presencia (PoP).",
+    "como": "Cada punto de presencia perteneciente al proveedor (por ejemplo Cloudflare o DNS raíz) establece sesiones BGP con operadores de tránsito locales anunciando el mismo prefijo IP (como /24 en IPv4 o /48 en IPv6). Los routers de Internet evalúan las rutas BGP disponibles usando métricas como la longitud del AS-PATH y políticas locales, encaminando los paquetes de cada usuario hacia el PoP más próximo. Si un centro de datos cae o sufre saturación, retira su anuncio BGP (BGP withdraw) y el tráfico converge hacia el siguiente PoP disponible. En mitigación DDoS volumétrica, Anycast diluye el caudal del ataque entre múltiples centros de limpieza en lugar de colapsar un único origen.",
+    "practicas": [
+      "Usar Anycast para servicios mayoritariamente sin estado (DNS, terminación TLS en borde, caché CDN) donde el cambio dinámico de ruta no rompa sesiones locales.",
+      "Implementar terminación TLS y sincronización de certificados en todos los PoPs para que cualquier nodo responda de forma idéntica y segura.",
+      "Anycast vs Unicast: en Unicast una IP identifica un único destino físico (vulnerable a cuellos de botella en DDoS); en Anycast la misma IP representa múltiples nodos distribuidos.",
+      "Trampa habitual: asumir que Anycast por sí solo protege el servidor de origen; si la IP real del backend se filtra, un atacante puede eludir la capa Anycast atacándola directamente."
+    ],
+    "ejemplo": "# Comprobar desde distintos orígenes o trazas cómo se alcanza una IP Anycast\ntraceroute -n 1.1.1.1\n# Consultar qué PoP responde en servicios compatibles (ej. Cloudflare trace)\ncurl -s https://1.1.1.1/cdn-cgi/trace | grep -E 'colo|ip'",
+    "entrevista": "Anycast permite anunciar una misma IP vía BGP desde múltiples PoPs globales, lo que reduce latencia y absorbe ataques DDoS volumétricos distribuyendo la carga cerca de su origen."
+  },
+  "Análisis de superficie de ataque": {
+    "que": "Proceso sistemático de identificar, mapear, clasificar y evaluar todos los puntos de entrada, interfaces, protocolos, dependencias y flujos de datos a través de los cuales un actor no autorizado podría interactuar con una aplicación o infraestructura para extraer datos o comprometer el sistema.",
+    "para": "Sirve para conocer qué ve exactamente un atacante antes de intentar explotar el sistema, permitiendo reducir el perímetro innecesario, priorizar controles de seguridad (como WAF, autenticación o segmentación) y alinear el modelado de amenazas con el despliegue real en producción.",
+    "como": "El análisis combina una vista de fuera hacia dentro (External Attack Surface Management, EASM) con una vista interna de arquitectura. Externamente se enumeran dominios, subdominios, rangos IP, certificados TLS, puertos abiertos y endpoints de API mediante herramientas como Amass, Subfinder, Nmap o Nuclei. Internamente se revisan manifiestos IaC, Ingress de Kubernetes, rutas de API Gateway, webhooks y buckets expuestos. Cada punto hallado se documenta con su protocolo, nivel de autenticación requerido, sensibilidad de los datos procesados y exposición de red para calcular el riesgo y aplicar medidas de reducción.",
+    "practicas": [
+      "Integrar la detección de cambios en la superficie de ataque dentro del pipeline CI/CD (por ejemplo, alertando si un cambio en Terraform abre un puerto público o añade un Ingress sin autenticación).",
+      "Aplicar el principio de mínima exposición: desactivar métodos HTTP innecesarios, ocultar endpoints internos/admin tras VPN o mTLS y eliminar APIs obsoletas (shadow/zombie APIs).",
+      "Diferenciar entre superficie de ataque de red (IPs, puertos, servicios) y superficie de aplicación (formularios, parámetros JSON, GraphQL, cabeceras, cargas de archivos).",
+      "Trampa común: realizar el análisis una sola vez al año; en entornos DevSecOps continuos la superficie cambia con cada despliegue."
+    ],
+    "ejemplo": "# Enumeración básica de subdominios y sondeo HTTP vivo en auditoría\nsubfinder -d ejemplo.com -silent | httpx -silent -status-code -title -tech-detect",
+    "entrevista": "El análisis de superficie de ataque mapea de forma continua cada puerto, endpoint y servicio expuesto para eliminar vectores innecesarios antes de que un atacante los descubra y explote."
+  },
+  "Análisis forense de red": {
+    "que": "Disciplina de la respuesta a incidentes centrada en capturar, preservar, reconstruir y analizar el tráfico de red y sus metadatos históricos para determinar el alcance, el vector inicial, el movimiento lateral y la exfiltración de datos durante un incidente de seguridad.",
+    "para": "Resuelve la falta de visibilidad cuando los logs de aplicación o sistema han sido borrados por un atacante o no registran el contenido de las comunicaciones. Se utiliza tras detectar una intrusión, sospechar de comunicación con servidores de Comando y Control (C2) o investigar fugas de información.",
+    "como": "Durante la investigación se recolectan artefactos de distintas profundidades: paquetes completos (PCAP) obtenidos mediante Network TAP o port mirroring, registros de flujo (NetFlow, VPC Flow Logs) y logs estructurados de protocolos generados por herramientas como Zeek o Suricata. Los analistas reconstruyen sesiones TCP (Follow TCP Stream en Wireshark), extraen archivos transferidos en claro, correlacionan resoluciones DNS anómalas (DGA, tunneling) e inspeccionan metadatos TLS como huellas JA3/JA4 o certificados anómalos. Es imprescindible mantener la cadena de custodia calculando hashes criptográficos (SHA-256) sobre cada captura antes de procesarla.",
+    "practicas": [
+      "Conservar hashes SHA-256 y trabajar siempre sobre copias de los archivos PCAP para preservar la integridad probatoria.",
+      "Combinar flujo continuo (VPC Flow Logs / NetFlow) para trazabilidad a largo plazo con PCAPs activados por alertas (IDS/NDR) para no saturar el almacenamiento.",
+      "Sincronizar relojes mediante NTP/Chrony en toda la infraestructura para poder correlacionar marcas de tiempo entre firewalls, proxies y hosts.",
+      "Análisis forense de red vs análisis en host: aunque el atacante limpie los registros locales del servidor comprometido, los datos capturados fuera del host en la red permanecen intactos."
+    ],
+    "ejemplo": "# Calcular hash probatorio y extraer estadísticas de conversaciones HTTP/DNS con tshark\nsha256sum captura_incidente.pcapng > captura.sha256\ntshark -r captura_incidente.pcapng -Y 'dns.flags.response == 0' -T fields -e frame.time -e ip.src -e dns.qry.name",
+    "entrevista": "El análisis forense de red reconstruye ataques y exfiltraciones a partir de PCAPs, logs de Zeek y Flow Logs, aportando evidencia externa imposible de manipular desde un host ya comprometido."
+  },
+  "Arquitectura zero trust": {
+    "que": "Modelo de seguridad de red y acceso basado en el principio de 'nunca confiar, siempre verificar', donde la ubicación en la red (estar dentro de la LAN o conectado por VPN) deja de otorgar confianza implícita. Cada solicitud de acceso se evalúa por identidad, contexto del dispositivo y privilegio mínimo por sesión.",
+    "para": "Resuelve la debilidad del modelo clásico de perímetro (castillo y foso), en el que un atacante que compromete un equipo interno o un microservicio puede desplazarse lateralmente sin fricción. Es esencial en arquitecturas híbridas, multi-cloud, microservicios y trabajo remoto.",
+    "como": "La arquitectura (definida en guías como NIST SP 800-207) separa el plano de control del plano de datos. Un sujeto (usuario o carga de trabajo) intenta acceder a un recurso a través de un Policy Enforcement Point (PEP), como un proxy de identidad o un sidecar de service mesh. El PEP consulta al Policy Decision Point (PDP), compuesto por el Policy Engine y Policy Administrator, que verifica identidad fuerte (OIDC, SAML, certificados SPIFFE/mTLS), estado de salud del dispositivo, contexto y políticas de mínimo privilegio. Solo tras autorizar la petición se establece un canal cifrado punto a punto (TLS/mTLS) temporal limitado exclusivamente a ese recurso.",
+    "practicas": [
+      "Implementar mTLS automático entre microservicios mediante un service mesh o identidades criptográficas de carga de trabajo (SPIFFE/SPIRE) en lugar de listas blancas de IPs.",
+      "Aplicar microsegmentación por defecto denegar para contener el movimiento lateral ante el compromiso de un contenedor o servidor.",
+      "Sustituir VPNs con acceso amplio a subredes enteras por proxies conscientes de identidad (IAP / ZTNA) que expongan únicamente aplicaciones concretas.",
+      "Error típico: pensar que Zero Trust es comprar un producto concreto; es una estrategia arquitectónica que combina identidad, red, telemetría y autorización continua."
+    ],
+    "ejemplo": "# Ejemplo conceptual de AuthorizationPolicy en Istio (Zero Trust entre servicios)\napiVersion: security.istio.io/v1beta1\nkind: AuthorizationPolicy\nmetadata:\n  name: allow-orders-only\nspec:\n  selector: { matchLabels: { app: payments } }\n  rules:\n  - from: [{ source: { principals: [\"cluster.local/ns/prod/sa/orders-sa\"] } }]\n    to: [{ operation: { methods: [\"POST\"], paths: [\"/v1/charge\"] } }]",
+    "entrevista": "Zero Trust elimina la confianza implícita basada en la ubicación de red exigiendo autenticación fuerte, cifrado extremo a extremo y autorización por mínimo privilegio en cada petición."
+  },
+  "Bloqueo geográfico": {
+    "que": "Control de filtrado de tráfico que permite o deniega conexiones entrantes hacia una aplicación o red basándose en el país o región geográfica asociada a la dirección IP de origen del cliente.",
+    "para": "Sirve como medida complementaria para reducir ruido de escaneos automatizados, fuerza bruta o ataques provenientes de jurisdicciones donde el servicio no opera, así como para ayudar al cumplimiento de restricciones regulatorias o de licenciamiento territorial.",
+    "como": "Un firewall de nueva generación, WAF, proxy inverso (Nginx con módulo GeoIP2) o CDN (como Cloudflare) inspecciona la IP origen de cada petición entrante —o la cabecera X-Forwarded-For confiable— y la consulta en una base de datos de geolocalización IP (como MaxMind GeoLite2). Según las tablas de asignación de bloques CIDR gestionadas por los Registros Regionales de Internet (ARIN, RIPE, LACNIC, etc.), se determina el código de país ISO 3166-1 alpha-2. Si el país coincide con una lista de bloqueo (denylist) o no está en la lista permitida (allowlist), el borde descarta la conexión o devuelve un código HTTP 403/451 antes de alcanzar el backend.",
+    "practicas": [
+      "No depender del bloqueo geográfico como control de seguridad primario, ya que un atacante puede evadirlo en segundos usando VPNs, proxies residenciales, Tor o instancias cloud en países permitidos.",
+      "Evitar bloquear países completos si se depende de servicios globales (webhooks de pasarelas de pago, monitoreo externo o bots legítimos de buscadores) sin excluir antes sus rangos o firmas verificadas.",
+      "Mantener actualizadas periódicamente las bases GeoIP, puesto que los bloques IPv4 cambian de titularidad con frecuencia.",
+      "Error común: leer directamente X-Forwarded-For sin validar proxies de confianza, permitiendo al atacante falsificar su IP de origen en la cabecera."
+    ],
+    "ejemplo": "# Regla Nginx con GeoIP2 para restringir acceso administrativo por país\ngeoip2 /etc/nginx/GeoLite2-Country.mmdb {\n    $geoip2_data_country_code country iso_code;\n}\nmap $geoip2_data_country_code $allowed_country {\n    default no;\n    ES yes;\n}\n# En location /admin: if ($allowed_country = no) { return 403; }",
+    "entrevista": "El bloqueo geográfico reduce el ruido automatizado y apoya restricciones regionales, pero es un control complementario fácilmente evadible mediante VPNs o infraestructura cloud en países permitidos."
+  },
+  "Captura de tráfico": {
+    "que": "Proceso de interceptar, copiar y almacenar los paquetes de red completos (incluyendo cabeceras de capa 2 a 4 y carga útil de capa 7) que circulan por una interfaz física, virtual o enlace de red en formato estándar como PCAP o PCAPNG.",
+    "para": "Se utiliza para depurar errores sutiles de protocolo o TLS, verificar que los datos sensibles viajan realmente cifrados, alimentar motores IDS/NDR y recopilar evidencia detallada durante investigaciones forenses o pruebas de penetración.",
+    "como": "En un host específico, una herramienta de captura coloca la tarjeta de red en modo promiscuo usando bibliotecas como libpcap (Linux) o Npcap (Windows) y filtros BPF (Berkeley Packet Filter) en kernel para copiar solo los paquetes de interés sin impactar en exceso el rendimiento. A nivel de red corporativa o cloud, se emplea un Network TAP o Port Mirroring (SPAN/RSPAN) en switches, o Traffic Mirroring (como AWS VPC Traffic Mirroring) para duplicar paquetes hacia un colector externo. Las herramientas como tcpdump o tshark escriben el flujo en archivos rotativos PCAP.",
+    "practicas": [
+      "Aplicar filtros BPF restrictivos al capturar en producción (por ejemplo, host y puerto concretos) y limitar la longitud de captura (-s) si solo interesan las cabeceras para evitar saturar disco o CPU.",
+      "Rotar y cifrar los archivos PCAP generados, ya que pueden contener tokens, cabeceras de sesión o datos personales (PII) en texto claro si se captura tras la terminación TLS.",
+      "Captura de tráfico (PCAP) vs Flow Logs: el PCAP guarda el paquete entero (alto volumen y privacidad sensible), mientras los Flow Logs solo registran metadatos agregados de la conexión.",
+      "Trampa típica: olvidar que en tráfico cifrado con TLS 1.3 (Forward Secrecy), capturar paquetes en tránsito no permite descifrar la carga útil sin exportar las claves efímeras de sesión (SSLKEYLOGFILE) en entornos controlados."
+    ],
+    "ejemplo": "# Captura rotativa en producción filtrando tráfico HTTPS hacia un puerto específico\ntcpdump -i eth0 -nn -s 0 -W 5 -C 100 -w /var/captures/traza.pcap 'tcp port 443 and host 10.0.12.5'",
+    "entrevista": "La captura de tráfico con filtros BPF y duplicación por TAP o Traffic Mirroring ofrece visibilidad exacta paquete a paquete, aunque exige gestionar almacenamiento, privacidad y rotación."
+  },
+  "Cloudflare": {
+    "que": "Plataforma global de borde (edge) que combina CDN sobre arquitectura Anycast, proxy inverso, DNS autoritativo, WAF, mitigación DDoS, gestión de bots y servicios Zero Trust actuando como capa intermedia delante de aplicaciones web y APIs.",
+    "para": "Resuelve la protección y aceleración de servicios expuestos a Internet absorbiendo ataques volumétricos en el borde, filtrando payloads maliciosos (SQLi, XSS) antes de llegar al origen, terminando TLS y ocultando la dirección IP real de la infraestructura backend.",
+    "como": "Al habilitar el modo proxy ('nube naranja') en el DNS de Cloudflare, las consultas A/AAAA devuelven IPs Anycast de Cloudflare en lugar de la IP del servidor de origen. Cuando un cliente realiza una petición HTTPS, la conexión TCP y TLS termina en el PoP más cercano, donde se evalúan reglas de firewall WAF, rate limiting, desafío de bots y Workers. Si la petición es legítima y no está en caché, Cloudflare abre una nueva conexión TLS hacia el servidor de origen enviando la IP real del usuario en cabeceras como CF-Connecting-IP.",
+    "practicas": [
+      "Configurar el modo SSL/TLS en 'Full (Strict)' para validar el certificado del servidor de origen; usar 'Flexible' deja el tramo borde-origen en HTTP sin cifrar.",
+      "Restringir el firewall/Security Group del servidor de origen para aceptar tráfico HTTP/HTTPS únicamente desde los rangos IP oficiales de Cloudflare o mediante Authenticated Origin Pulls (mTLS) y Cloudflare Tunnel, evitando que un atacante eluda el WAF atacando la IP directa.",
+      "Rotar o nunca exponer en registros históricos MX, subdominios de correo o entornos dev la IP real del servidor protegido.",
+      "Error frecuente: confiar en la cabecera X-Forwarded-For sin restringir quién puede conectarse al origen, permitiendo suplantar IPs."
+    ],
+    "ejemplo": "# Regla Nginx en origen para confiar en la IP real enviada por Cloudflare\n# (combinar siempre con bloqueo a nivel de firewall fuera de rangos Cloudflare)\nreal_ip_header CF-Connecting-IP;\nset_real_ip_from 173.245.48.0/20;\nset_real_ip_from 103.21.244.0/22;",
+    "entrevista": "Usar Cloudflare como proxy inverso protege el perímetro con WAF, DDoS y caché en el borde, siempre que el servidor de origen valide TLS en modo Full Strict y bloquee el acceso directo que evite el proxy."
+  },
+  "DNS sobre HTTPS": {
+    "que": "Protocolo estandarizado (DoH, RFC 8484) que encapsula y cifra las consultas y respuestas DNS tradicionales dentro de tráfico HTTPS estándar sobre el puerto TCP 443 utilizando TLS.",
+    "para": "Protege la confidencialidad e integridad de la resolución de nombres frente a observadores en la red (ISPs, redes Wi-Fi públicas, actores con capacidad MITM), impidiendo la escucha pasiva del historial de dominios visitados y la manipulación local de respuestas DNS.",
+    "como": "En lugar de enviar datagramas UDP sin cifrar al puerto 53 hacia el resolver local, el cliente compatible (navegador, sistema operativo o daemon como cloudflared/dnscrypt-proxy) establece una sesión HTTPS (HTTP/2 o HTTP/3) con un resolver DoH confiable (como 1.1.1.1 o dns.google). La consulta DNS en formato wire format (application/dns-message) o JSON se envía mediante peticiones GET o POST hacia un endpoint como /dns-query. El resolver procesa la resolución estándar de forma recursiva y devuelve la respuesta cifrada dentro del cuerpo HTTP.",
+    "practicas": [
+      "Evaluar el impacto en visibilidad corporativa: como DoH va por el puerto 443 mezclado con tráfico web normal, los firewalls tradicionales y sistemas de filtrado DNS internos pierden visibilidad si los navegadores usan DoH externo por defecto.",
+      "En entornos empresariales gestionados, redirigir o configurar DoH hacia un resolver interno corporativo autorizado para mantener telemetría y bloqueo de dominios maliciosos.",
+      "DoH vs DoT (DNS over TLS): ambos cifran el tramo cliente-resolver; DoT usa un puerto dedicado (TCP 853) fácil de auditar o bloquear en redes corporativas, mientras DoH usa TCP 443 y es más difícil de censurar o distinguir del tráfico HTTPS.",
+      "Recordar que DoH cifra el enlace entre cliente y resolver recursivo, pero no autentica el origen autoritativo del registro (función que corresponde a DNSSEC)."
+    ],
+    "ejemplo": "# Consulta DoH manual usando curl con formato wire-format o JSON\ncurl -s -H 'accept: application/dns-json' \\\n  'https://cloudflare-dns.com/dns-query?name=example.com&type=A' | jq .Answer",
+    "entrevista": "DNS sobre HTTPS cifra las consultas DNS encapsulándolas en HTTPS por el puerto 443 para evitar espionaje y manipulación en tránsito, aunque reduce la visibilidad del filtrado DNS perimetral si no se gobierna."
+  },
+  "DNSSEC": {
+    "que": "Conjunto de extensiones de seguridad para el Sistema de Nombres de Dominio (DNS) que añade autenticación de origen e integridad de datos mediante firmas criptográficas de clave pública sobre los registros DNS.",
+    "para": "Previene ataques de envenenamiento de caché DNS (cache poisoning) y suplantación de respuestas en tránsito (spoofing), garantizando que el cliente o resolver recibe exactamente los registros publicados por el propietario legítimo del dominio y no una IP redirigida hacia un servidor malicioso.",
+    "como": "El propietario del dominio firma los conjuntos de registros (RRset) en su zona usando una clave privada de firma de zona (ZSK), generando registros RRSIG, y publica las claves públicas mediante registros DNSKEY firmados por una Key Signing Key (KSK). Para establecer la cadena de confianza hasta la raíz DNS (Root Zone), el dominio padre publica un registro DS (Delegation Signer) que contiene el hash de la KSK del subdominio. Cuando un resolver validador recibe una respuesta, verifica las firmas RRSIG recorriendo la cadena desde la zona raíz hasta el dominio consultado; si la firma falla o falta cuando hay DS, devuelve SERVFAIL. Además, utiliza registros NSEC o NSEC3 para probar de forma autenticada la inexistencia de un dominio.",
+    "practicas": [
+      "Habilitar validación DNSSEC en los resolvers recursivos internos y firmar las zonas públicas mediante automatización (DNS gestionado) para evitar errores de caducidad de firmas o rotación de claves.",
+      "Preferir NSEC3 sobre NSEC para mitigar la enumeración trivial (zone walking) de todos los subdominios de una zona.",
+      "DNSSEC vs DoH/DoT: DNSSEC garantiza autenticidad e integridad de principio a fin (no cifra los nombres consultados), mientras DoH/DoT cifran el transporte entre cliente y resolver.",
+      "Error operacional crítico: actualizar los registros DS en el registrador antes o después de rotar claves correctamente puede romper por completo la resolución del dominio para resolvers validadores."
+    ],
+    "ejemplo": "# Verificar la cadena de validación DNSSEC y firmas RRSIG con dig\ndig +dnssec +multi cloudflare.com A\n# Comprobar si existe el flag 'ad' (Authenticated Data) en la respuesta del resolver\ndig cloudflare.com A | grep flags",
+    "entrevista": "DNSSEC firma criptográficamente los registros DNS formando una cadena de confianza desde la raíz para evitar el envenenamiento de caché, aunque no cifra la consulta como hacen DoH o DoT."
+  },
+  "Escaneo de puertos": {
+    "que": "Técnica de reconocimiento activo de red que consiste en enviar sondas TCP, UDP o ICMP a un rango de puertos de uno o varios hosts para determinar qué puertos están abiertos, cerrados o filtrados, e identificar los servicios y versiones que escuchan en ellos.",
+    "para": "En defensa (DevSecOps / auditoría) se utiliza para validar que las reglas de firewall y Security Groups cumplen con la exposición esperada y detectar servicios no autorizados. Para un atacante constituye la fase inicial de mapeo para localizar software vulnerable o interfaces administrativas expuestas.",
+    "como": "En un escaneo TCP Connect completo (-sT), el escáner realiza el handshake completo de tres vías (SYN, SYN-ACK, ACK). En el escaneo sigiloso o SYN scan (-sS), envía un paquete SYN y si recibe SYN-ACK marca el puerto como abierto enviando inmediatamente un RST para no completar la conexión; si recibe RST está cerrado, y si no hay respuesta o llega un ICMP unreachable se clasifica como filtrado. Para UDP (-sU), la ausencia de respuesta suele indicar puerto abierto o filtrado, mientras un ICMP Port Unreachable indica cerrado. Opcionalmente, tras hallar puertos abiertos se envían sondas de banner grabbing (-sV) para identificar el software exacto.",
+    "practicas": [
+      "Ejecutar escaneos automatizados periódicos (Nmap/Masscan) contra la IP pública real de cada despliegue para detectar regresiones respecto al estado definido en IaC.",
+      "No depender de 'seguridad por oscuridad' cambiando un puerto estándar (como mover SSH del 22 al 2222); un escaneo rápido de los 65535 puertos lo encuentra en segundos.",
+      "Distinguir estado 'closed' (el host responde RST, alcanzable pero sin servicio) de 'filtered' (un firewall descarta el paquete silenciosamente).",
+      "Coordinar ventanas y tasas de paquetes en entornos productivos para no saturar firewalls stateful o provocar falsos positivos de caída de servicio."
+    ],
+    "ejemplo": "# Escaneo SYN rápido de los 1000 puertos principales con detección de versión\nnmap -sS -sV --top-ports 1000 -T4 -Pn 203.0.113.10\n# Comprobar todos los puertos TCP abiertos en un servidor objetivo\nnmap -p- --min-rate 2000 203.0.113.10",
+    "entrevista": "El escaneo de puertos permite verificar desde fuera qué servicios están realmente accesibles en un host; en DevSecOps lo automatizamos para detectar exposiciones accidentales antes de que lo haga un atacante."
+  },
+  "Filtrado DNS": {
+    "que": "Control de seguridad de red que inspecciona las solicitudes de resolución de nombres de dominio y bloquea o redirige aquellas dirigidas a dominios maliciosos conocidos (C2, phishing, malware) o fuera de una lista permitida antes de que el cliente establezca conexión IP.",
+    "para": "Sirve para cortar de raíz comunicaciones salientes no autorizadas desde servidores, contenedores o puestos de usuario hacia infraestructura de atacantes, además de mitigar la exfiltración de datos mediante DNS tunneling y reducir errores operacionales hacia destinos no confiables.",
+    "como": "Los servidores y cargas de trabajo se configuran para usar exclusivamente un resolver DNS controlado (como AWS Route 53 Resolver DNS Firewall, Pi-hole, CoreDNS o resolvers corporativos tipo Cisco Umbrella). Al recibir una consulta, el resolver evalúa el FQDN y tipo de registro contra listas de inteligencia de amenazas (RPZ - Response Policy Zones) o políticas de allowlist/denylist. Si coincide con una regla de bloqueo, responde con NXDOMAIN, una IP sinkhole (0.0.0.0 o servidor interno de alertas) o NODATA, y registra el host solicitante para investigación. Para que sea efectivo, el firewall de red debe bloquear el tráfico UDP/TCP puerto 53 directo hacia Internet.",
+    "practicas": [
+      "Combinar el filtrado DNS con reglas de firewall de salida que bloqueen UDP/TCP 53 y DoT (853) hacia cualquier destino que no sea el resolver corporativo autorizado.",
+      "En cargas de backend en la nube, usar listas blancas (allowlist) de dominios necesarios (repositorios de paquetes, APIs de terceros) en lugar de depender solo de listas negras.",
+      "Monitorizar consultas con alta entropía, subdominios excesivamente largos o volumen anómalo de registros TXT/NULL para detectar DNS tunneling.",
+      "Limitación clave: el filtrado DNS no detiene a un atacante o malware que se conecte directamente usando direcciones IP hardcodeadas."
+    ],
+    "ejemplo": "# Regla de ejemplo en CoreDNS / RPZ o bloqueo de salida directo al puerto 53\n# En Kubernetes / iptables: forzar DNS solo hacia CoreDNS interno\niptables -A OUTPUT -p udp --dport 53 -d 10.96.0.10 -j ACCEPT\niptables -A OUTPUT -p udp --dport 53 -j DROP",
+    "entrevista": "El filtrado DNS bloquea conexiones hacia dominios C2 o phishing en la fase previa a la conexión IP, pero debe acompañarse de bloqueo de salida al puerto 53 externo y control por IP para evitar evasiones."
+  },
+  "Filtrado de entrada": {
+    "que": "Conjunto de reglas en firewalls, routers, Security Groups o Network ACLs que inspeccionan y restringen el tráfico entrante (ingress) hacia una red, subred, nodo o carga de trabajo basándose en origen, protocolo, puerto y validez de cabeceras.",
+    "para": "Protege los servicios y sistemas internos limitando qué direcciones IP y puertos pueden iniciar conexiones hacia ellos, además de prevenir ataques de suplantación de IP (IP spoofing) descartando en el perímetro paquetes con direcciones origen imposibles o reservadas.",
+    "como": "Un router perimetral o firewall evalúa los paquetes entrantes según el estándar BCP 38 (RFC 2827) y políticas de acceso definidas. Primero valida que la IP origen no pertenezca a rangos privados (RFC 1918), loopback o propios de la red interna cuando llega por una interfaz externa (protección anti-spoofing / Reverse Path Forwarding). A continuación comprueba la tupla IP origen, IP destino, protocolo y puerto destino frente a reglas explícitas; en firewalls con estado (Security Groups), además permite automáticamente el retorno de conexiones salientes previamente establecidas. Todo paquete que no coincide con una regla de aceptación es descartado (DROP).",
+    "practicas": [
+      "Aplicar el principio de mínimo privilegio abriendo únicamente los puertos estrictamente requeridos y acotando los CIDRs de origen (por ejemplo, aceptar tráfico HTTP solo desde el balanceador de carga).",
+      "Activar Reverse Path Forwarding (uRPF) en routers de borde para mitigar tráfico entrante con IP origen falsificada.",
+      "Diferenciar entre filtrado de entrada (quién puede iniciar una conexión hacia mis servicios) y filtrado de salida (a dónde pueden conectarse mis servicios).",
+      "Evitar reglas 0.0.0.0/0 en puertos administrativos (22, 3389) o bases de datos (5432, 3306, 27017)."
+    ],
+    "ejemplo": "# Regla típica de Security Group en Terraform (entrada solo desde ALB en puerto 8080)\nresource \"aws_security_group_rule\" \"app_ingress\" {\n  type                     = \"ingress\"\n  from_port                = 8080\n  to_port                  = 8080\n  protocol                 = \"tcp\"\n  source_security_group_id = aws_security_group.alb.id\n  security_group_id        = aws_security_group.app.id\n}",
+    "entrevista": "El filtrado de entrada reduce la superficie expuesta permitiendo solo orígenes y puertos autorizados y descartando tráfico con IPs falsificadas en el perímetro."
+  },
+  "Filtrado de salida": {
+    "que": "Control de red que restringe qué conexiones salientes (egress) pueden iniciar los servidores, contenedores o usuarios de una red interna hacia Internet u otros segmentos de red.",
+    "para": "Limita gravemente el impacto de una intrusión o vulnerabilidad RCE/SSRF: impide que un servidor comprometido descargue herramientas maliciosas, establezca shells inversas (reverse shells) hacia un servidor C2 o exfiltre bases de datos hacia destinos externos arbitrarios.",
+    "como": "El tráfico saliente originado en una subred o pod atraviesa un firewall de salida, un proxy de reenvío (forward proxy), una NetworkPolicy de Kubernetes con bloque egress o reglas de Security Group sin permiso global hacia 0.0.0.0/0. El motor inspecciona el destino (IP/CIDR, puerto o dominio mediante SNI/HTTP CONNECT en proxies L7) y verifica si está en la lista blanca corporativa (por ejemplo, API de pasarela de pago o endpoint de S3). A nivel de proveedor de red (BCP 38), también garantiza que ningún paquete abandone la red con una IP de origen que no pertenezca al rango asignado.",
+    "practicas": [
+      "Reemplazar el permiso por defecto de salida abierta (egress 0.0.0.0/0) por políticas explícitas hacia los destinos exactos requeridos por la aplicación.",
+      "En Kubernetes y subredes privadas, canalizar todo el tráfico saliente necesario hacia Internet a través de un proxy de reenvío o firewall L7 con filtrado por FQDN.",
+      "Restringir especialmente el acceso saliente a puertos comunes de exfiltración o C2 y bloquear el acceso a servicios de metadatos cloud (169.254.169.254) salvo excepción controlada para mitigar SSRF.",
+      "Error habitual: configurar un filtrado de entrada muy estricto y dejar toda la salida abierta, facilitando reverse shells y exfiltración tras explotar una sola vulnerabilidad web."
+    ],
+    "ejemplo": "# NetworkPolicy de Kubernetes que restringe salida (egress) solo a DNS y API interna\nspec:\n  podSelector: { matchLabels: { app: api-backend } }\n  policyTypes: [\"Egress\"]\n  egress:\n  - to: [{ namespaceSelector: {}, podSelector: { matchLabels: { k8s-app: kube-dns } } }]\n    ports: [{ protocol: UDP, port: 53 }]\n  - to: [{ ipBlock: { cidr: 10.20.0.0/16 } }]\n    ports: [{ protocol: TCP, port: 443 }]",
+    "entrevista": "El filtrado de salida es clave en defensa en profundidad porque, aunque un atacante logre RCE o SSRF, bloquea reverse shells, descarga de payloads y exfiltración de datos hacia destinos no autorizados."
+  },
+  "Firewall de red": {
+    "que": "Dispositivo físico, virtual o servicio gestionado (L3/L4 y en modelos avanzados L7) situado en los límites entre segmentos de red que inspecciona paquetes y flujos de conexión para permitirlos, denegarlos o registrarlos según un conjunto ordenado de reglas de seguridad.",
+    "para": "Aplica aislamiento perimetral y segmentación entre zonas de distinta confianza (como Internet, DMZ, producción y red corporativa), bloqueando tráfico no autorizado y registrando intentos de acceso o movimiento lateral.",
+    "como": "Un firewall sin estado (stateless) evalúa cada paquete de forma aislada mirando sus cabeceras IP y TCP/UDP. Un firewall con estado (stateful) mantiene una tabla de conexiones activas (conntrack) para distinguir paquetes nuevos (SYN) de paquetes pertenecientes a sesiones legítimas ya establecidas (ESTABLISHED, RELATED). Los firewalls de nueva generación (NGFW, como AWS Network Firewall o Palo Alto) añaden inspección profunda de paquetes (DPI) para identificar protocolos de capa 7 independientemente del puerto, verificar SNI en TLS y aplicar firmas IPS sobre el flujo de red.",
+    "practicas": [
+      "Colocar reglas explícitas de denegación y registro al final de cada política (default deny) para evitar que tráfico imprevisto cruce entre zonas.",
+      "Separar funciones: usar un firewall de red para control L3/L4/L7 entre VPCs o subredes y un WAF dedicado para inspeccionar semántica HTTP/API (SQLi, XSS, JSON).",
+      "Auditar periódicamente reglas obsoletas o demasiado permisivas (any-any) que quedan tras migraciones temporales.",
+      "Firewall de red vs Security Group: el firewall de red suele operar de forma centralizada en el borde de subredes o VPCs (incluyendo tráfico norte-sur y entre VPCs), mientras el Security Group protege directamente interfaces de instancia."
+    ],
+    "ejemplo": "# Ejemplo de reglas stateful básicas con nftables en Linux (política drop por defecto)\ntable inet filter {\n  chain input {\n    type filter hook input priority 0; policy drop;\n    ct state established,related accept\n    iif \"lo\" accept\n    tcp dport 443 accept\n  }\n}",
+    "entrevista": "Un firewall de red stateful controla qué flujos pueden atravesar fronteras entre subredes o VPCs mediante tablas de estado e inspección L3-L7, complementando al WAF y a las políticas locales."
+  },
+  "Gestión de bots": {
+    "que": "Conjunto de técnicas de detección, clasificación y mitigación orientadas a distinguir tráfico automatizado malicioso (scrapers, credential stuffing, carding, acaparamiento de inventario) de usuarios humanos reales y bots legítimos (motores de búsqueda, monitoreo).",
+    "para": "Protege aplicaciones web y APIs frente al abuso automatizado de la lógica de negocio, la sobrecarga de infraestructura por scraping masivo y el robo de cuentas mediante pruebas masivas de credenciales filtradas.",
+    "como": "La solución de gestión de bots (en un WAF, CDN o servicio especializado) analiza múltiples señales en tiempo real: reputación de IP y ASN, huella TLS (JA3/JA4) y HTTP/2 para detectar librerías como curl o scripts frente a navegadores reales, inconsistencias en cabeceras HTTP y análisis de comportamiento en el cliente mediante telemetría JavaScript (movimientos de ratón, eventos de teclado, huella de canvas/WebGL). Según la puntuación de riesgo asignada, el sistema permite la petición, aplica rate limiting estricto, sirve datos falsos (honeypot), fuerza un desafío criptográfico invisible (Proof-of-Work/Turnstile) o devuelve HTTP 403. Los bots legítimos como Googlebot se verifican mediante rDNS inverso o firmas criptográficas (Web Bot Auth).",
+    "practicas": [
+      "No confiar únicamente en la cabecera User-Agent ni en listas de IPs estáticas, ya que los atacantes rotan proxies residenciales y suplantan cabeceras fácilmente.",
+      "Proteger específicamente endpoints de alto valor (login, registro, checkout, recuperación de contraseña y búsquedas costosas) en lugar de degradar toda la aplicación con captchas agresivos.",
+      "Combinar gestión de bots en el borde con controles de lógica de aplicación (MFA, bloqueo progresivo por cuenta, detección de anomalías de sesión).",
+      "Verificar criptográficamente o mediante rDNS + ASN a los crawlers legítimos antes de incluirlos en listas de excepción."
+    ],
+    "ejemplo": "# Ejemplo conceptual de bloqueo si falta validación de bot o huella TLS incoherente en borde\n# Cabeceras típicas inspeccionadas junto a JA3/JA4:\n# User-Agent: Mozilla/5.0 ... (declarado navegador)\n# Sec-CH-UA / Sec-Fetch-Mode ausentes en cliente HTTP simple -> sospecha de automatización",
+    "entrevista": "La gestión de bots combina huellas TLS/HTTP, reputación de red y telemetría de comportamiento para frenar credential stuffing y scraping sin bloquear tráfico humano ni crawlers legítimos."
+  },
+  "Límite de confianza": {
+    "que": "Frontera lógica o física dentro de una arquitectura donde los datos, solicitudes o identidades cambian de nivel de privilegio o confianza, exigiendo validación explícita, autenticación y control de acceso al cruzarla.",
+    "para": "Es el concepto central del modelado de amenazas (Threat Modeling): permite identificar dónde debe aplicarse validación de entradas, autorización, terminación TLS o aislamiento de red, evitando asumir erróneamente que un componente interno siempre envía datos seguros.",
+    "como": "Durante el diseño de arquitectura (diagramas DFD - Data Flow Diagrams), se trazan líneas punteadas alrededor de zonas que comparten un mismo nivel de confianza: por ejemplo, entre el navegador del usuario e Internet, entre el API Gateway y los microservicios, o entre un servicio y la base de datos. Cada flujo de datos que cruza un límite de confianza se somete a análisis STRIDE (Spoofing, Tampering, Repudiation, Information Disclosure, DoS, Elevation of Privilege). Técnicamente, cruzar ese límite exige mecanismos como validación estricta de esquemas, tokens firmados (JWT), mTLS o políticas de firewall.",
+    "practicas": [
+      "Validar y sanitizar toda entrada que cruce un límite de confianza, incluso si proviene de otro microservicio interno o de una cola de mensajes.",
+      "Documentar los límites de confianza en diagramas de arquitectura antes de escribir código y revisar cada cambio que añada un nuevo punto de cruce (webhooks, integraciones SaaS).",
+      "Reducir la amplitud de los límites de confianza mediante microsegmentación y privilegio mínimo en lugar de agrupar toda la VPC bajo una sola zona confiable.",
+      "Trampa clásica: tratar la zona detrás del balanceador de carga como un único límite sin controles internos, permitiendo que un SSRF o un servicio comprometido acceda sin restricciones a toda la red interna."
+    ],
+    "ejemplo": "# Flujo con dos límites de confianza explícitos:\n# [Usuario/Internet] --(Límite 1: TLS + WAF + Rate Limit)--> [API Gateway]\n# [API Gateway]      --(Límite 2: mTLS + JWT + AuthZ)------> [Servicio Pagos]",
+    "entrevista": "Un límite de confianza marca exactamente dónde cambia el nivel de privilegio entre componentes; todo dato o petición que lo cruce debe autenticarse, autorizarse y validarse."
+  },
+  "Man-in-the-middle": {
+    "que": "Ataque activo en el que un adversario se interpone en el canal de comunicación entre dos partes legítimas, haciéndose pasar por cada extremo ante el otro para escuchar, inyectar o alterar los mensajes en tránsito sin que las víctimas lo adviertan.",
+    "para": "Comprender este modelo de ataque justifica la implementación obligatoria de protocolos con cifrado autenticado (TLS/HTTPS, SSH, mTLS), HSTS y validación estricta de certificados en todas las comunicaciones de red, tanto públicas como internas.",
+    "como": "El atacante obtiene primero una posición en ruta mediante técnicas como ARP spoofing en LAN, puntos de acceso Wi-Fi maliciosos (Evil Twin), DNS spoofing o secuestro BGP. Al recibir la petición de conexión del cliente hacia el servidor, el atacante intercepta el paquete y establece dos sesiones separadas: una con el cliente (suplantando al servidor) y otra con el servidor real (suplantando al cliente). Si el canal no usa TLS o si el cliente ignora advertencias de certificado inválido/autofirmado, el atacante descifra o lee en claro credenciales, cookies de sesión y cuerpos JSON, pudiendo modificar respuestas HTTP o inyectar código JavaScript al vuelo.",
+    "practicas": [
+      "Exigir TLS 1.2/1.3 con verificación estricta de certificados y nombre de host (nunca usar flags como insecureSkipVerify o verify=False en producción).",
+      "Habilitar HSTS (Strict-Transport-Security) con preload para impedir ataques de downgrade HTTP (como SSLstrip) en navegadores.",
+      "Usar mTLS para comunicaciones servicio a servicio y SSH con verificación de huella (known_hosts) para administración.",
+      "Man-in-the-middle vs eavesdropping pasivo: el eavesdropping solo escucha tráfico sin modificarlo; el MITM participa activamente retransmitiendo y pudiendo alterar la comunicación en tiempo real."
+    ],
+    "ejemplo": "# Ejemplo de vulnerabilidad típica en cliente Python que habilita MITM\n# MAL: desactiva verificación de certificado TLS\nrequests.get(\"https://api.interna/secretos\", verify=False)\n\n# BIEN: valida contra CA corporativa confiable\nrequests.get(\"https://api.interna/secretos\", verify=\"/etc/ssl/certs/ca-corp.pem\")",
+    "entrevista": "El ataque Man-in-the-middle intercepta y altera comunicaciones entre dos extremos; se neutraliza con TLS correctamente validado, HSTS para evitar downgrades y mTLS en comunicaciones internas."
+  },
+  "NetFlow": {
+    "que": "Protocolo de telemetría de red desarrollado originalmente por Cisco (estandarizado luego como IPFIX en RFC 7011) que recopila y exporta resúmenes estadísticos de flujos IP sin almacenar el contenido de los paquetes.",
+    "para": "Proporciona visibilidad continua sobre quién habla con quién, por qué puertos, con qué volumen de bytes y durante cuánto tiempo, siendo clave para detectar exfiltraciones masivas, escaneos internos, movimiento lateral y anomalías de tráfico a bajo coste de almacenamiento.",
+    "como": "Un router, switch o sonda en la red agrupa los paquetes que comparten una misma tupla clave (IP origen, IP destino, puerto origen, puerto destino, protocolo L3/L4, interfaz de entrada y ToS) dentro de un registro de flujo en memoria. Al finalizar la conexión (FIN/RST) o cumplirse un tiempo límite (active/inactive timeout), el exportador envía los registros mediante UDP o SCTP (típicamente puerto 2055 o 4739 en IPFIX) hacia un colector central (como ElastiFlow, nfdump o SIEM). El colector indexa estos metadatos para consultas históricas, generación de líneas base y alertas de anomalías.",
+    "practicas": [
+      "Ajustar el intervalo de muestreo (sampling rate) con cuidado: el muestreo agresivo (p. ej. 1:1000) ahorra CPU en enlaces troncales, pero puede hacer invisibles conexiones cortas de C2 o escaneos puntuales.",
+      "Correlacionar registros NetFlow/IPFIX con logs DHCP y DNS para atribuir direcciones IP dinámicas a usuarios o pods concretos.",
+      "NetFlow vs PCAP: NetFlow guarda solo metadatos ligeros ideales para retención de meses y detección volumétrica; PCAP guarda el contenido completo para análisis forense detallado.",
+      "Asegurar el canal de envío hacia el colector (por red de gestión aislada o TLS sobre TCP/SCTP en IPFIX) para evitar manipulación o saturación del colector."
+    ],
+    "ejemplo": "# Inspección de flujos NetFlow almacenados buscando mayores transmisores con nfdump\nnfdump -R /var/cache/nfdump/ -s srcip/bytes -n 10\n# Filtrar conexiones salientes hacia puerto no estándar\nnfdump -r nfcapd.202611250000 'dst port 4444 and proto tcp'",
+    "entrevista": "NetFlow e IPFIX ofrecen visibilidad histórica de bajo coste sobre todas las conversaciones de red mediante metadatos de flujo, permitiendo detectar movimiento lateral o exfiltraciones sin almacenar paquetes completos."
+  },
+  "Network TAP": {
+    "que": "Dispositivo hardware (Test Access Point) pasivo o activo intercalado físicamente en un enlace de red que duplica exactamente todo el tráfico eléctrico u óptico hacia un puerto de monitorización sin alterar los paquetes ni introducir latencia apreciable.",
+    "para": "Sirve para alimentar con una copia íntegra y fiable de los paquetes a sistemas IDS, NDR, sondas Zeek/Suricata o grabadores forenses de red sin afectar al rendimiento ni a la disponibilidad del enlace productivo.",
+    "como": "En fibra óptica, un TAP pasivo utiliza divisores ópticos (optical splitters) que desvían un porcentaje fijo de la señal luminosa (por ejemplo 30% hacia el monitor y 70% al enlace principal) sin requerir alimentación eléctrica, por lo que no se convierte en punto único de fallo. En cobre (Ethernet), un TAP activo regenera la señal y la copia hacia puertos dedicados de recepción (TX y RX separados para evitar colisiones). A diferencia de un puerto espejo en un switch, el TAP copia incluso tramas corruptas o errores de capa 1/2 y no descarta paquetes cuando el switch sufre congestión de CPU.",
+    "practicas": [
+      "Utilizar TAPs ópticos pasivos en enlaces críticos de alta velocidad donde cualquier fallo de alimentación del dispositivo de monitoreo no deba cortar la conectividad de producción.",
+      "Network TAP vs SPAN (Port Mirroring): el SPAN depende de la capacidad de procesamiento del switch y puede descartar paquetes en picos de carga o alterar marcas de tiempo; el TAP garantiza copia íntegra a velocidad de línea.",
+      "En entornos virtualizados o cloud donde no hay acceso físico al cable, emplear sus equivalentes virtuales como AWS VPC Traffic Mirroring o vSwitch mirroring.",
+      "Combinar un packet broker si múltiples herramientas (Wireshark, Suricata, Zeek) necesitan recibir flujos filtrados o deduplicados desde varios TAPs."
+    ],
+    "ejemplo": "# Topología típica de despliegue fuera de banda (out-of-band)\n# [Router Borde] <==== Enlace Principal ====> [Switch Core]\n#                        |\n#                   [Network TAP] (copia pasiva RX/TX)\n#                        |\n#                [Sensor Suricata / Zeek]",
+    "entrevista": "Un Network TAP copia físicamente todo el tráfico del enlace sin riesgo de caída ni pérdida de paquetes por congestión de switch como ocurre con SPAN, siendo la fuente ideal para IDS y análisis forense."
+  },
+  "NetworkPolicy de Kubernetes": {
+    "que": "Recurso nativo de la API de Kubernetes que define reglas de firewall declarativas a nivel de pod (capas 3 y 4) para controlar qué tráfico de entrada (ingress) y salida (egress) está permitido entre pods, namespaces y bloques IP externos.",
+    "para": "Implementa microsegmentación dentro del clúster para evitar que, si un pod expuesto al público resulta comprometido, el atacante pueda acceder libremente a bases de datos, cachés o servicios internos de otros namespaces.",
+    "como": "Por defecto en Kubernetes todos los pods pueden comunicarse con cualquier otro pod del clúster. Al aplicar una NetworkPolicy, el controlador del plugin CNI (como Cilium, Calico o Antrea) traduce los selectores de etiquetas (podSelector, namespaceSelector) y rangos CIDR a reglas en el kernel del nodo (iptables, nftables o programas eBPF). En cuanto al menos una NetworkPolicy selecciona a un pod para Ingress o Egress, todo tráfico de ese tipo que no coincida con ninguna regla permitida queda bloqueado por defecto. Es importante notar que el plano de control de Kubernetes solo define la especificación: si el CNI instalado (como Flannel estándar) no implementa NetworkPolicy, las reglas no tienen efecto.",
+    "practicas": [
+      "Aplicar una NetworkPolicy 'default-deny-all' en cada namespace productivo y abrir explícitamente solo los flujos necesarios entre microservicios.",
+      "Verificar que el plugin CNI del clúster soporta NetworkPolicy (Cilium, Calico) y comprobarlo con pruebas reales de conectividad entre pods.",
+      "No olvidar permitir explícitamente el tráfico hacia kube-dns/CoreDNS (UDP/TCP 53) cuando se restringe el egress global de un namespace.",
+      "NetworkPolicy estándar vs CiliumNetworkPolicy / Service Mesh: la NetworkPolicy nativa filtra en L3/L4 (IP y puertos); para reglas L7 (rutas HTTP, métodos o mTLS) se requieren extensiones como Cilium L7 o un Service Mesh."
+    ],
+    "ejemplo": "apiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: deny-all-ingress\n  namespace: produccion\nspec:\n  podSelector: {}\n  policyTypes: [\"Ingress\"]",
+    "entrevista": "Las NetworkPolicies aplican microsegmentación L3/L4 por etiquetas en Kubernetes; requieren un CNI compatible como Calico o Cilium y deben partir de una política por defecto denegar en cada namespace."
+  },
+  "Peering de VPC": {
+    "que": "Conexión de red privada entre dos Virtual Private Clouds (VPCs), dentro de la misma cuenta/región o entre cuentas y regiones distintas, que permite encaminar tráfico directamente entre ambas mediante direcciones IP privadas sin atravesar Internet público.",
+    "para": "Permite interconectar cargas de trabajo separadas por entorno, equipo o cuenta cloud (por ejemplo, servicios compartidos y aplicaciones) con baja latencia y sin exponer servicios internos en IPs públicas.",
+    "como": "El administrador crea una solicitud de peering entre una VPC solicitante y una VPC aceptante que posean rangos CIDR sin solapamiento. Tras aceptarse, se añaden rutas en las tablas de enrutamiento (Route Tables) de las subredes implicadas apuntando el CIDR de la VPC remota hacia el identificador del enlace de peering (pcx-...). El tráfico fluye de forma privada sobre la red troncal del proveedor cloud. El peering de VPC no es transitivo: si la VPC A tiene peering con B y B con C, A no puede alcanzar a C a través de B.",
+    "practicas": [
+      "Planificar rangos CIDR sin solapamiento (IPAM) desde el inicio para evitar imposibilidad de establecer peering entre VPCs en el futuro.",
+      "Configurar Security Groups y Network ACLs estrictos tras habilitar el peering: conectar dos VPCs no implica abrir todo el tráfico entre ellas.",
+      "Peering de VPC vs PrivateLink vs Transit Gateway: el peering expone conectividad de subred bidireccional (con riesgo de acceso lateral amplio) y no escala en topologías de decenas de VPCs; PrivateLink expone un único servicio unidireccional y Transit Gateway centraliza arquitecturas hub-and-spoke.",
+      "Recordar la no transitividad del peering al diseñar redes compartidas con acceso a VPN o Direct Connect."
+    ],
+    "ejemplo": "# Ruta en AWS Route Table para enviar tráfico hacia la VPC remota por peering\naws ec2 create-route \\\n  --route-table-id rtb-0123456789abcdef0 \\\n  --destination-cidr-block 10.20.0.0/16 \\\n  --vpc-peering-connection-id pcx-0a1b2c3d4e5f67890",
+    "entrevista": "El peering de VPC une privadamente dos VPCs sin solapamiento CIDR mediante tablas de rutas; no es transitivo y expone redes completas salvo que se acote con Security Groups, frente al acceso granular de PrivateLink."
+  },
+  "Política de red": {
+    "que": "Conjunto formal y ejecutable de reglas, estándares y controles que dictan qué comunicaciones están permitidas o denegadas entre segmentos, usuarios, aplicaciones y servicios externos dentro de una infraestructura.",
+    "para": "Traduce los requisitos de negocio, cumplimiento normativo y modelado de amenazas en configuraciones concretas de red versionables y auditables, reduciendo la ambigüedad operacional y el riesgo de exposiciones accidentales.",
+    "como": "Una política de red se estructura en niveles: primero define zonas o grupos lógicos (producción, datos, gestión, DMZ) y principios rectores (como denegación por defecto y cifrado obligatorio). Luego se materializa como código (Policy as Code / IaC) mediante manifiestos de Kubernetes NetworkPolicy, reglas Terraform de Security Groups, políticas en Cilium/OPA o reglas en firewalls centrales. Antes de desplegarse, los cambios pasan por revisión en Pull Requests y comprobaciones automatizadas (linters como Checkov, Trivy o Kyverno) que bloquean reglas abiertas a 0.0.0.0/0 o puertos prohibidos.",
+    "practicas": [
+      "Gestionar todas las políticas de red como código en repositorios Git con revisión por pares (peer review) y pruebas automatizadas en CI/CD.",
+      "Basar las reglas en identidades o etiquetas lógicas siempre que la plataforma lo permita, en lugar de listas estáticas de IPs efímeras.",
+      "Documentar el propósito y propietario de cada regla o excepción temporal con fecha de caducidad para evitar acumulación histórica de permisos.",
+      "Auditar periódicamente la política declarada frente al tráfico real observado en Flow Logs para podar permisos no utilizados."
+    ],
+    "ejemplo": "# Regla de Policy-as-Code (OPA/Rego) para rechazar puertos SSH abiertos al mundo\npackage network.policy\ndeny[msg] {\n  input.type == \"ingress\"\n  input.from_port <= 22; input.to_port >= 22\n  input.cidr_blocks[_] == \"0.0.0.0/0\"\n  msg := \"Prohibido exponer puerto 22 a 0.0.0.0/0\"\n}",
+    "entrevista": "Una política de red en DevSecOps define de forma declarativa y versionada qué flujos están autorizados bajo mínimo privilegio, validándose automáticamente en CI/CD antes de llegar a producción."
+  },
+  "Política por defecto denegar": {
+    "que": "Postura de configuración de seguridad de red y control de acceso (default deny / implicit deny) según la cual todo tráfico o solicitud queda bloqueado de forma predeterminada a menos que exista una regla explícita que lo autorice.",
+    "para": "Garantiza que cualquier nuevo servicio, puerto accidentalmente levantado o ruta imprevista quede aislado por defecto frente a ataques o movimiento lateral, minimizando el impacto de errores humanos o despliegues incompletos.",
+    "como": "Al final de las listas de reglas de un firewall, iptables/nftables, router ACL o NetworkPolicy de Kubernetes, el sistema evalúa el tráfico que no coincidió con ninguna regla superior (ACCEPT/ALLOW) y ejecuta la acción terminal DROP o DENY. En Kubernetes, una NetworkPolicy con un `podSelector: {}` vacío y `policyTypes: [\"Ingress\", \"Egress\"]` sin reglas `ingress`/`egress` activa el aislamiento total en el namespace. Cualquier comunicación legítima debe declararse mediante reglas de lista blanca (allowlist) lo más acotadas posible en origen, destino y puerto.",
+    "practicas": [
+      "Establecer 'default deny' como línea base en cada nuevo namespace de Kubernetes, tabla de firewall de host y perfil de Security Group.",
+      "En firewalls cloud como AWS Network ACLs (stateless), recordar que existe una regla final explícita de denegación (*) y que hay que autorizar también los puertos efímeros de respuesta si aplica.",
+      "Preferir 'DROP' silencioso frente a 'REJECT' en interfaces expuestas a Internet para no confirmar la presencia de un host ni facilitar el mapeo rápido, aunque en redes internas 'REJECT' ayuda a diagnosticar fallos rápido sin esperar timeouts.",
+      "Política por defecto denegar (allowlist) vs por defecto permitir (denylist): las listas negras siempre van por detrás de nuevos puertos o servicios; solo la denegación por defecto ofrece contención real."
+    ],
+    "ejemplo": "# Política por defecto denegar tráfico entrante y saliente en un namespace Kubernetes\napiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: default-deny-all\nspec:\n  podSelector: {}\n  policyTypes: [\"Ingress\", \"Egress\"]",
+    "entrevista": "Aplicar una política por defecto denegar invierte el modelo hacia listas blancas explícitas, asegurando que cualquier puerto o servicio nuevo quede aislado hasta que se autorice su flujo concreto."
+  },
+  "PrivateLink": {
+    "que": "Tecnología de conectividad privada de proveedores cloud (como AWS PrivateLink o Azure Private Link) que permite acceder a servicios alojados en otra VPC, cuenta o proveedor SaaS a través de direcciones IP privadas dentro de la propia red virtual, sin salir a Internet ni requerir peering completo de VPC.",
+    "para": "Resuelve la exposición de APIs internas, bases de datos gestionadas o servicios de terceros evitando el tráfico por Internet público, eliminando problemas de rangos CIDR solapados y restringiendo el acceso únicamente a un servicio concreto y unidireccional.",
+    "como": "El proveedor del servicio expone su carga detrás de un Network Load Balancer (NLB) y crea un Endpoint Service asociado. El consumidor crea un Interface VPC Endpoint dentro de sus subredes privadas, lo que provisiona una interfaz de red elástica (ENI) con una IP privada local de la VPC consumidora y un nombre DNS privado opcional. El tráfico enviado a esa IP privada viaja encapsulado por la red troncal del proveedor cloud directamente hacia el NLB del productor. La conexión es estrictamente unidireccional: solo el consumidor puede iniciar sesiones hacia el servicio expuesto, nunca el productor hacia la red del consumidor.",
+    "practicas": [
+      "Preferir PrivateLink frente a VPC Peering al exponer un servicio específico hacia múltiples clientes o cuentas distintas para evitar la exposición lateral de toda la subred.",
+      "Combinar el Interface Endpoint con Endpoint Policies (políticas IAM de recurso) y Security Groups para restringir qué identidades y cargas locales pueden consumir el endpoint.",
+      "Aprovechar PrivateLink para conectar servicios PaaS (S3, KMS, Secrets Manager, ECR) desde subredes completamente privadas sin NAT Gateway.",
+      "Verificar la resolución DNS privada (Enable Private DNS) para que los SDKs apunten transparentemente a la IP privada del endpoint sin cambiar el código."
+    ],
+    "ejemplo": "# Crear un VPC Interface Endpoint en AWS para consumir Secrets Manager en privado\naws ec2 create-vpc-endpoint \\\n  --vpc-id vpc-0abc123456789def0 \\\n  --vpc-endpoint-type Interface \\\n  --service-name com.amazonaws.eu-west-1.secretsmanager \\\n  --subnet-ids subnet-1111aaaa subnet-2222bbbb \\\n  --security-group-ids sg-0123456789abcdef0",
+    "entrevista": "PrivateLink expone servicios concretos de forma unidireccional mediante una IP privada en la VPC consumidora, evitando Internet, el solapamiento de CIDRs y el riesgo lateral del VPC Peering."
+  },
+  "Protección DDoS": {
+    "que": "Conjunto de arquitecturas, capacidades de red y controles de aplicación diseñados para detectar, absorber y filtrar ataques distribuidos de denegación de servicio (capa 3/4 volumétricos y de protocolo, y capa 7 de aplicación) manteniendo la disponibilidad del servicio legítimo.",
+    "para": "Protege la disponibilidad y la estabilidad financiera (evitando costes desbocados por autoescalado en la nube) de aplicaciones web, APIs y DNS frente a botnets que intentan saturar el ancho de banda, agotar tablas de estado o colapsar recursos de cómputo.",
+    "como": "La defensa opera en múltiples capas. En capas 3 y 4, redes Anycast y centros de limpieza (scrubbing centers) absorben ataques volumétricos (UDP floods, amplificación DNS/NTP) y ataques de estado (SYN floods mediante SYN cookies), descartando paquetes malformados antes de que lleguen al origen. En capa 7 (HTTP floods contra endpoints pesados), el proxy inverso o CDN aplica caché agresiva, rate limiting adaptativo, validación de huellas TLS/HTTP, desafíos JavaScript/Proof-of-Work y reglas WAF para separar peticiones automatizadas de usuarios reales mientras el origen escala de forma controlada.",
+    "practicas": [
+      "Ocultar las direcciones IP reales de los servidores de origen detrás de una CDN/proxy Anycast con mitigación DDoS (Cloudflare, AWS Shield Advanced) y bloquear todo tráfico directo al origen.",
+      "Cachear en el borde contenido público y respuestas de error, y proteger rutas costosas (búsquedas, generación de PDF, login) con rate limiting estricto y timeouts cortos.",
+      "Establecer límites máximos en políticas de autoescalado y presupuestos de red para evitar ataques de denegación de cartera (EDoS - Economic Denial of Sustainability).",
+      "DDoS L3/L4 vs L7: los ataques L3/L4 buscan saturar ancho de banda o tabla de conexiones TCP; los L7 usan conexiones TLS válidas a bajo volumen aparente para agotar CPU o base de datos del backend."
+    ],
+    "ejemplo": "# Ejemplo conceptual de mitigación básica en Nginx frente a slowloris/conexiones lentas\nclient_body_timeout 10s;\nclient_header_timeout 10s;\nsend_timeout 10s;\nlimit_conn_zone $binary_remote_addr zone=addr:10m;\nlimit_conn addr 20;",
+    "entrevista": "Una protección DDoS eficaz combina absorción Anycast y scrubbing para ataques volumétricos L3/L4 con caché en borde, rate limiting y protección de bots en L7, ocultando siempre la IP real del origen."
+  },
+  "Proxy de identidad": {
+    "que": "Componente intermediario consciente de la identidad (Identity-Aware Proxy, IAP) ubicado delante de aplicaciones internas o APIs que autentica al usuario o servicio, verifica políticas contextuales y solo entonces reenvía las peticiones autorizadas al backend.",
+    "para": "Materializa el acceso Zero Trust para aplicaciones web, paneles internos, herramientas administrativas o servicios SSH/RDP, eliminando la necesidad de abrir VPNs corporativas amplias o confiar en el código de cada aplicación legacy para gestionar la autenticación inicial.",
+    "como": "Cuando un usuario intenta acceder a una URL protegida (por ejemplo, `admin.interno.empresa.com`), el proxy de identidad intercepta la petición sin sesión válida y redirige mediante OIDC o SAML al Proveedor de Identidad (IdP como Okta, Entra ID o Google Workspace), exigiendo MFA y evaluando la postura del dispositivo. Una vez autenticado, el proxy valida si la identidad pertenece al grupo autorizado para ese recurso específico. Si cumple la política, reenvía la petición al backend inyectando una cabecera criptográficamente firmada (un JWT con la identidad verificada y expiración corta) para que la aplicación de destino pueda auditar o autorizar con certeza.",
+    "practicas": [
+      "Validar siempre la firma criptográfica de la cabecera JWT inyectada por el proxy en el backend; nunca confiar en cabeceras simples tipo X-User-Email sin verificar firma o aislar la red de origen.",
+      "Exigir autenticación multifactor (MFA) resistente a phishing (FIDO2/WebAuthn) y comprobación de dispositivo gestionado para paneles críticos.",
+      "Bloquear cualquier acceso directo al servidor backend que no provenga del proxy de identidad (mediante mTLS o Firewall/Security Group).",
+      "Proxy de identidad vs VPN: una VPN otorga acceso de nivel red (L3) a toda una subred; un proxy de identidad otorga acceso en capa 7 aplicación por aplicación evaluando identidad y contexto en cada petición."
+    ],
+    "ejemplo": "# Verificación conceptual en backend de la aserción JWT enviada por un Identity-Aware Proxy\n# Cabecera típica: X-Goog-IAP-JWT-Assertion o Cf-Access-Jwt-Assertion\njwt.decode(request.headers[\"Cf-Access-Jwt-Assertion\"],\n           public_key_jwks, algorithms=[\"RS256\"], audience=POLICY_AUD)",
+    "entrevista": "Un proxy de identidad reemplaza la VPN tradicional verificando usuario, MFA y dispositivo en capa 7 antes de dejar pasar peticiones hacia aplicaciones internas, pasando al backend una identidad firmada."
+  },
+  "Proxy de reenvío": {
+    "que": "Servidor intermediario (forward proxy) situado del lado del cliente o dentro de una red privada que actúa en nombre de los clientes internos para recibir sus peticiones salientes, evaluarlas y realizar en su lugar la conexión hacia servidores externos en Internet.",
+    "para": "Controla y audita el tráfico saliente (egress) desde subredes privadas o estaciones de trabajo: permite implementar filtrado por dominio (FQDN), inspeccionar tráfico saliente, almacenar caché de dependencias y evitar que los hosts internos necesiten IPs públicas o rutas directas a Internet.",
+    "como": "El cliente se configura (mediante variables HTTP_PROXY/HTTPS_PROXY, archivo PAC o proxy transparente en red) para enviar sus peticiones salientes al proxy de reenvío (como Squid, Envoy o AWS Network Firewall). Para tráfico HTTP plano, el cliente envía la URL completa al proxy. Para tráfico HTTPS cifrado, el cliente envía una petición `CONNECT destino.com:443`; el proxy verifica si `destino.com` está permitido en su lista blanca, abre el socket TCP hacia el servidor externo y establece un túnel transparente (o realiza inspección TLS si tiene una CA corporativa instalada en los clientes). Sin reglas explícitas de salida directa en el firewall, el proxy se convierte en el único punto de salida.",
+    "practicas": [
+      "Forzar todo el tráfico de salida de servidores en subredes privadas a pasar por un proxy de reenvío con lista blanca de FQDNs permitidos y bloquear salida directa en firewall.",
+      "Registrar todas las peticiones CONNECT (cliente origen, dominio SNI/Host, código de respuesta y bytes transferidos) en el SIEM para detectar actividad C2 o exfiltración.",
+      "Proxy de reenvío vs Proxy inverso: el proxy de reenvío protege y controla a los clientes internos al salir hacia Internet; el proxy inverso protege a los servidores internos frente a clientes externos que entran desde Internet.",
+      "Tener cuidado al configurar `NO_PROXY` para direcciones internas y metadatos cloud (169.254.169.254) evitando bucles o accesos inadvertidos por el proxy."
+    ],
+    "ejemplo": "# Configuración mínima en Squid para permitir salida solo a dominios en allowlist\nacl allowed_domains dstdomain .github.com .pypi.org\nacl local_servers src 10.10.0.0/16\nhttp_access allow local_servers allowed_domains\nhttp_access deny all",
+    "entrevista": "El proxy de reenvío centraliza el tráfico saliente desde redes privadas para aplicar listas blancas por dominio y registrar conexiones externas, bloqueando salidas directas no autorizadas."
+  },
+  "Proxy inverso": {
+    "que": "Servidor intermediario (como Nginx, Envoy, HAProxy o Traefik) situado delante de uno o varios servidores de aplicación (backends) que recibe las peticiones de los clientes externos en su nombre, las procesa y las distribuye internamente hacia los orígenes correspondientes.",
+    "para": "Oculta la topología e IPs reales de los servidores internos, centraliza la terminación TLS y la gestión de certificados, aplica controles tempranos de seguridad (rate limiting, cabeceras de seguridad, filtrado de métodos) y permite balanceo de carga y enrutamiento por ruta o dominio.",
+    "como": "El cliente resuelve el dominio público hacia la IP del proxy inverso y establece con él la conexión TCP y el handshake TLS (terminación TLS). El proxy inspecciona la petición HTTP desencriptada: valida tamaños máximos de cabecera y cuerpo, elimina cabeceras potencialmente peligrosas o falsificadas, aplica reglas de acceso o WAF y selecciona un servidor backend según políticas de enrutamiento (Virtual Host, prefijo de URL). Luego abre una conexión separada —preferiblemente cifrada con TLS/mTLS— hacia el upstream seleccionado añadiendo cabeceras de trazabilidad como `X-Forwarded-For` y `X-Forwarded-Proto`.",
+    "practicas": [
+      "Sobrescribir o limpiar cabeceras de confianza (`X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`) en el proxy inverso de borde para impedir que un atacante las falsifique desde el cliente.",
+      "Configurar timeouts estrictos, límites de tamaño de cuerpo (`client_max_body_size`) y cifrado TLS también en el tramo interno entre proxy y backend si la red no es de máxima confianza.",
+      "Inyectar cabeceras de seguridad estándar (HSTS, X-Content-Type-Options, CSP) de forma uniforme en el proxy para proteger todas las aplicaciones detrás de él.",
+      "Prevenir discrepancias de parseo HTTP (HTTP Request Smuggling) asegurando que proxy inverso y servidor de aplicación coincidan estrictamente en el manejo de `Content-Length` y `Transfer-Encoding`."
+    ],
+    "ejemplo": "# Configuración segura básica de proxy inverso en Nginx\nserver {\n  listen 443 ssl http2;\n  server_name api.ejemplo.com;\n  client_max_body_size 2m;\n  location / {\n    proxy_pass https://backend_upstream;\n    proxy_set_header Host $host;\n    proxy_set_header X-Forwarded-For $remote_addr;\n    proxy_set_header X-Forwarded-Proto $scheme;\n  }\n}",
+    "entrevista": "El proxy inverso actúa como única fachada hacia los clientes externos, centralizando la terminación TLS, el ocultamiento del backend, el saneamiento de cabeceras y la defensa temprana ante abusos HTTP."
+  }
+}

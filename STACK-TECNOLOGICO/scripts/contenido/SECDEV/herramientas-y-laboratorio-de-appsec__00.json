@@ -1,0 +1,230 @@
+{
+  "CTF (Capture The Flag)": {
+    "que": "Modalidad de competición y entrenamiento en ciberseguridad basada en retos prácticos donde los participantes resuelven desafíos técnicos para obtener una cadena de verificación llamada flag. Los formatos principales son Jeopardy (retos independientes por categoría) y Attack-Defense (servicios reales que cada equipo defiende y audita).",
+    "para": "Sirve para desarrollar habilidades prácticas en seguridad ofensiva, defensiva y AppSec dentro de un entorno controlado y legal. Se utiliza en formación corporativa, selección técnica de talento y validación de conocimientos en vulnerabilidades web, criptografía, binarios y análisis forense.",
+    "como": "La plataforma despliega contenedores o máquinas aisladas por reto con un servicio intencionalmente vulnerable o un artefacto de análisis. Al identificar y validar la falla conceptual (lógica de negocio, configuración o diseño criptográfico), el sistema expone un token único con formato predefinido (por ejemplo, `CTF{...}`). El jugador envía ese token al motor de puntuación, que verifica su validez criptográfica o coincidencia y asigna puntos según dificultad o puntuación dinámica.",
+    "practicas": [
+      "Documentar cada hallazgo como un informe reproducible orientado a remediación, no solo a capturar la flag.",
+      "Ejecutar siempre herramientas y binarios descargados dentro de máquinas virtuales o contenedores aislados sin acceso a red interna.",
+      "Jeopardy vs Attack-Defense: Jeopardy prioriza amplitud por categorías discretas; Attack-Defense entrena parcheo rápido bajo presión y detección en tiempo real."
+    ],
+    "ejemplo": "# Flujo típico de validación en formato Jeopardy:\n# 1. Revisión de artefacto o servicio en entorno aislado\n# 2. Identificación de la debilidad de diseño o implementación\n# 3. Verificación controlada -> obtención del token de prueba\n# 4. Registro del token en el marcador y nota de mitigación",
+    "entrevista": "Un CTF entrena la capacidad de razonar sobre fallos reales de arquitectura e implementación en entornos aislados, aunque en producción el objetivo no es la flag sino la remediación verificable."
+  },
+  "DVWA": {
+    "que": "Damn Vulnerable Web Application (DVWA) es una aplicación web escrita en PHP y respaldada por MySQL/MariaDB diseñada de forma intencional con múltiples vulnerabilidades clásicas. Incluye niveles configurables de seguridad (Low, Medium, High e Impossible) para observar el contraste entre código inseguro y código corregido.",
+    "para": "Sirve como laboratorio introductorio para que desarrolladores, auditores y analistas AppSec comprendan cómo nacen y se mitigan fallos comunes como inyección SQL, XSS, CSRF, carga insegura de archivos e inclusión de rutas. Se usa en talleres presenciales y prácticas locales sin riesgo para sistemas productivos.",
+    "como": "Cada módulo expone una funcionalidad mínima (formularios de consulta, carga de avatares o gestión de sesión) cuyo controlador PHP cambia dinámicamente según el nivel seleccionado en la sesión. En niveles bajos faltan validaciones y consultas parametrizadas; en niveles altos se añaden filtros parciales que muestran defensas incompletas; en el nivel Impossible se aplica la implementación segura de referencia (sentencias preparadas, tokens anti-CSRF y listas blancas), permitiendo comparar el código fuente lado a lado.",
+    "practicas": [
+      "Ejecutar DVWA únicamente ligado a `127.0.0.1` en Docker o red host-only, nunca expuesto a Internet.",
+      "Inspeccionar el código fuente del nivel Impossible tras cada módulo para interiorizar el patrón de corrección en PHP.",
+      "DVWA vs OWASP Juice Shop: DVWA enseña vulnerabilidades aisladas en stack PHP clásico; Juice Shop simula una SPA moderna en Node.js/Angular con APIs REST y lógica de negocio compleja."
+    ],
+    "ejemplo": "docker run --rm -it -p 127.0.0.1:8080:80 vulnerables/web-dvwa",
+    "entrevista": "DVWA es ideal para comparar en el propio código fuente la transición desde una defensa ingenua basada en listas negras hasta una mitigación robusta como consultas parametrizadas o tokens anti-CSRF."
+  },
+  "DirBuster": {
+    "que": "DirBuster es una herramienta gráfica heredada desarrollada en Java por OWASP para descubrir directorios y archivos ocultos o no enlazados en servidores web mediante fuerza bruta basada en diccionarios. Aunque está descontinuada y superada por alternativas modernas, sigue siendo una referencia histórica en enumeración web.",
+    "para": "Sirve para identificar superficies de ataque olvidadas en auditorías autorizadas, como paneles administrativos, copias de respaldo, archivos de configuración o endpoints no referenciados en el HTML. Ayuda a validar que la ocultación por URL (security through obscurity) no sustituye al control de acceso.",
+    "como": "La herramienta toma una URL base y una lista de palabras (wordlist), genera peticiones HTTP GET o HEAD concurrentes mediante hilos configurables y analiza los códigos de estado HTTP (200, 301, 403) y tamaños de respuesta. Cuando detecta un directorio válido, puede encolarlo de forma recursiva para explorar subrutas adicionales según las extensiones configuradas.",
+    "practicas": [
+      "Evitar su uso en pruebas modernas de rendimiento o CI/CD; preferir herramientas ligeras en CLI con control fino de tasa y filtrado de falsos positivos.",
+      "En defensa, eliminar artefactos residuales (`.bak`, `.git`, `.env`) del despliegue y aplicar control de acceso explícito en lugar de ocultar rutas.",
+      "DirBuster vs FFuf: DirBuster depende de JVM y GUI lenta sin soporte nativo de pipelines; FFuf es un binario Go ultrarrápido diseñado para automatización y filtrado avanzado."
+    ],
+    "ejemplo": "",
+    "entrevista": "DirBuster ilustró el riesgo de exponer rutas no enlazadas, pero hoy el estándar técnico exige herramientas scriptables como FFuf en auditoría y bloqueo estricto de rutas residuales en el servidor web."
+  },
+  "FFuf": {
+    "que": "Fuzz Faster U Fool (FFuf) es un fuzzer HTTP de alto rendimiento escrito en Go diseñado para enumerar rutas, parámetros, cabeceras, subdominios y valores mediante sustitución paralela de marcadores. Su arquitectura ligera sin interfaz gráfica facilita su integración en flujos automatizados de seguridad.",
+    "para": "Sirve para descubrir endpoints ocultos en APIs, parámetros no documentados y configuraciones expuestas durante evaluaciones de AppSec autorizadas. Permite verificar la superficie real publicada frente al inventario esperado de rutas.",
+    "como": "El motor lee uno o varios diccionarios y sustituye la palabra clave `FUZZ` (o marcadores personalizados) en cualquier segmento de la petición HTTP: ruta, query string, cuerpo o cabeceras. Utiliza goroutines de Go para mantener alta concurrencia y aplica filtros por código de estado, tamaño de respuesta, número de palabras o líneas para descartar páginas de error personalizadas (soft 404).",
+    "practicas": [
+      "Configurar siempre límites de tasa (`-rate`) y pausas para evitar denegación de servicio accidental en entornos de staging o producción autorizados.",
+      "Calibrar el filtrado automático para evitar falsos positivos ante respuestas HTTP 200 genéricas en SPAs.",
+      "FFuf vs Gobuster: FFuf permite fuzzing multiposición en cabeceras, cuerpos JSON y parámetros, mientras Gobuster se centra principalmente en enumeración de rutas y DNS."
+    ],
+    "ejemplo": "",
+    "entrevista": "FFuf destaca por su concurrencia en Go y su capacidad de filtrar soft-404 por tamaño o palabras, lo que lo hace superior a fuzzers heredados para auditar superficies HTTP modernas."
+  },
+  "Falco": {
+    "que": "Falco es una herramienta de detección de amenazas en tiempo de ejecución (runtime security) graduada de la CNCF, diseñada originalmente por Sysdig para Linux, contenedores y Kubernetes. Monitoriza llamadas al sistema (syscalls) y eventos de auditoría para detectar comportamientos anómalos en tiempo real.",
+    "para": "Sirve para detectar actividad sospechosa tras el despliegue, como ejecución de shells inesperadas en contenedores, lectura de archivos sensibles, escalada de privilegios o conexiones salientes no autorizadas. Cubre la brecha que dejan el análisis estático (SAST) y el escaneo de imágenes cuando una carga ya está corriendo.",
+    "como": "Un sensor en espacio de kernel (módulo del kernel o sonda eBPF) captura llamadas al sistema sin modificar los contenedores y las envía a un motor en espacio de usuario. Allí, el motor evalúa cada evento frente a reglas declarativas en YAML enriquecidas con metadatos de contenedores y Kubernetes (pod, namespace, imagen), emitiendo alertas vía gRPC, stdout o herramientas como Falcosidekick hacia SIEMs.",
+    "practicas": [
+      "Desplegar preferentemente el driver eBPF moderno para evitar riesgos de estabilidad asociados a módulos de kernel tradicionales.",
+      "Ajustar excepciones por namespace e imagen base para reducir ruido antes de activar respuestas automáticas en Kubernetes.",
+      "Falco vs Wazuh/OSSEC: Falco se especializa en syscalls efímeras y contexto nativo de contenedores/K8s mediante eBPF, mientras Wazuh/OSSEC destacan en FIM tradicional, análisis de logs y cumplimiento en hosts."
+    ],
+    "ejemplo": "- rule: Shell Spawned in Container\n  desc: Detecta apertura de shell interactiva dentro de un contenedor\n  condition: spawned_process and container and proc.name in (bash, sh)\n  output: \"Shell en contenedor (pod=%k8s.pod.name user=%user.name)\"\n  priority: WARNING",
+    "entrevista": "Falco aporta visibilidad en runtime mediante sondas eBPF sobre syscalls enriquecidas con contexto de Kubernetes, detectando intrusiones activas que ningún escáner previo al despliegue puede ver."
+  },
+  "Hack The Box": {
+    "que": "Hack The Box (HTB) es una plataforma en línea de entrenamiento continuo en ciberseguridad que ofrece máquinas virtuales vulnerables, retos discretos y escenarios empresariales simulados accesibles mediante VPN privada o instancias en navegador.",
+    "para": "Sirve para perfeccionar metodologías completas de auditoría técnica, correlación de hallazgos, análisis de código y movimiento lateral en redes realistas. Se emplea tanto para capacitación avanzada de equipos Red/Blue/AppSec como para evaluación práctica de competencias.",
+    "como": "La plataforma provisiona entornos aislados en la nube (OpenVPN o Pwnbox) donde cada máquina simula servicios reales con fallos encadenados de configuración, lógica de aplicación o gestión de permisos. El participante debe enumerar servicios, identificar debilidades de diseño o implementación, demostrar impacto controlado obteniendo tokens de usuario y sistema, y estudiar la causa raíz mediante informes técnicos (writeups) una vez retirada la máquina.",
+    "practicas": [
+      "Seguir una metodología estructurada de toma de notas y mapeo de superficie antes de probar hipótesis aisladas.",
+      "Utilizar los tracks defensivos (Sherlocks) además de máquinas ofensivas para correlacionar artefactos de intrusión con logs reales.",
+      "Hack The Box vs TryHackMe: HTB exige mayor autonomía e investigación sin guías paso a paso en máquinas activas, mientras TryHackMe prioriza rutas guiadas para consolidar fundamentos."
+    ],
+    "ejemplo": "",
+    "entrevista": "Hack The Box entrena la disciplina metodológica frente a entornos sin pistas guiadas, obligando a encadenar enumeración rigurosa y análisis de causa raíz como en una auditoría real."
+  },
+  "Hashcat": {
+    "que": "Hashcat es un motor de recuperación y auditoría de contraseñas acelerado por hardware (GPU, CPU y FPGA mediante OpenCL/CUDA) capaz de verificar millones o miles de millones de candidatos por segundo frente a resúmenes criptográficos.",
+    "para": "Sirve en auditorías defensivas y pruebas de cumplimiento para medir la fortaleza real de políticas de contraseñas, detectar credenciales débiles tras filtraciones internas y validar que los algoritmos de hashing elegidos (Argon2id, bcrypt, scrypt) resisten ataques offline.",
+    "como": "El motor lee archivos de hashes identificados por código de algoritmo, compila kernels optimizados para la GPU disponible y ejecuta modos de ataque como diccionario, combinatorio, máscara posicional o híbrido basado en reglas de mutación. Calcula el resumen de cada candidato directamente en memoria de dispositivo y lo compara en lote contra la lista objetivo sin realizar peticiones de red.",
+    "practicas": [
+      "Usar Hashcat sobre volcados autorizados para demostrar por qué hashes rápidos (MD5, SHA-1, NTLM) sin factor de coste ni sal adecuada son insuficientes en producción.",
+      "Exigir algoritmos con memoria dura (Argon2id) y longitud mínima elevada en lugar de reglas de complejidad predecibles.",
+      "Hashcat vs John the Ripper: Hashcat domina en rendimiento bruto sobre GPUs modernas, mientras John destaca por su integración directa con formatos de sistema y utilidades de extracción (`*2john`)."
+    ],
+    "ejemplo": "",
+    "entrevista": "Hashcat demuestra con métricas de velocidad en GPU por qué el almacenamiento de contraseñas exige funciones lentas y memory-hard como Argon2id en lugar de hashes criptográficos generales."
+  },
+  "Hydra": {
+    "que": "THC-Hydra es una herramienta modular de auditoría de autenticación en red que automatiza pruebas de fuerza bruta y pulverización de contraseñas (password spraying) contra múltiples protocolos simultáneamente.",
+    "para": "Sirve para verificar en entornos autorizados la eficacia de controles contra abuso de autenticación, tales como bloqueo de cuentas, limitación de tasa (rate limiting), detección en SIEM/WAF y obligatoriedad de autenticación multifactor (MFA).",
+    "como": "Implementa conectores nativos para más de cincuenta protocolos (SSH, HTTP form, FTP, SMB, RDP, LDAP) que gestionan múltiples tareas paralelas por socket. Itera pares usuario-contraseña desde diccionarios, interpreta las respuestas de fallo o redirección definidas por el operador y se detiene al identificar una respuesta distinta que indique autenticación válida.",
+    "practicas": [
+      "Limitar su ejecución exclusivamente a ventanas aprobadas y con baja concurrencia para no provocar bloqueos masivos de cuentas corporativas (DoS operativo).",
+      "En defensa, mitigar estos patrones con MFA resistente a phishing, rate limiting por IP/identidad, retardo exponencial y alertas de password spraying.",
+      "Hydra vs análisis offline (Hashcat): Hydra opera contra servicios en red y es ruidoso y detectable por logs/IPS, mientras Hashcat audita hashes ya extraídos sin interacción de red."
+    ],
+    "ejemplo": "",
+    "entrevista": "Auditar con Hydra permite validar empíricamente si el rate limiting, el bloqueo progresivo y las alertas del SIEM detectan intentos distribuidos de password spraying antes de un compromiso."
+  },
+  "John the Ripper": {
+    "que": "John the Ripper (JTR) es una suite multiplataforma de auditoría y recuperación de contraseñas que combina detección automática de formatos, reglas de mutación avanzadas y extractores para archivos cifrados y almacenes de credenciales.",
+    "para": "Sirve para evaluar la robustez de contraseñas en archivos locales (ZIP, PDF, claves SSH, bases KeePass, `/etc/shadow`) durante auditorías internas o investigaciones forenses autorizadas, verificando el cumplimiento de estándares de complejidad y longitud.",
+    "como": "Integra un ecosistema de preprocesadores (`zip2john`, `ssh2john`, `keepass2john`) que convierten encabezados de archivos protegidos en cadenas de hash normalizadas. Luego ejecuta en modo single crack (derivando variantes a partir del nombre de usuario o metadatos), diccionario con reglas o modo incremental basado en modelos estadísticos de frecuencia de caracteres (Markov).",
+    "practicas": [
+      "Utilizar la edición comunitaria (`jumbo`) cuando se requiera soporte amplio de formatos de aplicaciones y archivos corporativos.",
+      "Complementar cualquier hallazgo en auditoría interna recomendando gestores de contraseñas y rotación inmediata de claves privadas sin passphrase robusta.",
+      "John the Ripper vs Hashcat: John sobresale en flexibilidad para extraer y analizar formatos heterogéneos en CPU, mientras Hashcat ofrece mayor aceleración masiva en GPU."
+    ],
+    "ejemplo": "",
+    "entrevista": "John the Ripper destaca por su flujo integral de extracción y auditoría sobre formatos de archivo y credenciales del sistema, complementando la aceleración pura en GPU de Hashcat."
+  },
+  "Metasploit": {
+    "que": "Metasploit Framework es una plataforma modular de código abierto escrita en Ruby para desarrollar, validar y documentar pruebas de penetración, verificación de vulnerabilidades y emulación de adversarios.",
+    "para": "Sirve en evaluaciones autorizadas para confirmar si una vulnerabilidad reportada por un escáner es realmente explotable en el contexto concreto de la red o aplicación (reducción de falsos positivos), así como para probar controles de detección EDR/IDS frente a técnicas conocidas.",
+    "como": "Organiza sus capacidades en módulos desacoplados: auxiliares (reconocimiento y verificación sin carga útil), exploits (aprovechamiento de fallos), payloads (código ejecutado tras validar el fallo), encoders y post-explotación. La consola (`msfconsole`) gestiona variables globales y sesiones abiertas mediante una interfaz unificada respaldada opcionalmente por PostgreSQL para almacenar hosts, servicios y evidencias.",
+    "practicas": [
+      "Priorizar módulos `auxiliary` y comprobaciones seguras (`check`) antes de ejecutar pruebas invasivas que puedan inestabilizar servicios críticos.",
+      "Registrar todas las sesiones y evidencias con marcas de tiempo para correlacionarlas con el equipo Blue Team durante ejercicios Purple Team.",
+      "Metasploit vs Nuclei: Metasploit se orienta a validación interactiva post-hallazgo y gestión de sesiones, mientras Nuclei ejecuta escaneo rápido y declarativo basado en plantillas YAML."
+    ],
+    "ejemplo": "",
+    "entrevista": "En un programa maduro de seguridad, Metasploit aporta valor principalmente para validar explotabilidad real y medir la capacidad de detección del SOC, no como sustituto de la remediación en código."
+  },
+  "Nmap": {
+    "que": "Network Mapper (Nmap) es un escáner de red de código abierto para descubrimiento de hosts, inventario de puertos abiertos, detección de versiones de servicios, huella digital de sistemas operativos y auditoría ligera mediante scripts.",
+    "para": "Sirve para verificar qué superficie de red está realmente expuesta en servidores, contenedores o perímetros en la nube frente a las reglas de firewall esperadas. Es esencial en validación de segmentación de red, detección de servicios no autorizados y verificación de suites TLS débiles.",
+    "como": "Envía paquetes IP, TCP, UDP o ICMP construidos de forma granular y analiza las respuestas o ausencias de respuesta (SYN-ACK, RST, ICMP unreachable) para clasificar cada puerto como abierto, cerrado o filtrado. Posteriormente puede realizar sondas de banner (service detection) y ejecutar el motor NSE (Nmap Scripting Engine) en Lua para inspeccionar certificados TLS, cabeceras HTTP o configuraciones de servicio.",
+    "practicas": [
+      "Ejecutar comparativas periódicas entre el inventario declarado en IaC/CMDB y los puertos detectados externamente para encontrar desviaciones de firewall.",
+      "Usar scripts NSE no intrusivos (`safe`, `default`) en entornos productivos para auditar cifrados TLS obsoletos sin saturar servicios.",
+      "Nmap vs Wireshark: Nmap genera tráfico activo de sonda para mapear servicios expuestos; Wireshark captura e inspecciona pasivamente paquetes que ya circulan por la red."
+    ],
+    "ejemplo": "# Verificación autorizada de versiones y configuración TLS en un host de laboratorio\nnmap -sV --script ssl-enum-ciphers -p 443 127.0.0.1",
+    "entrevista": "Nmap permite auditar de forma determinista la exposición real de puertos, versiones y suites TLS de un entorno, validando que las políticas de firewall y segmentación se cumplen en la práctica."
+  },
+  "OSSEC": {
+    "que": "OSSEC es un sistema de detección de intrusiones basado en host (HIDS) de código abierto y multiplataforma que realiza análisis de logs, verificación de integridad de archivos (FIM), detección de rootkits y respuesta activa.",
+    "para": "Sirve para monitorizar servidores Linux y Windows desde dentro del sistema operativo en busca de cambios no autorizados en binarios o configuraciones, intentos de acceso anómalos y desviaciones de cumplimiento normativo (PCI-DSS, ISO 27001).",
+    "como": "Opera mediante una arquitectura agente-servidor (o instalación local): el demonio `ossec-syscheckd` calcula periódicamente hashes criptográficos de archivos críticos para detectar alteraciones, mientras `ossec-logcollector` lee registros del sistema y aplicaciones. Los eventos se envían cifrados al gestor central, donde un motor de decodificadores y reglas XML evalúa correlaciones y dispara alertas o scripts de respuesta activa.",
+    "practicas": [
+      "Ajustar exclusiones de FIM sobre directorios temporales o logs rotativos para evitar tormentas de alertas y consumo innecesario de disco.",
+      "Usar la respuesta activa con extrema cautela (listas blancas para IPs de gestión y balanceadores) para no provocar auto-bloqueos.",
+      "OSSEC vs Wazuh: Wazuh nació como fork de OSSEC y añade API REST moderna, integración nativa con OpenSearch/Elastic y cobertura cloud/contenedores mucho más amplia."
+    ],
+    "ejemplo": "<syscheck>\n  <frequency>43200</frequency>\n  <directories check_all=\"yes\">/etc,/usr/bin,/usr/sbin</directories>\n  <ignore>/etc/mtab</ignore>\n</syscheck>",
+    "entrevista": "OSSEC sienta las bases del HIDS clásico mediante integridad de archivos y correlación de logs en host, aunque en arquitecturas modernas suele adoptarse su sucesor Wazuh por su escalabilidad e integración SIEM."
+  },
+  "OWASP Juice Shop": {
+    "que": "OWASP Juice Shop es una aplicación web moderna intencionalmente insegura desarrollada con Node.js, Express y Angular que simula una tienda de comercio electrónico completa con SPA, APIs REST y autenticación JWT.",
+    "para": "Sirve como laboratorio realista para formar a desarrolladores full-stack y profesionales de AppSec en vulnerabilidades contemporáneas alineadas con el OWASP Top 10, incluyendo fallos de lógica de negocio, manipulación de JWT, NoSQL/SQL injection y XSS basado en DOM.",
+    "como": "La aplicación ejecuta un servidor Node.js embebido con base de datos SQLite en memoria e instrumenta en tiempo real las acciones del usuario contra un registro interno de desafíos (Score Board). Cuando una interacción cumple las condiciones de vulnerabilidad de un reto, el backend registra la resolución en el marcador y permite consultar pistas progresivas o exportar métricas de aprendizaje mediante su API.",
+    "practicas": [
+      "Desplegarlo localmente en contenedor aislado o mediante instancias dedicadas por alumno en talleres (MultiJuicer) para evitar interferencias.",
+      "Priorizar la comprensión de fallos propios de SPAs modernas (autorización rota a nivel de objeto, exposición de datos en API) sobre trucos aislados.",
+      "OWASP Juice Shop vs OWASP WebGoat: Juice Shop ofrece una aplicación realista continua con marcador oculto; WebGoat presenta lecciones estructuradas paso a paso con explicaciones guiadas."
+    ],
+    "ejemplo": "docker run --rm -p 127.0.0.1:3000:3000 bkimminich/juice-shop",
+    "entrevista": "OWASP Juice Shop refleja con fidelidad las vulnerabilidades de arquitecturas modernas SPA más API REST, siendo el laboratorio de referencia para entrenar revisión de lógica de negocio y BOLA/IDOR."
+  },
+  "OWASP WebGoat": {
+    "que": "OWASP WebGoat es una plataforma educativa mantenida por OWASP y construida en Java/Spring Boot que ofrece lecciones interactivas aisladas para enseñar cómo se producen y cómo se corrigen vulnerabilidades web.",
+    "para": "Sirve como entorno didáctico guiado para equipos de desarrollo Java y analistas iniciales de AppSec que necesitan teoría aplicada, ejercicios paso a paso y verificación inmediata sin tener que inferir el diseño completo de una aplicación comercial.",
+    "como": "Cada lección de WebGoat se ejecuta como un módulo independiente dentro de Spring Boot respaldado por una base de datos embebida HSQLDB, acompañado frecuentemente de WebWolf como servidor auxiliar de escucha para prácticas de correo o redirecciones. El estudiante lee el contexto técnico, prueba el comportamiento inseguro en la interfaz de la lección y responde preguntas de remediación que validan el aprendizaje en el perfil local.",
+    "practicas": [
+      "Acompañar cada lección resuelta con la lectura del controlador Java correspondiente para conectar el fallo HTTP con la línea de código fuente.",
+      "Mantener WebGoat y WebWolf accesibles únicamente en localhost, ya que por diseño desactivan protecciones estándar del servidor.",
+      "OWASP WebGoat vs PortSwigger Web Security Academy: WebGoat se ejecuta offline en local con enfoque didáctico en Java; PortSwigger ofrece laboratorios en la nube centrados en flujos de auditoría con proxy HTTP."
+    ],
+    "ejemplo": "docker run --rm -p 127.0.0.1:8080:8080 -p 127.0.0.1:9090:9090 webgoat/webgoat",
+    "entrevista": "WebGoat destaca como herramienta de capacitación guiada para equipos de desarrollo porque combina teoría, práctica interactiva y contexto directo en código Java/Spring."
+  },
+  "PortSwigger Web Security Academy": {
+    "que": "PortSwigger Web Security Academy es una plataforma gratuita de formación en línea mantenida por los creadores de Burp Suite, compuesta por documentación técnica profunda y cientos de laboratorios interactivos efímeros sobre seguridad web.",
+    "para": "Sirve para dominar desde fundamentos hasta vulnerabilidades web avanzadas (SSRF, deserialización, request smuggling, race conditions, OAuth y prototype pollution) y prepararse para auditorías reales o la certificación BSCP.",
+    "como": "Cada laboratorio provisiona bajo demanda un contenedor web aislado con tiempo de vida limitado al que el alumno accede a través de un proxy de intercepción HTTP. La plataforma separa cada tema en material teórico, análisis de impacto, técnicas de prevención en código y laboratorios escalonados por dificultad (Apprentice, Practitioner, Expert) que verifican automáticamente el estado objetivo en el backend.",
+    "practicas": [
+      "Estudiar siempre la sección de prevención y mitigación de cada tema antes de pasar al siguiente laboratorio.",
+      "Practicar los ejercicios interceptando y comprendiendo el tráfico HTTP crudo, no solo dependiendo de escáneres automáticos.",
+      "PortSwigger Academy vs OWASP Juice Shop: PortSwigger profundiza en clases de vulnerabilidades avanzadas aisladas y actualizadas continuamente, mientras Juice Shop entrena descubrimiento integral sobre una única app compleja."
+    ],
+    "ejemplo": "",
+    "entrevista": "PortSwigger Web Security Academy es el estándar de facto para entrenar AppSec web profundo porque combina teoría de protocolos HTTP modernos con laboratorios prácticos y guías claras de remediación."
+  },
+  "Security Shepherd": {
+    "que": "OWASP Security Shepherd es una plataforma de entrenamiento en seguridad web y móvil de código abierto pensada para programas de concienciación y formación escalable en organizaciones.",
+    "para": "Sirve para impartir currículos estructurados de AppSec y OWASP Top 10 a grupos grandes de desarrolladores, incorporando seguimiento de progreso, gestión de aulas, insignias y tablas de clasificación.",
+    "como": "Despliega un servidor central Java que gestiona usuarios, módulos de aprendizaje y marcadores, junto con lecciones (challenges y lessons) que aíslan cada vulnerabilidad por sesión de usuario. Cada módulo incluye una explicación previa, un entorno interactivo para validar el fallo y una guía de remediación posterior, generando una clave única por usuario para evitar el intercambio directo de soluciones.",
+    "practicas": [
+      "Utilizar sus controles de administración de clases y temporizadores para organizar bootcamps internos de desarrollo seguro.",
+      "Revisar el estado de mantenimiento del despliegue y aislarlo estrictamente en redes internas de formación o VPN corporativa.",
+      "Security Shepherd vs OWASP Juice Shop: Security Shepherd está orientado a gestión de aulas y lecciones individuales por módulo, mientras Juice Shop prioriza una experiencia realista de aplicación única."
+    ],
+    "ejemplo": "",
+    "entrevista": "Security Shepherd resuelve la dimensión organizativa del entrenamiento AppSec al ofrecer trazabilidad por alumno, lecciones progresivas y claves únicas por sesión para programas corporativos."
+  },
+  "TryHackMe": {
+    "que": "TryHackMe es una plataforma educativa en la nube basada en salas interactivas (rooms) y rutas de aprendizaje guiadas que cubren fundamentos de redes, Linux, seguridad defensiva (SOC), AppSec y pentesting.",
+    "para": "Sirve para acelerar la curva de aprendizaje desde cero hasta niveles intermedios mediante teoría intercalada con ejercicios prácticos en máquinas virtuales desplegadas en un clic, sin necesidad de configurar infraestructura local compleja.",
+    "como": "Al iniciar una sala, la plataforma instancia contenedores o VMs dedicadas en AWS a las que el usuario se conecta mediante OpenVPN o una máquina AttackBox directamente en el navegador. El contenido avanza por tareas secuenciales con preguntas conceptuales, logs reales de análisis o tokens de verificación que validan cada paso antes de desbloquear el siguiente.",
+    "practicas": [
+      "Aprovechar los caminos de Blue Team (SOC Level 1/2) y DevSecOps además de los módulos ofensivos para construir criterio integral.",
+      "Replicar los conceptos aprendidos en entornos locales propios (Docker/VMs) para no depender de guías preconfiguradas.",
+      "TryHackMe vs Hack The Box: TryHackMe prioriza aprendizaje guiado paso a paso y fundamentos sólidos; Hack The Box ofrece mayor desafío abierto en máquinas sin instrucciones."
+    ],
+    "ejemplo": "",
+    "entrevista": "TryHackMe es altamente efectivo para estandarizar fundamentos de redes, Linux, SIEM y AppSec mediante rutas guiadas con laboratorios inmediatos en la nube."
+  },
+  "Wireshark": {
+    "que": "Wireshark es el analizador de protocolos de red gráfico más utilizado en la industria, capaz de capturar tráfico en vivo e inspeccionar en profundidad archivos de captura (PCAP/PCAPNG) a través de cientos de disectores de protocolos.",
+    "para": "Sirve para diagnosticar problemas de transporte, investigar incidentes de red (análisis forense de tráfico), verificar si las conexiones aplican correctamente TLS/HTTPS/HSTS o detectar anomalías como ARP spoofing, tráfico en claro o exfiltración.",
+    "como": "Captura tramas de red a través de bibliotecas como `libpcap` o `Npcap` (usando filtros BPF de captura para limitar volumen) y aplica disectores jerárquicos por capa OSI desde Ethernet/IP/TCP hasta TLS, DNS o HTTP/2. Reconstruye flujos TCP completos (`Follow TCP Stream`), calcula estadísticas de conversación y permite aplicar filtros de visualización complejos; para tráfico TLS cifrado puede descifrar sesiones únicamente si se aportan claves efímeras (`SSLKEYLOGFILE`) en entornos de depuración autorizados.",
+    "practicas": [
+      "Separar siempre los filtros de captura (BPF, ligeros en kernel) de los filtros de visualización (display filters, ricos en semántica) para no perder paquetes en capturas grandes.",
+      "Utilizar `tshark` en servidores sin interfaz gráfica para capturar o prefiltrar PCAPs antes de analizarlos en local.",
+      "Wireshark vs Zeek/Suricata: Wireshark es interactivo para inspección manual paquete a paquete; Zeek y Suricata procesan tráfico continuo en producción generando logs estructurados y alertas IDS/NDR."
+    ],
+    "ejemplo": "# Filtros de visualización útiles en análisis de transporte y TLS\ntls.handshake.type == 1 || dns.flags.response == 1\nhttp.request && !tls",
+    "entrevista": "Wireshark es indispensable para verificar a nivel de paquete qué ocurre realmente en la red —desde negociaciones TLS y consultas DNS hasta anomalías de capa 2— complementando la telemetría agregada de flow logs y NDR."
+  },
+  "sqlmap": {
+    "que": "sqlmap es una herramienta de código abierto escrita en Python diseñada para detectar y verificar de forma automatizada fallos de inyección SQL (SQLi) y tomar conciencia del impacto sobre distintos motores de bases de datos relacionales.",
+    "para": "Sirve en pruebas de seguridad autorizadas y validación de parches para confirmar si un parámetro HTTP, cabecera o cookie interpola entrada de usuario sin parametrizar en consultas SQL. Permite demostrar el riesgo crítico de una inyección frente a equipos de desarrollo y verificar que una remediación con consultas preparadas elimina el problema.",
+    "como": "Envía secuencias de pruebas heurísticas sobre los puntos de inserción indicados en una petición HTTP y analiza diferencias en códigos de estado, contenido HTML, mensajes de error SQL o tiempos de respuesta. Mediante clasificadores internos distingue entre inyección basada en errores, UNION, booleana ciega (boolean-based blind), temporal (time-based blind) o fuera de banda (OOB), adaptando automáticamente la sintaxis al SGBD detectado (PostgreSQL, MySQL, MSSQL, Oracle).",
+    "practicas": [
+      "Usar el nivel de riesgo y pruebas mínimo necesario (`--risk=1 --level=1`) y evitar operaciones destructivas o de modificación sobre bases de datos de staging o producción.",
+      "Remediar la causa raíz en código mediante consultas parametrizadas (Prepared Statements / ORM seguro) y privilegios mínimos en el usuario de base de datos, nunca confiando solo en WAFs.",
+      "sqlmap vs SAST/DAST general: SAST localiza concatenaciones inseguras en el código fuente sin ejecutar la app, mientras sqlmap valida dinámicamente la alcanzabilidad real en un endpoint HTTP activo."
+    ],
+    "ejemplo": "# Mitigación definitiva en código (Python/psycopg) frente a SQLi:\ncursor.execute(\"SELECT id, email FROM users WHERE username = %s\", (username,))",
+    "entrevista": "sqlmap demuestra rápidamente el impacto de concatenar entradas en consultas, pero la solución definitiva en AppSec siempre está en consultas parametrizadas y principio de mínimo privilegio en base de datos."
+  }
+}

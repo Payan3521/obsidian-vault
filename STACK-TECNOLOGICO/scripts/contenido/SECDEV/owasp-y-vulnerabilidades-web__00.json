@@ -1,0 +1,392 @@
+{
+  "A01 Broken access control": {
+    "que": "Categoría #1 del OWASP Top 10 (2021) que engloba los fallos mediante los cuales un usuario puede actuar fuera de sus permisos previstos. Incluye la violación del principio de mínimo privilegio, la omisión de comprobaciones de autorización en el servidor y la manipulación de identificadores o metadatos de sesión.",
+    "para": "Identificar y corregir brechas de autorización evita la divulgación no autorizada de datos, la modificación de registros ajenos y la escalada de privilegios vertical u horizontal. Se evalúa en el diseño de APIs, controladores web, políticas CORS y reglas de almacenamiento en la nube.",
+    "como": "Un atacante intercepta una petición autenticada y altera parámetros como un ID de recurso (IDOR), un método HTTP o un claim de rol en un token sin firma verificada. Si el backend confía únicamente en ocultar botones en el frontend o no valida la propiedad del recurso frente al sujeto autenticado en cada endpoint, ejecuta la operación solicitada. También ocurre cuando el servidor permite navegar por rutas administrativas o sobrescribir políticas CORS permisivas (`Access-Control-Allow-Origin: *` con credenciales) desde orígenes externos.",
+    "practicas": [
+      "Aplicar denegación por defecto (deny by default) en todas las rutas y recursos excepto en los explícitamente públicos.",
+      "Centralizar la lógica de autorización en middleware o motores de políticas (RBAC/ABAC) y verificar tanto el rol como la propiedad del recurso en servidor.",
+      "Error típico: confiar en controles de interfaz (ocultar rutas en SPA) o comprobar solo en el API Gateway sin validar el contexto del usuario en el microservicio.",
+      "Diferencia clave: la autenticación confirma quién eres (A07), mientras que el control de acceso (A01) decide qué puedes hacer sobre un objeto concreto."
+    ],
+    "ejemplo": "// Express.js: verificación explícita de propiedad en servidor\napp.get('/api/invoices/:id', authenticate, async (req, res) => {\n  const invoice = await db.invoices.findById(req.params.id);\n  if (!invoice) return res.status(404).end();\n  if (invoice.ownerId !== req.user.id && req.user.role !== 'admin') {\n    return res.status(403).json({ error: 'Forbidden' });\n  }\n  return res.json(invoice);\n});",
+    "entrevista": "El control de acceso roto ocurre cuando el servidor no valida en cada petición si la identidad autenticada tiene permiso y propiedad sobre el recurso solicitado, por lo que debe aplicarse denegación por defecto y verificación centralizada en backend."
+  },
+  "A02 Cryptographic failures": {
+    "que": "Categoría #2 del OWASP Top 10 (2021), antes llamada Sensitive Data Exposure, que agrupa debilidades relacionadas con la ausencia o el uso incorrecto de criptografía. Abarca datos en tránsito sin cifrar, almacenamiento con algoritmos obsoletos y mala gestión de claves o entropía.",
+    "para": "Proteger la confidencialidad e integridad de datos sensibles (contraseñas, PII, secretos, tokens y datos financieros) frente a intercepción pasiva o robo de copias de seguridad. Su mitigación es crítica en capas de transporte, bases de datos, almacenamiento de objetos y gestión de secretos.",
+    "como": "La vulnerabilidad se materializa cuando una aplicación transmite credenciales por HTTP plano, acepta versiones débiles como TLS 1.0/1.1 o no valida certificados X.509. En reposo, ocurre al guardar contraseñas con hashes rápidos sin sal (MD5, SHA-1, SHA-256 directo) o cifrar con modos inseguros como AES-ECB que revelan patrones del texto plano. Un atacante que captura tráfico o extrae un volcado de base de datos rompe rápidamente el cifrado mediante tablas arcoíris, ataques de fuerza bruta en GPU o reutilización de IVs.",
+    "practicas": [
+      "Clasificar los datos según su sensibilidad y exigir TLS 1.2/1.3 con HSTS en todo el tráfico, deshabilitando cifrados débiles (RC4, 3DES, CBC vulnerables).",
+      "Usar funciones de derivación adaptativas con sal única para contraseñas (Argon2id, bcrypt o scrypt) y cifrado autenticado (AES-GCM o ChaCha20-Poly1305) para datos.",
+      "Error típico: codificar en Base64 creyendo que cifra, reutilizar nonces/IVs en AES-GCM o almacenar claves privadas junto al código fuente.",
+      "Separar la gestión de claves mediante KMS/HSM con rotación periódica en lugar de cifrar con secretos estáticos en variables de entorno compartidas."
+    ],
+    "ejemplo": "# Nginx: forzar TLS 1.2/1.3 y cabeceras HSTS\nssl_protocols TLSv1.2 TLSv1.3;\nssl_prefer_server_ciphers on;\nadd_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+    "entrevista": "Los fallos criptográficos no suelen deberse a romper AES matemáticamente, sino a usar protocolos sin TLS, hashes rápidos sin sal para contraseñas o una gestión deficiente de claves, IVs y certificados."
+  },
+  "A03 Injection": {
+    "que": "Categoría #3 del OWASP Top 10 (2021) que cubre cualquier vulnerabilidad donde datos no confiables del usuario se interpretan como comandos o consultas dentro de un intérprete. En 2021 incorporó también Cross-Site Scripting (XSS) junto a SQL, NoSQL, OS Command, LDAP y Template Injection.",
+    "para": "Evitar que entradas manipuladas alteren la estructura sintáctica de consultas, comandos del sistema o código ejecutado en el navegador. Comprenderla es la base para separar el plano de datos del plano de control en cualquier arquitectura web o de microservicios.",
+    "como": "La aplicación construye dinámicamente una sentencia concatenando cadenas con parámetros procedentes de peticiones HTTP, cabeceras, archivos o bases de datos. El intérprete (motor SQL, shell `/bin/sh`, motor de plantillas Jinja2/Twig o DOM del navegador) no distingue entre la plantilla escrita por el desarrollador y el fragmento aportado por el atacante. Al introducir metacaracteres (`'`, `;`, `$()`, `{{}}`, `<script>`), el atacante cierra el contexto de dato y abre una nueva instrucción arbitraria.",
+    "practicas": [
+      "Usar APIs seguras que separen datos de código, como consultas parametrizadas (Prepared Statements), ORMs bien usados y llamadas sin shell (`execFile` en vez de `exec`).",
+      "Aplicar validación estricta con listas de permitidos en servidor y codificación de salida dependiente del contexto (HTML, atributo, JS, URL) frente a XSS.",
+      "Error típico: confiar únicamente en listas negras o reemplazos simples de palabras clave (ej. borrar `SELECT` una vez), que se evaden con `SELSELECTECT` o codificaciones.",
+      "Comparación: validar la entrada filtra formatos anómalos temprano, pero solo la parametrización y el escape contextual neutralizan la inyección de raíz."
+    ],
+    "ejemplo": "// Vulnerable: concatenación SQL directa\ndb.query(\"SELECT * FROM users WHERE email = '\" + req.body.email + \"'\");\n\n// Seguro: consulta parametrizada\ndb.query(\"SELECT * FROM users WHERE email = $1\", [req.body.email]);",
+    "entrevista": "Toda inyección nace de mezclar datos no confiables con sintaxis ejecutable en un intérprete; la defensa estructural consiste en separar plano de control y plano de datos mediante parametrización y codificación contextual."
+  },
+  "A04 Insecure design": {
+    "que": "Categoría #4 del OWASP Top 10 (2021) que señala fallos arquitectónicos y de diseño previos a la codificación, originados por ausencia de requisitos de seguridad y modelado de amenazas. Se diferencia de una implementación defectuosa porque el software funciona exactamente como fue diseñado, pero su diseño es explotable.",
+    "para": "Prevenir vulnerabilidades sistémicas que no se resuelven con un simple parche de código, sino rediseñando el flujo de negocio. Se aplica durante la fase de arquitectura, definición de historias de usuario y revisión de flujos críticos como recuperación de cuenta, pagos o límites de uso.",
+    "como": "Durante la concepción del sistema se omiten controles compensatorios o supuestos adversarios; por ejemplo, diseñar un flujo de restablecimiento de contraseña mediante preguntas de seguridad predecibles, o permitir compras masivas sin reserva atómica de inventario ni límites de tasa. Incluso con código limpio, sin XSS ni SQLi, un atacante explota las reglas previstas del sistema (abuso de cupones, enumeración ilimitada de OTP de 4 dígitos, falta de segregación multi-tenant). Mitigarlo exige reescribir el caso de uso y añadir invariantes de seguridad desde la especificación.",
+    "practicas": [
+      "Realizar Threat Modeling (STRIDE, PASTA) antes de implementar funcionalidades críticas e incorporar casos de abuso (abuse cases) junto a los casos de uso.",
+      "Diseñar con límites explícitos: rate limiting por identidad y recurso, tokens de un solo uso con expiración corta y aislamiento estricto entre tenants.",
+      "Error típico: confundir diseño inseguro con bug de implementación; un código sin errores sintácticos puede seguir permitiendo fraude si la lógica carece de controles.",
+      "Establecer patrones de diseño seguros reutilizables (paved roads) y pruebas de integración orientadas a reglas de negocio y límites de consumo."
+    ],
+    "ejemplo": "# Ejemplo conceptual de fallo de diseño vs mitigación:\n# Mal diseño: código OTP de 4 dígitos sin límite de intentos -> 10.000 pruebas.\n# Diseño seguro:\n# - Token aleatorio >= 128 bits o OTP con máx. 5 intentos y expiración de 5 min.\n# - Bloqueo progresivo + invalidación tras primer fallo excedido.",
+    "entrevista": "El diseño inseguro es una falla arquitectónica donde falta un control de seguridad desde la especificación, de modo que una implementación técnicamente perfecta sigue siendo vulnerable hasta que se rediseña el flujo con modelado de amenazas."
+  },
+  "A05 Security misconfiguration": {
+    "que": "Categoría #5 del OWASP Top 10 (2021) provocada por configuraciones inseguras, incompletas o por defecto en cualquier capa del stack: sistema operativo, servidor web, contenedores, cloud, frameworks o bases de datos. Incluye servicios innecesarios activos, permisos amplios y mensajes de error detallados en producción.",
+    "para": "Reducir la superficie de ataque derivada de despliegues descuidados, credenciales de fábrica y configuraciones permisivas en entornos productivos. Se controla mediante hardening automatizado, Infraestructura como Código (IaC) y revisión continua de postura de seguridad.",
+    "como": "Al desplegar un servidor o servicio cloud (por ejemplo un bucket S3, una instancia de Redis o un panel de administración de Spring Boot Actuator), se dejan puertos abiertos, cuentas predeterminadas (`admin/admin`) o modos de depuración (`DEBUG=True`). Un atacante utiliza escáneres automatizados para descubrir rutas como `/actuator/env`, `/.git/config` o trazas de pila (stack traces) que revelan versiones, rutas internas y credenciales. Con esa información compromete el entorno sin necesidad de explotar fallos complejos de lógica o memoria.",
+    "practicas": [
+      "Automatizar el hardening de imágenes base y despliegues mediante IaC (Terraform, Ansible) siguiendo benchmarks como CIS.",
+      "Desactivar modos de depuración, cuentas de ejemplo, listados de directorios y endpoints administrativos en producción.",
+      "Configurar cabeceras HTTP defensivas (`X-Content-Type-Options`, `CSP`, `Strict-Transport-Security`) y deshabilitar métodos HTTP innecesarios.",
+      "Error típico: aplicar configuración segura en un entorno inicial y sufrir drift manual en producción sin auditorías automatizadas."
+    ],
+    "ejemplo": "# Django settings.py en producción (evitar DEBUG=True)\nDEBUG = False\nALLOWED_HOSTS = ['app.ejemplo.com']\nSECURE_SSL_REDIRECT = True\nSESSION_COOKIE_SECURE = True\nCSRF_COOKIE_SECURE = True",
+    "entrevista": "La mala configuración de seguridad expone el sistema por valores por defecto, modos debug activos o permisos abiertos en el stack, y se combate automatizando el hardening en IaC con verificación continua."
+  },
+  "A06 Vulnerable and outdated components": {
+    "que": "Categoría #6 del OWASP Top 10 (2021) referente al uso de bibliotecas, frameworks, módulos, imágenes de contenedor o motores con vulnerabilidades conocidas o sin soporte activo. Abarca tanto dependencias directas como transitivas en el código de aplicación y su entorno de ejecución.",
+    "para": "Mitigar el riesgo de que vulnerabilidades públicas (CVEs) con exploits disponibles sean aprovechadas de forma masiva contra la aplicación. Es esencial en la gestión de la cadena de suministro de software (Supply Chain Security) y pipelines CI/CD.",
+    "como": "Los proyectos modernos importan cientos de paquetes desde registros como npm, PyPI, Maven o Docker Hub; una sola dependencia transitiva desactualizada puede introducir ejecución remota de código (como Log4Shell en Log4j2) o Prototype Pollution. Los atacantes escanean Internet en busca de firmas de versiones vulnerables y lanzan exploits automatizados horas después de publicarse un CVE. Si la organización desconoce su inventario de componentes (SBOM) o no monitoriza alertas, el parche tarda semanas en llegar.",
+    "practicas": [
+      "Integrar herramientas de Análisis de Composición de Software (SCA como Trivy, Snyk, Dependabot o OWASP Dependency-Check) en cada pull request.",
+      "Generar y mantener un SBOM (CycloneDX o SPDX) para conocer con exactitud dependencias directas, transitivas e imágenes base.",
+      "Error típico: fijar versiones con rangos laxos o ignorar dependencias de contenedores base (`FROM node:latest` con paquetes SO antiguos).",
+      "Fijar hashes/lockfiles (`package-lock.json`, `poetry.lock`) y aplicar políticas de actualización continua con pruebas automatizadas."
+    ],
+    "ejemplo": "# Escaneo de vulnerabilidades en dependencias e imagen con Trivy\ntrivy fs --severity HIGH,CRITICAL --exit-code 1 .\ntrivy image --severity HIGH,CRITICAL mi-registro/app:1.4.2",
+    "entrevista": "Las dependencias vulnerables heredan el riesgo de todo su árbol transitivo; la defensa efectiva combina lockfiles reproducibles, inventario mediante SBOM y escaneo SCA automatizado en CI/CD."
+  },
+  "A07 Identification and authentication failures": {
+    "que": "Categoría #7 del OWASP Top 10 (2021) que reúne debilidades en la confirmación de la identidad del usuario y en la gestión del ciclo de vida de sesiones. Incluye ausencia de protección contra fuerza bruta, contraseñas débiles, fijación de sesión y validación defectuosa de tokens.",
+    "para": "Garantizar que solo el titular legítimo pueda iniciar sesión y mantener una sesión válida durante el tiempo previsto. Su fortalecimiento impide el robo de cuentas (Account Takeover), el relleno de credenciales (Credential Stuffing) y la suplantación de identidad.",
+    "como": "Un atacante automatiza pruebas masivas con diccionarios de contraseñas filtradas contra un endpoint `/login` sin rate limiting ni MFA, o explota respuestas diferenciadas ('usuario no existe' vs 'contraseña incorrecta') para enumerar cuentas. En sesiones basadas en cookies o JWT, los fallos ocurren si el identificador de sesión viaja en la URL, no se regenera tras autenticar (Session Fixation), no expira al cerrar sesión o acepta JWT con algoritmo `none` o secreto débil.",
+    "practicas": [
+      "Exigir autenticación multifactor (MFA resistente a phishing como WebAuthn/FIDO2 o TOTP) en cuentas privilegiadas y operaciones sensibles.",
+      "Implementar contraseñas alineadas con NIST 800-63B (longitud mínima, verificación contra listas de contraseñas filtradas, sin rotación forzada arbitraria).",
+      "Regenerar el ID de sesión al autenticarse, marcar cookies con `HttpOnly`, `Secure` y `SameSite`, e invalidar sesiones en servidor al hacer logout.",
+      "Error típico: devolver mensajes o tiempos de respuesta distintos al validar usuarios inexistentes facilitando la enumeración de cuentas."
+    ],
+    "ejemplo": "// Express-session: configuración segura de cookie de sesión\napp.use(session({\n  secret: process.env.SESSION_SECRET,\n  resave: false,\n  saveUninitialized: false,\n  cookie: { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 3600000 }\n}));",
+    "entrevista": "Los fallos de autenticación permiten el robo de cuentas por fuerza bruta, enumeración o sesiones mal gestionadas, y se mitigan con MFA, detección de credenciales filtradas, cookies protegidas y rotación de sesión al autenticar."
+  },
+  "A08 Software and data integrity failures": {
+    "que": "Categoría #8 del OWASP Top 10 (2021) que trata la suposición implícita de integridad sobre actualizaciones de software, artefactos críticos, pipelines CI/CD y datos serializados sin verificación criptográfica. Incorpora tanto ataques a la cadena de suministro como la deserialización insegura.",
+    "para": "Asegurar que el código ejecutado, las dependencias descargadas y los objetos procesados no hayan sido alterados por terceros no autorizados. Es fundamental al consumir CDNs externas, publicar paquetes, ejecutar runners de CI/CD o deserializar payloads externos.",
+    "como": "El fallo aparece cuando una aplicación descarga scripts desde una CDN sin Subresource Integrity (SRI), aplica actualizaciones automáticas sin verificar firma digital o ejecuta pipelines CI/CD donde un fork no confiable accede a secretos de despliegue. También ocurre cuando un servidor recibe bytes serializados (Java `ObjectInputStream`, PHP `unserialize`, Python `pickle`) manipulados por un atacante y reconstruye cadenas de gadgets que ejecutan código arbitrario al instanciarse.",
+    "practicas": [
+      "Verificar firmas criptográficas de artefactos, contenedores (Cosign/Sigstore) y actualizaciones antes de desplegar o ejecutar.",
+      "Usar Subresource Integrity (`integrity=\"sha384-...\"`) para recursos cargados desde CDNs externas y fijar versiones de Actions/plugins por commit SHA.",
+      "Sustituir formatos de serialización binaria o con clases arbitrarias por formatos declarativos seguros como JSON con validación de esquema.",
+      "Error típico: proteger pipelines solo en la rama principal sin aislar workflows de pull requests externos (`pull_request_target`)."
+    ],
+    "ejemplo": "<!-- Subresource Integrity (SRI) para proteger scripts de CDN -->\n<script src=\"https://cdn.example.com/lib.min.js\"\n        integrity=\"sha384-oqVuAfXRKap7fdgcCY5uykM6+R9GqQ8K/uxy9rx7HNQlGYl1kPzQho1wx4JwY8wC\"\n        crossorigin=\"anonymous\"></script>",
+    "entrevista": "Los fallos de integridad surgen al confiar en artefactos, dependencias, pipelines o datos serializados sin verificación criptográfica; se previenen firmando artefactos, usando SRI, endureciendo el CI/CD y evitando deserialización insegura."
+  },
+  "A09 Security logging and monitoring failures": {
+    "que": "Categoría #9 del OWASP Top 10 (2021) que describe la incapacidad de detectar, registrar, correlacionar y alertar incidentes de seguridad a tiempo. Sin visibilidad, un ataque activo puede prolongarse durante meses con exfiltración continua o persistencia.",
+    "para": "Permitir la detección temprana de intrusiones, la respuesta ante incidentes (IR) y la reconstrucción forense tras una brecha. Resulta imprescindible en autenticación, cambios de privilegios, errores de validación de entrada, pagos y acceso a datos sensibles.",
+    "como": "Cuando una aplicación no registra inicios de sesión fallidos, denegaciones de autorización (HTTP 401/403) o errores repetidos de validación, un atacante realiza reconocimiento, fuerza bruta o explotación de forma silenciosa. Si además los logs se guardan solo localmente en el contenedor efímero, carecen de timestamp sincronizado (NTP), o mezclan entradas de usuario sin sanitizar (Log Injection), se pierde la trazabilidad o se falsifican registros. La falta de envío hacia un SIEM con reglas de correlación impide disparar alertas automáticas.",
+    "practicas": [
+      "Registrar eventos críticos (authN, authZ, cambios de roles, fallos de integridad y excepciones) en formato estructurado (JSON) con contexto: timestamp UTC, actor, IP, recurso y resultado.",
+      "Centralizar los logs en tiempo real en un sistema inmutable/SIEM separado de la máquina comprometible, evitando registrar contraseñas, tokens o PII sensible.",
+      "Error típico: registrar demasiado ruido sin alertas accionables o volcar cabeceras `Authorization` y cuerpos completos en modo debug.",
+      "Implementar sanitización o codificación al escribir en logs para prevenir Log Injection / falsificación de líneas (Log Forging)."
+    ],
+    "ejemplo": "// Log estructurado de evento de autorización denegada (sin secretos)\nlogger.warn({\n  event: 'authz_denied',\n  userId: req.user.id,\n  resource: req.originalUrl,\n  ip: req.ip,\n  requestId: req.id\n});",
+    "entrevista": "La falta de logging y monitoreo no previene la explotación inicial, pero convierte una brecha contenible en un compromiso prolongado al impedir la detección, alerta temprana y trazabilidad forense."
+  },
+  "A10 Server-side request forgery (SSRF)": {
+    "que": "Categoría #10 del OWASP Top 10 (2021) que describe una vulnerabilidad donde el servidor realiza peticiones HTTP o de red hacia una ubicación arbitraria controlada por el usuario. Permite usar el propio backend como proxy para alcanzar servicios internos no expuestos a Internet.",
+    "para": "Evitar el acceso a redes privadas, servicios de metadatos cloud (IMDS) y puertos locales desde funciones que consumen URLs externas (webhooks, previsualizadores de enlaces, importadores de PDF/XML o avatares remotos).",
+    "como": "La aplicación recibe una URL en un parámetro (ej. `url=http://...`) y la solicita mediante un cliente HTTP del servidor (`curl`, `fetch`, `requests`). El atacante reemplaza el destino por `http://127.0.0.1:8080/admin` o por el endpoint de metadatos en la nube `http://169.254.169.254/latest/meta-data/iam/security-credentials/` para robar credenciales IAM temporales. Aunque se bloquee `127.0.0.1` como cadena, el atacante puede evadir filtros ingenuos usando redirecciones HTTP 302, notaciones IP alternativas (`0x7f000001`, `[::1]`) o DNS Rebinding.",
+    "practicas": [
+      "Validar el destino mediante lista de permitidos estricta de dominios/esquemas (`https` únicamente) en lugar de listas negras de IPs.",
+      "Resolver el DNS una sola vez, comprobar que la IP resultante no pertenezca a rangos privados/loopback/link-local (`10.0.0.0/8`, `169.254.0.0/16`, `127.0.0.0/8`) y desactivar redirecciones automáticas.",
+      "Exigir IMDSv2 en AWS (basado en token de sesión vía PUT) y aislar salidas mediante un proxy dedicado sin acceso a la VPC interna.",
+      "Error típico: validar solo la URL antes de la petición HTTP sin controlar redirecciones 30x ni resolución DNS posterior (DNS Rebinding / TOCTOU)."
+    ],
+    "ejemplo": "# Mitigación parcial en cliente HTTP (Python): desactivar redirects + verificar IP resuelta\nimport ipaddress, socket\nip = ipaddress.ip_address(socket.gethostbyname(hostname))\nif ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:\n    raise ValueError(\"Destino interno bloqueado\")\n# Conectar directamente a esa IP validada o usar proxy de salida aislado",
+    "entrevista": "En SSRF el servidor actúa como puente hacia la red interna o el servicio de metadatos cloud; la defensa robusta combina listas de permitidos, deshabilitar redirecciones, validar la IP resuelta y exigir IMDSv2."
+  },
+  "Business logic flaw": {
+    "que": "Vulnerabilidad derivada de errores en la implementación o concepción de las reglas funcionales del dominio de negocio. El sistema ejecuta operaciones técnicamente válidas (sin inyección ni corrupción de memoria), pero permite abusar de flujos, estados o cálculos económicos.",
+    "para": "Proteger la integridad financiera y operativa de la aplicación en casos que los escáneres automáticos (DAST/SAST) no comprenden, ya que requieren entender el contexto del negocio. Es clave en comercio electrónico, banca, reservas, sistemas de puntos y flujos multi-paso.",
+    "como": "El atacante analiza la secuencia de pasos o las condiciones límite que los desarrolladores asumieron como 'uso normal'. Puede saltarse el paso 2 de un proceso de checkout invocando directamente el paso 3, introducir cantidades negativas para recibir abonos en lugar de cargos, o aplicar el mismo cupón de un solo uso concurrentemente mediante condiciones de carrera (Race Conditions). También explota redondeos acumulativos, cambios de divisa favorables o reutilización de tokens de confirmación en flujos alternativos.",
+    "practicas": [
+      "Validar todas las invariantes de negocio en el servidor: cantidades positivas, transiciones válidas en una máquina de estados y cálculos realizados únicamente en backend.",
+      "Proteger operaciones críticas contra concurrencia mediante bloqueos transaccionales en base de datos (`SELECT ... FOR UPDATE`) o claves de idempotencia.",
+      "Error típico: asumir que el flujo secuencial de la interfaz web garantiza el orden en que el cliente llamará a los endpoints de la API.",
+      "Escribir pruebas de abuso específicas por historia de usuario (cantidades 0/negativas, saltos de estado, peticiones paralelas)."
+    ],
+    "ejemplo": "-- SQL: evitar condición de carrera al canjear cupón único\nBEGIN;\nSELECT used FROM coupons WHERE code = 'PROMO50' FOR UPDATE;\n-- Verificar en backend que used = false antes de aplicar descuento\nUPDATE coupons SET used = true WHERE code = 'PROMO50' AND used = false;\nCOMMIT;",
+    "entrevista": "Un fallo de lógica de negocio permite explotar las reglas legítimas del sistema —como saltar estados, usar valores negativos o abusar de concurrencia— y solo se mitiga reforzando invariantes y máquinas de estado en servidor."
+  },
+  "CRLF injection": {
+    "que": "Vulnerabilidad que se produce cuando una entrada no sanitizada introduce caracteres de retorno de carro (`CR`, `\\r`, `%0d`) y salto de línea (`LF`, `\\n`, `%0a`) en protocolos o formatos basados en líneas de texto. Al interpretarse como delimitadores de línea, permiten inyectar directivas arbitrarias.",
+    "para": "Prevenir la manipulación de cabeceras HTTP, comandos SMTP, entradas de logs y comandos en protocolos como Redis o FTP. Es la causa raíz tanto de HTTP Header Injection como de HTTP Response Splitting y Log Injection.",
+    "como": "Protocolos como HTTP/1.1 separan cada cabecera mediante la secuencia `\\r\\n` y el fin de las cabeceras con `\\r\\n\\r\\n`. Si un endpoint toma un parámetro (por ejemplo `?lang=es`) y lo escribe directamente dentro de una cabecera `Set-Cookie` o `Location` sin eliminar `\\r` y `\\n`, el atacante envía `es%0d%0aSet-Cookie:%20admin=true`. El servidor emite la respuesta con la cabecera adicional inyectada, o incluso con un cuerpo nuevo si introduce doble CRLF.",
+    "practicas": [
+      "Rechazar o eliminar cualquier carácter `\\r` (`0x0D`) y `\\n` (`0x0A`) (y sus equivalentes Unicode separadores de línea) antes de escribir en cabeceras o logs.",
+      "Utilizar APIs de frameworks modernos para manipular cabeceras y redirecciones, que validan y bloquean secuencias CRLF automáticamente.",
+      "Error típico: decodificar URL después de validar la entrada, permitiendo que `%0d%0a` supere el filtro inicial.",
+      "Comparación: CRLF injection es el mecanismo sintáctico (`\\r\\n`); en HTTP da lugar a Header Injection (añadir cabeceras) o Response Splitting (añadir una respuesta completa)."
+    ],
+    "ejemplo": "# Petición maliciosa por parámetro reflejado en Location:\nGET /redirect?next=https://app.com/%0d%0aSet-Cookie:%20session=atacante HTTP/1.1\n\n# Respuesta vulnerable resultante:\nHTTP/1.1 302 Found\nLocation: https://app.com/\nSet-Cookie: session=atacante",
+    "entrevista": "La inyección CRLF inserta secuencias de retorno de carro y salto de línea en protocolos basados en texto para crear nuevas cabeceras, falsificar logs o dividir respuestas HTTP; se previene rechazando \\r y \\n y usando APIs de cabecera seguras."
+  },
+  "CSRF": {
+    "que": "Cross-Site Request Forgery (Falsificación de Petición en Sitios Cruzados) es una vulnerabilidad que fuerza al navegador de una víctima autenticada a enviar una petición HTTP no deseada hacia una aplicación donde mantiene una sesión activa.",
+    "para": "Evitar que sitios externos ejecuten acciones de cambio de estado (transferencias, cambio de correo/contraseña, borrado de datos) abusando de las credenciales automáticas del navegador. Aplica principalmente cuando la autenticación depende de cookies o autenticación HTTP básica/NTLM enviada automáticamente.",
+    "como": "Cuando la víctima visita una página maliciosa o carga una imagen/formulario oculto mientras tiene sesión abierta en `banco.com`, la página atacante dispara un `POST` o `GET` hacia `https://banco.com/transfer`. El navegador adjunta automáticamente las cookies de `banco.com` porque la petición va dirigida a ese dominio, sin importar que el origen sea otro sitio. Si el servidor no verifica la intención legítima mediante un secreto impredecible o cabeceras de origen, procesa la orden como si la hubiera hecho el usuario.",
+    "practicas": [
+      "Usar tokens anti-CSRF impredecibles por sesión/petición (Synchronizer Token Pattern) validados en servidor para toda operación que modifique estado.",
+      "Configurar cookies de sesión con `SameSite=Lax` o `SameSite=Strict` como defensa en profundidad (recordando que `Lax` permite cookies en navegación GET de primer nivel).",
+      "Error típico: permitir cambios de estado mediante peticiones `GET` o validar únicamente el token CSRF en el cliente.",
+      "Nota arquitectónica: las APIs que reciben tokens `Bearer` manualmente en la cabecera `Authorization` (no en cookies) no son vulnerables a CSRF clásico, aunque sí requieren protección frente a XSS."
+    ],
+    "ejemplo": "<!-- Formulario oculto autoenviado desde sitio atacante -->\n<form action=\"https://app.ejemplo.com/account/email\" method=\"POST\">\n  <input type=\"hidden\" name=\"email\" value=\"atacante@evil.com\" />\n</form>\n<script>document.forms[0].submit();</script>",
+    "entrevista": "CSRF abusa de que el navegador envía cookies automáticamente en peticiones entre sitios; se mitiga con tokens anti-CSRF impredecibles validados en servidor, cookies SameSite y evitando mutaciones de estado por GET."
+  },
+  "Clickjacking": {
+    "que": "Técnica de ataque (UI Redressing) en la que una página maliciosa carga una aplicación legítima dentro de un `<iframe>` transparente superpuesto a elementos visuales engañosos. El usuario cree hacer clic en una interfaz inocua, pero en realidad pulsa botones de la aplicación oculta.",
+    "para": "Proteger acciones sensibles de la interfaz web (confirmar pagos, autorizar permisos OAuth, eliminar cuenta o habilitar cámara) frente a interacciones involuntarias inducidas visualmente.",
+    "como": "El atacante crea una página atractiva con un botón falso ('Reclamar premio') posicionado exactamente debajo de un `<iframe>` con `opacity: 0` que apunta a `https://victima.com/settings/delete`. Si `victima.com` permite ser incrustada en marcos externos y la víctima tiene sesión abierta (con cookies `SameSite=None` o sesión activa aplicable), al hacer clic en el botón visible el evento de ratón impacta sobre el botón real del iframe invisible. El navegador ejecuta la acción con la sesión del usuario.",
+    "practicas": [
+      "Enviar la cabecera `Content-Security-Policy: frame-ancestors 'none'` (o `'self'` / orígenes confiables) como defensa estándar moderna.",
+      "Mantener `X-Frame-Options: DENY` o `SAMEORIGIN` por compatibilidad con navegadores heredados.",
+      "Error típico: depender de scripts JavaScript de 'frame-busting' (`if (top !== self)`), que pueden eludirse mediante el atributo `sandbox` en el `<iframe>`.",
+      "Combinar cookies `SameSite=Lax` o `Strict` para impedir que la sesión del usuario viaje dentro de iframes de terceros."
+    ],
+    "ejemplo": "# Cabeceras HTTP recomendadas para bloquear incrustación en iframes\nContent-Security-Policy: frame-ancestors 'self' https://portal.empresa.com;\nX-Frame-Options: SAMEORIGIN",
+    "entrevista": "El Clickjacking superpone un iframe transparente de la app víctima sobre una UI engañosa para capturar clics del usuario autenticado; la defensa estándar es Content-Security-Policy con frame-ancestors junto a X-Frame-Options."
+  },
+  "Codificación de salida": {
+    "que": "Mecanismo defensivo que transforma caracteres especiales de datos no confiables en su representación literal segura según el intérprete de destino antes de renderizarlos. Su objetivo es asegurar que el navegador o intérprete trate los datos como texto inerte y nunca como código ejecutable.",
+    "para": "Prevenir ataques de Cross-Site Scripting (XSS) y otras inyecciones en tiempo de renderizado cuando una aplicación debe mostrar entrada proporcionada por usuarios o sistemas externos. Debe aplicarse en el último momento posible antes de insertar el dato en la salida.",
+    "como": "El codificador sustituye los caracteres de control propios de cada contexto sintáctico: en el cuerpo HTML convierte `<`, `>`, `&`, `\"` y `'` en entidades (`&lt;`, `&gt;`, `&amp;`, `&quot;`, `&#x27;`); dentro de un literal JavaScript aplica escape Unicode (`\\u003c`); y en parámetros URL aplica codificación porcentual (`%3C`). Si se utiliza la codificación equivocada para el contexto (por ejemplo, escape HTML dentro de un bloque `<script>` o un atributo `href`), el atacante mantiene la capacidad de ejecutar código mediante `javascript:` o cierre de cadena JS.",
+    "practicas": [
+      "Aprovechar el auto-escaping contextual de motores modernos (React JSX, Angular, Jinja2 con autoescape, Go `html/template`) en lugar de construir HTML manualmente.",
+      "Aplicar la codificación específica de cada contexto: HTML body, atributo HTML, JavaScript, CSS o URL.",
+      "Error típico: codificar la entrada al guardarla en base de datos, lo que corrompe los datos para otros consumidores (PDF, JSON, emails) y no sirve si cambia el contexto de salida.",
+      "Comparación: la codificación de salida neutraliza sintaxis convirtiendo caracteres en literales seguros; la sanitización HTML elimina etiquetas peligrosas cuando sí se necesita permitir formato rico."
+    ],
+    "ejemplo": "// React (JSX) codifica automáticamente el texto en contexto HTML\nfunction Greeting({ username }) {\n  return <p>Hola, {username}</p>; // '<script>' se renderiza como texto literal\n}\n// Riesgo: usar dangerouslySetInnerHTML o href={userUrl} sin validar esquema http/https",
+    "entrevista": "La codificación de salida debe aplicarse justo al renderizar y ser específica del contexto (HTML, atributo, JS o URL) para que los datos nunca se interpreten como instrucciones ejecutables."
+  },
+  "Command injection": {
+    "que": "Vulnerabilidad crítica (OS Command Injection, CWE-78) en la que un atacante logra ejecutar comandos arbitrarios del sistema operativo en el servidor que aloja la aplicación. Ocurre cuando datos controlados por el usuario se pasan sin aislamiento a una shell del sistema.",
+    "para": "Evitar la toma de control total del servidor o contenedor (RCE), el robo de secretos de entorno, el pivoteo en red interna y la destrucción de datos al invocar utilidades externas del sistema operativo.",
+    "como": "Una funcionalidad legítima llama a herramientas del sistema (como `ping`, `convert`, `wkhtmltopdf` o `git`) concatenando argumentos de usuario en funciones que invocan una shell (`/bin/sh -c` o `cmd.exe`), como `system()`, `os.system()`, `shell_exec()` o `child_process.exec()`. El atacante introduce separadores de comandos o sustituciones (`;`, `&&`, `|`, `` ` ``, `$(...)`), por ejemplo `8.8.8.8; id`. La shell interpreta la primera orden seguida de la orden maliciosa bajo los privilegios del proceso de la aplicación.",
+    "practicas": [
+      "Evitar invocar comandos del sistema cuando exista una librería nativa del lenguaje (ej. usar módulos de compresión o red nativos en lugar de llamar a `tar` o `ping`).",
+      "Cuando sea imprescindible ejecutar un binario, usar APIs parametrizadas sin shell (`execFile` en Node.js, `subprocess.run([...], shell=False)` en Python) pasando un array de argumentos.",
+      "Error típico: usar `subprocess.run(cmd, shell=True)` pasando una lista o creer que escapar espacios basta sin bloquear `;`, `|`, `$()` o redirecciones.",
+      "Validar los argumentos con listas de permitidos estrictas (ej. solo caracteres alfanuméricos o formato IPv4) y ejecutar el proceso con mínimo privilegio."
+    ],
+    "ejemplo": "# Vulnerable (invoca /bin/sh):\nsubprocess.run(f\"ping -c 1 {host}\", shell=True)\n\n# Seguro (sin shell + validación previa de formato):\nsubprocess.run([\"ping\", \"-c\", \"1\", validated_host], shell=False, check=True)",
+    "entrevista": "La inyección de comandos surge al pasar entradas de usuario a una shell del sistema; la solución es sustituir llamadas al SO por APIs nativas o usar ejecución directa sin shell mediante arrays de argumentos y validación por lista blanca."
+  },
+  "Consultas parametrizadas": {
+    "que": "Técnica de acceso a bases de datos (también implementada mediante Prepared Statements) en la que la estructura de la sentencia SQL se define y compila por separado de los valores proporcionados como parámetros. Garantiza que el motor de base de datos trate los parámetros estrictamente como literales de datos.",
+    "para": "Erradicar de forma estructural la vulnerabilidad de SQL Injection en operaciones de lectura, inserción, actualización y borrado. Es el estándar obligatorio en todo acceso a bases de datos relacionales desde aplicaciones web y APIs.",
+    "como": "La aplicación envía al driver o servidor SQL la plantilla con marcadores de posición (`?`, `$1`, `:email`) en una fase de preparación (`PREPARE`). El motor analiza el árbol sintáctico (AST) y genera el plan de ejecución antes de conocer los valores. Posteriormente, la aplicación envía los parámetros vinculados (bound parameters) en un canal o paquete separado; aunque el valor contenga `' OR 1=1--`, el motor nunca vuelve a parsear la sintaxis SQL y busca literalmente esa cadena.",
+    "practicas": [
+      "Usar marcadores de posición en todas las consultas SQL, incluyendo cláusulas `WHERE`, `INSERT`, `UPDATE` y `LIMIT`.",
+      "Recordar que los parámetros no sirven para identificadores estructurales (nombres de tablas, columnas o dirección `ASC`/`DESC` en `ORDER BY`); para esos casos debe usarse una lista de permitidos.",
+      "Error típico: usar `PREPARE` en un procedimiento almacenado concatenando cadenas dentro del propio SQL dinámico (`EXEC('SELECT ...' + @var)`), lo que reintroduce SQLi.",
+      "En ORMs (Hibernate, SQLAlchemy, Prisma), evitar métodos crudos con interpolación de strings (`raw`, `execute`) si no utilizan enlace explícito de parámetros."
+    ],
+    "ejemplo": "# Python (psycopg / sqlite3): consulta parametrizada segura\ncursor.execute(\n    \"SELECT id, role FROM users WHERE email = %s AND active = %s\",\n    (user_email, True)\n)",
+    "entrevista": "Las consultas parametrizadas compilan el árbol sintáctico SQL antes de recibir los valores, impidiendo que una entrada de usuario altere la estructura de la consulta; para nombres de columnas o tablas deben complementarse con listas de permitidos."
+  },
+  "Content Security Policy (CSP)": {
+    "que": "Cabecera de respuesta HTTP estándar (y metaetiqueta parcial) mediante la cual el servidor declara al navegador qué orígenes y tipos de recursos tiene permitido cargar y ejecutar una página. Funciona como una política declarativa de lista de permitidos en el cliente.",
+    "para": "Mitigar el impacto de ataques Cross-Site Scripting (XSS), inyección de datos y Clickjacking actuando como capa de defensa en profundidad en el navegador. También permite detectar intentos de violación en producción mediante reportes automáticos.",
+    "como": "El navegador recibe la cabecera `Content-Security-Policy` con directivas como `default-src`, `script-src`, `style-src`, `object-src`, `connect-src` y `frame-ancestors`. Al procesar el HTML, bloquea por defecto la ejecución de scripts inline (`<script>...</script>`), manejadores de eventos (`onload=...`), funciones `eval()` y cargas desde dominios no autorizados. En políticas estrictas (Strict CSP), cada bloque de script legítimo incluye un `nonce` criptográfico aleatorio por respuesta o un hash SHA-256, impidiendo que un payload XSS inyectado se ejecute.",
+    "practicas": [
+      "Preferir Strict CSP basada en `nonce` o hashes más `'strict-dynamic'` en lugar de listas de dominios largas, que suelen eludirse mediante endpoints JSONP o bibliotecas alojadas en CDNs permitidas.",
+      "Incluir `object-src 'none'`, `base-uri 'none'` y `frame-ancestors 'none'` (o `'self'`) para cerrar vectores de plugins, secuestro de URLs base y Clickjacking.",
+      "Error típico: añadir `'unsafe-inline'` o `'unsafe-eval'` en `script-src`, lo que anula casi por completo la protección contra XSS.",
+      "Desplegar inicialmente con `Content-Security-Policy-Report-Only` y `report-to` para detectar rupturas legítimas antes de activar el bloqueo estricto."
+    ],
+    "ejemplo": "# Cabecera Strict CSP con nonce por petición\nContent-Security-Policy: default-src 'self'; script-src 'nonce-rAnd0m123' 'strict-dynamic'; object-src 'none'; base-uri 'none'; frame-ancestors 'none';",
+    "entrevista": "CSP es una capa de defensa en profundidad en el navegador que restringe qué scripts y orígenes pueden ejecutarse; una Strict CSP con nonces aleatorios, sin unsafe-inline y con object-src 'none' neutraliza la ejecución de XSS aunque exista un fallo de escape."
+  },
+  "Deserialización insegura": {
+    "que": "Vulnerabilidad que ocurre cuando una aplicación reconstruye objetos a partir de datos binarios o estructurados procedentes de una fuente no confiable sin validar su tipo ni integridad. Permite manipular el estado interno de los objetos o desencadenar cadenas de ejecución de código (RCE).",
+    "para": "Evitar la ejecución remota de código, la manipulación de privilegios y ataques de denegación de servicio en sistemas que intercambian estado serializado (cookies firmadas mal, colas de mensajes, caché, RPC o sesiones).",
+    "como": "Formatos como Java Serialization (`ObjectInputStream`), Python `pickle`, PHP `unserialize()`, .NET `BinaryFormatter` o `PyYAML` sin `SafeLoader` permiten instanciar clases arbitrarias presentes en el classpath o runtime de la aplicación. Durante la reconstrucción se invocan automáticamente métodos mágicos o de ciclo de vida (`readObject()`, `__wakeup()`, `__reduce__()`). Un atacante construye un payload encadenando clases legítimas disponibles en dependencias del proyecto (gadget chains, generadas p. ej. con `ysoserial`) para terminar invocando `Runtime.exec()` o `os.system()`.",
+    "practicas": [
+      "No deserializar nunca flujos binarios u objetos polimórficos procedentes de clientes no confiables; usar formatos simples de solo datos como JSON o Protobuf.",
+      "Si el protocolo exige serialización de objetos, aplicar autenticación/firma criptográfica (HMAC) previa a la deserialización y listas de permitidos estrictas de clases (`ObjectInputFilter` en Java).",
+      "Error típico: intentar prevenir el ataque filtrando nombres de clases con listas negras o comprimiendo/codificando en Base64 el payload sin firmarlo.",
+      "Usar `yaml.safe_load()` en Python y evitar `pickle` para intercambio de datos entre servicios o almacenamiento accesible por usuarios."
+    ],
+    "ejemplo": "# Python: peligro de pickle/yaml.load frente a JSON/safe_load\nimport json, yaml\n\n# Inseguro: yaml.load(untrusted_data, Loader=yaml.Loader)\n# Seguro para datos estructurados:\ndata = json.loads(untrusted_json)\ncfg = yaml.safe_load(untrusted_yaml)",
+    "entrevista": "La deserialización insegura permite que un atacante abuse de métodos mágicos y gadget chains del classpath para lograr RCE o escalada; la regla principal es evitar serialización de objetos arbitrarios y usar JSON o validación estricta de tipos más firma criptográfica."
+  },
+  "HTTP request smuggling": {
+    "que": "Vulnerabilidad de protocolo en la que un atacante envía una petición HTTP ambigua para explotar discrepancias entre cómo un proxy inverso (front-end) y el servidor de aplicación (back-end) interpretan los límites de cada petición sobre una misma conexión TCP reutilizada.",
+    "para": "Prevenir el envenenamiento de cachés web, el secuestro de peticiones de otros usuarios, el bypass de controles de seguridad del WAF/proxy (como cabeceras `X-Forwarded-For` o rutas `/admin`) y ataques XSS masivos sin interacción.",
+    "como": "En HTTP/1.1, una conexión keep-alive transporta múltiples peticiones seguidas cuyos límites se definen con `Content-Length` (CL) o `Transfer-Encoding: chunked` (TE). Si el front-end prioriza `Content-Length` y el back-end prioriza `Transfer-Encoding` (CL.TE), o viceversa (TE.CL), o uno ignora una cabecera `Transfer-Encoding` ofuscada (TE.TE), parte del cuerpo enviado por el atacante queda pendiente en el buffer del back-end. Ese fragmento residual se antepone como prefijo a la siguiente petición legítima de otro usuario en el socket compartido.",
+    "practicas": [
+      "Usar HTTP/2 de extremo a extremo (incluyendo la conexión entre proxy inverso y back-end) ya que usa tramas binarias con longitud explícita en lugar de delimitadores textuales ambiguos.",
+      "Rechazar con `400 Bad Request` cualquier petición que contenga simultáneamente `Content-Length` y `Transfer-Encoding`, o múltiples `Content-Length` distintos.",
+      "Error típico: confiar en reglas de WAF en el front-end cuando el back-end acepta sintaxis HTTP tolerante (espacios tras nombre de cabecera o saltos de línea no estándar).",
+      "Deshabilitar la reutilización de conexiones HTTP/1.1 hacia el back-end solo como mitigación temporal de emergencia, priorizando parches y normalización estricta."
+    ],
+    "ejemplo": "# Ejemplo conceptual CL.TE (el front-end lee 13 bytes por CL; el back-end corta en '0\\r\\n\\r\\n'):\nPOST / HTTP/1.1\nHost: ejemplo.com\nContent-Length: 13\nTransfer-Encoding: chunked\n\n0\n\nSMUGGLED",
+    "entrevista": "HTTP Request Smuggling explota discrepancias entre proxy y backend al interpretar Content-Length y Transfer-Encoding en conexiones persistentes; se previene usando HTTP/2 extremo a extremo o rechazando cabeceras ambiguas."
+  },
+  "HTTP response splitting": {
+    "que": "Ataque derivado de una vulnerabilidad CRLF Injection en cabeceras HTTP donde el atacante introduce dos saltos de línea consecutivos (`\\r\\n\\r\\n`) para cerrar prematuramente las cabeceras de la respuesta legítima e inyectar una segunda respuesta HTTP completa en el mismo flujo TCP.",
+    "para": "Evitar que un atacante controle el cuerpo completo de respuestas HTTP, envenene cachés compartidas (Web Cache Poisoning) o ejecute XSS reflejado desde cabeceras como `Location` o `Set-Cookie`.",
+    "como": "Cuando una aplicación refleja una entrada de usuario en una cabecera HTTP sin filtrar caracteres CR/LF, el atacante envía un payload con `%0d%0a%0d%0aHTTP/1.1%20200%20OK%0d%0aContent-Type:%20text/html%0d%0aContent-Length:%2035%0d%0a%0d%0a<script>alert(1)</script>`. En servidores o proxies que aún comparten conexiones HTTP/1.1 sin validación estricta, la primera respuesta termina tras el primer doble CRLF y el resto del texto inyectado es interpretado como respuesta a la siguiente petición en la cola (pipelining) o almacenado en caché bajo la URL víctima.",
+    "practicas": [
+      "Validar y prohibir caracteres `\\r` y `\\n` en cualquier valor destinado a cabeceras HTTP.",
+      "Utilizar APIs modernas de frameworks y servidores web actuales (Node.js, Go `net/http`, Servlet API moderna), que lanzan una excepción al detectar CRLF en valores de cabecera.",
+      "Error típico: asumir que un `302 Found` sin cuerpo HTML es inocuo frente a XSS cuando la cabecera `Location` refleja datos sin validar.",
+      "Diferencia frente a Header Injection simple: Header Injection añade o altera cabeceras en la misma respuesta; Response Splitting inyecta una segunda respuesta completa tras `\\r\\n\\r\\n`."
+    ],
+    "ejemplo": "# Payload que inyecta doble CRLF para crear una segunda respuesta HTTP:\nGET /lang?c=es%0d%0aContent-Length:%200%0d%0a%0d%0aHTTP/1.1%20200%20OK%0d%0aContent-Type:%20text/html%0d%0a%0d%0a<h1>Pwned</h1>",
+    "entrevista": "HTTP Response Splitting es un caso severo de CRLF Injection que usa doble salto de línea para terminar las cabeceras e inyectar una segunda respuesta HTTP completa, permitiendo XSS y envenenamiento de caché."
+  },
+  "Header injection": {
+    "que": "Vulnerabilidad que ocurre cuando una aplicación confía en valores manipulables de cabeceras HTTP entrantes o permite insertar datos no validados en cabeceras HTTP salientes. Incluye tanto la falsificación de cabeceras de petición (`Host`, `X-Forwarded-For`) como la inyección en cabeceras de respuesta (`Set-Cookie`, `Location`).",
+    "para": "Prevenir ataques de Host Header Injection (envenenamiento de enlaces de recuperación de contraseña y caché), evasión de controles de IP y establecimiento de cookies arbitrarias en el navegador de la víctima.",
+    "como": "En cabeceras entrantes, el servidor lee `req.headers['host']` o `X-Forwarded-For` directamente para construir URLs de reset de contraseña (`https://${host}/reset?token=...`) o validar límites de tasa por IP. Un atacante cambia `Host: atacante.com` y provoca que el correo con el enlace de recuperación enviado a la víctima apunte a su servidor, capturando el token. En cabeceras salientes, la concatenación de entradas en `Set-Cookie` o `Location` permite añadir directivas o nuevas cabeceras si no se bloquea CRLF.",
+    "practicas": [
+      "No construir URLs sensibles usando la cabecera `Host` de la petición; configurar un dominio base explícito en las variables de configuración del servidor.",
+      "Configurar los proxies inversos (Nginx, Envoy, ALB) para sobrescribir `X-Forwarded-For` y `X-Forwarded-Host`, y confiar en ellos solo si provienen de IPs de proxy conocidas (`trusted_proxies`).",
+      "Rechazar caracteres de control (`\\r`, `\\n`) en toda cabecera generada dinámicamente.",
+      "Error típico: implementar rate limiting leyendo `X-Forwarded-For` directamente en la app sin comprobar si el cliente externo falsificó esa cabecera."
+    ],
+    "ejemplo": "# Nginx: configurar virtual host por defecto para rechazar Host desconocidos\nserver {\n    listen 80 default_server;\n    server_name _;\n    return 444;\n}",
+    "entrevista": "Header Injection abarca tanto el abuso de cabeceras entrantes como Host o X-Forwarded-For para envenenar enlaces o evadir rate limits, como la inyección en cabeceras de respuesta; requiere dominios base fijos y proxies confiables explícitos."
+  },
+  "IDOR": {
+    "que": "Insecure Direct Object Reference (IDOR) es una vulnerabilidad de control de acceso (subconjunto de A01) donde una aplicación expone directamente un identificador interno (ID numérico, UUID, nombre de archivo) y permite operar sobre registros de otros usuarios al alterar dicho identificador.",
+    "para": "Impedir la lectura, modificación o eliminación masiva de datos privados (facturas, mensajes, perfiles, documentos) simplemente iterando parámetros en URLs, cuerpos JSON o rutas de API.",
+    "como": "Un usuario autenticado consulta su pedido en `GET /api/orders/1042`. Al cambiar el parámetro a `1041` o `1043` en la petición HTTP, el controlador busca el registro directamente por clave primaria (`SELECT * FROM orders WHERE id = ?`) sin comprobar que `order.user_id == session.user_id`. Aunque el usuario está autenticado correctamente, el sistema no valida su autorización a nivel de objeto (BOLA, Broken Object Level Authorization en APIs).",
+    "practicas": [
+      "Validar en el servidor en cada operación (lectura, actualización, borrado) que el usuario autenticado es propietario o tiene permiso explícito sobre ese objeto específico.",
+      "Preferir consultas filtradas por propietario (`WHERE id = $1 AND tenant_id = $2 AND user_id = $3`) en lugar de buscar solo por ID.",
+      "Error típico: reemplazar IDs autoincrementales por UUIDv4 pensando que eso resuelve el IDOR; un UUID solo dificulta la enumeración, pero si se filtra en logs o URLs el fallo de autorización persiste.",
+      "Complementar con pruebas automatizadas de autorización entre usuarios (Usuario A intentando leer/modificar recursos creados por Usuario B)."
+    ],
+    "ejemplo": "// Consulta SQL segura con scoping obligatorio por usuario autenticado\nconst doc = await db.query(\n  'SELECT id, title, content FROM documents WHERE id = $1 AND owner_id = $2',\n  [req.params.docId, req.user.id]\n);\nif (!doc.rows.length) return res.status(404).json({ error: 'Not found' });",
+    "entrevista": "IDOR o BOLA ocurre cuando un endpoint usa un identificador controlado por el cliente sin comprobar en servidor la propiedad o permiso sobre el objeto; usar UUIDs no sustituye la verificación obligatoria de autorización."
+  },
+  "Insecure direct object references": {
+    "que": "Patrón de fallo arquitectónico (CWE-639) que se produce cuando una aplicación utiliza directamente entradas proporcionadas por el usuario para referenciar objetos internos del sistema —como registros de base de datos, archivos en disco o claves de almacenamiento— sin aplicar controles de acceso ni mapeos indirectos.",
+    "para": "Establecer políticas de acceso a nivel de objeto (Object-Level Authorization) y evitar tanto la exposición de datos entre usuarios (IDOR horizontal/vertical) como el acceso a rutas o claves internas.",
+    "como": "Cuando una aplicación expone claves primarias (`?account=5501`), nombres de archivo (`?file=nomina_juan.pdf`) o claves S3 directamente en parámetros cliente, permite manipular dichas referencias en llamadas posteriores. Si la capa de controlador o servicio resuelve directamente la referencia sin cruzarla contra una lista de acceso del sujeto o sin emplear un mapa de referencias indirectas por sesión (por ejemplo, índices `1, 2, 3` traducidos en servidor a los IDs reales permitidos para ese usuario), el atacante accede a recursos ajenos o fuera de su ámbito.",
+    "practicas": [
+      "Implementar autorización a nivel de objeto en la capa de dominio/servicio para no depender de qué endpoint invoque el recurso.",
+      "En contextos de alto riesgo o listados acotados por sesión, considerar mapas de referencias indirectas por usuario junto con autorización obligatoria.",
+      "Error típico: devolver `403 Forbidden` para objetos existentes y `404` para inexistentes sin pensar en la fuga de existencia, o verificar permisos solo en el endpoint de lectura (`GET`) olvidando `PATCH` y `DELETE`.",
+      "Relación normativa: en OWASP Top 10 2021 se integra dentro de A01 Broken Access Control, y en el OWASP API Security Top 10 equivale a API1:2023 Broken Object Level Authorization."
+    ],
+    "ejemplo": "# Mapa de referencias indirectas en sesión + validación en dominio\n# El cliente solo ve un token opaco 'ref_1' mapeado en sesión\nallowed_map = session['indirect_refs']  # {'ref_1': 'invoice_9821'}\nreal_id = allowed_map.get(req.args.get('ref'))\nif not real_id:\n    abort(403)\ninvoice = invoice_service.get_for_user(real_id, current_user.id)",
+    "entrevista": "Las referencias directas inseguras a objetos exponen identificadores internos sin verificación de permisos; se corrigen aplicando autorización a nivel de objeto en la capa de dominio y, cuando aporta valor, mapeos indirectos por sesión."
+  },
+  "LDAP injection": {
+    "que": "Vulnerabilidad de inyección que permite alterar la estructura lógica de consultas enviadas a un servidor de directorio LDAP (Lightweight Directory Access Protocol) cuando se concatenan entradas de usuario en filtros de búsqueda o Distinguished Names (DN).",
+    "para": "Proteger mecanismos de autenticación corporativa (Active Directory, OpenLDAP), búsqueda de empleados y verificación de pertenencia a grupos contra evasión de autenticación y extracción de atributos del directorio.",
+    "como": "Las aplicaciones suelen consultar un directorio LDAP construyendo filtros de búsqueda en notación prefija entre paréntesis, como `(&(uid=<user>)(userPassword=<pass>))`. Si el valor de `<user>` no se escapa, un atacante introduce caracteres especiales LDAP (`*`, `(`, `)`, `\\`, `\\0`). Por ejemplo, al enviar `*)(uid=*))(|(uid=*` en el campo usuario, altera los paréntesis del filtro lógico para que siempre evalúe a verdadero o enumera cuentas mediante comodines (`admin*`) y consultas booleanas ciegas.",
+    "practicas": [
+      "Escapar estrictamente los caracteres reservados en filtros LDAP (`\\`, `*`, `(`, `)`, `NUL`) siguiendo RFC 4515, y los caracteres especiales de Distinguished Names según RFC 4514.",
+      "Utilizar funciones de escape específicas de la librería LDAP oficial (ej. `ldap3.utils.conv.escape_filter_chars` en Python o `LdapEncoder` en Java/Spring LDAP) y nunca construir filtros por concatenación cruda.",
+      "Configurar la cuenta de servicio (bind user) con permisos mínimos de lectura únicamente sobre las ramas y atributos necesarios.",
+      "Error típico: intentar prevenir LDAP injection usando filtros pensados para SQL o HTML, que dejan sin escapar `*`, `(` y `)`."
+    ],
+    "ejemplo": "# Python con ldap3: escape seguro de filtro LDAP (RFC 4515)\nfrom ldap3.utils.conv import escape_filter_chars\n\nsafe_user = escape_filter_chars(user_input)\nsearch_filter = f\"(&(objectClass=person)(uid={safe_user}))\"",
+    "entrevista": "LDAP Injection manipula filtros entre paréntesis o DNs usando caracteres como *, (, ) y NUL para evadir login o enumerar el directorio; se previene aplicando escape estricto RFC 4514/4515 mediante las utilidades de la librería LDAP."
+  },
+  "Listas de permitidos": {
+    "que": "Estrategia de validación de entradas y control de acceso (allowlisting / whitelisting) que define explícitamente el conjunto exacto de valores, tipos, formatos, orígenes o acciones válidos, rechazando todo lo demás por defecto.",
+    "para": "Eliminar las debilidades inherentes a las listas negras (blocklists), que fallan ante nuevas variantes, codificaciones alternativas o errores de normalización. Se usa en validación de archivos subidos, dominios para redirecciones o SSRF, ordenación SQL y CORS.",
+    "como": "En lugar de buscar patrones prohibidos (como `../`, `<script>`, `127.0.0.1` o extensiones `.exe`), el validador comprueba si el dato coincide exactamente con un catálogo finito o un esquema estricto. Por ejemplo, ante un parámetro `?sort=price`, el servidor busca `sort` en un diccionario cerrado `{'price': 'price', 'date': 'created_at'}` y descarta cualquier otro valor; o para extensiones de archivo acepta únicamente `['png', 'jpg']` tras comprobar firma mágica y generar un nombre nuevo.",
+    "practicas": [
+      "Preferir siempre listas de permitidos finitas (enums, diccionarios de mapeo, dominios exactos) frente a expresiones regulares complejas o listas negras.",
+      "Asegurar que la expresión regular de validación use anclas de inicio y fin reales (`\\A...\\z` en vez de `^...$` multilínea) para evitar bypass por salto de línea.",
+      "Error típico: validar mediante `includes()` o subcadenas (ej. verificar que la URL contenga `empresa.com`, evadible con `https://empresa.com.atacante.com`).",
+      "Combinar la lista de permitidos con normalización previa (canonicalización) de rutas o Unicode antes de evaluar la regla."
+    ],
+    "ejemplo": "// Mapeo estricto por lista de permitidos para ORDER BY dinámico\nconst ALLOWED_SORT = { name: 'u.name', created: 'u.created_at' };\nconst sortColumn = ALLOWED_SORT[req.query.sort];\nif (!sortColumn) return res.status(400).json({ error: 'Invalid sort field' });",
+    "entrevista": "Las listas de permitidos definen el conjunto exacto aceptado y rechazan el resto por defecto, evitando las evasiones por codificación o variantes que sufren siempre las listas negras."
+  },
+  "Manejo seguro de errores": {
+    "que": "Práctica de ingeniería de seguridad que consiste en capturar excepciones y fallos de forma controlada para devolver al cliente mensajes genéricos sin detalles internos, mientras se registra el detalle técnico completo de forma segura en el servidor y se mantiene un estado fail-closed.",
+    "para": "Evitar la fuga de información sensible (stack traces, consultas SQL, versiones de librerías, rutas de disco o claves) y garantizar que una excepción inesperada nunca deje abierta una operación privilegiada ni bloquee recursos.",
+    "como": "Cuando ocurre una excepción no controlada en un controlador web, el framework puede responder por defecto con una página de depuración que expone código fuente, variables locales y cadena de conexión. Con un manejador global de excepciones (error handler centralizado), la aplicación captura el fallo, genera un identificador de correlación (`traceId`), escribe la traza en el sistema de logs interno y devuelve al usuario un código HTTP apropiado con un mensaje neutro ('Error interno, ref: abc-123'). Además, en bloques de autorización aplica fail-closed: si el servicio de permisos falla o lanza timeout, se deniega el acceso.",
+    "practicas": [
+      "Implementar un middleware o handler global de errores que oculte stack traces y detalles de infraestructura en respuestas al cliente en producción.",
+      "Aplicar fail-closed (fallo seguro) en toda verificación de autenticación, autorización o firma: cualquier excepción debe traducirse en denegación.",
+      "Error típico: devolver mensajes demasiado específicos en login o recuperación de cuenta ('contraseña incorrecta' vs 'usuario no encontrado'), permitiendo enumeración.",
+      "Incluir un ID de correlación único en la respuesta genérica para vincular el reporte del usuario con el log privado del servidor."
+    ],
+    "ejemplo": "// Express: manejador global de errores seguro (fail-closed, sin fugas)\napp.use((err, req, res, next) => {\n  logger.error({ err: err.message, stack: err.stack, traceId: req.id });\n  res.status(500).json({ error: 'Internal error', traceId: req.id });\n});",
+    "entrevista": "El manejo seguro de errores aplica fail-closed ante fallos inesperados, devuelve mensajes genéricos con un ID de correlación al cliente y guarda las trazas detalladas únicamente en logs internos protegidos."
+  },
+  "Manipulación de precios": {
+    "que": "Subtipo frecuente de Business Logic Flaw (e indirectamente de confianza excesiva en el cliente) en el que un usuario altera importes, descuentos, cantidades o monedas en el flujo de compra para adquirir productos o servicios por un precio inferior o incluso negativo.",
+    "para": "Proteger los ingresos y la integridad contable de plataformas de comercio electrónico, SaaS, suscripciones y pasarelas de pago frente a fraude directo sin necesidad de explotar fallos técnicos clásicos.",
+    "como": "La vulnerabilidad aparece cuando el cliente envía en el `POST /checkout` campos como `price: 0.01`, `discount: 100`, `currency: 'JPY'` o `quantity: -5`, y el servidor los utiliza directamente para calcular el cobro o crear la sesión de pago. En otros casos, el ataque consiste en cambiar el carrito tras generar el intento de pago (TOCTOU) o pagar un pedido en una divisa de menor valor aprovechando una discrepancia entre el importe enviado a la pasarela y el validado en el webhook de confirmación.",
+    "practicas": [
+      "Calcular todos los precios, impuestos, envíos y descuentos exclusivamente en el servidor leyendo el catálogo oficial desde la base de datos por SKU/ID.",
+      "Verificar en el webhook firmado de la pasarela (Stripe, PayPal, etc.) que el monto pagado (`amount_total`) y la moneda coincidan exactamente con el pedido almacenado antes de marcarlo como pagado.",
+      "Error típico: aceptar importes o porcentajes de descuento desde campos ocultos HTML, localStorage o payloads JSON del frontend.",
+      "Validar tipos y rangos estrictos (cantidades enteras positivas `>= 1`) y bloquear modificaciones del carrito una vez iniciada la sesión de pago."
+    ],
+    "ejemplo": "// Backend seguro: ignorar price del cliente y recalcular desde BD\nconst items = await db.products.findByIds(req.body.items.map(i => i.sku));\nconst totalCents = req.body.items.reduce((sum, item) => {\n  if (!Number.isInteger(item.qty) || item.qty <= 0) throw new BadRequest();\n  const product = items.find(p => p.sku === item.sku);\n  return sum + product.priceCents * item.qty;\n}, 0);",
+    "entrevista": "La manipulación de precios ocurre al confiar en importes, descuentos o cantidades enviados por el cliente; la mitigación exige calcular totales únicamente en servidor y verificar importe y moneda en el webhook firmado de la pasarela."
+  },
+  "Mass assignment": {
+    "que": "Vulnerabilidad (también llamada Auto-binding o Over-posting, API3:2023 Broken Object Property Level Authorization) que ocurre cuando un framework vincula automáticamente los campos de una petición HTTP (JSON, form-data) directamente a las propiedades de un modelo u objeto de base de datos sin filtrar los campos editables.",
+    "para": "Evitar que un atacante modifique atributos internos o privilegiados que no estaban expuestos en el formulario de la interfaz, como `role: 'admin'`, `isVerified: true`, `balance: 99999` o `ownerId`.",
+    "como": "Muchos frameworks ORM/MVC permiten pasar directamente `req.body` a un constructor o método de actualización (`User.create(req.body)` o `@ModelAttribute` en Spring). Un usuario normal envía `{\"name\": \"Ana\"}` desde la UI, pero intercepta la petición y añade `\"role\": \"admin\"` o `\"subscriptionTier\": \"enterprise\"`. Como el modelo de dominio contiene esas columnas y el binder copia cada clave coincidente del payload al objeto antes de persistirlo, el servidor sobrescribe privilegios o estados internos.",
+    "practicas": [
+      "Utilizar DTOs (Data Transfer Objects) o esquemas de validación explícitos (Zod, Pydantic, Joi) que extraigan únicamente la lista de propiedades permitidas para cada operación.",
+      "Configurar mecanismos nativos del framework cuando existan (como `strong_parameters` en Rails, `fillable` en Laravel o `@JsonIgnore` / mapeo manual a entidades).",
+      "Error típico: intentar bloquear atributos sensibles con listas negras (ej. eliminar `req.body.role`), olvidando otros campos internos como `isActive`, `credits` o relaciones anidadas.",
+      "Separar los DTOs de entrada por rol o caso de uso (un usuario normal no debe compartir el mismo esquema de actualización que un administrador)."
+    ],
+    "ejemplo": "// Seguro: extraer explícitamente solo los campos permitidos con DTO/validación\nconst { displayName, bio } = UpdateProfileSchema.parse(req.body);\nawait db.users.update({ where: { id: req.user.id }, data: { displayName, bio } });\n// Evitar siempre: await db.users.update({ where: { id }, data: req.body });",
+    "entrevista": "Mass Assignment ocurre al vincular automáticamente todo el payload HTTP a un modelo de base de datos, permitiendo sobrescribir campos como role o balance; se previene usando DTOs explícitos con listas de propiedades permitidas."
+  },
+  "NoSQL injection": {
+    "que": "Vulnerabilidad de inyección que afecta a bases de datos no relacionales (especialmente documentales como MongoDB, así como motores clave-valor o de búsqueda como Elasticsearch) cuando una entrada no confiable altera operadores de consulta, expresiones JSON o código JavaScript ejecutado en el motor.",
+    "para": "Prevenir el bypass de autenticación, la extracción masiva de documentos y la denegación de servicio en backends que construyen consultas dinámicas desde payloads JSON o parámetros URL parseados como objetos.",
+    "como": "En motores como MongoDB, las consultas se expresan como objetos JSON con operadores prefijados con `$` (`$ne`, `$gt`, `$regex`, `$where`). Si un endpoint en Express usa un parser que convierte `?password[$ne]=1` en `{ password: { $ne: '1' } }` o recibe un cuerpo JSON sin validar tipos y lo pasa directo a `db.users.findOne({ email, password })`, el atacante envía `{\"email\": \"admin@app.com\", \"password\": {\"$ne\": null}}` e inicia sesión sin conocer la contraseña. Además, operadores como `$regex` permiten exfiltrar secretos carácter a carácter (Blind NoSQLi) o causar ReDoS, y `$where` permite ejecutar JavaScript en el servidor si no está deshabilitado.",
+    "practicas": [
+      "Validar estrictamente los tipos de entrada esperados mediante esquemas (Zod, Joi, Pydantic) asegurando que campos como `email` o `password` sean `string` primitivos y nunca objetos o arrays.",
+      "Sanitizar o rechazar claves que comiencen por `$` o contengan `.` en entradas de usuario (ej. `mongo-sanitize`) y deshabilitar scripting en el motor (`javascriptEnabled: false` en MongoDB).",
+      "Error típico: asumir que usar MongoDB o un ODM como Mongoose hace inmune a la aplicación frente a inyecciones por no usar SQL.",
+      "Configurar el usuario de base de datos con mínimo privilegio por colección y evitar construir filtros `$regex` directamente con texto libre sin escapar metacaracteres."
+    ],
+    "ejemplo": "// Vulnerable en MongoDB si req.body.password es {\"$gt\": \"\"}\nconst user = await db.collection('users').findOne({ email, password });\n\n// Seguro: validar tipo estricto antes de consultar\nif (typeof email !== 'string' || typeof password !== 'string') {\n  return res.status(400).json({ error: 'Invalid input type' });\n}",
+    "entrevista": "NoSQL Injection aprovecha que los payloads JSON o query strings se parseen como objetos con operadores como $ne, $regex o $where; se mitiga validando tipos estrictos de datos, rechazando claves con $ y deshabilitando JavaScript en el motor."
+  }
+}

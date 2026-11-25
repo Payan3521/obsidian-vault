@@ -1,0 +1,392 @@
+{
+  "AI product management": {
+    "que": "Disciplina de gestión de producto especializada en sistemas probabilísticos basados en modelos de aprendizaje automático y modelos fundacionales (LLM/VLM). A diferencia del software determinista, el producto no se especifica solo con reglas lógicas, sino mediante conjuntos de evaluación (evals), umbrales de calidad y márgenes de error aceptables.",
+    "para": "Sirve para alinear las capacidades inciertas de un modelo con necesidades reales de negocio y expectativas de usuario sin sobredimensionar la infraestructura ni asumir riesgos de alucinación incontrolados. Se aplica desde la ideación de funcionalidades generativas o predictivas hasta su operación continua en producción.",
+    "como": "El AI Product Manager define primero la métrica de éxito del usuario y traduce los casos de uso en un conjunto de pruebas dorado (golden dataset) junto al equipo de ingeniería. Durante el desarrollo, se itera sobre prompts, arquitectura RAG o fine-tuning midiendo tasas de precisión, latencia (TTFT) y coste por consulta antes de lanzar. En producción, se instrumentan trazas con herramientas de observabilidad (p. ej. OpenTelemetry, Langfuse), se monitoriza la deriva de datos y se retroalimentan los fallos al pipeline de evaluación.",
+    "practicas": [
+      "Eval-driven development: redactar los criterios de evaluación y casos límite antes de optimizar el prompt o elegir un modelo.",
+      "Software tradicional vs AI PM: el software determinista falla por bugs reproducibles; los productos de IA fallan por distribuciones de entrada imprevistas y requieren diseño de recuperación ante errores.",
+      "Error típico: diseñar una arquitectura multiagente compleja antes de validar si un flujo determinista o una sola llamada con contexto estructurado resuelve el problema.",
+      "Definir presupuestos explícitos de latencia y coste por sesión desde la fase de descubrimiento."
+    ],
+    "ejemplo": "# Estructura mínima de especificación en AI PM (eval gate)\nmetricas_objetivo:\n  faithfulness_min: 0.92      # fidelidad al contexto recuperado\n  ttft_p95_ms: 800            # Time To First Token\n  coste_max_sesion_usd: 0.015\nfallback: \"Si score < 0.70, derivar a búsqueda clásica sin generación\"",
+    "entrevista": "En AI product management no especificamos código determinista, sino fronteras probabilísticas mediante evals, guardrails y métricas de latencia y coste unitario."
+  },
+  "Accesibilidad de productos IA": {
+    "que": "Conjunto de principios de diseño y estándares técnicos (como WCAG 2.2 y WAI-ARIA) adaptados a interfaces impulsadas por IA, donde el contenido se genera dinámicamente, fluye por streaming o utiliza modalidades conversacionales y multimodales. Garantiza que personas con discapacidades visuales, auditivas, motoras o cognitivas puedan operar y comprender respuestas no deterministas.",
+    "para": "Resuelve las barreras críticas que introducen los chatbots, los flujos en streaming y los componentes autogenerados que rompen lectores de pantalla o sobrecargan la memoria de trabajo. Es imprescindible en productos empresariales, sector público y aplicaciones de consumo masivo para cumplir normativas (EAA, ADA) y ampliar la usabilidad.",
+    "como": "En respuestas en streaming, la UI evita anunciar cada token al lector de pantalla usando regiones `aria-live=\"polite\"` con debouncing por bloques u oraciones completas, o anunciando al finalizar la generación. Las interfaces multimodales proporcionan transcripciones sincronizadas para entradas de voz, texto alternativo verificable en imágenes generadas y navegación completa por teclado para aceptar, editar o rechazar sugerencias (p. ej. en editores de código). Además, se evita la carga cognitiva excesiva ofreciendo resúmenes estructurados y controles simples de simplificación de lenguaje.",
+    "practicas": [
+      "Usar `aria-live=\"polite\"` con actualización al cierre de párrafo o fin de stream en lugar de `assertive` token a token, que hace ininteligible el lector de pantalla.",
+      "Asegurar que los botones de feedback, copia, regeneración y override sean enfocables por teclado y tengan etiquetas descriptivas (`aria-label`).",
+      "Chat visual vs accesibilidad multimodal: ofrecer siempre salida en texto plano estructurado y atajos de teclado equivalentes a gestos o comandos de voz.",
+      "Error común: ocultar indicadores de incertidumbre o fuentes solo mediante colores (rojo/verde) sin texto ni iconos semánticos."
+    ],
+    "ejemplo": "<div role=\"region\" aria-label=\"Respuesta del asistente\">\n  <div aria-live=\"polite\" aria-busy=\"true\" id=\"ai-output\">\n    <!-- Actualizar texto completo al finalizar o por bloques -->\n  </div>\n  <button type=\"button\" aria-label=\"Detener generación\">Detener</button>\n</div>",
+    "entrevista": "La accesibilidad en productos de IA exige controlar el ritmo de las regiones ARIA live durante el streaming, garantizar control total por teclado para el override y no depender solo del color para comunicar incertidumbre."
+  },
+  "Bucle de feedback de IA": {
+    "que": "Arquitectura cerrada (data flywheel) que captura señales explícitas e implícitas de los usuarios en producción para evaluar, curar datos y mejorar continuamente prompts, recuperadores (RAG) o pesos del modelo. Convierte la interacción cotidiana del producto en un activo de datos de entrenamiento y evaluación.",
+    "para": "Resuelve la brecha entre el rendimiento en laboratorio y el comportamiento real en producción, donde aparecen casos extremos y cambios de dominio. Se utiliza cuando un producto de IA necesita aumentar su precisión con el uso sin depender exclusivamente de anotación manual externa.",
+    "como": "Primero se instrumenta cada petición con un identificador de traza único (`trace_id`) que vincula entrada, contexto recuperado, salida y versión del modelo. Luego se recolectan señales implícitas (usuario acepta, copia, edita o abandona la sugerencia) y explícitas (pulgar arriba/abajo con categoría de error). Un pipeline de curación filtra sesgos y PII, agrupa los fallos frecuentes y los convierte en nuevos casos de test para el conjunto de evaluación o en pares de preferencia (DPO/RLHF) tras revisión humana.",
+    "practicas": [
+      "Priorizar señales implícitas de alto valor (tasa de aceptación o porcentaje de edición humana del texto generado) frente a botones de like/dislike, que suelen tener baja tasa de clic.",
+      "Incluir siempre anonimización de PII y consentimiento antes de incorporar interacciones de usuario a datasets de entrenamiento.",
+      "Feedback explícito vs implícito: el explícito diagnostica el motivo del fallo; el implícito mide el impacto real sin añadir fricción.",
+      "Evitar entrenar automáticamente sin validación humana (human-in-the-loop), ya que amplifica sesgos o envenena el modelo con salidas sintéticas defectuosas (model collapse)."
+    ],
+    "ejemplo": "{\n  \"trace_id\": \"tr_98a1c\",\n  \"model_version\": \"gpt-4o-2024-11\",\n  \"signal_type\": \"implicit_edit\",\n  \"accepted\": true,\n  \"edit_distance_ratio\": 0.14,\n  \"explicit_tag\": null\n}",
+    "entrevista": "Un buen bucle de feedback de IA vincula cada traza en producción con señales implícitas de edición o aceptación y las depura con revisión humana para alimentar primero los evals y luego el ajuste del sistema."
+  },
+  "Business case de IA": {
+    "que": "Análisis cuantitativo y financiero que evalúa la viabilidad económica, el retorno de la inversión (ROI), el coste total de propiedad (TCO) y los riesgos de una iniciativa de IA antes de comprometer presupuesto de ingeniería. Modela tanto el ahorro o ingreso incremental como la estructura de costes variables de inferencia y operación.",
+    "para": "Sirve para filtrar proyectos impulsados por entusiasmo tecnológico sin impacto medible y justificar la asignación de capital frente a dirección financiera o inversores. Se emplea antes de escalar una prueba de concepto (PoC) a producción.",
+    "como": "Se parte de una línea base actual (coste por ticket resuelto, horas de análisis manual o tasa de conversión actual) y se estima el delta atribuible a la IA ajustado por su tasa de acierto y necesidad de supervisión humana. En el lado de los costes se suman costes fijos (ingeniería, etiquetado, evaluación, cumplimiento legal) y costes variables (tokens de entrada/salida, almacenamiento vectorial, GPU). Finalmente se ejecuta un análisis de sensibilidad probando escenarios si el tráfico se multiplica por diez o si el coste de inferencia cambia.",
+    "practicas": [
+      "Calcular el TCO completo incluyendo costes ocultos: curación de datos, mantenimiento de pipelines RAG, guardrails y revisión humana de excepciones.",
+      "PoC vs Business Case: un PoC demuestra viabilidad técnica con 50 ejemplos; un business case demuestra rentabilidad unitaria a volumen real con fallos incluidos.",
+      "Error clásico: asumir automatización del 100 % en el cálculo de ahorros e ignorar el coste del tiempo humano revisando respuestas dudosas.",
+      "Definir un periodo de retorno (payback) realista y métricas de corte (kill criteria) si el margen no converge."
+    ],
+    "ejemplo": "Línea base: 10,000 tickets/mes * $4.50 = $45,000/mes\nCon IA (60% desvío neto, $0.08/ticket):\n  Coste inferencia: 10,000 * $0.08 = $800/mes\n  Tickets humanos: 4,000 * $4.50 = $18,000/mes\n  Ahorro bruto: $26,200/mes (antes de OpEx de ingeniería y QA)",
+    "entrevista": "Un business case de IA sólido no asume 100 % de automatización: descuenta el coste de supervisión humana, el TCO de datos y evals, y realiza análisis de sensibilidad sobre el tráfico."
+  },
+  "Caso de negocio de IA": {
+    "que": "Documento estratégico y de alineación organizacional que articula el problema de negocio, las alternativas de solución (determinista, API comercial, modelo propio), los supuestos de adopción, los riesgos regulatorios y el plan de retorno de valor de un producto de IA. Traduce la propuesta técnica a decisiones de inversión y gobernanza.",
+    "para": "Resuelve la desconexión entre equipos técnicos que optimizan métricas de modelo (F1, perplejidad) y áreas de negocio que requieren impacto en ingresos, eficiencia o retención. Se presenta ante comités de producto, finanzas y compliance para aprobar fases de desarrollo.",
+    "como": "El documento estructura primero la hipótesis de valor y compara la solución con IA frente a no hacer nada o usar automatización basada en reglas. A continuación detalla las restricciones operativas (latencia máxima, soberanía de datos, requisitos del EU AI Act), el esquema de financiación (CapEx vs OpEx en nube) y los hitos de validación por fases. Cada hito incluye criterios objetivos de avance o cancelación basados en métricas piloto medidas con usuarios reales.",
+    "practicas": [
+      "Evaluar siempre la alternativa no-IA (reglas, búsqueda léxica o mejora de UX): si resuelve el 80 % del problema a una fracción del coste, la IA no se justifica.",
+      "Incluir riesgos de propiedad intelectual, privacidad y dependencia de proveedor (vendor lock-in) como partidas explícitas de mitigación.",
+      "Establecer hitos con criterios Go/No-Go basados en retención y precisión en producción, no solo en demos internas.",
+      "Alinear el caso de negocio con el dueño presupuestario que absorbe tanto el beneficio como la factura variable de inferencia."
+    ],
+    "ejemplo": "# Resumen ejecutivo de Caso de Negocio\nProblema: 18 días promedio de cierre de revisión de contratos.\nAlternativa elegida: RAG híbrido sobre cláusulas + revisión legal obligatoria.\nCriterio Go/No-Go Piloto (90 días): reducir ciclo >= 35% con < 2% falsos negativos críticos.",
+    "entrevista": "Un caso de negocio de IA debe justificar por qué un enfoque probabilístico supera a reglas deterministas, definir criterios Go/No-Go medibles y contemplar riesgos legales y de vendor lock-in."
+  },
+  "Comercialización de IA": {
+    "que": "Conjunto de decisiones estratégicas para empaquetar, posicionar, fijar precios y distribuir capacidades de IA en el mercado de forma sostenible y rentable. Abarca desde el modelo de monetización (add-on, tiers por créditos o incluido en suscripción base) hasta los contratos de nivel de servicio (SLA) y derechos de uso de datos.",
+    "para": "Resuelve cómo transformar una capacidad técnica costosa en ingresos recurrentes defendibles frente a competidores con acceso a los mismos modelos fundacionales. Se define cuando un producto pasa de fase experimental a oferta comercial general.",
+    "como": "Comienza segmentando el valor percibido por el cliente (ahorro de tiempo, generación de ingresos o reducción de riesgo) para elegir entre venta como producto autónomo o complemento (copilot add-on). Luego se diseñan límites de uso (cuotas de créditos, asientos o acciones) que protejan el margen bruto frente a usuarios intensivos. Finalmente se establecen términos legales claros sobre propiedad de las salidas, cláusulas de no entrenamiento con datos del cliente (zero data retention) y soporte de cumplimiento empresarial.",
+    "practicas": [
+      "Monetizar el resultado o flujo de trabajo resuelto (workflow), no el acceso bruto a un chat genérico fácilmente replicable.",
+      "Evitar ofrecer \"IA ilimitada\" dentro de una tarifa plana sin techos razonables (fair use) o enrutamiento a modelos pequeños para tareas simples.",
+      "Add-on vs incluido en core: usar add-on cuando el valor es especializado y medible por rol; incluirlo en el plan base cuando evita la obsolescencia del producto frente a competidores.",
+      "Destacar garantías contractuales de privacidad (no reentrenamiento con datos del cliente) como palanca clave en ventas B2B."
+    ],
+    "ejemplo": "Estructura de empaquetado SaaS B2B:\n- Plan Core ($29/asiento): búsqueda semántica + 200 resúmenes/mes (modelo ligero).\n- Add-on AI Pro (+$20/asiento): flujos agénticos, 2,000 créditos/mes, ZDR contractual.",
+    "entrevista": "Comercializar IA con éxito requiere vender resultados de flujo de trabajo en lugar de wrappers genéricos, protegiendo el margen con límites de uso claros y garantías de privacidad B2B."
+  },
+  "Consentimiento informado de IA": {
+    "que": "Mecanismo legal y de experiencia de usuario mediante el cual se comunica de forma clara, previa y comprensible cuándo el usuario interactúa con un sistema de IA, qué datos se envían a qué modelos y cómo se procesarán o retendrán. Exige acción afirmativa y granular antes de activar funcionalidades que procesen datos personales o sensibles.",
+    "para": "Resuelve la asimetría de información y cumple obligaciones regulatorias (GDPR, EU AI Act) al evitar el procesamiento opaco o la reutilización encubierta de datos para entrenamiento. Se aplica en el onboarding, al activar conectores de datos y antes de enviar entradas a modelos externos.",
+    "como": "Antes de ejecutar la primera inferencia o habilitar una integración, la interfaz presenta un aviso conciso sin jerga legal oculta especificando el alcance (p. ej. qué documentos se indexan), el proveedor procesador y la política de retención/entrenamiento. El usuario otorga permiso mediante un control desmarcado por defecto (`opt-in`) registrado con marca temporal y versión de política en un log de auditoría. La aplicación permite revocar ese consentimiento desde preferencias y dispara la eliminación de embeddings o historiales asociados.",
+    "practicas": [
+      "Separar el consentimiento para ejecutar la funcionalidad en tiempo real del consentimiento opcional para usar datos en entrenamiento o mejora de modelos.",
+      "Explicar el alcance en lenguaje llano justo en el momento de uso (just-in-time disclosure), no enterrado en la página 40 de los términos de servicio.",
+      "Opt-in vs Opt-out: en datos sensibles o entrenamiento, aplicar siempre opt-in explícito y granular.",
+      "Garantizar que revocar el consentimiento purgue tanto logs de prompts como vectores derivados en la base vectorial."
+    ],
+    "ejemplo": "{\n  \"user_id\": \"usr_442\",\n  \"feature\": \"email_assistant_rag\",\n  \"inference_consent\": true,\n  \"training_opt_in\": false,\n  \"policy_version\": \"2026-03\",\n  \"timestamp\": \"2026-11-20T14:22:00Z\"\n}",
+    "entrevista": "El consentimiento informado en IA debe ser granular, just-in-time y desacoplar el permiso de inferencia del permiso para entrenar modelos, con trazabilidad de auditoría y revocación efectiva."
+  },
+  "Coste variable de IA": {
+    "que": "Gasto marginal que se incrementa directamente con cada petición, token procesado, segundo de cómputo GPU o llamada a API externa que realiza un usuario. A diferencia del SaaS tradicional donde el coste marginal por clic tiende a cero, en productos de IA cada interacción consume cómputo significativo.",
+    "para": "Sirve para proyectar gastos operativos reales al escalar usuarios y detectar rápidamente qué funcionalidades destruyen el margen de contribución. Es crítico en la arquitectura técnica y financiera de cualquier producto basado en LLM, audio o generación visual.",
+    "como": "Cada flujo se descompone en sus componentes variables: tokens de prompt (incluyendo historial y fragmentos RAG), tokens generados (normalmente 3x a 5x más caros que los de entrada), llamadas a APIs de embeddings, re-rankers y herramientas agénticas en bucle. Este gasto se monitorea por usuario y por funcionalidad mediante telemetría de uso (`usage.prompt_tokens`, `usage.completion_tokens`). Para reducirlo se aplican técnicas como prompt caching, enrutamiento de modelos (model routing), compresión de contexto y cuantización en despliegues propios.",
+    "practicas": [
+      "Controlar el crecimiento cuadrático o acumulativo del historial conversacional aplicando ventanas deslizantes o resúmenes periódicos.",
+      "Implementar model routing: enviar clasificación o extracción simple a modelos pequeños/baratos y reservar modelos frontier para razonamiento complejo.",
+      "Usar prompt caching en instrucciones largas y fijas del sistema para recortar el coste de tokens de entrada repetidos.",
+      "Error grave: permitir bucles de agentes autónomos sin `max_iterations` ni presupuesto máximo de tokens por ejecución."
+    ],
+    "ejemplo": "# Cálculo de coste variable por conversación (5 turnos)\n# Modelo ejemplo: $2.50 / 1M input, $10.00 / 1M output\ntokens_in = 12_000   # incluye historial acumulado y RAG\ntokens_out = 2_000\ncoste = (tokens_in / 1e6) * 2.50 + (tokens_out / 1e6) * 10.00\n# coste = $0.030 + $0.020 = $0.050 por sesión",
+    "entrevista": "A diferencia del SaaS clásico de coste marginal casi nulo, la IA tiene un coste variable relevante por token y bucle agéntico que se controla con caching, model routing y límites de contexto."
+  },
+  "Delegación progresiva": {
+    "que": "Patrón de diseño de interacción donde el usuario cede autonomía al sistema de IA de manera gradual, pasando de asistencia manual a automatización supervisada y, solo tras validar confianza, a ejecución autónoma acotada. Permite calibrar el nivel de agencia según el riesgo de la tarea y la familiaridad del usuario.",
+    "para": "Resuelve el rechazo inicial por desconfianza o el riesgo de errores catastróficos cuando se introduce un agente autónomo desde el primer día. Se aplica en copilotos de código, flujos financieros, gestión de CRM y automatización operativa.",
+    "como": "El sistema modela niveles de autonomía explícitos: Nivel 1 (solo sugiere o redacta borrador), Nivel 2 (prepara el plan de acción y solicita aprobación en un clic), Nivel 3 (ejecuta acciones reversibles en lote y notifica resumen) y Nivel 4 (actúa autónomamente dentro de reglas y umbrales definidos). A medida que el historial muestra alta tasa de aceptación sin ediciones por parte del usuario, la UI propone elevar la delegación para tareas repetitivas de bajo riesgo. Cualquier cambio de alcance o caída de confianza vuelve a exigir confirmación explícita.",
+    "practicas": [
+      "Empezar siempre por flujos de lectura o borrador (draft-first) antes de habilitar escritura o envío externo automático.",
+      "Vincular el nivel de delegación con la reversibilidad de la acción: enviar un email masivo o borrar datos nunca debe escalar automáticamente sin umbral estricto.",
+      "Automatización total vs delegación progresiva: la delegación progresiva construye confianza verificable y reduce la fatiga de revisión.",
+      "Mostrar claramente qué acciones puede ejecutar el agente hoy y permitir al usuario degradar la autonomía en cualquier momento."
+    ],
+    "ejemplo": "niveles_autonomia = {\n    \"resumir_ticket\": \"auto_execute\",\n    \"etiquetar_prioridad\": \"auto_with_undo\",\n    \"responder_cliente\": \"require_approval\",\n    \"emitir_reembolso\": \"manual_only\"\n}",
+    "entrevista": "La delegación progresiva escala la autonomía del agente por niveles según la reversibilidad de la acción y la confianza demostrada, evitando exigir fe ciega desde el primer uso."
+  },
+  "Descubrimiento de producto con IA": {
+    "que": "Fase exploratoria orientada a validar si un problema de usuario existe, tiene suficiente valor económico y si la IA es técnicamente viable y superior a soluciones deterministas para resolverlo. Combina investigación cualitativa de usuarios con experimentación rápida sobre datos reales y evaluación de viabilidad del modelo.",
+    "para": "Evita construir soluciones costosas buscando un problema (\"solution in search of a problem\") o prometer experiencias que los modelos actuales no alcanzan con fiabilidad suficiente. Se ejecuta antes de redactar especificaciones definitivas o entrenar modelos propios.",
+    "como": "Se comienza observando flujos de trabajo reales (contextual inquiry) para detectar cuellos de botella cognitivos: síntesis de información, clasificación ambigua o redacción repetitiva. En paralelo, se realizan pruebas de viabilidad con prototipos ligeros (\"Wizard of Oz\" o prompts sobre muestras representativas de datos del cliente, no datos limpios sintéticos). El equipo mide tanto el deseo del usuario (¿confía en el resultado y lo integra?) como la frontera técnica (¿qué tasa de fallo ocurre en datos ruidosos?) antes de aprobar la fase de construcción.",
+    "practicas": [
+      "Probar los primeros prototipos con datos reales sucios del usuario (PDFs mal escaneados, jerga interna) desde la semana uno.",
+      "Usar pruebas Wizard of Oz (humano simulando la IA detrás de la UI) para validar el valor UX antes de invertir en pipelines complejos.",
+      "Descubrimiento tradicional vs descubrimiento IA: en IA el riesgo de viabilidad técnica (¿el modelo logra >90% de precisión aquí?) debe validarse en paralelo al riesgo de valor.",
+      "Identificar desde el inicio cuál es la tolerancia al error del usuario en ese contexto (entretenimiento vs diagnóstico clínico)."
+    ],
+    "ejemplo": "# Matriz rápida de validación en descubrimiento\n1. Frecuencia del dolor: diario (>5 veces/semana)\n2. Tolerancia al error: media (el usuario ya revisa borradores)\n3. Prueba con 100 casos reales: 84% útiles con RAG básico\n-> Decisión: avanzar a piloto acotado con UI de revisión rápida.",
+    "entrevista": "En descubrimiento de producto con IA validamos simultáneamente el valor para el usuario y la viabilidad probabilística sobre datos reales y sucios antes de construir infraestructura."
+  },
+  "Diseño de interacción con IA": {
+    "que": "Rama del diseño de interacción (IxD) centrada en definir cómo los humanos inician, guían, inspeccionan y corrigen sistemas generativos o predictivos. Trasciende la interfaz conversacional pura integrando controles gráficos, contexto implícito y manipulación directa.",
+    "para": "Resuelve el \"problema de la página en blanco\" (blank canvas problem) donde el usuario no sabe qué pedir por chat, así como la fricción de iterar prompts largos. Se aplica en cualquier interfaz donde la IA asista al usuario dentro de herramientas de productividad, diseño, análisis o código.",
+    "como": "En lugar de delegar todo a una caja de texto libre, el diseñador captura el contexto actual del espacio de trabajo (documento abierto, selección de texto, estado de la tabla) para prellenar la intención. Ofrece acciones contextuales (botones rápidos, menús slash, chips de refinamiento), salidas estructuradas editables directamente en el lienzo (canvas/inline diff) y bucles cortos de regeneración parcial. De este modo, el usuario dirige mediante reconocimiento y selección en vez de redactar especificaciones complejas desde cero.",
+    "practicas": [
+      "Evitar usar un chatbot genérico cuando una acción contextual in-situ (botón, inline diff o autocompletado) resuelve la tarea en un clic.",
+      "Facilitar la edición directa de la salida generada (p. ej. ajustar un campo de un formulario generado) sin obligar a reescribir todo el prompt.",
+      "Chat puro vs UI híbrida (generative/canvas UI): las interfaces híbridas reducen drásticamente el tiempo hasta el resultado útil.",
+      "Diseñar explícitamente los estados vacíos (empty states) con ejemplos accionables que eduquen sobre las capacidades reales del sistema."
+    ],
+    "ejemplo": "// Acción contextual en editor (sin caja de chat libre)\nconst aiAction = {\n  trigger: \"selection_toolbar\",\n  context: { selectedText, documentTone, cursorLine },\n  options: [\"Resumir\", \"Cambiar a tono técnico\", \"Convertir a tabla\"]\n};",
+    "entrevista": "El buen diseño de interacción con IA supera el chatbot de caja en blanco usando contexto implícito de la UI, acciones contextuales y edición directa sobre salidas estructuradas."
+  },
+  "Economía unitaria de IA": {
+    "que": "Modelo financiero que mide los ingresos, el coste directo de entrega y la rentabilidad generada por una unidad fundamental de negocio (una cuenta, un asiento, una sesión o una tarea completada) en un producto con IA. Integra explícitamente el coste de cómputo por inferencia dentro del cálculo del margen.",
+    "para": "Sirve para determinar si el crecimiento de usuarios aumenta las ganancias o acelera las pérdidas por consumo intensivo de modelos. Es esencial para fijar precios, negociar contratos con proveedores de modelos y evaluar la salud financiera ante inversores.",
+    "como": "Se calcula el ingreso promedio por usuario (ARPU) frente al coste de servirlo (COGS de IA): tokens consumidos, llamadas a bases vectoriales, caché, embeddings de ingesta y soporte técnico atribuible. Como el uso suele seguir una distribución asimétrica (power users consumen 10x más que la media), se segmenta la economía unitaria por percentiles (P50, P90, P99) en lugar de usar solo promedios. Con ello se obtienen el margen bruto por cohorte, el valor de vida del cliente (LTV) y la relación LTV/CAC.",
+    "practicas": [
+      "Analizar siempre los percentiles P90 y P99 de consumo por usuario en tarifa plana; un promedio sano puede ocultar cohortes de usuarios muy deficitarios.",
+      "Incluir el coste de indexación/ingesta de documentos (embeddings + OCR) aunque el usuario apenas realice consultas después.",
+      "SaaS clásico vs IA unit economics: en SaaS tradicional el margen bruto ronda 75-85%; en productos IA intensivos puede caer al 40-65% si no se optimiza inferencia.",
+      "Medir el coste por tarea resuelta con éxito (cost per successful outcome), no solo el coste por llamada API."
+    ],
+    "ejemplo": "ARPU mensual = $30.00\nCOGS infraestructura base = $1.50\nCOGS IA (P50): $3.20 -> Margen bruto: 84.3%\nCOGS IA (P99 power user): $34.00 -> Margen: -$5.50 (pérdida neta)\nAcción: limitar cuota o enrutar exceso a modelo mini.",
+    "entrevista": "La economía unitaria de IA debe analizarse por percentiles de consumo y coste por tarea exitosa, porque los power users en tarifa plana pueden volver negativo el margen bruto."
+  },
+  "Engagement con IA": {
+    "que": "Grado de interacción recurrente, profunda y productiva que mantienen los usuarios con las funcionalidades de IA dentro de un producto. Mide no solo cuántas veces se invoca al modelo, sino si sus salidas se adoptan e integran en el flujo de trabajo real.",
+    "para": "Resuelve el fenómeno de \"turismo de IA\" (curiosidad inicial seguida de abandono rápido cuando pasa la novedad). Se utiliza para distinguir funcionalidades que aportan utilidad sostenida de aquellas que solo generan ruido o fricción.",
+    "como": "Se instrumentan eventos granulares del ciclo de vida de la interacción: activación (primer prompt o acción contextual), completado de respuesta, tasa de aceptación o copia (adoption rate), tasa de edición posterior y frecuencia semanal de retorno (WAU/MAU). También se miden señales negativas como regeneraciones consecutivas repetidas, cancelaciones tempranas de stream o cambio inmediato a flujo manual. Estos eventos alimentan cohortes de retención para comparar usuarios que adoptan la IA frente a los que no.",
+    "practicas": [
+      "No optimizar por \"número de mensajes enviados\" (vanity metric): más turnos en un chat de soporte suelen indicar que la IA no entendió ni resolvió el problema a la primera.",
+      "Medir tasa de adopción real (código aceptado sin borrarlo a los 30 segundos, texto pegado, acción confirmada).",
+      "Engagement en IA vs redes sociales: en herramientas de productividad, menor tiempo en pantalla y menos turnos para lograr la tarea significan mejor engagement de valor.",
+      "Correlacionar el uso de IA en los primeros 7 días con la retención a 30 y 90 días."
+    ],
+    "ejemplo": "Metricas_Engagement_Copilot:\n  acceptance_rate: 31%       # sugerencias aceptadas vs mostradas\n  retention_30d_accepted_code: 82%\n  regeneration_rate: 12%     # >25% indica mala alineación de prompt\n  time_to_value_sec: 14",
+    "entrevista": "Un buen engagement en IA no se mide por más turnos de chat, sino por tasas de aceptación efectiva, menor fricción hasta el resultado y mayor retención de cohortes frente a usuarios sin IA."
+  },
+  "Estados de incertidumbre en UI": {
+    "que": "Convenciones visuales, textuales e interactivas diseñadas para comunicar al usuario que una salida de IA es probabilística, incompleta, ambigua o de baja confianza. Evitan presentar con falsa autoridad gráfica información que podría ser errónea o inventada.",
+    "para": "Mitiga el sesgo de automatización (automation bias), por el cual los humanos confían ciegamente en respuestas redactadas con tono seguro. Se aplica en diagnósticos, resúmenes legales, búsqueda RAG sin coincidencias exactas, extracción de datos y predicciones.",
+    "como": "Cuando el recuperador obtiene baja similitud semántica, el modelo emite un nivel bajo de confianza o faltan fuentes verificables, la UI cambia de presentación afirmativa a un estado degradado explícito. Esto incluye insignias de advertencia, resaltado de fragmentos no respaldados por citas, presentación de múltiples interpretaciones alternativas (top-k) o mensajes directos de abstención (\"No se encontró evidencia suficiente en tus documentos\"). Además, ofrece un botón directo para inspeccionar la fuente original o reformular la consulta.",
+    "practicas": [
+      "Implementar abstención elegante (graceful abstention): es preferible que la UI diga qué falta o qué no sabe a que rellene huecos con alucinaciones.",
+      "Diferenciar visualmente los hechos citados de las inferencias o síntesis generadas por el modelo.",
+      "Certeza aparente vs incertidumbre calibrada: nunca mostrar predicciones dudosas con el mismo peso tipográfico y diseño que datos deterministas de base de datos.",
+      "Evitar porcentajes crudos sin calibración (p. ej. \"73.4% de confianza\") si confunden al usuario; usar categorías claras (Alta / Requiere revisión) con motivo."
+    ],
+    "ejemplo": "{\n  \"status\": \"low_evidence\",\n  \"answer\": \"No hay cláusulas explícitas sobre penalización en el anexo B.\",\n  \"unverified_claims\": [\"plazo estándar de 30 días\"],\n  \"suggested_action\": \"Subir contrato marco o revisar manualmente sección 4.\"\n}",
+    "entrevista": "Representar la incertidumbre en UI evita el sesgo de automatización mediante citas verificables, resaltado de afirmaciones sin respaldo y mecanismos explícitos de abstención."
+  },
+  "Explicabilidad en la UI": {
+    "que": "Presentación comprensible dentro de la interfaz de los factores, fuentes, pasos de razonamiento o reglas que llevaron a un sistema de IA a producir una recomendación o salida concreta. Traduce señales internas del modelo o del pipeline en evidencia verificable para el usuario final.",
+    "para": "Permite auditar decisiones, detectar errores rápidamente y generar confianza justificada en entornos críticos (finanzas, salud, RRHH, código). Se utiliza cuando el usuario es responsable de validar o aprobar la decisión sugerida.",
+    "como": "En sistemas RAG, la UI adjunta citas interactivas en línea (`[1]`, `[2]`) que al hacer clic abren el fragmento exacto del documento fuente resaltado. En modelos tabulares o de scoring (p. ej. riesgo crediticio), se muestran los principales factores contribuyentes positivos y negativos (derivados de valores SHAP o pesos locales) traducidos a lenguaje de negocio. En flujos agénticos, se despliega un panel colapsable con la traza de herramientas invocadas y parámetros consultados sin saturar la vista principal.",
+    "practicas": [
+      "Usar divulgación progresiva (progressive disclosure): mostrar primero la respuesta limpia con citas discretas y permitir expandir el razonamiento o las fuentes bajo demanda.",
+      "Verificar que las citas mostradas en UI apunten al fragmento real recuperado y no sean URLs o referencias alucinadas por el LLM.",
+      "Explicabilidad técnica (SHAP/atención) vs explicabilidad de usuario: traducir pesos matemáticos a causas accionables comprensibles por el rol.",
+      "No confundir el texto de Chain-of-Thought generado por un LLM con una explicación causal fiel del modelo; en RAG, priorizar la trazabilidad a fuentes."
+    ],
+    "ejemplo": "<p>El límite recomendado es $5,000\n  <button class=\"citation\" data-source-id=\"doc_12#p4\">[Política v2, p.4]</button>\n</p>\n<details><summary>Ver pasos del agente (2 herramientas)</summary>\n  <ol><li>consultado_saldo() -> $18,400</li><li>regla_antiguedad() -> 24 meses</li></ol>\n</details>",
+    "entrevista": "La explicabilidad en UI aplica divulgación progresiva: presenta respuestas limpias con citas verificables al fragmento original y trazas colapsables de herramientas o factores clave."
+  },
+  "Feedback de usuario sobre IA": {
+    "que": "Mecanismos dentro de la interfaz y procesos de producto destinados a recoger valoraciones cualitativas y cuantitativas del usuario sobre la calidad, utilidad y seguridad de las respuestas de la IA. Incluye tanto controles rápidos de corrección como reportes estructurados de fallos.",
+    "para": "Sirve para diagnosticar modos de fallo específicos (alucinaciones, tono inadecuado, sesgo, respuesta incompleta) que las métricas automáticas no siempre detectan. Es clave para priorizar mejoras del sistema y medir satisfacción percibida.",
+    "como": "Al pie de cada salida o en el flujo de edición se colocan controles discretos de valoración (positivo/negativo) junto con acciones naturales como copiar, reintentar o corregir directamente. Cuando el usuario marca una respuesta negativa o reporta un error, se despliega un microformulario opcional con categorías accionables (\"Información incorrecta\", \"No siguió instrucciones\", \"Falta contexto\"). Estos metadatos se envían vía API al backend de telemetría asociados al ID de generación y al prompt exacto.",
+    "practicas": [
+      "Hacer que dar feedback negativo tome un clic y ofrecer categorías específicas de error para facilitar la clasificación automática.",
+      "Capturar el valor del feedback en el flujo natural: si el usuario edita el borrador de la IA antes de enviarlo, medir la diferencia (diff) vale más que una encuesta.",
+      "Evitar interrumpir al usuario con popups invasivos tras cada respuesta.",
+      "Cerrar el ciclo (close the loop) corrigiendo errores reportados recurrentes en los tests de regresión del sistema."
+    ],
+    "ejemplo": "POST /api/v1/feedback\n{\n  \"generation_id\": \"gen_77f2\",\n  \"rating\": \"down\",\n  \"reason\": \"hallucinated_citation\",\n  \"user_correction\": \"El artículo correcto es el 14, no el 22.\"\n}",
+    "entrevista": "El feedback efectivo sobre IA combina señales sin fricción en el flujo (ediciones y copias) con reportes categóricos de error ligados al ID de generación."
+  },
+  "Gestión de producto de IA": {
+    "que": "Práctica integral de dirigir el ciclo de vida de productos basados en IA, conectando descubrimiento de mercado, diseño de experiencia probabilística, arquitectura de datos/modelos, evaluación continua y viabilidad económica. Coordina perfiles multidisciplinares de producto, ingeniería de ML/IA, diseño y cumplimiento.",
+    "para": "Resuelve la complejidad única de lanzar software cuyo comportamiento evoluciona con los datos, los prompts y las actualizaciones de los modelos base. Se aplica para transformar capacidades técnicas en productos fiables, rentables y alineados con marcos regulatorios.",
+    "como": "El equipo gestiona un roadmap dual: por un lado nuevas funcionalidades para el usuario y por otro mejoras en precisión, latencia y reducción de costes del sistema de IA. Antes de liberar cambios de prompt o de modelo, se exigen puertas de calidad (eval gates) automatizadas más pruebas shadow o canary con un porcentaje pequeño de tráfico. Tras el lanzamiento, la gestión continúa monitorizando métricas de negocio, seguridad (prompt injection, fuga de datos) y costes unitarios para decidir entre APIs externas, modelos open-weight o fine-tuning.",
+    "practicas": [
+      "Tratar prompts, configuraciones RAG y rúbricas de evaluación como artefactos versionados bajo control de cambios (CI/CD), igual que el código.",
+      "Evaluar \"construir vs comprar\" periódicamente: comenzar con APIs frontier para validar valor y considerar modelos propios/destilados solo al estabilizar escala y margen.",
+      "Planificar actualizaciones de modelos base con suites de regresión listas para evitar que un nuevo checkpoint rompa comportamientos existentes.",
+      "Integrar criterios de privacidad, seguridad y cumplimiento desde la definición del requisito, no al final."
+    ],
+    "ejemplo": "# Pipeline de lanzamiento en Gestión de Producto de IA\nCambio (prompt / modelo / chunking)\n  -> Suite offline (200 casos dorados, score >= 0.90)\n  -> Canary 5% tráfico (monitorizar latencia P95 y coste)\n  -> Rollout 100%",
+    "entrevista": "Gestionar un producto de IA implica operar un ciclo continuo de versionado de prompts y evals, despliegues canary ante cambios de modelo y balance constante entre calidad, latencia y coste."
+  },
+  "Go-to-market de IA": {
+    "que": "Estrategia integral de lanzamiento, posicionamiento, canales de adquisición, habilitación comercial y adopción inicial para llevar un producto o funcionalidad de IA al mercado. Alinea la propuesta de valor real con las expectativas de compradores y usuarios finales.",
+    "para": "Resuelve el escepticismo del mercado ante promesas infladas de IA y los largos ciclos de aprobación técnica, legal y de seguridad en empresas (especialmente B2B). Se diseña antes del lanzamiento beta público o de la disponibilidad general (GA).",
+    "como": "El plan define primero el perfil de cliente ideal (ICP) con mayor dolor medible y tolerancia tecnológica, y articula la narrativa en torno a métricas operativas concretas (horas ahorradas, reducción de errores) en lugar de \"magia de IA\". Para ventas B2B se preparan activos técnicos previos como hojas de arquitectura de seguridad, pruebas piloto acotadas con datos de muestra (sandbox) y documentación de privacidad (SOC2, Zero Data Retention). En paralelo se diseña el onboarding guiado para acelerar el primer momento de valor (Aha! moment) sin exigir al usuario ser experto en prompting.",
+    "practicas": [
+      "Vender el caso de uso específico y sus resultados medibles, evitando el posicionamiento genérico de \"asistente con IA para todo\".",
+      "Preparar desde el día uno paquetes de seguridad y privacidad (diagramas de flujo de datos, subprocesadores, retención) para desbloquear compras B2B.",
+      "PLG (Product-Led Growth) vs Enterprise GTM: el PLG funciona con demos interactivas inmediatas sin fricción; el Enterprise requiere pilotos con KPIs pactados y respaldo legal.",
+      "No prometer autonomía infalible en marketing; calibrar expectativas reduce drásticamente el churn temprano."
+    ],
+    "ejemplo": "Checklist GTM B2B IA:\n1. Sandbox con datos sintéticos listos para demo en < 2 minutos.\n2. Security Trust Pack (ZDR, cifrado, ubicación de inferencia).\n3. Piloto de 30 días con 2 KPIs pactados y equipo campeón designado.",
+    "entrevista": "Un go-to-market de IA exitoso calibra expectativas reales sin hype, reduce el tiempo al primer valor con plantillas o sandbox y despeja objeciones de privacidad y seguridad desde el inicio."
+  },
+  "Impacto social de IA": {
+    "que": "Análisis y gestión de las consecuencias éticas, laborales, ambientales y de equidad que genera el despliegue de un sistema de IA en usuarios, comunidades y la sociedad en general. Incluye sesgos algorítmicos, desplazamiento de tareas, huella energética y propagación de desinformación.",
+    "para": "Sirve para anticipar daños reputacionales, discriminaciones sistémicas o sanciones regulatorias antes de que escalen en producción. Es obligatorio en sistemas de alto impacto (crédito, empleo, salud, educación, justicia) y relevante en cualquier producto de alcance masivo.",
+    "como": "Durante el diseño y antes del lanzamiento se realizan Evaluaciones de Impacto Algorítmico o de Derechos Fundamentales (FRIA en el EU AI Act). Se auditan los datasets y salidas por subgrupos demográficos para medir disparidades en tasas de falsos positivos o negativos, se evalúa el uso indebido previsible (adversarial misuse, deepfakes, spam) y se estima el consumo energético de entrenamiento e inferencia. Posteriormente se establecen mitigaciones técnicas (filtros de contenido, marca de agua/C2PA, supervisión humana) y canales de apelación para afectados.",
+    "practicas": [
+      "Realizar evaluaciones desagregadas por grupos (edad, género, idioma, región) en lugar de mirar solo la precisión global promedio.",
+      "Evaluar el uso dual o malicioso (red teaming) antes de abrir APIs o capacidades generativas masivas.",
+      "Estimar la huella de carbono e hídrica eligiendo modelos eficientes (destilados o cuantizados) cuando no haga falta un modelo masivo.",
+      "Ofrecer vías claras de revisión y apelación humana cuando el sistema influya en oportunidades o derechos de personas."
+    ],
+    "ejemplo": "# Auditoría simple de equidad por subgrupo\nresultados_grupo_A = {\"tpr\": 0.91, \"fpr\": 0.04}\nresultados_grupo_B = {\"tpr\": 0.74, \"fpr\": 0.12}\n# Brecha de 17 pts en sensibilidad -> bloquea despliegue hasta rebalancear datos",
+    "entrevista": "Evaluar el impacto social de un producto de IA exige auditorías de sesgo desagregadas por subgrupos, red teaming de uso malicioso, eficiencia energética y vías de apelación humana."
+  },
+  "Indicadores de progreso de IA": {
+    "que": "Elementos visuales y textuales que comunican al usuario el estado actual de ejecución de una tarea de IA cuya latencia es alta o variable (búsqueda, planificación de agente, generación multimodal). Reducen la ansiedad de espera y distinguen entre procesamiento activo y bloqueo.",
+    "para": "Resuelve el abandono prematuro o los reenvíos duplicados cuando una operación tarda entre 2 y 60 segundos, mucho más que una consulta web tradicional. Se usan en flujos RAG multi-paso, razonamiento extendido (reasoning models), agentes con herramientas y generación de audio o vídeo.",
+    "como": "La interfaz reemplaza el spinner genérico por un indicador progresivo conectado a eventos reales del servidor mediante Server-Sent Events (SSE) o WebSockets. A medida que el backend avanza por etapas (\"Buscando en 4 documentos...\", \"Verificando citas...\", \"Redactando respuesta...\"), emite eventos de estado que actualizan una lista de pasos o una barra indeterminada con tiempo estimado o botón de cancelación (`AbortController`). Si ocurre un fallo de red o timeout, el indicador transiciona inmediatamente a un estado de reintento explícito.",
+    "practicas": [
+      "Mostrar pasos semánticos reales provenientes del backend (\"Consultando base de conocimiento\"), nunca textos falsos temporizados que engañan si la petición se cuelga.",
+      "Spinner genérico vs progreso por etapas: para latencias < 1s basta skeleton/spinner; > 2-3s usar pasos de estado claros; > 15s considerar ejecución asíncrona con notificación.",
+      "Incluir siempre un botón funcional de \"Cancelar / Detener\" conectado a la cancelación real del stream en backend para ahorrar tokens.",
+      "Mantener estabilidad visual (layout shift mínimo) reservando espacio o usando skeletons limpios."
+    ],
+    "ejemplo": "// Evento SSE de progreso real desde el backend\nevent: status\ndata: {\"step\": \"retrieval\", \"message\": \"Analizando 3 documentos relevantes...\"}\n\nevent: token\ndata: {\"delta\": \"Según el informe trimestral...\"}",
+    "entrevista": "Los indicadores de progreso en IA deben reflejar etapas reales emitidas por el backend vía SSE, ofrecer cancelación real para ahorrar inferencia y pasar a flujo asíncrono si la tarea supera unos segundos."
+  },
+  "Localización e idioma en IA": {
+    "que": "Adaptación lingüística, cultural, legal y de formato de un producto de IA para operar eficazmente en distintos mercados y lenguas, abarcando tanto la interfaz como las respuestas del modelo, prompts y bases de conocimiento. Va más allá de traducir cadenas de UI estáticas.",
+    "para": "Resuelve la pérdida de calidad, errores culturales, alucinaciones por traducción literal y problemas de cumplimiento local cuando un producto diseñado en inglés se despliega globalmente. Es vital en comercio electrónico, soporte al cliente, educación y herramientas legales o fiscales.",
+    "como": "El pipeline detecta o respeta la configuración regional (`locale`, p. ej. `es-MX`, `es-ES`, `ja-JP`) e inyecta reglas de formato (moneda, fechas, tono formal/informal, normativa local) en el prompt del sistema o en la capa de posprocesamiento. Los evaluadores (evals) deben replicarse con hablantes nativos para cada idioma soportado, evitando depender de traducciones automáticas para medir calidad. Asimismo, el chunking y los embeddings en RAG deben usar modelos multilingües o tokenizadores adecuados para escrituras no latinas y garantizar soporte RTL (de derecha a izquierda) en la UI.",
+    "practicas": [
+      "No asumir que un prompt en inglés funciona igual al traducirse literalmente; validar y ajustar las instrucciones por idioma y variante regional.",
+      "Adaptar las medidas de seguridad y moderación (guardrails) a modismos, jerga y sensibilidades culturales locales.",
+      "Localización clásica (i18n) vs localización IA: además de traducir la interfaz, hay que localizar el tono del modelo, la base documental RAG y las métricas de evaluación.",
+      "Soporte técnico correcto de UTF-8, segmentación CJK (chino/japonés/coreano) y dirección RTL en componentes de chat y streaming."
+    ],
+    "ejemplo": "{\n  \"locale\": \"es-MX\",\n  \"currency\": \"MXN\",\n  \"formality\": \"usted\",\n  \"rag_index\": \"kb_latam_es\",\n  \"prompt_lang_lock\": \"Responde siempre en español de México.\"\n}",
+    "entrevista": "Localizar un producto de IA no es solo i18n de la interfaz: exige adaptar prompts, bases RAG, moderación cultural, formatos regionales y suites de evaluación nativas por idioma."
+  },
+  "Margen de IA": {
+    "que": "Porcentaje de beneficio bruto que queda tras restar a los ingresos del producto todos los costes directos de entregar el servicio de IA (inferencia, GPU, APIs de terceros, almacenamiento vectorial y soporte directo). Es el indicador clave de sostenibilidad económica de una empresa AI-first.",
+    "para": "Permite saber si el negocio es escalable como software o si opera con estructura de costes cercana a servicios intensivos en recursos. Se monitoriza mensualmente por producto, plan comercial y segmento de clientes para guiar decisiones de arquitectura y pricing.",
+    "como": "Se calcula como `(Ingresos - COGS_IA) / Ingresos`, donde `COGS_IA` incluye facturación de proveedores LLM, cómputo de inferencia propia, costes de embedding/re-ranking, observabilidad ligada al tráfico y revisión humana necesaria como parte del servicio. Si el margen cae por debajo del objetivo (p. ej. < 60-70% en SaaS), ingeniería optimiza mediante destilación a modelos más pequeños, caché semántica, cuantización o límites de contexto, mientras producto ajusta precios o cuotas.",
+    "practicas": [
+      "Diferenciar el margen bruto de la fase experimental (aceptable temporalmente bajo para aprender) del margen objetivo en madurez.",
+      "Reducir el coste de tokens innecesarios antes de subir precios: muchas veces el 50% del gasto proviene de system prompts inflados o contextos RAG sin filtrar.",
+      "SaaS puro vs SaaS con IA: vigilar que la compresión de margen no impida financiar I+D y ventas.",
+      "Atribuir los costes de inferencia por feature mediante tags en las llamadas al gateway de modelos para identificar funciones deficitarias."
+    ],
+    "ejemplo": "Ingresos plan Pro: $100,000/mes\nCOGS: $18,000 (API LLM) + $4,000 (Vector DB + GPU) + $3,000 (infra SaaS)\nMargen bruto IA = ($100,000 - $25,000) / $100,000 = 75%",
+    "entrevista": "El margen bruto en IA suele ser inferior al SaaS clásico debido al COGS de inferencia, por lo que requiere atribución de costes por feature, caché semántica y model routing para sostenerse."
+  },
+  "Mostrar confianza al usuario": {
+    "que": "Conjunto de estrategias de diseño y comunicación para transmitir el nivel real de fiabilidad de una salida de IA, calibrando la confianza del usuario para que confíe cuando el sistema acierta y verifique cuando el sistema duda. Busca confianza calibrada, no confianza ciega.",
+    "para": "Resuelve dos extremos dañinos: el rechazo total tras ver un primer error del modelo (algorithm aversion) y la aceptación acrítica de errores graves (over-reliance). Se aplica en asistentes de decisión, análisis de datos, medicina, derecho y herramientas de desarrollo.",
+    "como": "La interfaz combina señales de procedencia (fuentes enlazadas, fecha de actualización de los datos), transparencia de alcance (\"Analizados 12 de 50 documentos\") e indicadores cualitativos o umbrales verificados de seguridad. Cuando el resultado proviene de una consulta determinista a una base de datos (p. ej. saldo exacto) frente a una síntesis probabilística, se etiquetan de forma distinta. Además, se facilita la verificación rápida lado a lado (split view entre documento original y resumen generado).",
+    "practicas": [
+      "Facilitar la verificación rápida (p. ej. vista lado a lado o clic a la línea exacta) es más efectivo para generar confianza que mostrar un número abstracto de confianza.",
+      "Calibrar el tono textual del sistema: evitar lenguaje hiperseguro cuando la evidencia recuperada es escasa o contradictoria.",
+      "Confianza ciega vs confianza calibrada: el objetivo es que el usuario sepa exactamente cuándo comprobar el dato.",
+      "Comunicar claramente las limitaciones del sistema desde el primer uso para evitar decepciones evitables."
+    ],
+    "ejemplo": "// Metadatos de respuesta para calibrar confianza en UI\n{\n  \"coverage\": \"12/12 contratos indexados\",\n  \"last_synced\": \"2026-11-24T10:00Z\",\n  \"confidence_tier\": \"high_grounded\",\n  \"deterministic_fields\": [\"importe_total\", \"fecha_vencimiento\"]\n}",
+    "entrevista": "Mostrar confianza al usuario significa fomentar confianza calibrada —no fe ciega— mediante procedencia verificable, vista lado a lado con las fuentes y distinción entre datos deterministas y generados."
+  },
+  "Multilingüismo en LLM": {
+    "que": "Capacidad técnica de un modelo de lenguaje para comprender, razonar y generar texto de forma coherente en múltiples idiomas, así como realizar tareas entre lenguas (cross-lingual, como consultar en español documentos en inglés). Su calidad depende del balance del corpus de preentrenamiento y de la eficiencia del tokenizador.",
+    "para": "Permite dar servicio a usuarios globales con un único modelo o recuperar conocimiento empresarial disperso en varios idiomas sin duplicar pipelines de traducción. Se evalúa al seleccionar modelos fundacionales para productos internacionales.",
+    "como": "Un tokenizador (como BPE o SentencePiece) entrenado mayoritariamente en inglés fragmenta más las palabras de otros idiomas, aumentando el número de tokens por frase (mayor coste y latencia, y menor ventana efectiva de contexto). Internamente, el modelo alinea representaciones semánticas en un espacio latente compartido, aunque el razonamiento complejo suele degradarse en idiomas de bajos recursos (low-resource languages). En RAG multilingüe se utilizan embeddings multilingües densos (p. ej. BGE-M3, E5-multilingual) y re-rankers capaces de emparejar consultas y documentos en idiomas distintos.",
+    "practicas": [
+      "Medir la tasa de fertilidad del tokenizador (tokens por palabra) en cada idioma objetivo, ya que afecta directamente al precio por uso y a la latencia.",
+      "Evaluar calidad de razonamiento y seguridad (safety guardrails) en el idioma de destino; muchos filtros contra jailbreaks son mucho más débiles fuera del inglés.",
+      "Traducir-y-procesar vs procesamiento nativo: para idiomas de muy bajos recursos, traducir a inglés para razonar y devolver en el idioma origen a veces supera el rendimiento nativo, a costa de latencia.",
+      "Usar embeddings y re-rankers explícitamente multilingües cuando la base de conocimiento y los usuarios mezclan idiomas."
+    ],
+    "ejemplo": "# Comparación aproximada de tokens para la misma frase\nfrase_en = \"Check your invoice status\"       # ~4 tokens\nfrase_es = \"Consulta el estado de tu factura\" # ~7-9 tokens\n# Mayor fragmentación = mayor coste por token y mayor TTFT",
+    "entrevista": "El multilingüismo en LLMs impacta costes, latencia y seguridad porque los tokenizadores fragmentan más los idiomas distintos al inglés y los guardrails y el razonamiento suelen degradarse en lenguas con menos datos."
+  },
+  "Métricas de producto de IA": {
+    "que": "Sistema jerárquico de indicadores que conecta el rendimiento técnico del modelo (calidad, latencia, seguridad) con el comportamiento del usuario (adopción, edición, retención) y los resultados de negocio (conversión, ahorro, margen). Permite gobernar el producto de forma integral.",
+    "para": "Resuelve la trampa de optimizar métricas offline de ML (como BLEU o F1) que no se traducen en valor para el usuario ni en rentabilidad. Se utiliza en tableros continuos de producto, experimentos A/B y revisiones ejecutivas.",
+    "como": "Las métricas se organizan en cuatro capas: (1) Modelo/Sistema (fidelidad RAG, tasa de alucinación, TTFT, latencia P95, tasa de error HTTP), (2) Interacción (tasa de aceptación, porcentaje de edición humana, regeneraciones), (3) Producto (retención D7/D30, usuarios activos recurrentes, tareas completadas) y (4) Negocio (coste por tarea resuelta, margen bruto, NPS/CSAT). En producción se correlacionan cambios en la capa 1 (p. ej. bajar TTFT de 2s a 600ms) con subidas en las capas 2 y 3 mediante pruebas A/B.",
+    "practicas": [
+      "Definir una métrica estrella (North Star) vinculada al resultado resuelto (p. ej. \"informes completados semanalmente con asistencia\"), no al volumen bruto de prompts.",
+      "Combinar siempre métricas de calidad con métricas de coste y latencia (ninguna mejora de +2% en precisión vale triplicar la latencia si cae la adopción).",
+      "Métricas offline vs métricas online: las offline validan regresiones antes de desplegar; las online (aceptación y retención) dictan el éxito real.",
+      "Medir la tasa de abandono tras error o latencia alta para calibrar los presupuestos de rendimiento."
+    ],
+    "ejemplo": "# Árbol de métricas de producto de IA\nNorth Star: Tareas completadas con <= 1 edición\n  ├── Calidad: Faithfulness >= 0.90, Tasa regeneración < 10%\n  ├── Velocidad: TTFT P95 < 700ms\n  ├── Adopción: Acceptance rate >= 35%, D30 retention >= 50%\n  └── Economía: Coste por tarea <= $0.012",
+    "entrevista": "Las métricas de producto de IA conectan en árbol las métricas técnicas (latencia, faithfulness) con adopción (acceptance rate, edit distance) y negocio (retención y coste por tarea exitosa)."
+  },
+  "Override humano": {
+    "que": "Mecanismo explícito en la interfaz y en la arquitectura de decisión que permite a una persona anular, corregir, pausar o revertir una acción o recomendación generada por la IA en cualquier momento. Constituye la salvaguarda operativa del principio Human-in-the-Loop (HITL) o Human-on-the-Loop (HOTL).",
+    "para": "Resuelve la falta de control cuando el modelo comete errores contextuales, aplica políticas rígidas o ejecuta acciones en cadena no deseadas. Es indispensable en productos agénticos, automatización empresarial y sistemas regulados (artículo 14 del EU AI Act sobre supervisión humana).",
+    "como": "Se implementa en tres momentos: (1) Antes de ejecutar (human-in-the-loop), mediante flujos de aprobación que pausan el agente en un estado persistido hasta recibir confirmación o parámetros editados; (2) Durante la ejecución, con botón de parada de emergencia (kill switch / abort) que cancela peticiones e invoca compensaciones; y (3) Después de ejecutar, con historial de auditoría y botón de deshacer (`Undo` / rollback transaccional). Además, cada override registrado alimenta el bucle de feedback para detectar en qué casos falla el sistema.",
+    "practicas": [
+      "Asegurar que el botón de anulación o deshacer sea tan visible y rápido de usar como el botón de aceptar.",
+      "Diseñar acciones del agente de forma idempotente y con patrón saga/compensación para que un rollback tras override sea técnicamente posible.",
+      "Human-in-the-loop (HITL) vs Human-on-the-loop (HOTL): usar HITL para acciones de alto impacto o irreversibles, y HOTL (ejecución + ventana de anulación) para bajo impacto.",
+      "Registrar quién realizó el override y por qué, tanto para cumplimiento normativo como para mejorar los evals."
+    ],
+    "ejemplo": "// Flujo de interrupción y rollback en agente\nconst actionLog = await agent.propose(\"cancel_subscription\", { id: \"sub_91\" });\nif (actionLog.risk === \"high\") {\n  await workflow.pauseForHumanApproval(actionLog.id);\n}\n// Si se ejecutó en modo optimista, ofrecer undo durante ventana de gracia",
+    "entrevista": "El override humano garantiza la soberanía del usuario mediante pausas previas en acciones de alto riesgo, interrupción inmediata durante la ejecución y rollback transaccional con trazabilidad de auditoría."
+  },
+  "Pricing por token": {
+    "que": "Modelo de tarificación directa en el que el cliente paga proporcionalmente al volumen de unidades subléxicas (tokens) procesadas como entrada (prompt/contexto) y generadas como salida (completion). Es el estándar de facturación de infraestructura y APIs de modelos de lenguaje.",
+    "para": "Alinea exactamente el ingreso con el coste computacional de inferencia, especialmente en plataformas para desarrolladores, APIs B2B o herramientas técnicas donde el consumo varía en órdenes de magnitud entre clientes. No suele ser adecuado para usuarios finales no técnicos.",
+    "como": "Un tokenizador convierte el texto enviado y generado en identificadores numéricos; el gateway de API cuenta los tokens por separado porque generar tokens de salida requiere decodificación autorregresiva secuencial (limitada por ancho de banda de memoria GPU) y cuesta más que procesar el prompt en paralelo (prefill). El precio se expresa normalmente por millón de tokens (MTok), diferenciando además tarifas con descuento para tokens cacheados (prompt caching) o procesamiento asíncrono por lotes (batch API).",
+    "practicas": [
+      "Evitar exponer precios en \"tokens\" a usuarios finales de negocio (abogados, médicos, ventas): no entienden qué es un token ni pueden predecir su factura.",
+      "Aprovechar tarifas de Batch API (usualmente ~50% más baratas) y Prompt Caching para cargas no interactivas o contextos repetitivos.",
+      "Pricing por token vs pricing por valor/crédito: usar tokens para clientes desarrolladores/API y créditos o suscripción por resultado para usuarios finales.",
+      "Implementar alertas de gasto y límites duros (hard caps) por clave API para evitar facturas inesperadas ante bucles infinitos."
+    ],
+    "ejemplo": "# Ejemplo de tarificación típica de API LLM (por 1M de tokens)\ninput_standard:  $3.00 / 1M tokens\ninput_cached:    $0.30 / 1M tokens  # 90% descuento\noutput:         $15.00 / 1M tokens\nbatch_discount:  50% en cargas asíncronas (24h)",
+    "entrevista": "El pricing por token refleja fielmente el coste de cómputo (siendo el output más caro que el prefill del input), por lo que es ideal para APIs de desarrolladores pero mala UX para usuarios finales."
+  },
+  "Pricing por uso": {
+    "que": "Modelo de monetización (usage-based pricing o pay-as-you-go) donde el cliente paga según una unidad de consumo comprensible vinculada al producto —como créditos, documentos procesados, minutos de audio, asientos activos o resoluciones completadas— en lugar de una tarifa plana fija.",
+    "para": "Resuelve la desalineación económica de las tarifas planas frente a costes variables de IA y reduce la barrera de entrada al permitir empezar pagando poco y escalar con el valor obtenido. Se emplea ampliamente en SaaS B2B con IA, automatización agéntica y plataformas multimedia.",
+    "como": "Se elige una métrica de valor (value metric) correlacionada tanto con el beneficio del cliente como con el COGS interno (p. ej. \"1 crédito = 1 vídeo resumido\" o \"$0.99 por ticket resuelto de extremo a extremo\"). La arquitectura implementa un motor de metering (medición de eventos idempotentes en tiempo real) que descuenta saldo o acumula consumo hacia un sistema de facturación (como Stripe Billing o Orb). Muchos productos adoptan un modelo híbrido: suscripción base por plataforma más paquetes de créditos o cobro por exceso (overage).",
+    "practicas": [
+      "Elegir una unidad de cobro orientada al resultado o trabajo completado (\"minutos transcritos\", \"tickets resueltos\") en lugar de unidades técnicas opacas.",
+      "Combinar suscripción base + cuota incluida + recarga flexible (modelo híbrido) para ofrecer previsibilidad financiera al cliente y proteger el margen propio.",
+      "Tarifa plana vs pricing por uso: la tarifa plana facilita la compra inicial pero sufre con power users; el uso puro alinea márgenes pero puede frenar el uso por miedo a gastar.",
+      "Mostrar un medidor de consumo claro en la UI y avisar antes de ejecutar tareas costosas."
+    ],
+    "ejemplo": "# Modelo híbrido de Pricing por Uso (SaaS)\nPlan Equipo: $49/mes (incluye 500 créditos de análisis)\n  - 1 documento estándar = 1 crédito\n  - 1 auditoría profunda multiagente = 10 créditos\nPaquete adicional: $20 por cada 250 créditos extra",
+    "entrevista": "El pricing por uso exitoso cobra por una métrica de valor comprensible (documentos, resoluciones, créditos) en un esquema híbrido que equilibra previsibilidad para el cliente y margen para el proveedor."
+  },
+  "Producto de IA": {
+    "que": "Sistema software cuyo núcleo de propuesta de valor depende de capacidades probabilísticas de aprendizaje automático o IA generativa (comprensión, síntesis, predicción, generación o agencia), requiriendo arquitecturas de evaluación, UX adaptada a la incertidumbre y control de costes variables.",
+    "para": "Resuelve problemas complejos con datos no estructurados (texto, voz, imagen, código) o toma de decisiones bajo alta variabilidad donde las reglas deterministas `if/else` resultan inviables o demasiado rígidas. Se distingue de un producto tradicional con IA meramente cosmética.",
+    "como": "Un producto de IA sólido integra cuatro capas interdependientes: (1) capa de datos y contexto (conectores, RAG, memoria), (2) capa de orquestación e inferencia (enrutamiento de modelos, herramientas, guardrails), (3) capa de experiencia de usuario (streaming, citas, override humano) y (4) capa de observabilidad y evaluación continua (trazas, feedback, evals). El valor defendible raramente está en el modelo base genérico, sino en el flujo de trabajo integrado, los datos propietarios y el bucle de mejora.",
+    "practicas": [
+      "Construir defendibilidad (moat) en los datos contextuales, la integración profunda con el workflow y la UX específica, no en un simple wrapper sobre una API pública.",
+      "Diseñar degradación elegante (graceful degradation) para que el producto siga siendo útil aunque el modelo falle o su API tenga latencia alta.",
+      "Feature de IA vs Producto AI-native: un producto AI-native replantea todo el flujo de trabajo alrededor de las capacidades del modelo en lugar de añadir un botón de resumen lateral.",
+      "Incorporar desde el primer día privacidad, seguridad ante prompt injection y telemetría de costes."
+    ],
+    "ejemplo": "// Arquitectura conceptual de Producto de IA\n[UI (Streaming + Citas + Override)]\n       |\n[Orquestador (Guardrails + Router + RAG)]\n       |\n[Modelos (Frontier / Small / Embeddings)]\n       |\n[Observabilidad (Trazas + Evals + Costes + Feedback)]",
+    "entrevista": "Un verdadero producto de IA se diferencia de un wrapper en la integración profunda con el workflow, sus datos contextuales propietarios, una UX calibrada para incertidumbre y un sistema continuo de evaluación."
+  },
+  "Requisitos de productos con IA": {
+    "que": "Especificaciones funcionales, no funcionales, de datos, de evaluación y de seguridad que definen qué debe lograr un producto impulsado por IA y bajo qué restricciones operará. Sustituyen o amplían los requisitos binarios tradicionales (pasa/no pasa) con criterios estadísticos y de comportamiento.",
+    "para": "Resuelve la ambigüedad entre producto, ingeniería y QA al responder \"¿qué tan bueno es suficientemente bueno para salir a producción?\". Se redactan en el PRD (Product Requirements Document) antes de implementar y sirven de contrato de aceptación.",
+    "como": "Además de historias de usuario clásicas, un PRD de IA especifica: (1) métricas de calidad sobre un dataset de evaluación (p. ej. precisión >= 92%, tasa de alucinación < 1%), (2) requisitos de latencia (TTFT y tiempo total P95), (3) presupuesto máximo por ejecución, (4) requisitos de datos (frescura del índice, cobertura de fuentes, PII masking), (5) políticas de abstención y seguridad (qué temas debe rechazar y qué acciones requieren confirmación humana) y (6) fallbacks operativos.",
+    "practicas": [
+      "Especificar explícitamente qué NO debe hacer el modelo (out-of-scope, políticas de rechazo y límites de alucinación) con la misma precisión que lo que sí debe hacer.",
+      "Adjuntar al PRD ejemplos concretos de entradas difíciles y salidas esperadas/inaceptables para alinear a producto e ingeniería.",
+      "Requisito determinista vs probabilístico: definir umbrales porcentuales por categoría de riesgo (p. ej. 99% en extracción de importes, 85% en tono de resumen).",
+      "Incluir requisitos de cumplimiento (retención de logs, derecho al olvido en vectores, explicabilidad) desde la versión 1."
+    ],
+    "ejemplo": "# Extracto de Requisitos (AI PRD)\n- Latencia: TTFT P95 <= 600ms; total <= 4.0s\n- Calidad: 0% de invención de precios/fechas; >= 90% utilidad en 150 casos test\n- Seguridad: bloqueo de PII saliente y rechazo de instrucciones fuera de dominio\n- Coste: <= $0.008 por consulta promedio",
+    "entrevista": "Los requisitos de un producto de IA reemplazan las aserciones binarias por umbrales estadísticos de evaluación, límites de latencia y coste por consulta, políticas de abstención y guardrails de seguridad."
+  }
+}

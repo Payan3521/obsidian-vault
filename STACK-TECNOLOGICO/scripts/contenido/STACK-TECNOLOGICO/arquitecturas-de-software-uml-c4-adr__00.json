@@ -1,0 +1,374 @@
+{
+  "BPMN": {
+    "que": "Business Process Model and Notation (BPMN 2.0, estándar OMG / ISO 19510) es un lenguaje gráfico estandarizado para modelar procesos de negocio de extremo a extremo, con una serialización XML ejecutable por motores de flujos de trabajo. Combina legibilidad para analistas de negocio con semántica formal de ejecución para ingeniería de software.",
+    "para": "Resuelve la desconexión entre la documentación funcional de un proceso empresarial y su orquestación técnica en microservicios o flujos humanos. Se usa cuando existen múltiples participantes, aprobaciones humanas, temporizadores, reintentos, compensaciones (Sagas) o integraciones asíncronas entre sistemas.",
+    "como": "El diagrama organiza los participantes en Pools (organizaciones o sistemas independientes) divididos en Lanes (roles internos). Dentro de un Pool, los flujos de secuencia conectan Eventos (inicio, intermedios de tiempo/mensaje/error, fin), Actividades (User Task, Service Task, Script Task, Subprocesos) y Gateways (XOR exclusivo, AND paralelo, OR inclusivo, basado en eventos). Entre distintos Pools solo pueden cruzar flujos de mensaje (líneas discontinuas), nunca flujos de secuencia. En tiempo de ejecución, un motor como Camunda o Zeebe interpreta el archivo `.bpmn` XML, mantiene tokens de estado persistentes, despacha trabajos a workers externos en cada Service Task y evalúa condiciones en los Gateways.",
+    "practicas": [
+      "Usa Pools separados para actores externos (Cliente, Pasarela de Pago) y Lanes solo para roles dentro del mismo proceso.",
+      "Modela compensaciones y timeouts explícitos con eventos de borde (Boundary Events) en lugar de llenar el flujo principal de flechas de error.",
+      "BPMN vs Diagrama de actividad UML: BPMN incluye semántica XML ejecutable, Pools/mensajes B2B y eventos ricos; UML Activity se enfoca en flujo de control interno o algorítmico.",
+      "Error típico: convertir cada `if` técnico o validación trivial de código en un Gateway, haciendo el diagrama ilegible."
+    ],
+    "ejemplo": "<process id=\"orden-compra\" isExecutable=\"true\">\n  <startEvent id=\"inicio\" />\n  <sequenceFlow sourceRef=\"inicio\" targetRef=\"validarStock\" />\n  <serviceTask id=\"validarStock\" name=\"Validar inventario\" />\n  <exclusiveGateway id=\"gwStock\" name=\"¿Hay stock?\" />\n  <sequenceFlow sourceRef=\"validarStock\" targetRef=\"gwStock\" />\n  <sequenceFlow sourceRef=\"gwStock\" targetRef=\"cobrar\">\n    <conditionExpression>${stockDisponible == true}</conditionExpression>\n  </sequenceFlow>\n</process>",
+    "entrevista": "BPMN 2.0 no es solo un dibujo para documentación: es un estándar ejecutable que separa la orquestación de procesos largos (estados, timers y compensaciones) de la lógica de cada servicio."
+  },
+  "Diagrama DFD": {
+    "que": "Un Diagrama de Flujo de Datos (DFD) es un modelo del análisis estructurado (notaciones Yourdon/DeMarco o Gane & Sarson) que representa cómo los datos ingresan, se transforman, se almacenan y salen de un sistema. A diferencia de los diagramas de flujo tradicionales, no modela bifurcaciones ni bucles de control, sino el movimiento y transformación de la información.",
+    "para": "Sirve para entender fronteras de datos, dependencias funcionales y superficies de exposición antes de diseñar código o bases de datos. En 2026 sigue siendo el artefacto base en Threat Modeling (metodología STRIDE) para auditar dónde los datos cruzan fronteras de confianza (Trust Boundaries).",
+    "como": "Se construye con cuatro primitivas: Entidades Externas (fuentes o destinos fuera del sistema), Procesos (funciones que transforman datos), Almacenes de Datos (repositorios en reposo) y Flujos de Datos (vectores etiquetados con los paquetes de datos transportados). El modelado avanza por descomposición jerárquica: el Nivel 0 (Diagrama de Contexto) muestra todo el sistema como un único proceso rodeado de entidades externas; el Nivel 1 desglosa los subprocesos principales y el Nivel 2 detalla procesos complejos. En cada descenso se aplica la regla de balanceo: las entradas y salidas de un subnivel deben coincidir exactamente con las de su proceso padre.",
+    "practicas": [
+      "Respeta el principio de conservación de datos: todo flujo debe nacer o terminar en un Proceso (nunca conectes directamente Entidad Externa con Almacén de Datos ni dos Almacenes entre sí).",
+      "Evita procesos 'agujero negro' (solo entradas sin salidas) y procesos 'milagro' (salidas sin entradas que las originen).",
+      "DFD vs Diagrama de flujo / UML Actividad: el DFD muestra el recorrido de los datos (data in motion), no el orden secuencial ni condicional de instrucciones.",
+      "En seguridad (STRIDE), dibuja líneas punteadas de Trust Boundary sobre los flujos de datos que cruzan redes, procesos o niveles de privilegio."
+    ],
+    "ejemplo": "[Cliente] --(Datos de pedido)--> (1. Validar Pedido) --(Orden válida)--> [DB: Pedidos]\n                                        |\n                              (Solicitud de cargo)\n                                        v\n                                [Pasarela Pagos]",
+    "entrevista": "Un DFD modela el flujo y transformación de datos sin atarse al control de flujo ni a clases, y hoy es indispensable en Threat Modeling para localizar cruces de Trust Boundaries."
+  },
+  "Diagrama ERD": {
+    "que": "Un Diagrama Entidad-Relación (ERD) es un modelo estructural de datos (introducido por Peter Chen y popularizado en notación Crow's Foot / Barker) que describe las entidades de información, sus atributos, claves y las cardinalidades entre ellas. Representa los datos en reposo antes y durante el diseño de esquemas relacionales.",
+    "para": "Sirve para diseñar bases de datos relacionales sin redundancias anómalas, acordar reglas de integridad referencial y comunicar la estructura del modelo de persistencia entre backend, datos y negocio. Se utiliza en la fase de diseño lógico/físico de SQL y para documentar esquemas complejos existentes.",
+    "como": "Define Entidades fuertes (existencia propia, clave primaria independiente) y Entidades débiles (dependen de la clave primaria del padre). Cada relación entre entidades especifica cardinalidad máxima (1:1, 1:N, M:N) y opcionalidad mínima (obligatoria `||` o condicional `o|`), típicamente leída en ambos sentidos con patas de gallo (Crow's Foot). Al pasar del modelo lógico al físico en SQL, las relaciones 1:N colocan la clave foránea (`FK`) en el lado 'muchos', y las relaciones M:N se resuelven mediante una tabla asociativa intermedia con ambas `FK` formando su clave primaria compuesta o única.",
+    "practicas": [
+      "Distingue las tres capas: ERD Conceptual (entidades y relaciones clave), Lógico (atributos normalizados hasta 3FN y claves) y Físico (tipos de motor SQL, índices y tablas puente).",
+      "Resuelve toda relación M:N en una tabla intermedia explícita al pasar al ERD físico para capturar atributos propios de la relación (ej. `cantidad`, `precio_unitario`).",
+      "ERD vs Diagrama de Clases UML: el ERD modela estructura de tablas, claves y restricciones de persistencia; el Diagrama de Clases modela estado + comportamiento orientado a objetos.",
+      "Normaliza primero (1FN-3FN) para evitar anomalías de actualización y desnormaliza después solo con métricas reales de lectura."
+    ],
+    "ejemplo": "erDiagram\n  CLIENTE ||--o{ PEDIDO : realiza\n  PEDIDO ||--|{ LINEA_PEDIDO : incluye\n  PRODUCTO ||--o{ LINEA_PEDIDO : figura_en\n  CLIENTE {\n    uuid id PK\n    string email UK\n  }",
+    "entrevista": "Un buen ERD en Crow's Foot hace explícitas cardinalidad y opcionalidad en cada relación, resolviendo los muchos-a-muchos en tablas puente antes de escribir el primer DDL."
+  },
+  "Diagrama de actividad": {
+    "que": "El Diagrama de Actividad es un diagrama de comportamiento de UML que modela flujos de trabajo paso a paso, lógica condicional y ejecución concurrente de acciones. Extiende el concepto clásico de diagrama de flujo incorporando sincronización paralela, particiones de responsabilidad y flujo de objetos.",
+    "para": "Sirve para especificar algoritmos complejos, flujos internos de un caso de uso con múltiples caminos alternativos o pipelines de procesamiento paralelo. Se utiliza cuando importa el orden de ejecución de tareas, las bifurcaciones condicionales y qué actor o componente ejecuta cada paso.",
+    "como": "Su ejecución sigue una semántica de tokens que viajan por aristas dirigidas desde el nodo inicial (círculo sólido) hasta un nodo final de actividad (doble círculo) o fin de flujo (círculo con X). Los nodos de decisión y fusión (rombos) enrutan el token según guardas booleanas `[condición]`, mientras que las barras de sincronización Fork y Join dividen un token en múltiples ramas concurrentes y esperan a que todas terminen antes de continuar. Los Swimlanes (carriles verticales u horizontales) agrupan las acciones por rol o módulo responsable, y los Object Nodes muestran los artefactos de datos producidos entre acciones.",
+    "practicas": [
+      "Empareja cada Fork (división paralela) con su correspondiente Join cuando las ramas deban sincronizarse, o usa Flow Final si una rama muere de forma independiente.",
+      "Etiqueta siempre de forma mutuamente excluyente las guardas salientes de un nodo de decisión (`[aprobado]` / `[rechazado]`).",
+      "Diagrama de actividad vs Diagrama de estados: Actividad fluye al completarse acciones paso a paso; Estados espera eventos externos para transicionar.",
+      "Usa Swimlanes para detectar rápidamente saltos innecesarios (handoffs) entre capas o equipos."
+    ],
+    "ejemplo": "(Inicio) --> [Validar carrito]\n  --> <¿Pago aprobado?>\n      -- [sí] --> === FORK ===\n                    |--> [Reservar inventario]\n                    |--> [Enviar recibo]\n                  === JOIN === --> (Fin)",
+    "entrevista": "El Diagrama de Actividad UML modela flujo de control y concurrencia con semántica de tokens mediante barras Fork/Join y Swimlanes por responsable."
+  },
+  "Diagrama de casos de uso": {
+    "que": "El Diagrama de Casos de Uso es un diagrama de comportamiento de UML que captura los requisitos funcionales de un sistema desde la perspectiva externa de sus usuarios. Muestra el límite del sistema, los actores que interactúan con él y los objetivos de valor (casos de uso) que el sistema les provee.",
+    "para": "Sirve para delimitar el alcance funcional de un proyecto y alinear a negocio, producto e ingeniería sobre quién puede hacer qué antes de entrar en detalles de interfaz o arquitectura. Es útil en fases iniciales de análisis de requisitos, licitaciones y definición de permisos por rol.",
+    "como": "El rectángulo central define la frontera del sistema; fuera de ella se dibujan Actores (roles humanos o sistemas externos: primarios a la izquierda si inician la acción, secundarios a la derecha si prestan un servicio). Dentro se colocan los Casos de Uso (óvalos con verbo en infinitivo + sustantivo) conectados por asociaciones. Tres relaciones estructuran el modelo: `«include»` (el caso base siempre invoca obligatoriamente al incluido, flecha desde base hacia incluido), `«extend»` (comportamiento opcional bajo condición en un punto de extensión, flecha desde extensión hacia base) y generalización (herencia entre actores o casos). El diagrama actúa como índice de especificaciones textuales con precondiciones, flujo principal y flujos alternativos.",
+    "practicas": [
+      "Nunca conviertas un diagrama de casos de uso en un diagrama de flujo con flechas secuenciales entre óvalos (`Paso 1 -> Paso 2`).",
+      "Recuerda la dirección opuesta de las flechas: en `«include»` apunta hacia el subcaso reutilizado; en `«extend»` apunta hacia el caso base que se extiende.",
+      "Casos de Uso vs User Stories: los casos de uso ofrecen una visión global de fronteras, actores y flujos alternativos; las User Stories priorizan incrementos pequeños en backlog ágil.",
+      "Incluye siempre los sistemas externos (pasarelas, proveedores OAuth) como actores secundarios fuera del límite del sistema."
+    ],
+    "ejemplo": "[Cliente] ---> (Realizar Compra)\n(Realizar Compra) ..> <<include>> ..> (Autenticar Usuario)\n(Aplicar Cupón) ..> <<extend>> ..> (Realizar Compra)\n(Realizar Compra) ---> [Pasarela de Pagos]",
+    "entrevista": "Un diagrama de casos de uso define fronteras funcionales y actores, pero su valor real está en indexar flujos principales y excepciones sin caer en modelar pasos de UI."
+  },
+  "Diagrama de clases": {
+    "que": "El Diagrama de Clases es el diagrama estructural central de UML; describe la arquitectura estática de un sistema orientado a objetos mediante clases, interfaces, atributos, operaciones y sus relaciones. Permite representar tanto modelos conceptuales de dominio como estructuras detalladas de implementación.",
+    "para": "Sirve para diseñar jerarquías de tipos, acoplamientos, contratos entre módulos y reglas de cardinalidad antes o durante la codificación. Se utiliza en diseño orientado a objetos (SOLID/GoF), modelado de dominio y documentación de librerías o SDKs.",
+    "como": "Cada clase se dibuja en tres compartimentos: nombre (cursiva si es abstracta, o estereotipo `«interface»`), atributos (`visibilidad nombre: Tipo = valor`) y métodos (`visibilidad nombre(params): Retorno`), usando `+` público, `-` privado, `#` protegido y `~` paquete. Las relaciones expresan acoplamiento creciente: Dependencia (línea discontinua con flecha abierta), Asociación (línea sólida con multiplicidad `0..1`, `1..*`), Agregación (rombo hueco: parte reutilizable con ciclo de vida independiente), Composición (rombo relleno: propiedad exclusiva con borrado en cascada), Realización de interfaz (discontinua con triángulo hueco) y Generalización/Herencia (sólida con triángulo hueco).",
+    "practicas": [
+      "Distingue entre Diagrama de Clases de Dominio (conceptos de negocio sin tipos SQL ni getters) y Diagrama de Implementación (interfaces concretas, genéricos, DTOs).",
+      "Diferencia bien Agregación vs Composición: si al destruir el contenedor deben destruirse sus partes (`Pedido` -> `LineaPedido`), es Composición (rombo negro).",
+      "Prioriza Composición y Realización de interfaces sobre Herencia profunda para evitar jerarquías frágiles.",
+      "Omitir getters, setters y atributos triviales mantiene el diagrama legible y enfocado en responsabilidades."
+    ],
+    "ejemplo": "classDiagram\n  class Repositorio {\n    <<interface>>\n    +guardar(o: Orden) void\n  }\n  class Orden {\n    -UUID id\n    +agregarItem(p: Producto) void\n  }\n  Orden *-- \"1..*\" ItemOrden",
+    "entrevista": "En un diagrama de clases no todas las flechas pesan igual: la diferencia entre dependencia, agregación y composición define quién posee el ciclo de vida y el grado de acoplamiento."
+  },
+  "Diagrama de componentes C4": {
+    "que": "El Diagrama de Componentes C4 (Nivel 3 del modelo C4 de Simon Brown) hace zoom dentro de un único Contenedor (por ejemplo, una API REST o un worker) para mostrar sus bloques lógicos internos y cómo colaboran. En C4, un componente es una agrupación cohesiva de funcionalidad encapsulada detrás de una interfaz bien definida dentro del mismo proceso.",
+    "para": "Sirve para explicar cómo está organizado internamente un servicio complejo (capas, módulos verticales, adaptadores externos) sin descender todavía al detalle de cada clase o función. Se usa en revisiones de diseño de servicios clave, auditorías de arquitectura hexagonal/limpia y onboarding técnico al código.",
+    "como": "Se selecciona un Contenedor específico del Nivel 2 y se despliegan sus límites exteriores (usuarios u otros contenedores del sistema como bases de datos o APIs externas). Dentro de ese límite se dibujan los Componentes indicando su nombre, responsabilidad principal y tecnología o paquete (por ejemplo, `AuthController`, `TokenService`, `UserRepository`), conectados entre sí y hacia los contenedores externos mediante flechas etiquetadas con la acción invocada. A diferencia del Diagrama de Componentes UML, el Nivel 3 de C4 no exige puertos ni conectores bola-zócalo, priorizando la claridad por encima de la notación formal.",
+    "practicas": [
+      "No dibujes diagramas de Nivel 3 para todos los contenedores: resérvalos para servicios con lógica de negocio compleja o múltiples integraciones.",
+      "Mantén los componentes alineados con módulos reales del código (paquetes, namespaces o slices) y valídalo en CI con herramientas como ArchUnit.",
+      "Diagrama de componentes C4 vs Diagrama de componentes UML: C4 siempre vive estrictamente dentro de un único Contenedor ejecutable y usa cajas simples descriptivas.",
+      "Evita mezclar clases DTO o helpers utilitarios en Nivel 3; si necesitas ver clases concretas, baja al Nivel 4 (Código)."
+    ],
+    "ejemplo": "C4Component\n  Container_Boundary(api, \"API Pedidos (Go)\") {\n    Component(ctrl, \"OrderHandler\", \"HTTP/GIN\", \"Valida requests y serializa JSON\")\n    Component(svc, \"OrderService\", \"Domain\", \"Aplica reglas de negocio e invariantes\")\n    Component(repo, \"OrderRepo\", \"pgx\", \"Persiste agregados en PostgreSQL\")\n  }\n  Rel(ctrl, svc, \"Invoca creación\")\n  Rel(svc, repo, \"Guarda orden\")\n  Rel(repo, db, \"SQL/TCP\")",
+    "entrevista": "El Nivel 3 de C4 descompone un único contenedor en sus módulos lógicos internos y dependencias externas, y conviene limitarlo a servicios complejos para evitar documentación obsoleta."
+  },
+  "Diagrama de componentes": {
+    "que": "El Diagrama de Componentes de UML es un diagrama estructural que representa las unidades modulares desplegables o reemplazables de un sistema software y los contratos formales mediante los que se conectan. Se centra en la encapsulación por interfaces y en el cableado entre piezas independientes.",
+    "para": "Sirve para diseñar arquitecturas modulares basadas en contratos (plugins, librerías, módulos OSGi, servicios) donde una implementación concreta puede sustituirse por otra sin romper a sus consumidores. Se emplea cuando importa visualizar interfaces provistas, interfaces requeridas y empaquetado físico de artefactos.",
+    "como": "Cada componente se representa como un rectángulo con el estereotipo `«component»` (o el icono de componente en la esquina superior) y puede exponer Puertos (cuadrados en el borde) como puntos de interacción. Desde el componente nacen Interfaces Provistas (notación 'piruleta' o círculo completo) que declaran qué contratos implementa, e Interfaces Requeridas (notación 'zócalo' o semicírculo) que declaran qué contratos necesita consumir. Dos componentes se conectan mediante un Conector de Ensamblaje (Assembly Connector) encajando la piruleta de uno en el zócalo del otro, y los artefactos compilados (`.jar`, `.dll`, binarios) se vinculan mediante dependencias `«manifest»`.",
+    "practicas": [
+      "Usa conectores bola-zócalo (provided/required) para evidenciar inversión de dependencias entre módulos de dominio e infraestructura.",
+      "No confundas componentes UML (unidades lógicas con contratos explícitos) con nodos de red físicos (Diagrama de Despliegue) ni con Contenedores C4.",
+      "Mantén la cohesión: si un componente expone demasiadas piruletas no relacionadas, divídelo aplicando el Principio de Segregación de Interfaces (ISP)."
+    ],
+    "ejemplo": "[<<component>> Facturación] ---( (IFacturador) )--- [<<component>> API Ventas]\n[<<component>> Facturación] ---( (IPasarelaPago) )--- [<<component>> Adaptador Stripe]",
+    "entrevista": "El Diagrama de Componentes UML destaca por su notación de interfaces provistas y requeridas (bola y zócalo), que hace explícitos los contratos reemplazables entre módulos."
+  },
+  "Diagrama de contenedores C4": {
+    "que": "El Diagrama de Contenedores C4 (Nivel 2 del modelo C4) muestra la arquitectura técnica de alto nivel descomponiendo el sistema en sus unidades ejecutables y almacenes de datos independientes. En la terminología de C4, un 'Contenedor' es cualquier aplicación, proceso o datastore desplegable por separado (SPA, API, microservicio, worker, base de datos, cola), no exclusivamente un contenedor Docker.",
+    "para": "Sirve como el mapa principal de arquitectura para ingenieros de software, DevOps y SREs, respondiendo qué piezas corren en producción, qué stack tecnológico usa cada una y cómo se comunican por red. Es el diagrama con mayor retorno de inversión en entrevistas de System Design y en el README de un repositorio.",
+    "como": "Toma la caja única del sistema del Nivel 1 (Contexto) y abre su límite punteado para revelar los contenedores internos, manteniendo visibles los actores humanos y sistemas externos con los que interactúan. Cada contenedor especifica obligatoriamente su nombre, tipo y tecnología concreta (por ejemplo, `Next.js 15`, `Rust/Axum`, `PostgreSQL 17`, `Apache Kafka`) junto a una frase de responsabilidad. Todas las flechas entre contenedores indican la dirección de la llamada, el propósito y el protocolo de comunicación (`HTTPS/JSON`, `gRPC`, `SQL/TCP`, `AMQP`), diferenciando comunicación síncrona de asíncrona.",
+    "practicas": [
+      "Indica siempre el protocolo y el formato de datos en cada flecha (`REST/JSON`, `gRPC/Protobuf`, `Eventos Kafka`) para detectar cuellos de botella o acoplamientos.",
+      "Asegura que cada base de datos pertenezca lógicamente a un único servicio propietario; múltiples servicios escribiendo en la misma BD en Nivel 2 es una señal clara de acoplamiento.",
+      "Contenedor C4 vs Docker: una app React corriendo en el navegador del usuario y una base de datos RDS son Contenedores C4 aunque no usen Docker.",
+      "No bajes a clases ni controladores internos dentro del Nivel 2; esa granularidad pertenece al Nivel 3."
+    ],
+    "ejemplo": "C4Container\n  Person(user, \"Comprador\", \"Navegador web\")\n  System_Boundary(sys, \"E-Commerce\") {\n    Container(spa, \"Web App\", \"React 19\", \"UI de catálogo y checkout\")\n    Container(api, \"Core API\", \"Java 21 / Spring\", \"Lógica de órdenes y pagos\")\n    ContainerDb(db, \"Base de Datos\", \"PostgreSQL 17\", \"Órdenes e inventario\")\n  }\n  Rel(user, spa, \"Usa\", \"HTTPS\")\n  Rel(spa, api, \"Consume\", \"REST/JSON\")\n  Rel(api, db, \"Lee/escribe\", \"JDBC/TLS\")",
+    "entrevista": "El Diagrama de Contenedores C4 es el plano maestro de la arquitectura: muestra cada proceso y almacén de datos independiente con su tecnología y sus protocolos de red."
+  },
+  "Diagrama de contexto C4": {
+    "que": "El Diagrama de Contexto C4 (Nivel 1 del modelo C4) ofrece la vista panorámica más alta del sistema, representándolo como una única caja negra en el centro rodeada por sus usuarios y los sistemas externos con los que integra. Omite deliberadamente cualquier detalle tecnológico interno como bases de datos, lenguajes o microservicios.",
+    "para": "Sirve para alinear rápidamente a perfiles técnicos y no técnicos (product owners, stakeholders, seguridad, clientes) sobre el alcance del sistema, quién lo utiliza y qué dependencias externas críticas posee. Es el punto de partida obligatorio al presentar cualquier arquitectura nueva o documentar un producto.",
+    "como": "Coloca el Sistema bajo estudio en el centro con un nombre claro y una descripción concisa de su propósito de negocio. Alrededor dispone las Personas (roles de usuario o administradores) y los Sistemas de Software externos (ERPs, pasarelas de pago, proveedores de identidad, sistemas legados) diferenciados visualmente por color o forma. Las flechas conectan Personas con el Sistema y el Sistema con Sistemas externos describiendo en lenguaje natural la intención de la interacción (por ejemplo, 'Consulta saldo y ejecuta transferencias'), sin bajar aún a protocolos técnicos ni topologías internas.",
+    "practicas": [
+      "Mantén el lenguaje comprensible para negocio: si un product manager no entiende un término en Nivel 1, es demasiado técnico.",
+      "Limita los elementos estrictamente a Personas y Sistemas de Software; nunca dibujes bases de datos compartidas ni colas internas aquí (eso va en Nivel 2).",
+      "Diagrama de Contexto C4 vs Nivel 0 DFD: comparten el enfoque de caja negra, pero C4 se orienta a sistemas y actores mientras que el DFD de contexto detalla exactamente los paquetes de datos de entrada y salida."
+    ],
+    "ejemplo": "C4Context\n  Person(cliente, \"Cliente\", \"Usuario con cuenta activa\")\n  System(banca, \"Banca Digital\", \"Permite gestionar cuentas y transferencias\")\n  System_Ext(core, \"Core Bancario\", \"Sistema mainframe de saldos\")\n  System_Ext(smtp, \"Servicio Email\", \"Envía notificaciones transaccionales\")\n  Rel(cliente, banca, \"Realiza transferencias\")\n  Rel(banca, core, \"Registra movimientos\")\n  Rel(banca, smtp, \"Solicita envío de alertas\")",
+    "entrevista": "El Nivel 1 de C4 delimita el alcance y las integraciones externas de un sistema como caja negra, permitiendo alinear a negocio e ingeniería en menos de dos minutos."
+  },
+  "Diagrama de código C4": {
+    "que": "El Diagrama de Código C4 (Nivel 4 del modelo C4) representa el máximo nivel de detalle, haciendo zoom dentro de un único Componente para mostrar cómo está implementado a nivel de código fuente (clases, interfaces, structs, funciones o tablas). Simon Brown lo define explícitamente como opcional y orientado a generación automática.",
+    "para": "Sirve para analizar o explicar la mecánica interna de un componente especialmente complejo (un motor de reglas, un parser o un patrón de diseño delicado) durante revisiones de diseño o refactorizaciones. No está pensado para documentar manualmente toda la base de código.",
+    "como": "Parte de un único Componente identificado en el Nivel 3 y despliega sus unidades de código usando habitualmente notación UML estándar (Diagrama de Clases) o ERD cuando el componente encapsula un esquema de datos. En la práctica profesional moderna se genera automáticamente desde el código fuente o AST mediante plugins del IDE, anotaciones o herramientas como PlantUML/Doxygen/Mermaid-generators, manteniéndose sincronizado con los commits sin intervención manual.",
+    "practicas": [
+      "No dibujes diagramas de Nivel 4 a mano para componentes estándar o CRUD: quedan obsoletos en el primer refactor.",
+      "Genera el diagrama automáticamente desde el código o el IDE cuando realmente necesites visualizar acoplamientos entre clases.",
+      "Si el Nivel 4 revela ciclos de dependencia o clases Dios, úsalo como señal de refactorización hacia el Nivel 3."
+    ],
+    "ejemplo": "classDiagram\n  class RetryPolicy <<interface>> {\n    +nextDelay(attempt: int) Duration\n  }\n  class ExponentialBackoff {\n    -baseMs: long\n    +nextDelay(attempt: int) Duration\n  }\n  RetryPolicy <|.. ExponentialBackoff",
+    "entrevista": "El Nivel 4 de C4 es intencionalmente opcional: el código es la fuente de verdad y solo conviene visualizarlo mediante generación automática para componentes algorítmicos complejos."
+  },
+  "Diagrama de despliegue": {
+    "que": "El Diagrama de Despliegue de UML es un diagrama estructural físico que modela la topología de hardware, entornos de ejecución y redes donde se instalan y ejecutan los artefactos de software. Conecta el mundo lógico de los binarios con la infraestructura real (servidores, VMs, clusters, contenedores, dispositivos).",
+    "para": "Sirve para planificar y documentar la arquitectura física de producción: zonas de red, balanceadores, réplicas, comunicación entre entornos y ubicación de bases de datos. Se usa en colaboración entre arquitectos, DevOps, SRE y equipos de seguridad para validar latencia, alta disponibilidad y aislamiento de red.",
+    "como": "Representa la infraestructura mediante Nodos (cubos tridimensionales) diferenciados por estereotipos en `«device»` (hardware físico, instancias EC2, móviles) y `«executionEnvironment»` (clusters Kubernetes, JVM, Docker Engine, navegadores), que pueden anidarse entre sí. Dentro de los entornos se colocan los Artefactos (`«artifact» api.jar`, imagen OCI, bundle JS) indicando qué componentes manifiestan y su multiplicidad de réplicas. Los nodos se unen mediante Rutas de Comunicación (líneas sólidas) etiquetadas con el protocolo y puerto (`HTTPS/443`, `gRPC/mTLS`, `TCP/5432`) atravesando firewalls o VPCs.",
+    "practicas": [
+      "Distingue claramente Nodos de Dispositivo/VM de Nodos de Entorno de Ejecución (ej. Nodo EC2 conteniendo Docker Engine conteniendo contenedor Go).",
+      "Etiqueta siempre multiplicidades y zonas de disponibilidad para hacer visible la tolerancia a fallos y puntos únicos de fallo (SPOF).",
+      "Diagrama de despliegue UML vs C4 Deployment: en arquitecturas cloud-native (AWS/GCP/K8s), los nodos C4 Deployment con iconos de proveedor suelen ser más ágiles que los cubos UML estrictos."
+    ],
+    "ejemplo": "+-- <<device>> VPC Privada / Cluster K8s --------+\n|  +-- <<executionEnvironment>> Pod API [x3] --+ |\n|  |  <<artifact>> orders-service:v2.4.oci     | |\n|  +-------------------------------------------+ |\n+--------------------| (TCP/5432 TLS) -----------+\n                     v\n+-- <<device>> RDS Managed Postgres -------------+\n|  <<artifact>> primary-db + read-replica        |\n+------------------------------------------------+",
+    "entrevista": "El Diagrama de Despliegue mapea artefactos de software sobre nodos físicos y entornos de ejecución, exponiendo topología de red, replicación y puntos únicos de fallo."
+  },
+  "Diagrama de estados": {
+    "que": "El Diagrama de Estados (State Machine Diagram) de UML, basado en los Statecharts de David Harel, modela el comportamiento de un objeto o protocolo como una máquina de estados finitos. Describe los estados válidos por los que pasa una entidad, los eventos que disparan transiciones y las acciones ejecutadas en cada cambio.",
+    "para": "Sirve para diseñar entidades con ciclos de vida complejos y reglas estrictas de transición (órdenes de compra, pagos, suscripciones, flujos de aprobación, protocolos de red o componentes UI). Evita estados imposibles y errores de lógica cuando múltiples eventos pueden llegar en momentos distintos.",
+    "como": "Parte de un pseudoestado inicial (círculo sólido) hacia rectángulos de esquinas redondeadas (Estados) y termina en estados finales (doble círculo). Cada flecha de transición sigue la sintaxis `evento [guarda] / acción`: cuando llega el evento y la condición booleana `[guarda]` es verdadera, se ejecuta la acción `exit /` del estado origen, luego la `/ acción` de transición y finalmente `entry /` del estado destino (además de `do /` mientras permanece en el estado). Para evitar explosión combinatoria soporta estados compuestos (anidados), regiones ortogonales (estados concurrentes en un mismo objeto) e historial (`H`) para reanudar subestados previos.",
+    "practicas": [
+      "Audita cada estado preguntando qué ocurre si llega un evento inesperado o un timeout: toda transición de fallo (`PaymentFailed`, `Expired`) debe ser explícita.",
+      "Usa estados compuestos (superestados) para agrupar transiciones compartidas (ej. `Cancelar` desde cualquier subestado de `EnProceso`) y evitar grafos espagueti.",
+      "Diagrama de estados vs Diagrama de actividad: Estados reacciona a eventos externos que cambian el modo del objeto; Actividad modela un algoritmo o proceso secuencial hasta terminar.",
+      "En código, implementa máquinas de estado complejas con el patrón State o librerías como XState / Temporal para mantener paridad 1:1 con el diagrama."
+    ],
+    "ejemplo": "stateDiagram-v2\n  [*] --> Pendiente\n  Pendiente --> Pagada : pagoConfirmado [monto > 0] / emitirRecibo()\n  Pendiente --> Cancelada : expirarTimeout\n  Pagada --> Enviada : despachar\n  Enviada --> [*]",
+    "entrevista": "Un Diagrama de Estados UML formaliza el ciclo de vida de una entidad con transiciones `evento [guarda] / acción`, eliminando estados inválidos antes de escribir condicionales."
+  },
+  "Diagrama de paquetes": {
+    "que": "El Diagrama de Paquetes de UML es un diagrama estructural que agrupa elementos del modelo (clases, interfaces, componentes o casos de uso) en espacios de nombres lógicos y visualiza las dependencias entre ellos. Permite razonar sobre la modularidad macro y la arquitectura de dependencias de una base de código.",
+    "para": "Sirve para gobernar la organización de carpetas/módulos, verificar la dirección de dependencias (Arquitectura Limpia o Hexagonal) y detectar acoplamientos circulares antes de que degraden compilación y despliegues. Se usa en diseño de monolitos modulares, librerías y análisis estático de arquitectura.",
+    "como": "Cada paquete se dibuja como una carpeta con pestaña superior; los elementos internos pueden mostrarse dentro o quedar encapsulados dejando visible solo el nombre del paquete. Las relaciones entre paquetes se trazan con flechas discontinuas etiquetadas como `«import»` (incorpora elementos públicos en el espacio de nombres destino), `«access»` (uso privado sin reexportar) o `«merge»` (combinación de definiciones en modelos metamodelados). Al analizar el grafo dirigido resultante se verifica el Principio de Dependencias Acíclicas (ADP) y la estabilidad de paquetes (los paquetes estables y centrales deben tener muchas dependencias entrantes y cero salientes hacia detalles).",
+    "practicas": [
+      "Aplica tolerancia cero a los ciclos entre paquetes (`A -> B -> A`): rómpelos extrayendo interfaces comunes o invirtiendo la dependencia.",
+      "En sistemas grandes, organiza los paquetes principales por dominio/capacidad vertical (`orders`, `billing`, `shipping`) en lugar de solo capas técnicas horizontales (`controllers`, `services`, `models`).",
+      "Verifica las reglas del diagrama de paquetes automáticamente en el pipeline CI con herramientas como ArchUnit (Java), dependency-cruiser (TS) o import-linter (Python)."
+    ],
+    "ejemplo": "[<<package>> API / Web] ..> <<import>> ..> [<<package>> Aplicación]\n[<<package>> Infraestructura] ..> <<import>> ..> [<<package>> Dominio]\n[<<package>> Aplicación] ..> <<import>> ..> [<<package>> Dominio]",
+    "entrevista": "El Diagrama de Paquetes permite auditar la regla de oro de modularidad: dependencias siempre acíclicas y apuntando desde infraestructura hacia el dominio estable."
+  },
+  "Diagrama de secuencia": {
+    "que": "El Diagrama de Secuencia es un diagrama de interacción de UML que representa el orden cronológico exacto en que objetos, actores o servicios intercambian mensajes durante un escenario concreto. Mientras el diagrama de clases muestra relaciones estáticas, el de secuencia muestra el comportamiento dinámico en el eje del tiempo.",
+    "para": "Sirve para diseñar y validar flujos de ejecución entre microservicios, APIs, clientes y bases de datos, sacando a la luz llamadas síncronas bloqueantes, problemas N+1, condiciones de carrera y manejo de timeouts. Es el diagrama más utilizado en RFCs de ingeniería y revisiones de PRs arquitectónicos.",
+    "como": "Los participantes se alinean horizontalmente arriba y de cada uno desciende una Línea de Vida (Lifeline discontinua) con barras verticales de Activación que indican cuándo el participante está ejecutando lógica. El tiempo avanza de arriba hacia abajo; los mensajes se dibujan como flechas horizontales: punta sólida rellena para llamadas síncronas bloqueantes, punta abierta para mensajes asíncronos (eventos/colas) y línea discontinua para retornos. Para expresar lógica condicional o iterativa se enmarcan bloques con Fragmentos Combinados: `alt` (ramas if/else), `opt` (opcional), `loop` (bucle), `par` (ejecución paralela) y `ref` (referencia a otra secuencia).",
+    "practicas": [
+      "Modela un único escenario relevante por diagrama (ej. flujo feliz + fallo clave con `alt`), evitando abarcar todo el sistema en un lienzo interminable.",
+      "Distingue rigurosamente flecha síncrona vs asíncrona: confundir una petición HTTP bloqueante con un evento de Kafka oculta latencias y acoplamientos.",
+      "Usa `loop` para detectar de inmediato consultas N+1 dentro de iteraciones y reemplazarlas por operaciones batch.",
+      "Omite llamadas triviales internas (getters o logging local) para resaltar las fronteras entre módulos o servicios."
+    ],
+    "ejemplo": "sequenceDiagram\n  Cliente->>+API: POST /ordenes\n  API->>+Inventario: reservarStock()\n  alt stock disponible\n    Inventario-->>API: 200 OK\n    API->>Cola: <<async>> OrdenCreada\n    API-->>Cliente: 201 Created\n  else sin stock\n    API-->>-Cliente: 409 Conflict\n  end",
+    "entrevista": "Un Diagrama de Secuencia ordena las interacciones en el tiempo mediante lifelines y fragmentos (`alt`, `par`, `loop`), revelando latencias síncronas, N+1 y fallos distribuidos."
+  },
+  "Domain-Driven Design (DDD)": {
+    "que": "Domain-Driven Design (DDD) es una disciplina de diseño de software creada por Eric Evans que alinea la arquitectura y el código directamente con la complejidad del dominio de negocio mediante colaboración continua entre expertos del dominio y desarrolladores. Se divide en Diseño Estratégico (fronteras y lenguaje) y Diseño Táctico (patrones de modelado en código).",
+    "para": "Resuelve el problema de sistemas grandes cuyo código se vuelve incomprensible porque mezcla jerga técnica con reglas de negocio inconsistentes bajo modelos únicos gigantes. Se aplica en dominios con alta complejidad de reglas y evolución constante (fintech, logística, salud, seguros), nunca en CRUDs triviales.",
+    "como": "En el plano estratégico, cada equipo construye un Lenguaje Ubicuo compartido dentro de un Bounded Context (límite donde cada término y modelo tiene un significado unívoco) y coordina relaciones entre contextos con un Context Map (Anti-Corruption Layer, Published Language, Shared Kernel, Customer-Supplier), clasificando los subdominios en Core, Supporting y Generic. En el plano táctico, el núcleo modela Entidades (identidad continua), Value Objects (inmutables comparados por valor), Agregados (clústeres transaccionales protegidos por un Aggregate Root que garantiza invariantes), Repositorios y Eventos de Dominio que propagan cambios entre agregados mediante consistencia eventual.",
+    "practicas": [
+      "Invierte siempre en Diseño Estratégico (Bounded Contexts y Lenguaje Ubicuo), pero aplica Diseño Táctico completo solo en el Core Domain; usa soluciones simples o SaaS en subdominios genéricos.",
+      "Mantén los Agregados pequeños: un Agregado no debe referenciar objetos de otro Agregado directamente sino por su ID, modificando un solo Agregado por transacción.",
+      "Protege tu dominio limpio frente a APIs externas o sistemas legados usando una Anti-Corruption Layer (ACL) que traduzca modelos ajenos.",
+      "Error clásico: adoptar carpetas llamadas `entities` y `value_objects` sin hablar jamás con los expertos del negocio ni definir Bounded Contexts."
+    ],
+    "ejemplo": "// Aggregate Root protegiendo invariante de negocio\nclass Orden {\n  agregarItem(sku: Sku, qty: Cantidad) {\n    if (this.estado !== 'BORRADOR') throw new Error('Orden cerrada');\n    this.items.push(new LineaOrden(sku, qty));\n    this.registrarEvento(new ItemAgregado(this.id, sku));\n  }\n}",
+    "entrevista": "El verdadero valor de DDD no está en sus clases tácticas sino en el Diseño Estratégico: aislar modelos en Bounded Contexts con Lenguaje Ubicuo y proteger invariantes dentro de Agregados pequeños."
+  },
+  "Draw.io": {
+    "que": "Draw.io (actualmente diagrams.net) es una aplicación gratuita y de código abierto basada en `mxGraph` para crear diagramas técnicos de arquitectura, UML, C4, BPMN, ERD y topologías cloud. Funciona en navegador, aplicación de escritorio offline y mediante extensiones nativas para VS Code, Confluence y Obsidian.",
+    "para": "Sirve para diseñar rápidamente diagramas visuales con control espacial preciso sin depender de licencias SaaS ni enviar planos confidenciales a servidores externos. Se utiliza ampliamente en documentación técnica versionada en Git, talleres de diseño de sistemas y repositorios Markdown/Obsidian.",
+    "como": "Representa cada lienzo como un grafo XML determinista (`.drawio`) con capas, estilos de aristas ortogonales, contenedores anidados y bibliotecas oficiales de iconos (UML 2.5, C4, AWS, GCP, Azure, Kubernetes, BPMN). Permite exportar en formato híbrido `.drawio.svg` o `.drawio.png`, incrustando el árbol XML editable directamente dentro de la imagen renderizada. De este modo, GitHub, Obsidian o navegadores muestran el diagrama al instante mientras cualquier desarrollador puede reabrir el mismo archivo en Draw.io o VS Code para editarlo sin perder fuentes originales.",
+    "practicas": [
+      "Guarda los diagramas como `.drawio.svg` en el repositorio: ofrece renderizado vectorial inmediato en Markdown/GitHub y sigue siendo 100% editable.",
+      "Activa el ajuste a cuadrícula, usa capas separadas (ej. Red vs Servicios) y bloquea contenedores padre antes de mover flechas complejas.",
+      "Draw.io vs Mermaid/PlantUML: Draw.io gana en diseño visual libre, talleres en vivo y diagramas cloud ricos; Diagram-as-Code gana en diffs legibles de PR y generación automática."
+    ],
+    "ejemplo": "# Flujo recomendado Docs-as-Code con Draw.io en VS Code:\n1. Instalar extensión 'Draw.io Integration' (hediet.vscode-drawio)\n2. Crear archivo: docs/arquitectura/contenedores.drawio.svg\n3. Enlazar en README.md: ![Arquitectura C4](./docs/arquitectura/contenedores.drawio.svg)",
+    "entrevista": "Draw.io permite practicar Docs-as-Code offline sin vendor lock-in usando archivos `.drawio.svg` que combinan imagen vectorial para Markdown y XML editable dentro del mismo commit."
+  },
+  "Estereotipos UML": {
+    "que": "Los Estereotipos UML son el mecanismo estándar de extensión ligera del lenguaje UML (parte de los UML Profiles) que permite especializar elementos existentes como clases, componentes, nodos o dependencias con semántica específica de un dominio o plataforma. Visualmente se escriben encerrados entre comillas angulares `«estereotipo»`.",
+    "para": "Sirven para adaptar UML a tecnologías reales (microservicios, DDD, Spring, Kubernetes, bases de datos) sin romper la sintaxis oficial ni inventar símbolos arbitrarios incomprensibles. Se usan cuando la caja o flecha básica de UML resulta demasiado genérica para expresar el rol arquitectónico exacto del elemento.",
+    "como": "Un estereotipo extiende una metaclase base del metamodelo UML (por ejemplo, `Class`, `Component` o `Dependency`) añadiendo significado semántico, valores etiquetados (Tagged Values como `{version=\"2.0\", async=true}`), restricciones opcionales (OCL) o un icono personalizado. UML incluye estereotipos predefinidos como `«interface»`, `«abstract»`, `«enumeration»`, `«include»`, `«extend»`, `«import»` y `«deploy»`, y permite a cada equipo definir perfiles propios como `«AggregateRoot»`, `«ValueObject»`, `«RestController»` o `«KafkaTopic»`.",
+    "practicas": [
+      "Utiliza primero los estereotipos estándar de UML antes de inventar etiquetas personalizadas.",
+      "Documenta los estereotipos propios del equipo en una leyenda dentro del diagrama para no perder claridad con nuevos integrantes.",
+      "Nunca uses un estereotipo para contradecir la metaclase base (ej. no marques una línea de Herencia con `«uses»`; usa una Dependencia)."
+    ],
+    "ejemplo": "<<AggregateRoot>>\nOrden {\n  version = 1\n  table = \"orders\"\n}\n\n[API Pedidos] ..> <<publish>> ..> <<KafkaTopic>> ordenes.creadas",
+    "entrevista": "Los estereotipos son el mecanismo oficial de extensibilidad de UML para enriquecer clases, nodos o flechas con semántica de dominio o infraestructura sin romper el estándar."
+  },
+  "Lenguaje UML": {
+    "que": "Unified Modeling Language (UML, estándar OMG en su versión 2.5.1) es el lenguaje visual unificado más extendido en ingeniería de software para especificar, visualizar, construir y documentar artefactos de sistemas orientados a objetos y procesos. Agrupa 14 tipos oficiales de diagramas repartidos equitativamente entre vistas estructurales y vistas de comportamiento.",
+    "para": "Sirve para crear un vocabulario gráfico común que elimine ambigüedades al diseñar algoritmos, relaciones entre clases, máquinas de estados o secuencias distribuidas. Se utiliza en la formación universitaria, en entrevistas técnicas, en RFCs de arquitectura y como base visual para modelado de dominio.",
+    "como": "UML organiza sus 14 diagramas en dos familias: 7 Diagramas Estructurales (Clases, Componentes, Despliegue, Paquetes, Objetos, Estructura Compuesta y Perfil) que describen qué existe en el sistema de forma estática, y 7 Diagramas de Comportamiento (Casos de Uso, Actividad, Máquina de Estados y los 4 de Interacción: Secuencia, Comunicación, Tiempos y Vista General de Interacción) que describen qué ocurre en el tiempo. Según Martin Fowler se emplea en tres modos: Sketch (boceto ágil en pizarra para explorar ideas), Blueprint (plano detallado previo a codificar) y Programming Language (generación automática de código/MDA).",
+    "practicas": [
+      "Aplica 'UML as Sketch': dibuja solo los diagramas que aclaran un problema difícil (normalmente Clases, Secuencia y Estados), nunca los 14 por burocracia.",
+      "Combina siempre al menos una vista estructural (qué piezas hay) con una vista de comportamiento (cómo colaboran en tiempo de ejecución).",
+      "UML vs C4: usa C4 para arquitectura macro de sistemas cloud/microservicios (Contexto y Contenedores) y UML para diseño interno detallado (Secuencia, Clases, Estados)."
+    ],
+    "ejemplo": "Estructura estática (7): Clases | Componentes | Despliegue | Paquetes | Objetos | Estructura Compuesta | Perfil\nComportamiento dinámico (7): Casos de Uso | Actividad | Estados | Secuencia | Comunicación | Tiempos | Vista de Interacción",
+    "entrevista": "UML debe usarse en modo 'Sketch' y no como burocracia waterfall: combinando vistas estructurales y de comportamiento clave (Clases, Secuencia, Estados) junto a C4 para el nivel macro."
+  },
+  "Lucidchart": {
+    "que": "Lucidchart es una plataforma SaaS comercial de diagramación colaborativa en tiempo real orientada a diagramas de arquitectura cloud, UML, ERD, BPMN y flujos organizacionales. Funciona íntegramente en el navegador mediante un lienzo HTML5/Canvas con bibliotecas certificadas de proveedores y modelado asistido.",
+    "para": "Sirve para co-diseñar diagramas en vivo entre equipos distribuidos (ingeniería, producto, arquitectura empresarial y negocio) y enlazar documentación visual con suites corporativas como Jira, Confluence, Google Workspace o Slack. Destaca en talleres sincrónicos, importación automática de esquemas SQL y descubrimiento de infraestructura cloud.",
+    "como": "Permite múltiples cursores simultáneos con comentarios anclados a formas, control de versiones en la nube y plantillas formales para UML, Crow's Foot ERD y BPMN. Ofrece integraciones activas: puede generar un ERD automáticamente pegando el resultado de una consulta `INFORMATION_SCHEMA` de PostgreSQL/MySQL, importar flujos desde texto con formato Mermaid/UML o sincronizar inventarios reales de AWS/Azure/GCP (con Lucidscale) para visualizar topologías desplegadas y vincular atributos de CSV/Sheets mediante formato condicional.",
+    "practicas": [
+      "Exporta instantáneas SVG/PDF hacia el repositorio Git del proyecto para que las decisiones de arquitectura no queden atrapadas tras un paywall de licencia.",
+      "Aprovecha la importación SQL para auditar bases de datos legadas sin dibujar decenas de tablas a mano.",
+      "Lucidchart vs Mermaid/PlantUML: Lucidchart brilla en sesiones colaborativas multidisciplinares en vivo; Mermaid/PlantUML brillan en repositorios Git con Code Review."
+    ],
+    "ejemplo": "-- Flujo típico de ingeniería inversa ERD en Lucidchart:\n1. Ejecutar query de esquema generada por Lucidchart en PostgreSQL\n2. Copiar salida tabular (table_name, column_name, data_type, constraint_type)\n3. Importar en Lucidchart -> Shape Library: Entity Relationship\n4. Ajuste automático de relaciones PK/FK en notación Crow's Foot",
+    "entrevista": "Lucidchart destaca para co-diseño en tiempo real e ingeniería inversa de esquemas SQL o cloud, pero conviene exportar sus artefactos al repositorio Git para evitar pérdida de acceso."
+  },
+  "Mapa de proceso": {
+    "que": "Un Mapa de Proceso es una representación visual simplificada y de alto nivel que describe la secuencia de pasos, entradas, salidas, responsables y puntos de fricción de un flujo operativo de negocio. Prioriza la comprensión universal de negocio por encima del rigor sintáctico de estándares ejecutables.",
+    "para": "Sirve para descubrir cómo funciona realmente una operación ('as-is'), detectar cuellos de botella, retrabajos o aprobaciones manuales innecesarias y diseñar la versión optimizada ('to-be') antes de construir software o automatizar. Se utiliza al inicio de proyectos de transformación digital, onboarding operativo y levantamiento de requerimientos.",
+    "como": "Se construye en talleres con los actores reales del proceso empleando variantes como SIPOC (Suppliers, Inputs, Process, Outputs, Customers) para acotar fronteras o mapas con carriles funcionales (Cross-Functional Flowchart) para mostrar traspasos entre áreas. Por cada paso se documenta el dueño, el tiempo de ciclo frente al tiempo de espera y los artefactos producidos, identificando desperdicios o puntos de fallo antes de traducir las partes automatizables a un diagrama BPMN o de Actividad.",
+    "practicas": [
+      "Mapea primero el proceso 'as-is' real (incluyendo hojas de cálculo manuales y excepciones) antes de diseñar el 'to-be' ideal.",
+      "Empieza con un SIPOC de 5 a 7 macro-pasos para acordar alcance antes de descender al detalle operativo.",
+      "Mapa de proceso vs BPMN: usa Mapa de Proceso para alinear a stakeholders y detectar ineficiencias; pasa a BPMN cuando necesites eventos, reglas y ejecución técnica sin ambigüedad."
+    ],
+    "ejemplo": "[SIPOC: Onboarding de Proveedor]\nSuppliers: Área Compras, Proveedor\nInputs: Formulario fiscal, Cuenta bancaria\nProcess: 1. Registro -> 2. Validación KYC -> 3. Alta ERP -> 4. Notificación\nOutputs: ID Proveedor activo\nCustomers: Cuentas por Pagar",
+    "entrevista": "Antes de escribir código o BPMN, un Mapa de Proceso ('as-is' y 'to-be') expone cuellos de botella y traspasos humanos para no automatizar un proceso roto."
+  },
+  "Modelado de dominio": {
+    "que": "El Modelado de Dominio es la disciplina de construir una representación conceptual estructurada de los conceptos clave, reglas de negocio, invariantes y relaciones de un problema real, completamente independiente de bases de datos, frameworks o interfaces. Su artefacto resultante actúa como puente semántico entre el lenguaje del negocio y el código.",
+    "para": "Sirve para validar que el equipo de desarrollo entiende las reglas del negocio antes de diseñar tablas o endpoints, evitando modelos anémicos llenos de lógica dispersa en controladores. Se aplica al arrancar módulos centrales de producto o refactorizar sistemas legados donde las reglas se volvieron opacas.",
+    "como": "Comienza entrevistando a expertos del dominio y analizando casos de uso para extraer sustantivos candidatos (Entidades con identidad propia y Value Objects inmutables), verbos (comandos y comportamientos del negocio) y restricciones invariantes (reglas que nunca pueden violarse). Se plasma inicialmente en un diagrama conceptual de clases y un glosario de términos unívocos, verificando escenarios límite con recorridos paso a paso. Finalmente, ese modelo guía el diseño de objetos ricos en el código dejando los detalles de SQL, HTTP o colas en adaptadores externos.",
+    "practicas": [
+      "Separa el Modelo de Dominio del Modelo de Persistencia (tablas/ORM): una entidad de dominio agrupa comportamiento e invariantes, no solo columnas.",
+      "Modela conceptos importantes como Value Objects inmutables (`Dinero`, `RangoFechas`, `Email`) en lugar de usar tipos primitivos sueltos (Primitive Obsession).",
+      "Modelado de dominio vs DDD: el modelado de dominio es la técnica de abstracción conceptual; DDD añade además diseño estratégico (Bounded Contexts) y táctico completo."
+    ],
+    "ejemplo": "Dominio: Reserva de Vuelo\n- Value Objects: CodigoVuelo, Tarifa(monto, moneda), RangoAsiento\n- Entidad: Reserva (id, estado, pasajeros)\n- Invariante: \"No se pueden emitir billetes si la reserva expiró o excede capacidad\"",
+    "entrevista": "El Modelado de Dominio traduce reglas de negocio en conceptos ricos e invariantes agnósticos de la base de datos o framework, evitando la trampa del modelo anémico."
+  },
+  "Modelo C4": {
+    "que": "El Modelo C4 es un enfoque pragmático y jerárquico para documentar arquitectura de software creado por Simon Brown, estructurado en cuatro niveles de abstracción progresiva: Contexto, Contenedores, Componentes y Código. Se inspira en mapas interactivos tipo Google Maps donde cada nivel hace zoom dentro de un elemento del nivel superior.",
+    "para": "Resuelve el problema crónico de los diagramas ad-hoc de 'cajas y flechas' que mezclan usuarios, bases de datos, clases y servidores AWS en un mismo dibujo confuso. Se usa como estándar de documentación arquitectónica en equipos modernos (compatible con Docs-as-Code vía Structurizr, PlantUML y Mermaid).",
+    "como": "Organiza la arquitectura en una jerarquía estricta: Nivel 1 (Contexto del Sistema: sistema como caja negra, personas y sistemas externos), Nivel 2 (Contenedores: aplicaciones ejecutables, microservicios y datastores), Nivel 3 (Componentes: módulos lógicos dentro de un contenedor) y Nivel 4 (Código: clases/interfaces dentro de un componente, opcional). Además contempla vistas suplementarias: Diagrama Dinámico (flujo numerado de un escenario) y Diagrama de Despliegue (mapeo a nodos cloud/hardware). Todo elemento debe incluir nombre, tipo, tecnología y descripción corta; toda flecha debe indicar dirección, acción y protocolo.",
+    "practicas": [
+      "Nunca mezcles niveles de abstracción en un mismo diagrama (ej. no pongas Personas junto a Clases internas).",
+      "Incluye siempre una leyenda que explique colores, formas, bordes discontinuos y estilo de flechas.",
+      "Adopta C4 como código (Structurizr DSL o Mermaid C4) para mantener la arquitectura versionada en Git junto al código fuente.",
+      "En la práctica diaria, mantén actualizados Nivel 1 y Nivel 2 para todo el sistema, Nivel 3 solo para servicios complejos y Nivel 4 autogenerado."
+    ],
+    "ejemplo": "Nivel 1 (Contexto)   --> [Sistema] <-> [Usuarios / Sistemas Externos]\nNivel 2 (Contenedor) --> [SPA] -> [API REST] -> [PostgreSQL]\nNivel 3 (Componente) --> [Controller] -> [Service] -> [Repository]\nNivel 4 (Código)     --> [Clases / Interfaces autogeneradas]",
+    "entrevista": "El Modelo C4 ordena la documentación arquitectónica mediante niveles de zoom independientes (Contexto, Contenedores, Componentes, Código), evitando mezclar usuarios, procesos y clases en un solo dibujo."
+  },
+  "Notación UML": {
+    "que": "La Notación UML es la gramática visual y textual estandarizada por el OMG para representar clasificadores, relaciones, multiplicidades, visibilidad y flujo de mensajes sin ambigüedades entre diseñadores. Define qué significa exactamente cada tipo de línea, punta de flecha, rombo, icono y prefijo textual.",
+    "para": "Sirve para garantizar que dos ingenieros de distintos equipos o países interpreten exactamente el mismo acoplamiento, direccionalidad o ciclo de vida al leer un diagrama. Evita errores de diseño causados por dibujar 'flechas genéricas' que no distinguen herencia, composición o simple dependencia.",
+    "como": "Se apoya en convenciones estrictas de trazos y puntas: línea continua vs discontinua (relación estructural/llamada síncrona frente a dependencia/retorno/realización), punta de triángulo hueco (herencia o realización de contrato) frente a punta abierta o rellena (navegabilidad, mensaje asíncrono o llamada síncrona), y rombo hueco frente a rombo relleno (agregación compartida frente a composición con propiedad exclusiva). En texto aplica prefijos de visibilidad (`+` public, `-` private, `#` protected, `~` package), cursiva o `{abstract}` para abstracciones, subrayado para miembros estáticos y rangos de multiplicidad (`0..1`, `1`, `0..*`, `1..*`).",
+    "practicas": [
+      "No intercambies línea continua y discontinua ni triángulo hueco y flecha abierta: `---|>` es Herencia y `..|>` es Implementar Interfaz, mientras `..>` es Dependencia.",
+      "Coloca la multiplicidad en el extremo opuesto al origen para leer correctamente cuántos objetos destino se asocian con cada origen.",
+      "Usa llaves `{readOnly}`, `{ordered}`, `{unique}` para expresar restricciones inline sin saturar el diagrama con notas grandes."
+    ],
+    "ejemplo": "A --|> B   : A hereda de la clase B\nA ..|> I   : A implementa la interfaz I\nA ..>  B   : A depende temporalmente de B\nA o--  B   : A agrega a B (ciclo independiente)\nA *--  B   : A compone a B (ciclo de vida ligado)",
+    "entrevista": "Dominar la notación UML evita ambigüedades críticas porque cada trazo y punta distingue entre herencia, implementación, composición de ciclo de vida y simple dependencia."
+  },
+  "Patrón Adapter (GoF)": {
+    "que": "El patrón Adapter (Wrapper) es un patrón estructural del Gang of Four que convierte la interfaz de una clase existente o librería externa en otra interfaz compatible esperada por el cliente. Actúa como un traductor bidireccional entre contratos incompatibles sin modificar el código original de ninguno de los dos.",
+    "para": "Resuelve el problema de integrar SDKs de terceros, APIs legadas o librerías externas cuya firma de métodos o tipos de datos no coincide con las interfaces limpias de tu dominio. Se usa intensivamente en Arquitectura Hexagonal (adaptadores secundarios) y como pieza táctica de una Anti-Corruption Layer en DDD.",
+    "como": "Participan cuatro roles: el Cliente (solo conoce la interfaz Target), la interfaz Target (el contrato que espera el dominio), el Adaptee (la clase externa incompatible) y el Adapter (implementa Target y envuelve una instancia del Adaptee). En su variante recomendada (Object Adapter por composición), el Cliente invoca el método estándar en el Adapter, y este transforma los parámetros al formato del Adaptee, delega la llamada y traduce la respuesta o excepción resultante de vuelta al contrato Target. La variante alternativa (Class Adapter) usa herencia múltiple, poco habitual fuera de C++.",
+    "practicas": [
+      "Prefiere siempre Object Adapter (composición) sobre Class Adapter (herencia) para desacoplarte de la clase concreta del SDK y facilitar mocks.",
+      "Traduce también las excepciones técnicas del Adaptee a errores propios de tu dominio dentro del Adapter.",
+      "Adapter vs Facade vs Decorator: Adapter cambia una interfaz existente para cumplir otro contrato; Facade crea una interfaz nueva simplificada sobre un subsistema complejo; Decorator mantiene la misma interfaz añadiendo comportamiento."
+    ],
+    "ejemplo": "interface PasarelaPago { cobrar(centavos: number): Promise<void>; }\nclass StripeAdapter implements PasarelaPago {\n  constructor(private stripe: StripeSDK) {}\n  async cobrar(centavos: number) {\n    await this.stripe.charges.create({ amount: centavos, currency: 'usd' });\n  }\n}",
+    "entrevista": "El patrón Adapter protege la pureza del dominio al envolver APIs o legados incompatibles mediante composición y traducir tanto sus contratos como sus errores."
+  },
+  "Patrón Decorator (GoF)": {
+    "que": "El patrón Decorator es un patrón estructural del Gang of Four que permite añadir responsabilidades o comportamientos adicionales a un objeto de forma dinámica envolviéndolo en capas sucesivas. Mantiene exactamente la misma interfaz que el objeto envuelto, haciéndolo transparente para quien lo consume.",
+    "para": "Resuelve la explosión combinatoria de subclases cuando necesitas combinar características ortogonales en tiempo de ejecución (por ejemplo: compresión + cifrado + caché + logging sobre un stream o repositorio). Se usa en middleware HTTP, pipelines de I/O (Java IO, Go `http.Handler`), resiliencia (retries/circuit breakers) y observabilidad.",
+    "como": "Define una interfaz `Component` común, un `ConcreteComponent` con la funcionalidad base y un `Decorator` base que implementa `Component` mientras guarda una referencia por composición a otro `Component`. Cada `ConcreteDecorator` sobrescribe los métodos de la interfaz ejecutando su lógica adicional antes o después de delegar la llamada al objeto envuelto (`this.wrappee.op()`). Al instanciarse de forma anidada (`new LoggingRepo(new CachedRepo(new PostgresRepo()))`), las llamadas atraviesan la pila de envoltorios de afuera hacia adentro y los retornos en orden inverso.",
+    "practicas": [
+      "Respeta el Principio de Sustitución de Liskov: el cliente nunca debe necesitar hacer `instanceof` ni desempaquetar decoradores.",
+      "Cuida el orden de composición: `Cache(Retry(Http))` no se comporta igual que `Retry(Cache(Http))`.",
+      "Decorator vs Proxy: ambos implementan la misma interfaz y envuelven un objeto, pero Decorator apila comportamientos componibles elegidos por el cliente, mientras Proxy controla acceso, lazy-loading o ciclo de vida de un único sujeto."
+    ],
+    "ejemplo": "interface Notificador { enviar(msg: string): void; }\nclass ConLog implements Notificador {\n  constructor(private inner: Notificador) {}\n  enviar(msg: string) {\n    console.log('Enviando:', msg);\n    this.inner.enviar(msg);\n  }\n}",
+    "entrevista": "Decorator sustituye jerarquías rígidas de herencia por composición en capas transparentes, ideal para añadir cross-cutting concerns como caché, logging o reintentos en runtime."
+  },
+  "Patrón Factory Method (GoF)": {
+    "que": "El patrón Factory Method es un patrón creacional del Gang of Four que define una interfaz o método abstracto para crear un objeto, delegando en las subclases o implementaciones concretas la decisión de qué clase exacta instanciar. Desacopla el código consumidor de la instanciación directa con `new`.",
+    "para": "Resuelve el acoplamiento fuerte cuando un módulo contiene lógica de orquestación estable pero debe operar con distintos tipos de productos cuya implementación varía según entorno, configuración o extensión futura. Es clave en frameworks, drivers de bases de datos, exportadores multi-formato y SDKs extensibles.",
+    "como": "Se estructura en cuatro piezas: `Product` (interfaz común de los objetos creados), `ConcreteProducts` (implementaciones específicas), `Creator` (declara el método fábrica `createProduct(): Product` y contiene lógica de negocio que opera únicamente sobre `Product`) y `ConcreteCreators` (sobrescriben `createProduct()` devolviendo el `ConcreteProduct` adecuado). Cuando el `Creator` ejecuta su flujo principal, invoca `this.createProduct()` de forma polimórfica y manipula el resultado sin conocer su clase concreta, cumpliendo el principio Abierto/Cerrado (OCP).",
+    "practicas": [
+      "No confundas Factory Method (polimorfismo entre creadores) con Simple Factory (una función estática con un `switch` que no pertenece al GoF) ni con Abstract Factory (fábrica de familias enteras de objetos relacionados).",
+      "Evita crear fábricas innecesarias si el objeto no tiene múltiples variantes ni lógica de construcción compleja: la Inyección de Dependencias suele bastar.",
+      "Combínalo con un registro/mapa de constructores si quieres evitar modificar código al añadir nuevos tipos."
+    ],
+    "ejemplo": "abstract class Exportador {\n  abstract crearFormato(): Formato; // Factory Method\n  exportar(datos: string) {\n    const fmt = this.crearFormato();\n    return fmt.render(datos);\n  }\n}\nclass ExportadorPDF extends Exportador {\n  crearFormato() { return new FormatoPDF(); }\n}",
+    "entrevista": "Factory Method desacopla la lógica de negocio de las clases concretas que instancia mediante un método de creación polimórfico, facilitando extender variantes sin tocar el flujo principal."
+  },
+  "Patrón Observer (GoF)": {
+    "que": "El patrón Observer es un patrón de comportamiento del Gang of Four que define una dependencia uno-a-muchos entre objetos, de modo que cuando un Sujeto cambia de estado, todos sus Observadores suscritos son notificados y actualizados automáticamente. Promueve bajo acoplamiento entre emisores de cambios y múltiples reactores.",
+    "para": "Resuelve el problema de tener que hardcodear llamadas directas desde un objeto hacia decenas de módulos interesados en sus cambios (UI reactiva, actualización de vistas, disparadores de eventos de dominio en memoria). Se encuentra detrás de `EventTarget`/DOM, RxJS, señales reactivas y listeners de frameworks.",
+    "como": "El Sujeto (`Observable`/`Subject`) mantiene una colección dinámica de referencias a la interfaz `Observer` junto a métodos `subscribe(obs)`, `unsubscribe(obs)` y `notify(evento)`. Cada `ConcreteObserver` implementa `update(evento)` y se registra en el Sujeto. Al ocurrir un cambio relevante, el Sujeto itera su lista invocando `update` bajo dos modelos: Push (envía los datos exactos del cambio en el argumento) o Pull (envía solo la referencia al Sujeto para que cada observador consulte lo que necesite).",
+    "practicas": [
+      "Cancela siempre las suscripciones (`unsubscribe`) o usa referencias débiles al destruir componentes para evitar la fuga de memoria clásica del 'Lapsed Listener'.",
+      "Aísla excepciones dentro del bucle de notificación para que el fallo de un observador no aborte la notificación al resto ni corrompa al Sujeto.",
+      "Observer vs Pub/Sub: en Observer el Sujeto conoce directamente la lista de Observadores en memoria; en Pub/Sub existe un Event Bus o Broker intermedio que desacopla totalmente emisor y suscriptor."
+    ],
+    "ejemplo": "class Cuenta {\n  private obs: ((saldo: number) => void)[] = [];\n  suscribir(fn: (s: number) => void) { this.obs.push(fn); }\n  depositar(monto: number) {\n    this.saldo += monto;\n    this.obs.forEach(fn => fn(this.saldo));\n  }\n}",
+    "entrevista": "Observer permite reaccionar de forma desacoplada a cambios de estado uno-a-muchos, pero exige gestionar desuscripciones y aislamiento de errores para evitar memory leaks y cascadas."
+  },
+  "Patrón Singleton (GoF)": {
+    "que": "El patrón Singleton es un patrón creacional del Gang of Four que garantiza que una clase tenga una única instancia en todo el ciclo de vida del proceso y provee un punto de acceso global a dicha instancia. Controla directamente su propia creación impidiendo instanciaciones paralelas.",
+    "para": "Sirve únicamente cuando debe existir estrictamente un único coordinador lógico o recurso físico compartido (por ejemplo, un gestor de configuración inmutable o un pool único de conexiones), aunque en arquitectura moderna su uso manual se reemplaza por contenedores de Inyección de Dependencias.",
+    "como": "Oculta el constructor como `private` para bloquear llamadas externas `new`, almacena la referencia única en un atributo `private static instance` y expone un método `public static getInstance()`. Si la inicialización es perezosa (lazy) en entornos multihilo, requiere sincronización o Double-Checked Locking con `volatile` (en Java/C#), inicialización estática del cargador de clases, `enum` singleton o `sync.Once` en Go; en lenguajes como Python o JS de módulos ES, los módulos cacheados ya actúan naturalmente como singletons.",
+    "practicas": [
+      "Reconócelo como un posible antipatrón cuando guarda estado mutable global: rompe el paralelismo y el aislamiento de los tests unitarios al acoplar dependencias ocultas.",
+      "Prefiere registrar una instancia única ('Singleton Scope') en tu contenedor de Inyección de Dependencias en lugar de escribir `MiClase.getInstance()` por todo el código.",
+      "Si lo implementas de forma perezosa en código concurrente, usa mecanismos thread-safe garantizados por el lenguaje (`sync.Once`, Holder estático o `enum`) en lugar de un `if (instance == null)` ingenuo."
+    ],
+    "ejemplo": "class Config {\n  private static instance: Config;\n  private constructor(readonly env: string) {}\n  static getInstance(): Config {\n    if (!Config.instance) Config.instance = new Config(process.env.NODE_ENV ?? 'dev');\n    return Config.instance;\n  }\n}",
+    "entrevista": "Aunque Singleton asegura una única instancia global, hoy preferimos el ciclo de vida Singleton gestionado por un contenedor de Inyección de Dependencias para no introducir estado global oculto ni romper los tests."
+  },
+  "Patrón Strategy (GoF)": {
+    "que": "El patrón Strategy es un patrón de comportamiento del Gang of Four que define una familia de algoritmos intercambiables, encapsula cada uno detrás de una interfaz común y permite sustituirlos dinámicamente en tiempo de ejecución. Separa el qué se calcula de cómo se calcula.",
+    "para": "Resuelve la proliferación de bloques `if/else` o `switch` gigantes que eligen reglas de negocio, métodos de pago, políticas de descuentos, ordenamiento o algoritmos de compresión. Se usa para cumplir el principio Abierto/Cerrado permitiendo añadir nuevas variantes sin modificar la clase contexto.",
+    "como": "Se compone de una interfaz `Strategy` con un método común (ej. `calcular(orden)`), múltiples clases `ConcreteStrategy` independientes y una clase `Context` que mantiene una referencia por composición a `Strategy` y delega en ella la ejecución. El cliente inyecta o cambia la estrategia deseada en el `Context` (o mediante un diccionario/mapa por clave de configuración), sin que el `Context` conozca los detalles ni las dependencias de cada algoritmo concreto. En lenguajes con funciones de primera clase, una estrategia de un solo método puede simplificarse pasando directamente un callback o lambda.",
+    "practicas": [
+      "Combina Strategy con un mapa/diccionario (`Map<Tipo, Strategy>`) para eliminar por completo el `switch` de selección.",
+      "En TypeScript, Python o Go, si la estrategia solo tiene un método y no mantiene estado, usa un tipo función/closure en lugar de crear decenas de clases boilerplate.",
+      "Strategy vs State: aunque comparten estructura UML, en Strategy el cliente elige el algoritmo y este suele ser independiente; en State las transiciones ocurren internamente según el ciclo de vida del objeto."
+    ],
+    "ejemplo": "type PoliticaDescuento = (total: number) => number;\nconst descuentos: Record<string, PoliticaDescuento> = {\n  VIP: (t) => t * 0.8,\n  BLACK_FRIDAY: (t) => t * 0.7,\n  NORMAL: (t) => t,\n};\nconst cobrar = (total: number, tipo: string) => descuentos[tipo](total);",
+    "entrevista": "Strategy elimina condicionales rígidos encapsulando algoritmos intercambiables por composición, y en lenguajes modernos se expresa elegantemente mediante funciones de primera clase y mapas."
+  }
+}

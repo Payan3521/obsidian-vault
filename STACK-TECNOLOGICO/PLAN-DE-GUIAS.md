@@ -123,4 +123,4 @@ PY
 | Notas totales | 872 + MOC + grafo + README + este plan |
 | Guías completas | **14** (todo el núcleo ⭐) |
 | Wikilinks | ver validación (objetivo: **0 rotos**) |
-| PDF consolidado | `Stack_Tecnologico_v2.6.pdf` (edición explicativa: cada carpeta, tema y tecnología responde para qué sirve, qué hace y cómo funciona) |
+| PDF consolidado | `Super_Stack_Tecnologico_Ingenieria_Software.pdf` — se regenera con `python3 scripts/build_pdf.py STACK-TECNOLOGICO` |

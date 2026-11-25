@@ -1,0 +1,392 @@
+{
+  "ASP.NET Core security": {
+    "que": "Conjunto de mecanismos, middlewares y configuraciones integradas en el framework ASP.NET Core para proteger aplicaciones web y APIs en .NET. Abarca autenticación basada en claims, autorización declarativa, protección CSRF mediante antiforgery tokens, Data Protection API y cabeceras de seguridad.",
+    "para": "Mitiga vulnerabilidades web habituales (XSS, CSRF, inyección, exposición de secretos y deserialización insegura) sin depender de parches ad hoc en cada controlador. Se aplica desde la configuración del pipeline HTTP en Program.cs hasta los modelos y vistas Razor.",
+    "como": "Las peticiones entran por Kestrel y atraviesan una cadena ordenada de middlewares definida en Program.cs. UseHttpsRedirection y UseHsts fuerzan transporte cifrado, UseAuthentication reconstruye el ClaimsPrincipal a partir de cookies cifradas con Data Protection o tokens JWT validados por JwtBearerHandler, y UseAuthorization evalúa políticas ([Authorize(Policy = ...)]) antes de ejecutar el endpoint. Razor Pages y MVC aplican HTML encoding automático con @modelo y validan tokens antifalsificación ([ValidateAntiForgeryToken]) en formularios mediante cookies y campos ocultos vinculados criptográficamente. En acceso a datos, Entity Framework Core parametriza consultas LINQ por defecto, mientras que System.Text.Json evita la resolución polimórfica de tipos arbitrarios salvo opt-in explícito.",
+    "practicas": [
+      "Registrar UseAuthentication() siempre antes de UseAuthorization() y ambos antes de MapControllers() o MapRazorPages() para evitar rutas sin control de acceso.",
+      "Usar [ValidateAntiForgeryToken] o AutoValidateAntiforgeryTokenAttribute en aplicaciones con cookies, ya que las APIs puras con Bearer tokens en cabecera Authorization no son vulnerables a CSRF clásico.",
+      "Evitar BinaryFormatter (obsoleto e inseguro) y en Newtonsoft.Json mantener TypeNameHandling.None; preferir System.Text.Json con contratos estrictos.",
+      "Separar secretos de desarrollo con dotnet user-secrets y usar Azure Key Vault o gestores externos en producción en lugar de appsettings.json."
+    ],
+    "ejemplo": "builder.Services.AddAuthorization(o => o.AddPolicy(\"AdminOnly\", p => p.RequireRole(\"Admin\")));\nvar app = builder.Build();\napp.UseHsts();\napp.UseHttpsRedirection();\napp.UseAuthentication();\napp.UseAuthorization();\napp.MapControllers().RequireAuthorization();",
+    "entrevista": "En ASP.NET Core la seguridad depende del orden del pipeline de middlewares, de la validación estricta con Data Protection y del uso de System.Text.Json junto con Entity Framework Core parametrizado."
+  },
+  "Buffer overflow": {
+    "que": "Vulnerabilidad de corrupción de memoria que ocurre cuando un programa escribe o lee datos más allá de los límites asignados a un búfer contiguo en memoria. Puede producirse tanto en la pila (stack-based) como en el montículo (heap-based).",
+    "para": "Comprender este fallo permite prevenir ejecución arbitraria de código, denegación de servicio y filtración de memoria en lenguajes sin comprobación automática de límites como C y C++. Es la causa raíz histórica de múltiples compromisos críticos en sistemas operativos, navegadores y servicios de red.",
+    "como": "Al copiar una entrada externa con funciones sin límite explícito (como strcpy, gets o sprintf) hacia un arreglo de tamaño fijo, los bytes excedentes sobrescriben memoria adyacente. En un stack buffer overflow, la escritura sobreescribe variables locales, el frame pointer guardado y finalmente la dirección de retorno en la pila; al ejecutarse la instrucción ret, el flujo salta a una dirección controlada por el atacante o a una cadena ROP. En un heap overflow, se corrompen metadatos del asignador (tamaño de chunks o punteros de listas libres) o punteros de función en estructuras vecinas, permitiendo primitivas de escritura arbitraria al liberar o reasignar bloques.",
+    "practicas": [
+      "Reemplazar funciones inseguras (gets, strcpy, strcat, sprintf) por alternativas acotadas (fgets, snprintf, strlcpy o std::string/std::vector en C++), verificando siempre el truncamiento.",
+      "Compilar con mitigaciones en profundidad: stack canaries (-fstack-protector-strong), ASLR/PIE (-fPIE -pie), NX/DEP (pila no ejecutable) y RELRO completo.",
+      "Activar AddressSanitizer (-fsanitize=address) en pruebas y fuzzing para detectar escrituras fuera de límites de un solo byte (off-by-one) antes de pasar a producción.",
+      "Stack overflow vs Heap overflow: el primero suele apuntar al secuestro directo de la dirección de retorno o SEH; el segundo abusa de metadatos del heap o vtables adyacentes."
+    ],
+    "ejemplo": "// Vulnerable\nvoid copiar(const char *in) { char buf[16]; strcpy(buf, in); }\n// Seguro\nvoid copiar_ok(const char *in) {\n  char buf[16];\n  snprintf(buf, sizeof(buf), \"%s\", in);\n}",
+    "entrevista": "Un buffer overflow ocurre al escribir fuera de los límites de un búfer y corromper datos de control como direcciones de retorno o metadatos del heap, por lo que se mitiga con verificación estricta de tamaños y defensas del compilador como canaries, NX y ASLR."
+  },
+  "Deserialización insegura en Java": {
+    "que": "Vulnerabilidad crítica que se produce cuando una aplicación Java reconstruye objetos a partir de flujos binarios no confiables (típicamente mediante ObjectInputStream.readObject()) sin restringir las clases permitidas. Permite a un atacante instanciar clases arbitrarias presentes en el classpath y encadenar su comportamiento para ejecutar código remoto (RCE).",
+    "para": "Identificar y erradicar este vector evita compromisos totales del servidor en APIs legacy, colas JMS, RMI, sesiones HTTP serializadas o caché distribuida. También aplica a librerías de JSON/XML cuando habilitan polimorfismo de tipos sin lista blanca.",
+    "como": "El flujo binario Java (que suele comenzar con los bytes mágicos AC ED 00 05 o en Base64 rO0AB) incluye descriptores de clase que ObjectInputStream resuelve y carga antes de validar la lógica de negocio. Durante readObject(), la JVM invoca automáticamente métodos mágicos (readObject, readResolve, finalize, hashCode o equals en mapas) de las clases serializadas. Un atacante selecciona clases legítimas del classpath —llamadas gadgets— (por ejemplo en Commons Collections, Spring o JDK) y las enlaza en una gadget chain cuyo paso final invoca Runtime.exec(), Method.invoke() o carga clases remotas.",
+    "practicas": [
+      "Sustituir la serialización nativa de Java por formatos de datos puros como JSON (Jackson sin DefaultTyping) o Protocol Buffers, que no reconstruyen grafos arbitrarios de clases.",
+      "Si ObjectInputStream es inevitable, configurar filtros de deserialización con ObjectInputFilter (JEP 290, global o por flujo) aplicando una lista blanca estricta de clases y límites de profundidad/tamaño.",
+      "En Jackson, evitar enableDefaultTyping() / activateDefaultTyping() con PolymorphicTypeValidator permisivo y prohibir @JsonTypeInfo con entradas externas sin restringir subtipos.",
+      "Auditar dependencias en busca de librerías con gadgets conocidos y validar integridad/autenticidad (HMAC o firma) antes de deserializar cualquier payload."
+    ],
+    "ejemplo": "// Filtro JEP 290 con lista blanca antes de readObject()\nObjectInputStream ois = new ObjectInputStream(inputStream);\nois.setObjectInputFilter(info ->\n  info.serialClass() != null && !info.serialClass().getName().startsWith(\"com.miapp.dto.\")\n    ? ObjectInputFilter.Status.REJECTED\n    : ObjectInputFilter.Status.ALLOWED\n);\nObject obj = ois.readObject();",
+    "entrevista": "La deserialización insegura en Java permite RCE porque ObjectInputStream ejecuta métodos de ciclo de vida de clases del classpath durante readObject(), formando gadget chains que deben bloquearse usando formatos sin tipos arbitrarios o filtros JEP 290 por lista blanca."
+  },
+  "Django security": {
+    "que": "Modelo de seguridad integrado por defecto (batteries-included) del framework web Django en Python. Incluye protección automática contra XSS en plantillas, CSRF mediante middleware, SQLi a través de su ORM, clickjacking, validación de cabecera Host y gestión segura de sesiones y contraseñas.",
+    "para": "Reduce drásticamente la superficie de ataque en aplicaciones Python al establecer valores seguros por defecto y obligar a usar APIs explícitas cuando se desea desactivar una protección. Sirve para construir aplicaciones web y REST (junto con Django REST Framework) manteniendo aislamiento de datos y autenticación robusta.",
+    "como": "Cada petición pasa por SecurityMiddleware (HSTS, X-Content-Type-Options, redirección HTTPS), SessionMiddleware, CommonMiddleware y CsrfViewMiddleware. CsrfViewMiddleware valida en métodos mutadores (POST, PUT, DELETE) que el token de la cookie csrftoken coincida con el enviado en el campo oculto {% csrf_token %} o la cabecera X-CSRFToken, mitigando ataques CSRF con comparación en tiempo constante. El motor de plantillas escapa automáticamente HTML en variables ({{ var }}), salvo uso de |safe o mark_safe(). El ORM compila consultas parametrizadas hacia el driver de base de datos, mientras que ALLOWED_HOSTS rechaza cabeceras Host falsificadas para prevenir cache poisoning y password reset poisoning.",
+    "practicas": [
+      "Nunca desplegar con DEBUG = True en producción (expone stack traces, variables de entorno y settings) ni fijar ALLOWED_HOSTS = ['*'].",
+      "Evitar extra(), RawSQL() o cursor.execute() con formateo de cadenas (f-strings o %); pasar siempre parámetros como lista o tupla al driver.",
+      "No usar |safe, mark_safe() ni format_html() mal aplicado con entradas de usuario sin sanitización previa (por ejemplo, con nh3 o bleach).",
+      "Configurar SESSION_COOKIE_SECURE, CSRF_COOKIE_SECURE, SESSION_COOKIE_HTTPONLY y usar password hashers modernos (Argon2PasswordHasher o PBKDF2 por defecto)."
+    ],
+    "ejemplo": "# settings.py seguro en producción\nDEBUG = False\nALLOWED_HOSTS = [\"api.ejemplo.com\"]\nSECURE_SSL_REDIRECT = True\nSESSION_COOKIE_SECURE = True\nCSRF_COOKIE_SECURE = True\nSECURE_HSTS_SECONDS = 31536000",
+    "entrevista": "Django aplica seguridad por defecto mediante su ORM parametrizado, auto-escaping en plantillas, CsrfViewMiddleware y SecurityMiddleware, pero exige endurecer settings.py (DEBUG=False, ALLOWED_HOSTS estricto) y evitar escapes manuales como mark_safe o raw SQL."
+  },
+  "Evitar secretos en código": {
+    "que": "Práctica fundamental de AppSec consistente en impedir que credenciales, claves API, tokens privados, certificados o cadenas de conexión con contraseñas residan en el código fuente, archivos de configuración versionados o artefactos de compilación.",
+    "para": "Previene el robo masivo de accesos cuando un repositorio se filtra, se comparte con terceros, se sube a un registro público o se decompila una aplicación cliente o imagen Docker. Elimina también la deuda operativa de tener credenciales estáticas compartidas y difíciles de rotar.",
+    "como": "En lugar de incrustar literales en el código, la aplicación lee secretos en tiempo de ejecución desde variables de entorno inyectadas por el orquestador, archivos montados en memoria (tmpfs) o APIs de gestores de secretos (HashiCorp Vault, AWS Secrets Manager, GCP Secret Manager) autenticándose mediante identidades efímeras (OIDC, IAM Roles o Workload Identity). Para evitar fugas accidentales, el ciclo de vida integra escáneres de entropía y patrones en hooks pre-commit (gitleaks, trufflehog) y en el pipeline CI/CD, junto con rotación automática y revocación inmediata si un secreto llega al historial de Git.",
+    "practicas": [
+      "Nunca considerar seguro borrar un secreto en un commit posterior: el historial de Git lo conserva; es obligatorio rotar/revocar la credencial de inmediato y limpiar historial si procede.",
+      "No pasar secretos como argumentos ARG o ENV fijos en un Dockerfile, porque quedan visibles en las capas de la imagen (docker history); usar BuildKit --mount=type=secret o inyección en runtime.",
+      "Configurar gitleaks o detect-secrets en pre-commit y en CI con reglas personalizadas para tokens internos y bloquear el merge ante detecciones.",
+      "Preferir credenciales dinámicas de corta duración o federación OIDC (sin secretos estáticos) para autenticar pipelines CI/CD hacia la nube."
+    ],
+    "ejemplo": "# .pre-commit-config.yaml\nrepos:\n  - repo: https://github.com/gitleaks/gitleaks\n    rev: v8.18.4\n    hooks:\n      - id: gitleaks",
+    "entrevista": "Evitar secretos en código combina inyección en runtime mediante gestores de secretos o identidades efímeras (OIDC/IAM), prevención con gitleaks en pre-commit y CI, y rotación inmediata ante cualquier exposición en el historial de Git."
+  },
+  "Express security": {
+    "que": "Conjunto de prácticas de endurecimiento y middlewares para asegurar aplicaciones web y APIs desarrolladas con Express.js sobre Node.js. Dado que Express es un microframework minimalista, no incluye por defecto cabeceras de seguridad, limitación de tasa, protección CSRF ni validación de esquemas.",
+    "para": "Protege servicios Node.js de alto tráfico frente a XSS, clickjacking, DoS por agotamiento de recursos, contaminación de parámetros HTTP (HPP), filtrado de huella tecnológica y fallos de autenticación o autorización.",
+    "como": "Al inicializar la app Express, se encadenan middlewares antes de las rutas de negocio: helmet() establece cabeceras HTTP defensivas (Content-Security-Policy, X-Content-Type-Options: nosniff, Strict-Transport-Security) y elimina X-Powered-By; express.json({ limit: '10kb' }) acota el tamaño del cuerpo para evitar agotamiento de memoria; express-rate-limit restringe peticiones por IP o clave usando una ventana deslizante o fija; y validadores de esquema (Zod, Joi, express-validator) verifican tipos estrictos en req.body, req.query y req.params para bloquear objetos inesperados (por ejemplo operadores $gt de NoSQL injection). Además, un middleware final de errores de 4 parámetros (err, req, res, next) evita devolver stack traces al cliente.",
+    "practicas": [
+      "Deshabilitar app.disable('x-powered-by') o cargar helmet() como primer middleware para no exponer el framework ni omitir cabeceras de seguridad.",
+      "Configurar app.set('trust proxy', ...) con precisión detrás de Nginx/ALB; de lo contrario, los clientes pueden falsificar X-Forwarded-For y eludir rate limiters.",
+      "Validar tipos con esquemas estrictos (Zod/Joi) en req.query y req.body para prevenir HTTP Parameter Pollution (arrays inesperados) e inyecciones NoSQL.",
+      "Asegurar cookies de sesión con httpOnly: true, secure: true, sameSite: 'lax' o 'strict' y validar explícitamente errores en funciones async (Express 4 no captura promesas rechazadas sin wrapper o try/catch)."
+    ],
+    "ejemplo": "import express from \"express\";\nimport helmet from \"helmet\";\nimport rateLimit from \"express-rate-limit\";\nconst app = express();\napp.use(helmet());\napp.use(express.json({ limit: \"16kb\" }));\napp.use(\"/api\", rateLimit({ windowMs: 60_000, max: 100 }));",
+    "entrevista": "Como Express es minimalista y no trae defensas activas por defecto, asegurar una app implica montar helmet, límites de payload y rate limiting, validar tipos estrictos contra HPP/NoSQLi y manejar errores asíncronos sin filtrar stack traces."
+  },
+  "Format string vulnerability": {
+    "que": "Vulnerabilidad de memoria presente principalmente en C y C++ cuando una cadena controlada por el usuario se pasa directamente como primer argumento (la cadena de formato) a funciones de la familia printf (printf, fprintf, sprintf, snprintf, syslog).",
+    "para": "Permite prevenir fugas de información sensible de la pila o registros (mediante especificadores como %x o %p), caídas por lectura de punteros inválidos (%s) e incluso escritura arbitraria en memoria (%n). Aunque hoy es menos frecuente gracias a alertas del compilador, sigue apareciendo en código heredado, embebido y logging nativo.",
+    "como": "Funciones variádicas como printf reciben un primer parámetro que describe cuántos y qué tipo de argumentos adicionales deben extraerse de los registros y de la pila según la convención de llamada (ABI). Si un atacante controla ese formato e introduce especificadores como %p.%p.%p.%p, printf interpreta valores arbitrarios de la pila como argumentos y los imprime en la salida. Con el especificador %s, intenta desreferenciar valores de la pila como punteros a cadena; y con %n (o %hn), escribe el número de bytes impresos hasta ese punto en la dirección apuntada por el argumento correspondiente, logrando escritura arbitraria si el atacante controla datos en la pila.",
+    "practicas": [
+      "Pasar siempre una cadena de formato constante y literal: usar printf(\"%s\", user_input) o fputs(user_input, stdout) en lugar de printf(user_input).",
+      "Compilar con -Wformat -Wformat-security -Werror=format-security para convertir en error de compilación cualquier formato no literal.",
+      "Habilitar _FORTIFY_SOURCE=2 o 3 en glibc junto con compilación optimizada (-O2), lo que restringe el uso de %n cuando la cadena de formato está en memoria escribible.",
+      "Aplicar la misma regla a wrappers propios de logging o syslog(LOG_INFO, \"%s\", msg), donde a menudo se olvida el especificador constante."
+    ],
+    "ejemplo": "// Vulnerable: atacante puede enviar \"%p.%p.%p.%n\"\nprintf(user_input);\n// Seguro: formato literal constante\nprintf(\"%s\", user_input);",
+    "entrevista": "Una format string vulnerability ocurre al pasar entrada no confiable como cadena de formato en funciones variádicas como printf, permitiendo leer la pila (%p/%s) o escribir en memoria (%n), y se erradica usando formatos constantes y -Werror=format-security."
+  },
+  "Gestión segura de memoria": {
+    "que": "Disciplina de diseño, programación y compilación orientada a controlar el ciclo de vida completo de la memoria (asignación, inicialización, acceso acotado y liberación única) para eliminar corrupciones de memoria y fugas de datos sensibles.",
+    "para": "Sirve para construir software robusto en lenguajes de sistemas (C, C++) o en capas nativas (JNI, FFI, CGO) evitando ejecución de código remoto, denegación de servicio y exposición de secretos remanentes en RAM o swap.",
+    "como": "Combina patrones de propiedad claros en el código con comprobaciones en compilación y ejecución. En C++, el patrón RAII (Resource Acquisition Is Initialization) vincula la vida de la memoria al alcance de objetos mediante punteros inteligentes (std::unique_ptr, std::shared_ptr) y contenedores con tamaño gestionado (std::vector, std::span), eliminando delete manuales. En C, exige validar desbordamientos antes de malloc/calloc, nulificar punteros tras free(), y limpiar claves criptográficas con funciones no eliminables por el compilador (explicit_bzero, memset_s o SecureZeroMemory) porque memset() estándar suele ser optimizado y suprimido por Dead Store Elimination. Además, en entornos modernos se complementa con asignadores endurecidos y sanitizers en CI.",
+    "practicas": [
+      "Preferir lenguajes memory-safe (Rust, Go, Java, C#) para componentes nuevos que procesen entrada no confiable y limitar C/C++ al mínimo indispensable.",
+      "En C++, prohibir new/delete crudos en lógica de negocio usando std::make_unique, std::string y std::span para mantener límites y propiedad explícitos.",
+      "Usar explicit_bzero() o OPENSSL_cleanse() para borrar secretos en memoria antes de liberar búferes, evitando que el optimizador elimine la limpieza.",
+      "Integrar sanitizers (ASan, UBSan, MSan) y análisis estático (Clang Static Analyzer, Coverity) en el pipeline continuo."
+    ],
+    "ejemplo": "#include <strings.h>\nvoid procesar_clave(char *clave, size_t len) {\n  // Uso de la clave...\n  explicit_bzero(clave, len); // No eliminada por el compilador\n  free(clave);\n}",
+    "entrevista": "La gestión segura de memoria exige propiedad explícita (RAII y punteros inteligentes en C++), validación de límites y aritmética de asignación, limpieza garantizada de secretos con explicit_bzero y verificación continua con sanitizers."
+  },
+  "Integer overflow": {
+    "que": "Condición aritmética en la que el resultado de una operación con enteros excede el valor máximo (overflow) o mínimo (underflow) representable por su tipo de dato de ancho fijo, provocando envolvimiento modular (wrap-around) o comportamiento indefinido.",
+    "para": "Aunque por sí solo es un fallo lógico, en código de sistemas y validaciones de tamaño se convierte en el trampolín directo hacia buffer overflows en el heap, omisión de comprobaciones de límites y fallos de autorización o contabilidad.",
+    "como": "En enteros sin signo (uint32_t, size_t) en C/C++, la aritmética es módulo 2^N: sumar 1 a 0xFFFFFFFF produce 0. Si un programa calcula malloc(count * sizeof(item) + header) y la multiplicación desborda a un número muy pequeño, malloc reserva un bloque diminuto, pero el bucle posterior copia los count elementos originales, causando un heap buffer overflow masivo. En enteros con signo (int), el desbordamiento en C/C++ es Undefined Behavior (UB), por lo que el compilador puede asumir que nunca ocurre y eliminar comprobaciones defensivas como if (x + 100 < x). También surgen vulnerabilidades por truncamiento o conversión implícita de signed a unsigned (por ejemplo, pasar un int negativo a memcpy, que espera size_t).",
+    "practicas": [
+      "Comprobar desbordamientos antes de operar o usar builtins seguros del compilador como __builtin_mul_overflow / __builtin_add_overflow (GCC/Clang) o std::checked_add / checked_mul en Rust.",
+      "Evitar mezclar tipos con signo y sin signo en comparaciones o argumentos de tamaño (usar size_t de forma coherente tras validar límites >= 0).",
+      "Nunca escribir comprobaciones post-operación con enteros con signo (if (a + b < 0)), ya que el compilador puede optimizarlas y eliminarlas por Undefined Behavior.",
+      "Activar -fsanitize=undefined (UBSan) y alertas -Wconversion -Wsign-conversion en pruebas y compilación."
+    ],
+    "ejemplo": "size_t total;\nif (__builtin_mul_overflow(count, sizeof(Item), &total)) {\n  return -1; // Evita asignar un buffer diminuto por wrap-around\n}\nItem *arr = malloc(total);",
+    "entrevista": "Un integer overflow provoca wrap-around o comportamiento indefinido que suele desembocar en reservas de memoria insuficientes y heap overflows, por lo que debe validarse antes de operar usando builtins checked o aritmética saturada/segura."
+  },
+  "Laravel security": {
+    "que": "Conjunto de controles de seguridad integrados en el framework PHP Laravel, diseñados para proteger aplicaciones web modernas mediante su motor de plantillas Blade, el ORM Eloquent, middleware CSRF, cifrado autenticado y gestión de autorización basada en Gates y Policies.",
+    "para": "Resuelve los riesgos más frecuentes del desarrollo PHP tradicional (SQL injection, XSS, CSRF, mass assignment y carga arbitraria de archivos) ofreciendo convenciones claras y primitivas criptográficas seguras listas para producción.",
+    "como": "Las peticiones atraviesan el stack HTTP donde VerifyCsrfToken exige un token sincronizado de sesión en peticiones POST/PUT/PATCH/DELETE (excepto rutas stateless bajo api con tokens). El ORM Eloquent construye consultas mediante PDO con prepared statements y bindings posicionales, mientras protege contra asignación masiva obligando a definir $fillable o $guarded en cada modelo. En la capa de vista, Blade escapa automáticamente cualquier expresión {{ $dato }} con htmlspecialchars(..., ENT_QUOTES, 'UTF-8'), dejando sin escapar únicamente {!! $dato !!}. Para secretos de sesión y cookies cifradas, Illuminate\\Encryption usa AES-256-CBC o AES-256-GCM con verificación HMAC-SHA256 derivada de APP_KEY. Finalmente, Gates y Policies centralizan la autorización a nivel de recurso (IDOR/BOLA).",
+    "practicas": [
+      "Definir siempre $fillable explícitamente en los modelos Eloquent y pasar $request->validated() en lugar de $request->all() para impedir Mass Assignment.",
+      "Evitar DB::raw(), whereRaw() o orderByRaw() con interpolación de variables; si son indispensables, pasar array de bindings y validar nombres de columnas contra lista blanca.",
+      "Usar {{ $var }} en Blade y reservar {!! $var !!} exclusivamente para HTML confiable o sanitizado; jamás exponer APP_DEBUG=true ni APP_KEY en repositorios.",
+      "Implementar Policies para cada modelo y validar autorización con $this->authorize('update', $post) para prevenir Broken Object Level Authorization (IDOR)."
+    ],
+    "ejemplo": "// Controlador seguro: validación estricta + Policy + asignación controlada\npublic function update(UpdatePostRequest $request, Post $post) {\n    $this->authorize('update', $post);\n    $post->update($request->validated());\n    return redirect()->route('posts.show', $post);\n}",
+    "entrevista": "Laravel mitiga SQLi, XSS y Mass Assignment mediante Eloquent parametrizado, Blade con auto-escaping y $fillable/$request->validated(), pero requiere evitar whereRaw sin bindings, proteger APP_KEY y aplicar Policies contra IDOR."
+  },
+  "Logging seguro": {
+    "que": "Conjunto de reglas y mecanismos para registrar eventos relevantes de aplicación y seguridad con integridad, formato estructurado y trazabilidad, evitando simultáneamente la exposición de datos sensibles y la inyección o falsificación de registros.",
+    "para": "Permite detectar intrusiones, auditar acciones críticas (autenticación, cambios de privilegios, errores de validación) y realizar análisis forense sin convertir los propios logs en una fuga de credenciales/PII ni en un vector de ataque.",
+    "como": "Un pipeline de logging seguro centraliza la emisión mediante un logger estructurado (JSON) con nivel de severidad, timestamp UTC, correlation/trace ID, actor e IP origen. Antes de serializar el evento, aplica filtros o redactores de campos sensibles (Authorization, Cookie, contraseñas, tokens JWT, tarjetas) y normaliza o codifica caracteres de control (\\r, \\n, secuencias ANSI) para impedir log injection / log forging (CWE-117). Los logs se envían de forma asíncrona y cifrada (TLS) a un colector o SIEM separado con políticas de retención y control de acceso estricto (append-only cuando se requiere evidencia de auditoría).",
+    "practicas": [
+      "Aplicar una lista de exclusión/enmascaramiento en serializadores y middlewares HTTP para no registrar jamás contraseñas, tokens Bearer, claves API ni datos PII/PCI sin anonimizar.",
+      "Usar logging estructurado (JSON) en lugar de concatenación de texto plano para neutralizar saltos de línea falsos (log forging) y evitar inyección de secuencias ANSI en terminales.",
+      "Registrar tanto éxitos como fallos de eventos de seguridad (login fallido, denegación de acceso 403, cambio de rol, errores de firma JWT) con IDs de usuario/sesión, nunca el secreto fallido.",
+      "Evitar loguear objetos completos de excepción o payloads HTTP sin límite de tamaño para prevenir agotamiento de disco (log flooding / DoS)."
+    ],
+    "ejemplo": "logger.info(\"auth_failed\", extra={\n    \"event\": \"login_denied\",\n    \"user_id\": sanitize_id(username),\n    \"ip\": request.remote_addr,\n    \"trace_id\": trace_id\n})  # Nunca incluir password ni header Authorization",
+    "entrevista": "El logging seguro equilibra observabilidad forense y confidencialidad: emite eventos estructurados en JSON con trazabilidad de identidad y fallos de acceso, mientras redacta credenciales/PII y neutraliza saltos de línea contra log injection."
+  },
+  "Memory safety": {
+    "que": "Propiedad de un lenguaje de programación o entorno de ejecución que garantiza que todos los accesos a memoria son válidos espacialmente (dentro de los límites del objeto asignado) y temporalmente (mientras el objeto sigue vivo).",
+    "para": "Elimina clases enteras de vulnerabilidades críticas —como buffer overflows, use-after-free, double free y lecturas fuera de límites— que históricamente representan alrededor del 70% de las vulnerabilidades de alta severidad en grandes bases de código en C/C++.",
+    "como": "Existen dos enfoques principales para lograr memory safety. El primero es en tiempo de ejecución (managed runtimes como Java, Go, C#, Python): el compilador inserta comprobaciones automáticas de límites en arreglos y delega la liberación de memoria a un Garbage Collector (GC), impidiendo punteros colgantes. El segundo es en tiempo de compilación sin GC (Rust): un sistema de tipos afín basado en ownership y lifetimes demuestra estáticamente antes de generar código máquina que ningún dato tiene alias mutables simultáneos ni sobrevive a su dueño, relegando las operaciones sin comprobar a bloques explícitos unsafe.",
+    "practicas": [
+      "Seguridad espacial vs seguridad temporal: la primera impide leer/escribir fuera de límites (out-of-bounds); la segunda impide usar memoria ya liberada (UAF/double free).",
+      "En lenguajes memory-safe (Rust, Go, Java), auditar estrictamente los bloques unsafe, CGO o JNI/FFI, ya que ahí se pierde la garantía del lenguaje.",
+      "Recordar que memory safety no equivale a seguridad total de la aplicación: sigue siendo necesario prevenir SQLi, XSS, lógica de autorización o condiciones de carrera de negocio.",
+      "Al mantener código heredado memory-unsafe (C/C++), adoptar migración incremental de parsers de entrada no confiable hacia Rust o sandboxing por procesos."
+    ],
+    "ejemplo": "// Rust garantiza en compilación límites (runtime panic) y vida útil (compile-time)\nlet datos = [10, 20, 30];\n// datos[5] -> falla seguro (panic) en vez de leer memoria adyacente\nlet elemento = datos.get(5); // Option<&i32> -> None",
+    "entrevista": "Memory safety garantiza validez espacial (sin out-of-bounds) y temporal (sin use-after-free), lográndose mediante bounds checking más Garbage Collector en lenguajes gestionados o mediante ownership y lifetimes en compilación como en Rust."
+  },
+  "Node.js security": {
+    "que": "Conjunto de controles, configuraciones del runtime y prácticas de desarrollo seguro para aplicaciones backend y herramientas CLI construidas sobre Node.js (motor V8 + libuv).",
+    "para": "Protege aplicaciones JavaScript del lado del servidor frente a riesgos propios del ecosistema como prototype pollution, ataques ReDoS que bloquean el event loop, ejecución remota vía eval/child_process, ataques a la cadena de suministro npm y fugas de memoria o secretos.",
+    "como": "Node.js ejecuta JavaScript en un único hilo principal (event loop) apoyado por un pool de hilos en libuv. Una expresión regular con backtracking catastrófico (ReDoS) o una operación síncrona costosa paraliza todas las peticiones concurrentes (DoS). A nivel de lenguaje, el acceso dinámico a propiedades permite manipular __proto__ o constructor.prototype si no se usan mapas seguros o validación de claves. A nivel de plataforma, apis como child_process.exec invocan un shell (/bin/sh), exponiendo command injection, mientras que módulos nativos y scripts postinstall en npm ejecutan código con plenos permisos del proceso salvo que se restrinjan con --ignore-scripts o el Permission Model de Node.js (--permission).",
+    "practicas": [
+      "Usar child_process.execFile o spawn(..., { shell: false }) con arreglo de argumentos en lugar de exec() con interpolación de cadenas.",
+      "Evitar eval(), new Function(), vm (no es un sandbox de seguridad) y librerías inseguras de deserialización o expresiones regulares vulnerables a ReDoS (usar re2 si el patrón viene de usuario).",
+      "Bloquear dependencias con package-lock.json + npm ci, ejecutar npm install --ignore-scripts cuando sea posible y auditar actualizaciones con npm audit / Socket / Snyk.",
+      "Ejecutar Node.js con usuario sin privilegios, usar NODE_ENV=production, validar claves de objetos contra prototype pollution y evaluar el Permission Model (--permission) para limitar acceso a fs/child_process."
+    ],
+    "ejemplo": "import { execFile } from \"node:child_process\";\n// Seguro: no invoca shell ni interpreta metacaracteres\nexecFile(\"/usr/bin/convert\", [inputPath, \"-resize\", \"200x200\", outputPath], (err) => {\n  if (err) console.error(\"Error procesando imagen\");\n});",
+    "entrevista": "La seguridad en Node.js se centra en no bloquear el event loop (ReDoS), evitar command injection usando execFile sin shell, prevenir prototype pollution, proteger la cadena de suministro npm y no usar el módulo vm como sandbox."
+  },
+  "Null dereference": {
+    "que": "Fallo que ocurre cuando un programa intenta leer o escribir a través de un puntero o referencia que contiene el valor nulo (NULL, nullptr, null o nil) esperando una dirección válida de objeto o memoria.",
+    "para": "Prevenirlo evita caídas abruptas del servicio (Denial of Service por SIGSEGV, NullPointerException o panic) y, en escenarios específicos de kernel o sistemas sin protección de página cero, previene escaladas de privilegios.",
+    "como": "En sistemas operativos modernos, la primera página de memoria virtual (dirección 0x0) está sin mapear y protegida contra lectura/escritura. Cuando código C/C++ desreferencia NULL (o un offset pequeño NULL + offset, por ejemplo struct->campo), la MMU lanza un page fault que el kernel convierte en señal SIGSEGV, terminando el proceso (DoS). En el propio kernel o sistemas embebidos sin MMU, si un atacante logra mapear la página cero (mmap en kernels antiguos sin mmap_min_addr) y provocar una desreferencia nula, puede redirigir la ejecución a shellcode bajo su control. En lenguajes gestionados (Java, C#), lanza una excepción en runtime que si no se captura aborta la petición o el hilo.",
+    "practicas": [
+      "Validar punteros devueltos por funciones falibles (malloc, fopen, búsquedas) antes de usarlos o acceder a campos de estructuras.",
+      "No depender de punteros después de comprobarlos solo en una rama, y recordar en C que el compilador puede asumir que un puntero ya desreferenciado no es NULL y eliminar comprobaciones posteriores (if (!p) después de *p).",
+      "Aprovechar tipos no nulables del lenguaje: Option<T> en Rust, Optional en Java o nullable reference types (#nullable enable) en C# / strictNullChecks en TypeScript.",
+      "En Linux, verificar que el sistema mantiene vm.mmap_min_addr > 0 para impedir mapeos en la página cero frente a bugs del kernel."
+    ],
+    "ejemplo": "char *buf = malloc(size);\nif (buf == NULL) {\n  return ERR_NO_MEM; // Fallo controlado antes de desreferenciar\n}\nmemset(buf, 0, size);",
+    "entrevista": "Una null dereference provoca normalmente DoS por fallo de segmentación o excepción no controlada, aunque en kernels o entornos sin protección de página cero puede escalar a ejecución de código; la mejor defensa son tipos Option/no nulables y validación previa."
+  },
+  "Ownership y borrow checking": {
+    "que": "Modelo de gestión de memoria en tiempo de compilación introducido por Rust que asigna un único propietario (owner) a cada valor y verifica todas las referencias (borrows) mediante reglas estrictas de exclusividad y tiempo de vida (lifetimes).",
+    "para": "Elimina de raíz las vulnerabilidades de use-after-free, double free, punteros colgantes (dangling pointers) y data races en concurrencia, sin necesidad de Garbage Collector ni pérdida de rendimiento.",
+    "como": "Bajo las reglas de ownership, cada valor tiene una única variable propietaria; al moverse (move semantics) la propiedad se transfiere y la variable original queda invalidada por el compilador, mientras que al salir de alcance se invoca Drop una sola vez (adiós double free). Para prestar acceso sin transferir propiedad, el borrow checker impone la invariante XOR de alias/mutabilidad: en un mismo ámbito puede haber múltiples referencias inmutables (&T) simultáneas O una única referencia mutable (&mut T), pero nunca ambas a la vez. Mediante el análisis de lifetimes ('a), el compilador verifica estáticamente que ninguna referencia viva más tiempo que el dato al que apunta.",
+    "practicas": [
+      "Aprovechar la regla 'mutabilidad exclusiva o compartición inmutable' para evitar data races e invalidación de iteradores en tiempo de compilación.",
+      "Minimizar y encapsular cualquier uso de unsafe (punteros crudos *const T / *mut T), documentando siempre las invariantes de seguridad que el compilador deja de comprobar.",
+      "No confundir las garantías del borrow checker con seguridad lógica total: fugas de memoria (mem::forget, ciclos Rc) y deadlocks siguen siendo posibles en Rust seguro.",
+      "Borrow checker vs Garbage Collector: el primero resuelve seguridad temporal en compilación sin pausas ni sobrecarga en runtime; el segundo rastrea objetos vivos en ejecución."
+    ],
+    "ejemplo": "let mut v = vec![1, 2, 3];\nlet r = &v[0];\n// v.push(4); // ERROR en compilación: no puede mutar mientras exista préstamo inmutable 'r'\nprintln!(\"{}\", r);",
+    "entrevista": "Ownership y borrow checking permiten a Rust garantizar memory safety y ausencia de data races en compilación aplicando propiedad única y la regla de alias compartido inmutable o acceso mutable exclusivo, sin coste de Garbage Collector."
+  },
+  "Pickle inseguro en Python": {
+    "que": "Vulnerabilidad crítica de deserialización arbitraria presente en el módulo estándar pickle (así como cPickle, shelve y marshall/yaml.load inseguros) de Python, donde reconstruir un flujo de bytes no confiable permite ejecutar código arbitrario en el servidor.",
+    "para": "Identificar y prohibir el uso de pickle con datos externos evita compromisos RCE inmediatos en APIs, cachés Redis compartidas, colas Celery y modelos de Machine Learning (.pkl / PyTorch sin weights_only).",
+    "como": "Pickle no es un formato de datos pasivo como JSON, sino una pequeña máquina virtual basada en pila cuyos opcodes (como GLOBAL, STACK_GLOBAL y REDUCE) instruyen al intérprete para importar cualquier módulo accesible en sys.path e invocar cualquier callable con los argumentos almacenados en el flujo. Cuando una clase define el método especial __reduce__(), devuelve una tupla (callable, args) que se ejecuta al deserializar. Un atacante genera un payload malicioso cuyo __reduce__ devuelve (os.system, ('...',)) o (subprocess.Popen, ...); en el instante en que el servidor llama a pickle.loads(payload), la VM de pickle ejecuta el comando antes incluso de devolver el objeto.",
+    "practicas": [
+      "No usar nunca pickle.loads(), pickle.load() ni shelve sobre datos que provengan del usuario, cookies, colas externas o redes no confiables.",
+      "Sustituir pickle por JSON, MessagePack o Protocol Buffers para intercambio de datos y configuración de tareas (por ejemplo, task_serializer='json' en Celery).",
+      "En Machine Learning, evitar cargar checkpoints .pkl/.pt arbitrarios; preferir formatos seguros basados en tensores puros como safetensors o torch.load(..., weights_only=True).",
+      "Tener cuidado equivalente con PyYAML: usar siempre yaml.safe_load() en lugar de yaml.load() sin SafeLoader."
+    ],
+    "ejemplo": "# Payload conceptual malicioso: al hacer pickle.loads() ejecuta código\nimport os, pickle\nclass Exploit:\n    def __reduce__(self): return (os.system, (\"id\",))\npayload = pickle.dumps(Exploit())\n# NUNCA hacer pickle.loads(untrusted_bytes); usar json.loads()",
+    "entrevista": "Pickle es una máquina virtual basada en opcodes (como REDUCE) que importa módulos e invoca funciones arbitrarias durante pickle.loads(), por lo que nunca debe usarse con datos no confiables y debe sustituirse por JSON o safetensors."
+  },
+  "Prototype pollution en JavaScript": {
+    "que": "Vulnerabilidad específica de JavaScript en la que un atacante logra inyectar o modificar propiedades en Object.prototype (o prototipos integrados) aprovechando fusiones recursivas (merge/clone) o asignaciones dinámicas sin sanitizar claves especiales.",
+    "para": "Prevenirla evita elusión de controles de autenticación/autorización, Denegación de Servicio por alteración de métodos estándar y ejecución remota de código (RCE) en Node.js cuando una propiedad contaminada llega a un gadget como child_process o motores de plantillas.",
+    "como": "En JavaScript, casi todos los objetos heredan propiedades de Object.prototype mediante la cadena de prototipos. Si una función como deepMerge(target, source) itera sobre claves de un JSON controlado por el usuario y asigna target[key] = source[key] recursivamente, una clave como \"__proto__\" o la ruta \"constructor.prototype\" hace que target[\"__proto__\"] resuelva a Object.prototype. Cualquier propiedad escrita ahí (por ejemplo {\"__proto__\": {\"isAdmin\": true}} o {\"__proto__\": {\"shell\": \"node\"}}) pasa a existir en todos los objetos literales futuros de la aplicación que no definan esa propiedad explícitamente.",
+    "practicas": [
+      "Bloquear las claves \"__proto__\", \"constructor\" y \"prototype\" en funciones de fusión/asignación dinámica o comprobar Object.hasOwn(obj, key).",
+      "Usar new Map() o Object.create(null) cuando se almacenen pares clave-valor arbitrarios suministrados por el usuario, ya que carecen de cadena de prototipos.",
+      "Validar los cuerpos JSON de entrada con esquemas estrictos (Zod, Ajv con additionalProperties: false) antes de copiar o fusionar propiedades.",
+      "Ejecutar Node.js con --disable-proto=delete (o throw) cuando la compatibilidad lo permita y mantener actualizadas librerías utilitarias (lodash, qs, merge)."
+    ],
+    "ejemplo": "function safeMerge(target, src) {\n  for (const key of Object.keys(src)) {\n    if (key === \"__proto__\" || key === \"constructor\" || key === \"prototype\") continue;\n    if (typeof src[key] === \"object\" && src[key] !== null) {\n      target[key] ??= {};\n      safeMerge(target[key], src[key]);\n    } else { target[key] = src[key]; }\n  }\n}",
+    "entrevista": "La prototype pollution permite inyectar propiedades globales en Object.prototype mediante claves como __proto__ o constructor.prototype en merges inseguros, lo que se mitiga validando esquemas, filtrando esas claves o usando Map y Object.create(null)."
+  },
+  "Pruebas unitarias de seguridad": {
+    "que": "Pruebas automatizadas a nivel de unidad o integración ligera que verifican explícitamente invariantes de seguridad (control de acceso, validación de entradas, codificación, criptografía y manejo de errores) ante casos negativos y payloads maliciosos.",
+    "para": "Sirven para detectar regresiones de seguridad en el mismo momento en que un desarrollador modifica una regla o ruta, evitando que una vulnerabilidad ya corregida vuelva a introducirse en futuras entregas.",
+    "como": "A diferencia de los tests funcionales centrados en el 'happy path', las pruebas unitarias de seguridad ejercitan límites y casos de abuso directamente sobre funciones, middlewares o controladores en el suite habitual (pytest, JUnit, Jest, Go testing). Incluyen aserciones negativas sobre autorización (un usuario con rol estándar o de otro tenant recibe HTTP 403 al consultar un recurso ajeno — test anti-IDOR), verificación de rechazo de payloads XSS/SQLi/path traversal, validación de cabeceras de seguridad, expiración/firma inválida de JWT y comprobación de que los errores no filtran información interna ni logs sensibles.",
+    "practicas": [
+      "Escribir siempre un test de regresión que reproduzca el exploit exacto cada vez que se corrige una vulnerabilidad o hallazgo de pentest.",
+      "Probar controles de autorización en matriz (usuario no autenticado -> 401, usuario de otro tenant -> 403, admin -> 200) para cada endpoint crítico.",
+      "Incluir casos límite en validadores y parsers: cadenas vacías, caracteres nulos (%00), Unicode malformado, tamaños máximos, números negativos y tipos inesperados.",
+      "Diferenciar pruebas unitarias de seguridad (rápidas, deterministas, en cada PR) frente a DAST/fuzzing (exploratorios, más lentos, en staging o nightly)."
+    ],
+    "ejemplo": "def test_idor_bloqueado(client, token_usuario_a, pedido_usuario_b):\n    resp = client.get(\n        f\"/api/orders/{pedido_usuario_b.id}\",\n        headers={\"Authorization\": f\"Bearer {token_usuario_a}\"}\n    )\n    assert resp.status_code == 403",
+    "entrevista": "Las pruebas unitarias de seguridad codifican las invariantes de autorización, validación y no regresión directamente en CI, garantizando que cada bug de seguridad corregido tenga un test negativo automatizado que impida su reaparición."
+  },
+  "Rails security": {
+    "que": "Arquitectura de seguridad integrada en el framework Ruby on Rails, centrada en convenciones seguras para proteger sesiones, formularios, consultas SQL, asignación de parámetros y renderizado HTML en vistas ERB.",
+    "para": "Permite desarrollar aplicaciones web y APIs en Ruby mitigando por defecto XSS, CSRF, SQL injection, Mass Assignment y sesiones manipuladas, siempre que el desarrollador respete las APIs idiomáticas del framework.",
+    "como": "ActionController activa protect_from_forgery with: :exception por defecto, validando un authenticity_token en peticiones no idempotentes que coincide con la sesión cifrada (AES-256-GCM usando secret_key_base). ActiveRecord parametriza consultas al recibir hashes o placeholders (User.where(email: params[:email]) o where('email = ?', email)), mientras Strong Parameters obliga en el controlador a declarar explícitamente params.require(:user).permit(:name) antes de crear o actualizar modelos. En la capa de vista, ERB escapa automáticamente toda salida <%= %> mediante ActiveSupport::SafeBuffer, requiriendo llamada explícita a raw o html_safe para omitir el escape.",
+    "practicas": [
+      "Usar Strong Parameters (.permit(...)) de forma granular y nunca hacer .permit! sobre entradas de usuario ni aceptar :role o :admin en formularios públicos.",
+      "Evitar interpolación #{params[:x]} dentro de where(), order(), find_by_sql() o joins(); usar placeholders (?) o listas blancas de columnas permitidas para ordenación.",
+      "No llamar a .html_safe ni raw() sobre datos de usuario; si se necesita HTML enriquecido, procesarlo con el helper sanitize() o Loofah.",
+      "Integrar Brakeman en el pipeline CI para detectar estáticamente inyecciones, redirects abiertos (redirect_to params[:url]) y llamadas peligrosas como send() o eval()."
+    ],
+    "ejemplo": "# Controlador Rails seguro con Strong Parameters y consulta parametrizada\ndef update\n  @post = current_user.posts.find(params[:id]) # Acotado al dueño (anti-IDOR)\n  @post.update!(params.require(:post).permit(:title, :body))\n  redirect_to @post\nend",
+    "entrevista": "Rails protege por defecto con ActiveRecord parametrizado, auto-escaping en ERB, protect_from_forgery y Strong Parameters, pero sigue exigiendo acotar scopes al usuario contra IDOR, evitar interpolación en order()/where() y auditar con Brakeman."
+  },
+  "Revisión de dependencias": {
+    "que": "Proceso continuo de inventario, análisis de vulnerabilidades conocidas (SCA), verificación de licencias, procedencia y mantenimiento de librerías y paquetes de terceros integrados en un proyecto.",
+    "para": "Mitiga el riesgo en la cadena de suministro de software (supply chain), donde una sola dependencia transitiva vulnerable o comprometida (typosquatting, secuestro de mantenedor, backdoor) puede comprometer toda la aplicación aunque el código propio sea impecable.",
+    "como": "Se apoya en Software Composition Analysis (SCA) y generación de un Software Bill of Materials (SBOM, en formato CycloneDX o SPDX) a partir de los lockfiles deterministas (package-lock.json, poetry.lock, go.sum, Cargo.lock). El analizador cruza el árbol exacto de dependencias directas y transitivas contra bases de datos de vulnerabilidades (NVD, OSV, GitHub Advisory Database) y verifica hashes de integridad en el lockfile. Herramientas avanzadas añaden análisis de alcanzabilidad (reachability) para priorizar CVEs que realmente invoca la aplicación y detectan anomalías de comportamiento como scripts postinstall sospechosos o paquetes recién publicados.",
+    "practicas": [
+      "Versionar siempre lockfiles deterministas (npm ci, pip --require-hashes, go.sum, Cargo.lock) para evitar instalaciones silenciosas de versiones no auditadas.",
+      "Priorizar la remediación por alcanzabilidad y exposición real (CVSS + contexto de ejecución) en lugar de perseguir ciegamente alertas de dependencias solo de desarrollo.",
+      "Activar actualizaciones automatizadas (Dependabot, Renovate) agrupadas y evaluadas por pruebas, junto con generación de SBOM por cada release.",
+      "Verificar ortografía, firma/procedencia y actividad del mantenedor antes de añadir una librería nueva para prevenir typosquatting y dependency confusion."
+    ],
+    "ejemplo": "# Generar SBOM CycloneDX y escanear vulnerabilidades con Trivy\ntrivy fs --format cyclonedx --output sbom.cdx.json .\ntrivy sbom --severity HIGH,CRITICAL sbom.cdx.json",
+    "entrevista": "La revisión de dependencias combina lockfiles con verificación de hash, herramientas SCA conectadas a OSV/NVD, generación de SBOM y análisis de alcanzabilidad y procedencia para frenar tanto CVEs transitivos como ataques a la cadena de suministro."
+  },
+  "Secure coding (.NET - C)": {
+    "que": "Prácticas de programación segura para el ecosistema .NET y C#, aprovechando el sistema de tipos gestionado del CLR, la gestión automática de memoria y las APIs criptográficas y de acceso a datos de la biblioteca base.",
+    "para": "Previene inyecciones SQL/LDAP/XML, deserialización remota de objetos, exposición de información mediante excepciones detalladas, uso de algoritmos criptográficos débiles y fallos en interoperabilidad con código nativo (P/Invoke).",
+    "como": "Aunque el CLR ofrece memory safety en código gestionado, los riesgos se concentran en límites de entrada y serialización. En acceso a bases de datos, SqlCommand con parámetros tipados (Parameters.Add(...).Value) o Entity Framework Core mediante expresiones LINQ separan código de datos. En XML, XmlReaderSettings debe fijar DtdProcessing = DtdProcessing.Prohibit y XmlResolver = null para bloquear XXE. En criptografía, el uso de System.Security.Cryptography exige RandomNumberGenerator para aleatoriedad criptográfica (nunca System.Random), AesGcm o AES-CBC+HMAC y PBKDF2/Argon2 para contraseñas. Finalmente, cualquier código unsafe o P/Invoke hacia DLLs nativas requiere validación estricta de longitudes y fijación segura de punteros (fixed).",
+    "practicas": [
+      "Prohibir BinaryFormatter, NetDataContractSerializer y SoapFormatter; preferir System.Text.Json para serialización sin resolución arbitraria de tipos.",
+      "Configurar DtdProcessing.Prohibit y XmlResolver = null en XmlDocument/XmlReader para prevenir XXE en versiones o APIs legacy.",
+      "Usar RandomNumberGenerator.GetBytes() para tokens y nonces en lugar de System.Random, y validar rutas con Path.GetFullPath() verificando prefijo contra path traversal.",
+      "Habilitar analizadores Roslyn de seguridad (Microsoft.CodeAnalysis.NetAnalyzers / SecurityCodeScan) y #nullable enable para detectar nulabilidades y patrones peligrosos en compilación."
+    ],
+    "ejemplo": "// Consulta SQL parametrizada segura en ADO.NET\nusing var cmd = new SqlCommand(\"SELECT Id, Name FROM Users WHERE Email = @email\", conn);\ncmd.Parameters.Add(\"@email\", SqlDbType.NVarChar, 256).Value = userEmail;\nusing var reader = await cmd.ExecuteReaderAsync();",
+    "entrevista": "El secure coding en .NET/C# se apoya en consultas parametrizadas o LINQ, System.Text.Json en lugar de BinaryFormatter, deshabilitar DTD/XmlResolver contra XXE, usar RandomNumberGenerator y activar analizadores Roslyn en compilación."
+  },
+  "Secure coding (C - C++)": {
+    "que": "Conjunto de estándares y técnicas defensivas (como CERT C/C++ y C++ Core Guidelines) para escribir software seguro en lenguajes de bajo nivel con gestión manual de memoria y aritmética de punteros directa.",
+    "para": "Minimiza el riesgo de corrupción de memoria (buffer overflows, UAF, format strings), comportamiento indefinido y condiciones de carrera TOCTOU en kernels, controladores, parsers y servicios críticos de alto rendimiento.",
+    "como": "En C y C++, el compilador confía en que el programador respeta las reglas de tamaño, alineación y vida útil; cualquier violación se convierte en Undefined Behavior que el optimizador puede explotar eliminando comprobaciones. La programación segura exige validar entradas antes de calcular tamaños de asignación (prevenir integer overflow), utilizar funciones con límite explícito o wrappers RAII (std::unique_ptr, std::string, std::span, std::array), inicializar todas las variables y nulificar punteros tras liberar memoria. Se refuerza en compilación mediante flags de endurecimiento (-Wall -Wextra -Werror -D_FORTIFY_SOURCE=3 -fstack-protector-strong -fPIE -pie -Wl,-z,relro,-z,now) y pruebas dinámicas con ASan, UBSan y fuzzing (libFuzzer/AFL++).",
+    "practicas": [
+      "Tratar cualquier cálculo de tamaño para malloc/new como potencialmente desbordado y verificarlo antes de asignar memoria.",
+      "En C++, usar contenedores estándar y punteros inteligentes (std::vector, std::span, std::unique_ptr) con .at() cuando se requiera comprobación de límites, evitando aritmética cruda de punteros.",
+      "Compilar con flags de hardening completos (ASLR/PIE, RELRO completo, stack canaries, -Werror=format-security) y ejecutar fuzzing continuo con ASan y UBSan sobre parsers.",
+      "Evitar condiciones TOCTOU en sistema de archivos usando descriptores abiertos (openat, fstat) en vez de validar una ruta con stat() y luego abrirla con open()."
+    ],
+    "ejemplo": "// C++ moderno: std::span evita pasar punteros desacoplados de su tamaño\nvoid procesar(std::span<const uint8_t> datos) {\n  if (datos.size() < 4) return;\n  uint32_t hdr = datos[0];\n}",
+    "entrevista": "El secure coding en C/C++ combina prevención de integer/buffer overflows y UAF mediante RAII y std::span, eliminación de Undefined Behavior, flags de hardening del compilador y fuzzing continuo con ASan/UBSan."
+  },
+  "Secure coding (Go)": {
+    "que": "Conjunto de convenciones y prácticas de seguridad aplicadas al lenguaje Go, aprovechando su tipado estático, seguridad de memoria gestionada y biblioteca estándar robusta, mientras se previenen vulnerabilidades lógicas, de concurrencia y de fugas en capa HTTP o SQL.",
+    "para": "Permite desarrollar microservicios, APIs y herramientas cloud-native resistentes a inyecciones, path traversal, SSRF, DoS por goroutines sin límite y condiciones de carrera en memoria compartida.",
+    "como": "Aunque Go previene buffer overflows mediante bounds checking y Garbage Collector, permite errores graves si se ignoran sus garantías o se abusa de sus primitivas. En SQL, database/sql parametriza consultas con placeholders ($1 o ?), mientras concatenar con fmt.Sprintf abre SQLi. En plantillas, html/template escapa según contexto HTML/JS/CSS, a diferencia de text/template que no escapa nada. En rutas de archivo, filepath.Join limpia la ruta pero NO impide salir de un directorio base si no se valida con filepath.Rel o os.Root (Go 1.24+) / validación explícita de prefijo. Para servidores HTTP, http.Client y http.Server carecen de timeouts por defecto si se usan instancias globales o sin configurar, exponiendo Slowloris y agotamiento de descriptores; además, el acceso concurrente a mapas provoca panic fatal si no se sincroniza.",
+    "practicas": [
+      "Usar siempre html/template para salida web (nunca text/template) y database/sql con placeholders en vez de fmt.Sprintf.",
+      "Configurar explícitamente ReadHeaderTimeout, ReadTimeout, WriteTimeout e IdleTimeout en http.Server, y Timeout en http.Client.",
+      "Auditar exhaustivamente el paquete unsafe y llamadas CGO, además de ejecutar go test -race en CI para detectar data races.",
+      "Integrar gosec y govulncheck (que analiza vulnerabilidades alcanzables en el grafo de llamadas) en el flujo de integración continua."
+    ],
+    "ejemplo": "srv := &http.Server{\n    Addr:              \":8443\",\n    Handler:           mux,\n    ReadHeaderTimeout: 5 * time.Second,\n    ReadTimeout:       10 * time.Second,\n    WriteTimeout:      15 * time.Second,\n}",
+    "entrevista": "Go ofrece memory safety por defecto, pero su secure coding exige configurar timeouts explícitos en http.Server/Client, usar html/template y SQL parametrizado, proteger concurrencia con -race, evitar unsafe y escanear con govulncheck/gosec."
+  },
+  "Secure coding (Java)": {
+    "que": "Prácticas de desarrollo seguro en Java orientadas a prevenir vulnerabilidades en aplicaciones empresariales, microservicios y sistemas distribuidos que corren sobre la JVM.",
+    "para": "Mitiga fallos críticos recurrentes del ecosistema Java como deserialización insegura, XXE en parsers XML, SQL injection, path traversal, Expression Language injection y uso incorrecto de criptografía.",
+    "como": "En la JVM la seguridad de memoria está garantizada (salvo JNI/Unsafe), por lo que la superficie de ataque reside en las APIs de E/S, reflexión y parsers. En acceso a datos, PreparedStatement separa la estructura SQL de los parámetros frente a Statement.createStatement() con concatenación. Los parsers XML estándar (DocumentBuilderFactory, SAXParserFactory, XMLInputFactory) habilitan entidades externas por defecto en muchas implementaciones, exigiendo desactivar DTDs (disallow-doctype-decl) para impedir XXE. En criptografía, java.security.SecureRandom debe usarse en lugar de java.util.Random, y MessageDigest.isEqual() para comparaciones en tiempo constante. Asimismo, frameworks de plantillas o validación (SpEL, OGNL, Bean Validation) nunca deben evaluar cadenas controladas por el usuario como expresiones.",
+    "practicas": [
+      "Usar PreparedStatement o JPA con parámetros enlazados (:param), nunca concatenación de cadenas en consultas SQL/JPQL.",
+      "Desactivar DTDs y entidades externas en todos los parsers XML (DocumentBuilderFactory, SAXParserFactory, TransformerFactory) para neutralizar XXE.",
+      "Evitar ObjectInputStream sobre entradas externas, evitar reflexión dinámica con nombres de clase no filtrados y no interpolar entradas en expresiones SpEL o mensajes de Bean Validation.",
+      "Usar SecureRandom para generación aleatoria, MessageDigest.isEqual() para comparar HMACs/tokens y herramientas como SpotBugs + FindSecBugs en CI."
+    ],
+    "ejemplo": "DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();\ndbf.setFeature(\"http://apache.org/xml/features/disallow-doctype-decl\", true);\ndbf.setFeature(\"http://xml.org/sax/features/external-general-entities\", false);\ndbf.setFeature(\"http://xml.org/sax/features/external-parameter-entities\", false);\ndbf.setXIncludeAware(false);\ndbf.setExpandEntityReferences(false);",
+    "entrevista": "El secure coding en Java prioriza PreparedStatement frente a SQLi, blindaje de parsers XML contra XXE, rechazo de ObjectInputStream/SpEL sobre entradas no confiables y uso de SecureRandom más comparaciones en tiempo constante."
+  },
+  "Secure coding (JavaScript - TypeScript)": {
+    "que": "Conjunto de técnicas de programación segura para código frontend y backend escrito en JavaScript o TypeScript, centrado en el manejo seguro del DOM, aislamiento de tipos en tiempo de ejecución, prevención de XSS y control de prototipos.",
+    "para": "Evita la ejecución de scripts maliciosos en el navegador (DOM XSS), la contaminación de prototipos, fugas de tokens en almacenamiento local y la falsa sensación de seguridad derivada de confiar en tipos de TypeScript que desaparecen en runtime.",
+    "como": "TypeScript verifica contratos estáticamente al compilar, pero se transpila a JavaScript puro: una interfaz TS no impide que un payload JSON real traiga tipos distintos o claves como __proto__. En el navegador, insertar entradas no confiables mediante innerHTML, outerHTML, document.write() o href=\"javascript:...\" permite DOM XSS; debe emplearse textContent, createElement o sanitización estricta con DOMPurify. También debe validarse el esquema de URLs (solo https: o http: mediante new URL()) antes de asignarlos a enlaces o redirecciones (open redirect / XSS). En peticiones y estado, almacenar JWTs de sesión en localStorage los expone ante cualquier XSS, frente a cookies HttpOnly con SameSite.",
+    "practicas": [
+      "Nunca asumir que los tipos de TypeScript validan entradas externas en runtime; validar todo JSON/query/params con Zod, Valibot o Ajv.",
+      "En el DOM, usar textContent o enlaces seguros de frameworks (JSX/Angular) y evitar dangerouslySetInnerHTML / innerHTML / v-html salvo HTML pasado por DOMPurify.",
+      "Validar URLs con el constructor new URL(input) comprobando explícitamente url.protocol === 'https:' o 'http:' antes de usarlos en href o window.location.",
+      "No guardar tokens sensibles o sesiones en localStorage/sessionStorage; preferir cookies HttpOnly, Secure y SameSite junto con una Content-Security-Policy estricta."
+    ],
+    "ejemplo": "// Validación de protocolo seguro + inserción segura en el DOM\nconst parsed = new URL(userUrl, window.location.origin);\nif (parsed.protocol === \"https:\" || parsed.protocol === \"http:\") {\n  linkElement.href = parsed.href;\n  linkElement.textContent = userLabel; // Seguro frente a XSS\n}",
+    "entrevista": "En JS/TS la regla clave es que TypeScript desaparece en runtime, por lo que hay que validar entradas con esquemas como Zod, usar textContent o DOMPurify en el DOM, verificar protocolos de URL y guardar sesiones en cookies HttpOnly."
+  },
+  "Secure coding (PHP)": {
+    "que": "Disciplina de escritura de código seguro en PHP moderno (PHP 8+), enfocada en neutralizar las debilidades históricas del lenguaje: tipado débil, inclusión de archivos, deserialización de objetos, ejecución de comandos y manejo inseguro de SQL o sesiones.",
+    "para": "Protege aplicaciones web PHP contra inyección SQL, RCE por LFI/RFI o unserialize(), XSS, carga maliciosa de archivos y bypass de autenticación por comparaciones laxas (type juggling).",
+    "como": "El operador == en PHP realiza conversiones de tipo implícitas (type juggling) que en versiones antiguas producían colisiones absurdas (por ejemplo '0e123' == '0e456'); usar === (comparación estricta) y hash_equals() para tokens elimina el problema. En SQL, PDO debe configurarse con PDO::ATTR_EMULATE_PREPARES => false para que las consultas preparadas las compile el motor SQL real y no el cliente PHP. Para evitar Remote/Local File Inclusion (RFI/LFI) y RCE, nunca se pasan parámetros de usuario a include/require, eval() o unserialize() (usar json_decode() en su lugar). Al subir archivos, la extensión y MIME declarados por el cliente no son confiables: se inspeccionan bytes mágicos con finfo, se renombra con identificador aleatorio y se almacena fuera del document root.",
+    "practicas": [
+      "Usar comparación estricta (===), strict_types=1 y hash_equals() para verificar firmas, tokens CSRF o secretos.",
+      "Usar PDO con ATTR_EMULATE_PREPARES => false y ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION para consultas SQL reales parametrizadas.",
+      "Prohibir unserialize() sobre entradas externas (usar json_decode) y nunca pasar rutas de usuario a include/require o exec/shell_exec (usar escapeshellarg o evitar el shell).",
+      "Almacenar archivos subidos fuera del directorio público web, con nombre aleatorio generado en servidor y sin permisos de ejecución."
+    ],
+    "ejemplo": "$pdo = new PDO($dsn, $user, $pass, [\n    PDO::ATTR_EMULATE_PREPARES   => false,\n    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,\n]);\n$stmt = $pdo->prepare('SELECT id, hash FROM users WHERE email = :email');\n$stmt->execute(['email' => $email]);",
+    "entrevista": "El secure coding en PHP exige comparación estricta (=== y hash_equals) contra type juggling, PDO con prepared statements nativos (sin emulación), sustitución de unserialize por JSON y almacenamiento de uploads fuera del document root."
+  },
+  "Secure coding (Python)": {
+    "que": "Conjunto de prácticas para escribir código Python seguro en aplicaciones web, scripts de automatización y servicios de datos, evitando inyecciones de código/comandos, deserialización peligrosa, YAML inseguro, XXE y path traversal.",
+    "para": "Garantiza que la expresividad y dinamismo de Python no deriven en ejecución remota de código o fugas de datos al interactuar con el sistema operativo, bases de datos, parsers XML/YAML y sistemas de archivos.",
+    "como": "Python incluye primitivas dinámicas potentes (eval, exec, __import__, pickle) que ejecutan código arbitrario si reciben entrada no confiable. Para subprocesos, subprocess.run([...], shell=False) invoca execve directamente pasando argumentos como vector sin shell; activar shell=True abre command injection inmediata. En parsers XML de la stdlib (xml.etree.ElementTree, minidom), la mayoría son vulnerables por defecto a Billion Laughs (expansión de entidades XML / DoS), recomendándose la librería defusedxml. En archivos, os.path.join('/base', '/etc/passwd') descarta '/base' silenciosamente si el segundo argumento empieza por '/'; por ello es obligatorio resolver con Path.resolve() y verificar is_relative_to(base_dir). Además, hashlib/secrets deben usarse según propósito: secrets para tokens criptográficos en vez del módulo random (Mersenne Twister predecible).",
+    "practicas": [
+      "Usar subprocess.run(lista_args, shell=False) y evitar os.system, eval(), exec() y pickle con entradas externas.",
+      "Emplear secrets.token_urlsafe() / secrets.compare_digest() para tokens y comparaciones criptográficas en lugar de random o ==.",
+      "Usar defusedxml para parsear XML no confiable, yaml.safe_load() para YAML y Path.resolve().is_relative_to() contra path traversal.",
+      "Validar errores con Bandit o Ruff (reglas S / flake8-bandit) y eliminar bloques assert en validaciones de seguridad porque desaparecen al ejecutar Python con -O."
+    ],
+    "ejemplo": "from pathlib import Path\nBASE = Path(\"/srv/uploads\").resolve()\ntarget = (BASE / filename).resolve()\nif not target.is_relative_to(BASE):\n    raise ValueError(\"Path traversal detectado\")",
+    "entrevista": "El secure coding en Python evita shell=True, pickle, eval y assert en controles de seguridad, utiliza secrets para aleatoriedad criptográfica, defusedxml/safe_load para parsers y Path.resolve().is_relative_to() contra path traversal."
+  },
+  "Secure coding (Ruby)": {
+    "que": "Prácticas de programación segura en Ruby orientadas a evitar ejecución dinámica arbitraria, inyección de comandos, deserialización insegura con Marshal/YAML, expresiones regulares vulnerables y fugas en metaprogramación.",
+    "para": "Protege aplicaciones Ruby (y gemas) frente a RCE y DoS cuando el código aprovecha capacidades de introspección dinámica del lenguaje o interactúa con procesos externos y archivos.",
+    "como": "La metaprogramación en Ruby ofrece métodos como eval, instance_eval, class_eval, send / public_send y constantize. Si una entrada externa llega a send(params[:method]) o constantize, un atacante puede invocar métodos privados peligrosos o instanciar clases arbitrarias. En ejecución de comandos, Kernel#open('|...') o backticks (`...`) y system(str) invocan un shell; debe usarse system(cmd, arg1, arg2) o Open3.capture2e(cmd, arg1) con argumentos separados. En serialización, Marshal.load() y Psych/YAML.load() en versiones antiguas permiten instanciar objetos arbitrarios y cadenas gadget, debiendo sustituirse por JSON.parse o YAML.safe_load. Además, las anclas ^ y $ en expresiones regulares de Ruby coinciden con principio y fin de línea (no de cadena), permitiendo eludir validaciones con un \\n; deben usarse \\A y \\z.",
+    "practicas": [
+      "Usar \\A y \\z en expresiones regulares de validación (emails, URLs, identificadores) en lugar de ^ y $ para impedir bypass multilínea.",
+      "Prohibir Marshal.load con datos no confiables, usar YAML.safe_load (con permitted_classes restringidas) o JSON.parse, y evitar Kernel#open (preferir File.open / URI.open).",
+      "Evitar eval, constantize y send() con entradas de usuario; si se requiere despacho dinámico, validar contra una lista blanca estricta antes de llamar a public_send.",
+      "Pasar arreglos de argumentos a system() / Open3 sin invocar el shell y analizar el código estáticamente con Brakeman o RuboCop Security."
+    ],
+    "ejemplo": "# Validación sin bypass multilínea y despacho seguro por lista blanca\nALLOWED_ACTIONS = %w[export archive].freeze\nraise ArgumentError unless params[:id].match?(/\\A\\d+\\z/)\nraise SecurityError unless ALLOWED_ACTIONS.include?(params[:action])\nreport.public_send(params[:action])",
+    "entrevista": "En Ruby el secure coding exige usar anclas \\A/\\z en regex, evitar Marshal.load y metaprogramación dinámica (send/constantize/eval) sobre entrada externa, invocar comandos con Open3 en lista de argumentos y preferir File.open/YAML.safe_load."
+  },
+  "Secure coding (Rust)": {
+    "que": "Prácticas para escribir software seguro en Rust, combinando las garantías de memory safety y thread safety del compilador con controles explícitos sobre bloques unsafe, aritmética de enteros, pánicos (DoS), FFI y dependencias de crates.",
+    "para": "Evita que desarrolladores confíen ciegamente en que 'si compila en Rust es seguro', previniendo denegaciones de servicio por panic, desbordamientos aritméticos en modo release, errores sutiles en bloques unsafe y fallos de lógica web o criptográfica.",
+    "como": "En modo debug, Rust comprueba integer overflows provocando panic, pero en compilación --release hace wrap-around silencioso (two's complement wrapping) salvo que se utilicen métodos explícitos (checked_add, saturating_add, overflowing_add). Asimismo, el indexado directo slice[i] o .unwrap() sobre Result/Option provoca panic y caída del hilo o servicio (DoS) si la entrada es maliciosa; se prefiere .get(i) y propagación con ?. Cuando es inevitable usar unsafe (FFI con C, optimizaciones SIMD, abstracciones de bajo nivel), el programador asume la responsabilidad manual de mantener invariantes de alineación, no nulabilidad, vigencia de punteros y ausencia de alias mutables, encapsulando cada bloque unsafe tras una API segura con comentarios // SAFETY: que justifiquen su validez.",
+    "practicas": [
+      "Usar checked_* o saturating_* para aritmética sobre tamaños o entradas externas, ya que en builds --release los enteros hacen wrap-around silencioso.",
+      "Evitar .unwrap(), .expect() e indexado directo slice[i] con datos externos; usar .get() y manejo explícito de Result/Option para prevenir pánicos (DoS).",
+      "Minimizar bloques unsafe, documentar invariantes con '// SAFETY:' y validarlos con Miri (cargo miri test) y fuzzing (cargo-fuzz).",
+      "Auditar crates con cargo-audit y cargo-deny para detectar CVEs (RustSec), licencias incompatibles y dependencias no confiables en Cargo.lock."
+    ],
+    "ejemplo": "fn asignar_espacio(elementos: usize, tam: usize) -> Option<Vec<u8>> {\n    let total = elementos.checked_mul(tam)?; // Evita wrap-around en --release\n    if total > 10_000_000 { return None; }\n    Some(vec![0u8; total])\n}",
+    "entrevista": "Aunque Rust elimina errores de memoria en compilación, el secure coding requiere usar aritmética checked_* en release, evitar unwrap() contra DoS por panic, auditar bloques unsafe con Miri y revisar crates con cargo-audit."
+  },
+  "Seguridad en Go stdlib": {
+    "que": "Conjunto de paquetes, garantías y matices de seguridad presentes en la biblioteca estándar de Go (net/http, crypto/*, html/template, database/sql, os, path/filepath, encoding/json), incluyendo sus valores seguros por defecto y sus trampas conocidas.",
+    "para": "Permite aprovechar las primitivas de Go —auditadas y mantenidas con alto estándar criptográfico— sin introducir vulnerabilidades por configuración por defecto incompleta, comportamientos sutiles de parsers o permisos excesivos.",
+    "como": "La stdlib de Go destaca por ofrecer crypto/tls con soporte moderno (TLS 1.2/1.3, cifras seguras por defecto), crypto/rand conectado al CSPRNG del sistema operativo y html/template con escape contextual automático. Sin embargo, presenta matices críticos: http.DefaultClient y http.ListenAndServe no establecen timeouts y DefaultClient sigue hasta 10 redirecciones automáticamente (riesgo de SSRF/DoS); filepath.Clean(\"../../etc/passwd\") devuelve \"../../etc/passwd\" si no hay raíz previa y filepath.Join no bloquea escapes por sí solo (desde Go 1.24 os.Root resuelve el acceso confinado a directorio); encoding/json es case-insensitive al mapear campos de structs si coinciden sin distinguir mayúsculas; y net/http no valida CSRF ni limita tamaño de cuerpo si no se envuelve r.Body con http.MaxBytesReader.",
+    "practicas": [
+      "Usar crypto/rand (nunca math/rand) para claves, nonces o IDs impredecibles, y crypto/subtle.ConstantTimeCompare para verificar HMACs o secretos.",
+      "Envolver req.Body con http.MaxBytesReader y usar http.Server/http.Client propios con Timeouts y CheckRedirect controlado contra SSRF.",
+      "Confinar operaciones de sistema de archivos usando os.Root (Go 1.24+) o validación estricta de ruta resuelta con filepath.EvalSymlinks y comprobación de prefijo.",
+      "Usar DisallowUnknownFields() en json.NewDecoder cuando se requiera contrato estricto y evitar pasar URLs sin normalizar o confiar en r.URL.Path sin limpiar."
+    ],
+    "ejemplo": "func handler(w http.ResponseWriter, r *http.Request) {\n    r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // Límite estricto de 1 MiB\n    dec := json.NewDecoder(r.Body)\n    dec.DisallowUnknownFields()\n    // ...\n}",
+    "entrevista": "La stdlib de Go ofrece primitivas muy sólidas como crypto/tls, crypto/rand y html/template, pero exige aplicar http.MaxBytesReader, configurar timeouts y CheckRedirect en HTTP, y usar os.Root o validación estricta frente a path traversal."
+  }
+}

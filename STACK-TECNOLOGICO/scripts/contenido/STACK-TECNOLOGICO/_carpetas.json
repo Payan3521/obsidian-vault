@@ -1,0 +1,418 @@
+{
+  "apis-e-integraciones": {
+    "titulo": "APIs e Integraciones",
+    "rol": "Cubre el diseño, consumo y operación de interfaces de programación (REST, SOAP, webhooks, SDKs) junto con integraciones reales de pagos (Stripe, Mercado Pago), mapas, mensajería, modelos de IA (OpenAI, Claude, Gemini) y automatización (n8n, Make, Zapier). Cumple el papel de puente entre el sistema propio y el ecosistema externo de servicios.",
+    "por_que": "Casi ningún producto moderno opera aislado: cobrar, autenticar, enviar correos o invocar un LLM depende de integraciones confiables. Sin dominar paginación, versionado, límites de tasa e idempotency keys, el software sufre cobros duplicados, roturas silenciosas ante cambios de terceros y caídas en cascada.",
+    "como_encaja": "Se apoya en Formatos y serialización para los payloads y en Redes de datos para el transporte HTTP/TLS; alimenta directamente a Construcción de app empresariales y Desarrollo web. En el ciclo de vida aparece tanto en el diseño de contratos externos como en la fase de implementación e integración.",
+    "ruta": "Comienza por los fundamentos de contrato y transporte (REST, SOAP, paginación, versionado, Webhooks, Idempotency key) y herramientas de prueba (curl, HTTPie, Postman); luego explora SDKs, integraciones críticas de negocio (pagos, notificaciones, mapas, APIs de IA) y plataformas de orquestación no-code/low-code.",
+    "grupo": "Construcción de software"
+  },
+  "arquitectura": {
+    "titulo": "Arquitectura (Apuntes Propios)",
+    "rol": "Reúne apuntes propios y síntesis personales sobre tres estilos estructurales fundamentales: Clean Architecture, Arquitectura Hexagonal (puertos y adaptadores) y Microservicios. Funciona como cuaderno de referencia rápida para condensar decisiones y modelos mentales de diseño.",
+    "por_que": "Los apuntes propios traducen la teoría arquitectónica a criterios accionables adaptados al contexto de tus proyectos. Sin esta síntesis práctica, es fácil aplicar patrones por moda, acoplar el dominio a frameworks concretos o fragmentar un sistema en microservicios innecesarios.",
+    "como_encaja": "Complementa de forma directa a Arquitectura y diseño (que desarrolla los patrones en profundidad) y a Arquitecturas de software (UML, C4, ADR) para documentar las decisiones. Se consulta en las etapas de diseño de alto nivel, revisión técnica y refactorización estructural.",
+    "ruta": "Parte del índice general de arquitecturas, revisa Hexagonal y Clean Architecture para consolidar el aislamiento del dominio, y cierra con Microservicios evaluando cuándo justifica asumir complejidad distribuida.",
+    "grupo": "Construcción de software"
+  },
+  "arquitectura-y-diseño": {
+    "titulo": "Arquitectura y Diseño",
+    "rol": "Abarca patrones de diseño clásicos (GoF creacionales, estructurales y de comportamiento), principios de diseño orientado a objetos (SOLID, GRASP, alta cohesión y bajo acoplamiento), patrones de persistencia y estilos arquitectónicos modernos (capas, hexagonal, Clean, DDD, CQRS, Event Sourcing, monolito modular, microservicios, serverless y 12-Factor App). Es el núcleo intelectual para estructurar sistemas mantenibles.",
+    "por_que": "La diferencia entre un prototipo desechable y un sistema longevo radica en dónde se trazan los límites y cómo se gestionan las dependencias. Ignorar estos principios genera código rígido donde cada cambio rompe módulos lejanos y dispara el coste de mantenimiento.",
+    "como_encaja": "Extiende los conceptos de Fundamentos de programación hacia decisiones de escala sistémica y dialoga con Bases de datos, Caching y mensajería y Sistemas distribuidos. Participa desde el diseño inicial hasta la evolución continua y refactorización de sistemas en producción.",
+    "ruta": "Empieza por los principios base (cohesión/acoplamiento, SOLID, GRASP, composición sobre herencia), sigue con los patrones tácticos y de datos (GoF, Repository, Unit of Work, DTO/Mapper), y culmina con estilos macro (monolito modular, hexagonal, DDD, CQRS, Event Sourcing, microservicios y 12-Factor).",
+    "grupo": "Construcción de software"
+  },
+  "arquitecturas-de-software-uml-c4-adr": {
+    "titulo": "Arquitecturas de Software (UML, C4 y ADR)",
+    "rol": "Se centra en el modelado visual, la notación técnica y la documentación arquitectónica mediante UML (clases, secuencia, estados, actividad, componentes, despliegue), el modelo C4 (contexto, contenedores, componentes, código), diagramas de proceso (BPMN, DFD) y herramientas como PlantUML, Draw.io y Lucidchart, integrando también DDD y patrones GoF clave.",
+    "por_que": "Un diseño que solo vive en la cabeza de su autor no puede auditarse ni escalarse entre equipos. Sin una notación compartida con niveles claros de abstracción, los diagramas se vuelven ambiguos, desactualizados e inútiles para alinear a desarrollo, negocio y operaciones.",
+    "como_encaja": "Sirve de lenguaje visual para expresar las decisiones de Arquitectura y diseño y de Ingeniería de requisitos, además de alimentar los entregables de Documentación. Se utiliza durante el diseño previo a la codificación, en revisiones de arquitectura y en el onboarding técnico.",
+    "ruta": "Inicia con los fundamentos de modelado de dominio y el modelo C4 de lo general a lo específico (contexto, contenedores, componentes, código); continúa con los diagramas estructurales y de comportamiento de UML, BPMN/ERD y automatización de diagramas con PlantUML.",
+    "grupo": "Construcción de software"
+  },
+  "bases-de-datos": {
+    "titulo": "Bases de Datos",
+    "rol": "Cubre el diseño de datos relacionales (modelo ER, normalización, llaves, joins, transacciones ACID, aislamiento y bloqueos), motores SQL (PostgreSQL, MySQL, SQL Server, Oracle, SQLite), motores NoSQL y especializados (MongoDB, Redis, Cassandra, Neo4j, Elasticsearch, PostGIS, InfluxDB/TimescaleDB) y operación en producción (índices, EXPLAIN, migraciones, replicación, sharding, backups y PITR).",
+    "por_que": "El estado persistente es la parte más difícil de cambiar y la más sensible ante fallos o cuellos de botella. Desconocer planes de ejecución, niveles de aislamiento, migraciones seguras o estrategias de recuperación deriva en corrupción de datos, caídas por bloqueos y pérdida irreversible de información.",
+    "como_encaja": "Conecta los modelos de dominio de Arquitectura y diseño con la capa de aceleración y desacoplamiento de Caching y mensajería, y se despliega sobre Infraestructura de TI o Cloud / AWS. Acompaña todo el ciclo de vida: modelado inicial, optimización de consultas, evolución de esquemas y operación.",
+    "ruta": "Domina primero el modelo relacional, normalización, ACID, índices y EXPLAIN sobre PostgreSQL/MySQL; pasa luego a migraciones, backups/PITR y replicación/sharding, y finalmente compara cuándo incorporar motores documentales, clave-valor, columnares, grafos o series temporales.",
+    "grupo": "Datos e IA"
+  },
+  "caching-y-mensajería": {
+    "titulo": "Caching y Mensajería",
+    "rol": "Explora las estrategias de almacenamiento temporal en memoria y borde (Redis, Memcached, cache-aside, write-through, invalidación, TTL, ETag, CDN, prevención de thundering herd) y los patrones de comunicación asíncrona mediante brokers y streams (RabbitMQ, Kafka, NATS, Pub/Sub, DLQ, Outbox, Sagas, idempotencia y garantías de entrega).",
+    "por_que": "A medida que crece el tráfico, leer siempre de base de datos o encadenar llamadas síncronas destruye la latencia y la disponibilidad. Sin dominar invalidación de caché, entregas at-least-once o colas de mensajes muertos, aparecen datos obsoletos, tormentas de reintentos y pérdida de eventos de negocio.",
+    "como_encaja": "Actúa como capa intermedia entre Servicios/APIs y Bases de datos, y materializa los patrones de consistencia eventual y resiliencia de Sistemas distribuidos. Entra en juego al escalar rendimiento, desacoplar microservicios e integrar flujos de trabajo asíncronos.",
+    "ruta": "Estudia primero caching HTTP y en memoria (ETag, cache-aside, TTL/eviction, invalidación y thundering herd); después aborda mensajería asíncrona (Pub/Sub, RabbitMQ, Kafka/NATS) cerrando con garantías de entrega, idempotencia, Outbox y Sagas.",
+    "grupo": "Datos e IA"
+  },
+  "cloud-aws": {
+    "titulo": "Cloud / AWS",
+    "rol": "Presenta los servicios principales de Amazon Web Services organizados por capacidad: cómputo (EC2, Lambda, Batch, Lightsail), redes y borde (VPC, Subnets, Route 53, ALB/NLB, CloudFront, API Gateway, VPN), almacenamiento y datos (S3, EBS, EFS, RDS, Aurora, DynamoDB, ElastiCache, Redshift), mensajería (SQS, SNS, EventBridge, Kinesis, MSK), seguridad/IAM y control de costos (FinOps, Budgets, CUR).",
+    "por_que": "La nube pública es el entorno estándar de despliegue en la industria actual, y AWS concentra la mayor adopción empresarial. Trabajar sin entender IAM, aislamiento en VPC, permisos mínimos o modelos de precios expone a brechas de seguridad graves y facturas fuera de control.",
+    "como_encaja": "Materializa sobre infraestructura gestionada los conceptos de Redes de datos, Contenerización y orquestación, Bases de datos y Seguridad, y se automatiza desde DevOps, CI/CD e IaC. Es central desde la definición de arquitectura de despliegue hasta la operación y optimización financiera.",
+    "ruta": "Comienza por cuentas, IAM, VPC/Subnets y Security Groups; sigue con cómputo y almacenamiento base (EC2, S3, EBS, RDS, Load Balancers), avanza hacia serverless e integración (Lambda, API Gateway, SQS/SNS/EventBridge, DynamoDB) y cierra con observabilidad, seguridad y control de costos.",
+    "grupo": "Infraestructura y operación"
+  },
+  "compiladores": {
+    "titulo": "Compiladores",
+    "rol": "Recorre la teoría de lenguajes formales (jerarquía de Chomsky, autómatas finitos, expresiones regulares, gramáticas libres de contexto, BNF/EBNF) y todas las fases de un compilador o intérprete moderno: análisis léxico, parsing (LL, LR/LALR, ANTLR), AST, tabla de símbolos, sistemas de tipos, análisis semántico, código intermedio (IR, SSA), optimización, generación de código máquina/bytecode (LLVM, JVM, WebAssembly), linkers, JIT y LSP.",
+    "por_que": "Entender cómo se traduce el código fuente a instrucciones ejecutables desmitifica el rendimiento, los mensajes de error del compilador, la gestión de memoria y el análisis estático. Sin esta base, los compiladores, linters, motores de búsqueda y DSLs se perciben como cajas negras imposibles de depurar.",
+    "como_encaja": "Aplica directamente la Matemática discreta al funcionamiento interno de Lenguajes, runtimes y build y Sistemas operativos, además de fundamentar el análisis estático de Seguridad. Aporta criterio técnico transversal al elegir herramientas, escribir DSLs o diagnosticar problemas de toolchain.",
+    "ruta": "Empieza por lenguajes formales, autómatas y gramáticas BNF; avanza fase por fase por el frontend (lexer, parser LL/LR, AST, tabla de símbolos y tipado), luego el backend (IR, SSA, grafo de flujo, optimización y LLVM/generación de código) y termina con runtimes, JIT, GC y LSP.",
+    "grupo": "Fundamentos y ciencias"
+  },
+  "construcción-de-app-empresariales": {
+    "titulo": "Construcción de Aplicaciones Empresariales",
+    "rol": "Condensa los bloques recurrentes del software corporativo y B2B: diseño de APIs de negocio, patrones BFF (Backend for Frontend), control de acceso basado en roles (RBAC), inicio de sesión único (SSO), arquitecturas multi-tenant, auditoría y reportes, colas de integración y conceptos de sistemas ERP y CRM.",
+    "por_que": "El software empresarial falla raramente por algoritmos complejos y casi siempre por fugas de datos entre clientes (tenants), permisos mal modelados o falta de trazabilidad legal y contable. Dominar estos patrones evita reescribir la capa de acceso y cumplimiento cuando la empresa incorpora clientes grandes.",
+    "como_encaja": "Integra decisiones de Arquitectura y diseño, APIs e integraciones, Seguridad y Bases de datos en una vista orientada al producto corporativo. Aparece en la fase de arquitectura y construcción de plataformas SaaS y sistemas internos de gestión.",
+    "ruta": "Empieza por diseño de APIs y BFF, continúa con identidad y aislamiento (SSO, RBAC, multi-tenant), sigue con auditoría, reportes e integraciones por colas, y contextualiza todo en los dominios ERP y CRM.",
+    "grupo": "Construcción de software"
+  },
+  "construcción-de-apps-móviles": {
+    "titulo": "Construcción de Aplicaciones Móviles",
+    "rol": "Cubre el desarrollo nativo y multiplataforma para Android e iOS (Android Studio, Xcode, Swift, Flutter, React Native, .NET MAUI), ciclo de vida móvil (Activities, Intents, Fragments), persistencia local (SQLite/Room, preferencias), sincronización offline-first, permisos, notificaciones push, consumo de batería, pruebas en dispositivo y publicación en Play Store y App Store.",
+    "por_que": "El entorno móvil impone restricciones severas de red intermitente, batería, memoria y ciclos de suspensión que no existen en un servidor o navegador de escritorio. Ignorarlas produce aplicaciones que pierden estado, drenan batería, fallan sin conexión o son rechazadas en las tiendas oficiales.",
+    "como_encaja": "Comparte principios visuales con Diseño de interfaces de usuario, consume contratos de APIs e integraciones y aplica prácticas específicas de Testing. Se ubica en la fase de construcción y distribución de clientes móviles.",
+    "ruta": "Comprende primero los fundamentos de plataforma (ciclo de vida, permisos, almacenamiento local y offline-first) y las herramientas nativas (Android Studio/Xcode/Swift); luego evalúa frameworks multiplataforma (Flutter, React Native, MAUI) y cierra con rendimiento, firma (APK/AAB) y publicación.",
+    "grupo": "Construcción de software"
+  },
+  "contenerización-y-orquestación": {
+    "titulo": "Contenerización y Orquestación",
+    "rol": "Abarca el empaquetado de aplicaciones en contenedores (Docker, Podman, Dockerfile multi-stage, volúmenes, Docker Compose, registries como Docker Hub y ECR), proxies inversos (nginx, Traefik) y orquestación en clústeres (Kubernetes, K3s, ECS, Fargate, Helm, Argo CD, Istio/Linkerd y healthchecks).",
+    "por_que": "Eliminar el clásico 'en mi máquina funciona' y escalar servicios sin intervención manual exige entornos reproducibles y declarativos. Sin dominar imágenes ligeras, redes de contenedores, volúmenes y sondas de salud, los despliegues resultan frágiles, inseguros y lentos de recuperar.",
+    "como_encaja": "Se apoya directamente en namespaces y cgroups de Sistemas operativos y en Redes de datos, y sirve de destino para los pipelines de DevOps, CI/CD e IaC. Es clave en las etapas de empaquetado, despliegue, escalado y operación continua.",
+    "ruta": "Empieza con Docker, Dockerfiles multi-stage, volúmenes y Docker Compose para desarrollo local; pasa luego a proxies inversos y registries, y da el salto a orquestación con Kubernetes (o K3s/ECS), Helm, healthchecks, GitOps con Argo CD y service mesh.",
+    "grupo": "Infraestructura y operación"
+  },
+  "control-de-versiones-y-flujo-de-código": {
+    "titulo": "Control de Versiones y Flujo de Código",
+    "rol": "Cubre Git en profundidad (rebase vs merge, cherry-pick, tags, firma GPG, .gitignore), estrategias de ramificación (GitFlow, GitHub Flow, trunk-based development, monorepos), plataformas colaborativas (GitHub, GitLab, Bitbucket), revisión de código (Pull Requests), versionado semántico (SemVer) y automatización previa al commit (Conventional Commits, Husky, lint-staged, pre-commit, ESLint/Prettier).",
+    "por_que": "El flujo de código es el sistema nervioso de cualquier equipo de ingeniería. Sin acuerdos claros de ramas, revisiones disciplinadas y validaciones automáticas antes del merge, el historial se vuelve ilegible, las integraciones rompen la rama principal y los despliegues generan miedo.",
+    "como_encaja": "Es el primer eslabón operativo de Desarrollo en equipo y alimenta directamente los disparadores de DevOps, CI/CD e IaC. Está presente cada día durante toda la fase de construcción, revisión y liberación de versiones.",
+    "ruta": "Afianza Git (ramas, merge vs rebase, cherry-pick, .gitignore) y los flujos de trabajo (GitHub Flow, trunk-based, GitFlow); incorpora luego calidad automática en local (hooks, pre-commit, linters, Conventional Commits) y cierra con Pull Requests, code review, SemVer y releases.",
+    "grupo": "Construcción de software"
+  },
+  "desarrollo-de-software": {
+    "titulo": "Desarrollo de Software (Ciclo Completo)",
+    "rol": "Integra la secuencia práctica completa para construir un producto software: elicitación de requerimientos mediante entrevistas y talleres, perfiles de usuario (personas), casos de uso, historias de usuario con criterios de aceptación Given-When-Then, priorización MoSCoW, requisitos funcionales y no funcionales, diseño detallado, codificación, testing, verificación/validación y despliegue, incluyendo el impacto de la IA en requerimientos.",
+    "por_que": "Escribir código sin validar primero qué problema se resuelve y cómo se comprobará su cumplimiento desperdicia meses de esfuerzo en funcionalidades inútiles. Sin trazabilidad entre requerimiento, prueba y despliegue, los equipos entregan software que compila pero no sirve al usuario.",
+    "como_encaja": "Conecta la visión estructurada de Ingeniería de requisitos con la ejecución técnica de Diseño, Construcción y Testing, preparando el terreno para Ingeniería de software I y II. Recorre el ciclo de vida de principio a fin como mapa operativo.",
+    "ruta": "Sigue el orden natural del ciclo: parte de elicitación, personas, historias de usuario y RF/RNF con MoSCoW y Given-When-Then; continúa con trazabilidad, diseño detallado y codificación, y concluye con testing, verificación y validación y despliegue.",
+    "grupo": "Construcción de software"
+  },
+  "desarrollo-en-equipo": {
+    "titulo": "Desarrollo en Equipo",
+    "rol": "Reúne las dinámicas y ceremonias operativas de equipos ágiles de ingeniería: roles (Product Owner, Scrum Master y equipo), artefactos y flujo (Product Backlog, Sprint, tablero Kanban y límites WIP, Definition of Done, burndown/burnup, velocity), rituales (daily, review, retro), planificación de releases y prácticas colaborativas (pair/mob programming, onboarding, feedback y trabajo asíncrono).",
+    "por_que": "El software comercial casi nunca es obra de una sola persona, y la fricción humana frena más entregas que la complejidad técnica. Equipos sin Definition of Done, sin límites de trabajo en curso o con comunicación asíncrona deficiente acumulan tareas a medias y retrabajo constante.",
+    "como_encaja": "Traduce al trabajo diario los marcos de Principios de ingeniería de software y las herramientas de Control de versiones y flujo de código, coordinándose con Gestión de proyectos de TI. Se vive de forma continua en cada iteración de desarrollo.",
+    "ruta": "Comienza por roles, tablero Kanban/WIP, Product Backlog y Definition of Done; revisa después la cadencia de Sprint y ceremonias (daily, review, retro, burnup/velocity) y fortalece las prácticas humanas de pair programming, onboarding y colaboración asíncrona.",
+    "grupo": "Gestión y profesión"
+  },
+  "desarrollo-web": {
+    "titulo": "Desarrollo Web",
+    "rol": "Aborda los fundamentos del desarrollo web en el navegador y su arquitectura de renderizado: HTML y CSS, frameworks de maquetación (Bootstrap), aplicaciones de página única (SPA), estrategias de renderizado en servidor frente a cliente (SSR vs CSR), aplicaciones web progresivas (PWA), ruteo, formularios y gestión de estado en cliente (Redux, Pinia).",
+    "por_que": "Antes de saltar a meta-frameworks complejos, todo desarrollador web necesita entender el modelo del navegador, el ciclo de renderizado y dónde vive el estado. Confundir SSR con CSR o abusar del estado global produce sitios lentos, con mal SEO y difíciles de depurar.",
+    "como_encaja": "Sirve de base directa para los frameworks modernos de Frameworks y librerías, aplica los principios visuales de Diseño de interfaces de usuario y consume contratos de APIs e integraciones. Participa en el diseño y construcción de la capa frontend.",
+    "ruta": "Consolida HTML y CSS, comprende el contraste entre SPA, SSR y CSR junto con ruteo y formularios, incorpora gestión de estado (Redux/Pinia) y cierra con capacidades offline e instalables mediante PWA.",
+    "grupo": "Construcción de software"
+  },
+  "devops-ci-cd-e-iac": {
+    "titulo": "DevOps, CI/CD e Infraestructura como Código",
+    "rol": "Cubre la automatización de integración, entrega y aprovisionamiento: pipelines de CI/CD (GitLab CI, Jenkins, CircleCI), gestión de artefactos, estrategias de despliegue sin caída (blue-green, canary, feature flags), GitOps, aprovisionamiento declarativo con IaC (Terraform, Pulumi, AWS CDK, CloudFormation, Ansible) y manejo seguro de secretos (HashiCorp Vault, AWS Secrets Manager, SSM, dotenv).",
+    "por_que": "Desplegar a mano por SSH o configurar servidores desde consolas web impide auditar cambios, complica los rollbacks y multiplica los errores humanos. Sin IaC, pipelines automatizados y gestión centralizada de secretos, cada lanzamiento se convierte en un evento de alto riesgo.",
+    "como_encaja": "Conecta los repositorios de Control de versiones y flujo de código y las pruebas de Testing con los clústeres de Contenerización y orquestación y los recursos de Cloud / AWS. Opera en las fases de integración continua, liberación, provisión y operación.",
+    "ruta": "Empieza por pipelines de CI, generación de artefactos y manejo seguro de secretos (evitando exponer dotenv); continúa con estrategias de despliegue progresivo (blue-green, canary, feature flags) y GitOps, y domina luego IaC con Terraform/Pulumi/CDK y Ansible.",
+    "grupo": "Infraestructura y operación"
+  },
+  "diseño-de-interfaces-de-usuario": {
+    "titulo": "Diseño de Interfaces de Usuario (UI/UX)",
+    "rol": "Explora la disciplina visual y de interacción centrada en las personas: investigación con usuarios y pruebas de usabilidad, arquitectura de información, wireframes y mockups, diseño responsive, tipografía, color e iconografía, sistemas de diseño y design tokens, microinteracciones, internacionalización (i18n/l10n) y accesibilidad bajo estándares WCAG.",
+    "por_que": "Un backend sólido fracasa si la interfaz confunde al usuario, excluye a personas con discapacidad o carece de consistencia visual. Diseñar sin sistemas de tokens, arquitectura de información ni criterios WCAG genera pantallas incoherentes, alto soporte al usuario y pasivos legales de accesibilidad.",
+    "como_encaja": "Recibe insumos de Ingeniería de requisitos y se implementa técnicamente en Desarrollo web, Frameworks y librerías y Construcción de apps móviles, verificándose con pruebas de accesibilidad en Testing. Interviene en descubrimiento, diseño previo y validación continua.",
+    "ruta": "Inicia con UX research, arquitectura de información y wireframes; establece las bases visuales (tipografía, color, diseño responsive) y de consistencia (design tokens, design system), y cierra con microinteracciones, internacionalización y accesibilidad WCAG.",
+    "grupo": "Construcción de software"
+  },
+  "documentacion": {
+    "titulo": "Documentación de Proyecto (Plantillas Propias)",
+    "rol": "Agrupa las siete notas-plantilla propias del usuario que estructuran la documentación integral de un proyecto de software: documento de presentación (resumen, objetivos y alcance), documento funcional (casos de uso, historias de usuario y flujos), documento de arquitectura e infraestructura (C4, ERD y código), documento de diseño UX/UI (tipografía, color, identidad y mockups), documento de QA y DevOps (plan de pruebas y calidad de IA) y documento de soporte.",
+    "por_que": "En proyectos académicos y profesionales, la falta de documentación unificada provoca que el conocimiento operativo se pierda cuando cambia el equipo. En particular, un Documento de Soporte —que detalla cómo correr el proyecto, dónde está alojado, qué puertos usa, cómo se configura SSL/DNS y dónde residen las credenciales— es indispensable para que otra persona pueda levantar, mantener o rescatar el sistema sin depender del autor original.",
+    "como_encaja": "Actúa como repositorio de cierre y trazabilidad que consolida el trabajo de Ingeniería de requisitos, Diseño de UI, Arquitectura, Testing y DevOps en entregables legibles para evaluadores, clientes y equipos de soporte. Atraviesa todo el ciclo desde la propuesta inicial hasta la entrega y operación.",
+    "ruta": "Usa el índice DOCUMENTACION para recorrer los documentos en orden de ciclo de vida: Presentación y Funcional al definir el proyecto, Diseño y Arquitectura al diseñarlo, QA & DevOps al validarlo, y el Documento de Soporte al desplegar y transferir la operación.",
+    "grupo": "Gestión y profesión"
+  },
+  "economía-del-software": {
+    "titulo": "Economía del Software",
+    "rol": "Analiza el software como decisión financiera y activo de negocio: estimación y análisis coste-beneficio (COCOMO, puntos de función), TCO, coste de desarrollo, mantenimiento, deuda técnica, incidentes y cumplimiento, modelos de contratación (precio fijo vs tiempo y materiales), gestión de valor ganado (EVM), métricas SaaS (unit economics, burn rate, runway, ROI) y optimización financiera en la nube (FinOps).",
+    "por_que": "Las decisiones de ingeniería son decisiones económicas: elegir una arquitectura sobreingenierizada o ignorar el coste de la deuda técnica y de la nube puede volver inviable un producto técnicamente impecable. Sin vocabulario financiero, el equipo técnico no puede justificar inversiones en calidad, automatización ni refactorización frente a negocio.",
+    "como_encaja": "Traduce las métricas operativas de Gestión de proyectos de TI, los recursos de Cloud / AWS y la calidad de Ingeniería de software II a impacto presupuestario y rentabilidad. Participa en la evaluación previa de proyectos, presupuestos, control de ejecución y operación FinOps.",
+    "ruta": "Empieza por los conceptos de valor y costes del ciclo de vida (TCO, coste de deuda técnica, mantenimiento e incidentes, ROI); continúa con estimación, contratos y EVM, y cierra con economía SaaS (unit economics, burn rate) y FinOps.",
+    "grupo": "Gestión y profesión"
+  },
+  "estadística-y-probabilidad": {
+    "titulo": "Estadística y Probabilidad",
+    "rol": "Cubierta concisa pero esencial de probabilidad y estadística aplicada: variables aleatorias, probabilidad condicional y teorema de Bayes, distribuciones clave (normal, binomial, Poisson), esperanza y varianza, teorema del límite central, inferencia, intervalos de confianza, pruebas de hipótesis, regresión y correlación.",
+    "por_que": "Sin base probabilística es imposible interpretar percentiles de latencia, diseñar pruebas A/B válidas, evaluar modelos de IA o distinguir una mejora real de puro ruido estadístico. Tomar decisiones sobre métricas promedio o correlaciones espurias conduce a conclusiones falsas en producto y confiabilidad.",
+    "como_encaja": "Sostiene directamente la modelización estocástica de Simulación, los experimentos de Temas avanzados de ingeniería de software, el monitoreo de SLOs en Observabilidad y el aprendizaje automático en IA — nueva era. Se estudia en los ciclos iniciales y se aplica de forma transversal.",
+    "ruta": "Domina variables aleatorias, esperanza/varianza y probabilidad condicional (Bayes); pasa luego a distribuciones discretas y continuas y teorema del límite central, y concluye con inferencia, intervalos de confianza, test de hipótesis y regresión.",
+    "grupo": "Fundamentos y ciencias"
+  },
+  "estructuras-de-datos-y-algoritmos": {
+    "titulo": "Estructuras de Datos y Algoritmos",
+    "rol": "Cubre el análisis de complejidad temporal y espacial (Big O, complejidad amortizada, compromiso espacio-tiempo), estructuras lineales y jerárquicas (arreglos, matrices, listas enlazadas, pilas, colas, tablas hash, heaps, árboles binarios, BST, AVL/Red-Black, tries, grafos) y algoritmos esenciales de ordenamiento, búsqueda (lineal, binaria, hash) y recorrido/rutas mínimas (recursividad, BFS, DFS, Dijkstra, A*).",
+    "por_que": "Elegir la estructura incorrecta convierte una operación de milisegundos en un bloqueo de minutos cuando los datos crecen en órdenes de magnitud. Además, sigue siendo el estándar universal en entrevistas técnicas y el fundamento para entender índices de bases de datos, cachés, planificadores y compiladores.",
+    "como_encaja": "Construye sobre Fundamentos de programación y Matemática discreta, y explica cómo operan por debajo Bases de datos (B-trees, hash), Caching (LRU) y Compiladores (AST, grafos). Es piedra angular en la formación temprana y en la optimización de código crítico.",
+    "ruta": "Empieza por Big O, recursividad y estructuras básicas (arreglos, listas, pilas, colas, hash maps); domina luego búsqueda binaria y algoritmos de ordenamiento (Merge, Quick, Heap, Timsort), y cierra con árboles balanceados, tries y algoritmos sobre grafos (BFS, DFS, Dijkstra, A*).",
+    "grupo": "Fundamentos y ciencias"
+  },
+  "formatos-y-serialización": {
+    "titulo": "Formatos y Serialización",
+    "rol": "Detalla cómo se representan, codifican y evolucionan los datos al viajar por red o persistir en disco: formatos textuales y de configuración (JSON, JSONL/NDJSON, XML, CSV, YAML, TOML), formatos binarios y de esquema (Protobuf, Avro, Thrift, FlatBuffers, MessagePack, CBOR), formatos analíticos columnares (Parquet, ORC), evolución y compatibilidad de esquemas (Schema Registry, campos reservados), tipos delicados (fechas ISO-8601, zonas horarias, Decimal vs float, BigInt) y riesgos de serialización nativa (pickle, Java Serializable, BinaryFormatter).",
+    "por_que": "La gran mayoría de fallos sutiles entre servicios provienen de contratos de datos mal serializados: pérdida de precisión monetaria con flotantes, desfases por timezones, enteros de 64 bits truncados en JavaScript o cambios de esquema que rompen consumidores antiguos. Además, la deserialización insegura de formatos nativos es una vulnerabilidad crítica de ejecución remota.",
+    "como_encaja": "Se sitúa en la frontera entre APIs e integraciones, Caching y mensajería y Seguridad, definiendo los payloads que intercambian los sistemas. Aparece al diseñar contratos de API, eventos de Kafka/colas y pipelines de datos.",
+    "ruta": "Comprende primero serialización/deserialización, Content-Type y trampas de tipos (fechas, decimales, BigInt, objetos cíclicos); compara luego formatos textuales (JSON, JSONL, YAML, TOML, CSV) con formatos binarios y columnares (Protobuf, Avro, Parquet) y cierra con compatibilidad de esquemas y riesgos de seguridad.",
+    "grupo": "Construcción de software"
+  },
+  "frameworks-y-librerías": {
+    "titulo": "Frameworks y Librerías",
+    "rol": "Panorama práctico del ecosistema moderno de desarrollo tanto en frontend (React, Next.js, Vue, Nuxt, Angular, Svelte/SvelteKit, Astro, SolidJS, Qwik, Remix, Tailwind CSS, shadcn-ui, Material UI, TanStack Query, Zustand/Redux) como en backend y protocolos de API (Spring Boot, NestJS, Express, Fastify, ASP.NET Core, Gin/Echo, Actix/Axum, GraphQL, gRPC, tRPC).",
+    "por_que": "Los frameworks aceleran la entrega resolviendo ruteo, estado, inyección de dependencias y renderizado, pero elegirlos por tendencia sin entender sus compromisos genera deuda tecnológica y sobredimensionamiento. Conocer qué problema resuelve cada familia permite seleccionar la herramienta justa y migrar entre stacks con criterio.",
+    "como_encaja": "Se apoya en Lenguajes, runtimes y build y Desarrollo web, y materializa los patrones de Arquitectura y diseño y APIs e integraciones. Es protagonista durante la selección tecnológica inicial y la fase de implementación.",
+    "ruta": "Estudia un stack de cada lado según tus objetivos: en frontend domina un pilar reactivo (React, Vue o Angular), estilos (Tailwind/shadcn-ui) y estado/fetching (TanStack Query), más un meta-framework SSR (Next.js/Nuxt/SvelteKit); en backend elige un framework empresarial o ligero (Spring Boot, NestJS, Fastify, Gin o Actix) y compara GraphQL, gRPC y tRPC.",
+    "grupo": "Construcción de software"
+  },
+  "fundamentos-de-programación": {
+    "titulo": "Fundamentos de Programación",
+    "rol": "Sienta las bases del pensamiento computacional y la programación moderna: control de flujo, funciones, abstracción, programación orientada a objetos (clases, encapsulamiento, herencia, polimorfismo, interfaces, generics), manejo de errores y excepciones, calidad de código (clean code, code smells, DRY/KISS/YAGNI, refactoring), y modelos de ejecución concurrente, asíncrona y reactiva (I/O, event loop, promesas, async/await, hilos, backpressure, Reactor/WebFlux).",
+    "por_que": "Sin bases sólidas de abstracción, manejo de errores y concurrencia, aprender frameworks nuevos solo produce código frágil copiado de ejemplos. Confundir asincronía con paralelismo o ignorar la inmutabilidad y el backpressure provoca bloqueos, condiciones de carrera y sistemas imposibles de mantener.",
+    "como_encaja": "Es el punto de partida de todo el bloque de Construcción de software y prepara el terreno para Estructuras de datos y algoritmos, Lenguajes, runtimes y build y Arquitectura y diseño. Se aplica desde las primeras líneas de código hasta la refactorización continua.",
+    "ruta": "Domina primero estructuras de control, funciones, manejo de errores y pilares de POO; incorpora después higiene de código (clean code, DRY/KISS/YAGNI, refactoring) e inmutabilidad, y cierra con modelos de ejecución: I/O, event loop, async/await, hilos y programación reactiva.",
+    "grupo": "Fundamentos y ciencias"
+  },
+  "física-i-mecánica": {
+    "titulo": "Física I — Mecánica",
+    "rol": "Cubre la mecánica clásica de formación universitaria para ingeniería: sistemas de referencia y unidades, cinemática, dinámica y leyes de Newton, fricción y fuerzas de contacto, trabajo, energía y potencia, momento lineal y angular, momento de inercia, oscilaciones y gravitación.",
+    "por_que": "Más allá de cumplir con el currículo universitario, la mecánica entrena el modelado matemático de sistemas físicos continuos y leyes de conservación. Es indispensable si trabajas en robótica, motores de videojuegos, IoT, sistemas embebidos o simulaciones físicas.",
+    "como_encaja": "Aplica directamente el cálculo de Matemáticas I y los vectores de Álgebra lineal, y precede a Física II — Electromagnetismo y a modelos continuos en Simulación. Pertenece al tronco de ciencias básicas de la carrera.",
+    "ruta": "Sigue la progresión clásica: sistemas de unidades y cinemática, leyes de Newton y fricción, enfoques de conservación (trabajo/energía y momento lineal/angular), rotación con momento de inercia, oscilaciones y gravitación.",
+    "grupo": "Fundamentos y ciencias"
+  },
+  "física-ii-electromagnetismo": {
+    "titulo": "Física II — Electromagnetismo",
+    "rol": "Aborda los fenómenos eléctricos, magnéticos y ondulatorios esenciales para la ingeniería: carga y campo eléctrico, potencial y capacitancia, ley de Ohm y circuitos DC, circuitos RLC, magnetismo, inducción electromagnética, leyes de Maxwell, ondas electromagnéticas y óptica básica.",
+    "por_que": "Todo el hardware sobre el que corre el software —transistores, memoria, enlaces de fibra óptica, Wi-Fi y radiofrecuencia— obedece a las leyes del electromagnetismo y los circuitos. Sin comprender corriente, impedancia, atenuación y espectro electromagnético, la capa física de las redes y la electrónica queda desconectada de la realidad.",
+    "como_encaja": "Se apoya en Física I — Mecánica y en el cálculo vectorial y ecuaciones diferenciales de Matemáticas II y III; fundamenta la capa física de Redes de datos y Sistemas operativos. Integra el bloque de ciencias básicas universitarias.",
+    "ruta": "Avanza de electrostática (carga, campo, potencial, capacitancia) a circuitos (ley de Ohm, DC y RLC), luego a magnetismo e inducción hasta sintetizar las leyes de Maxwell, ondas electromagnéticas y óptica.",
+    "grupo": "Fundamentos y ciencias"
+  },
+  "gestión-de-proyectos-de-ti": {
+    "titulo": "Gestión de Proyectos de TI",
+    "rol": "Reúne herramientas y marcos para planificar, medir y gobernar proyectos tecnológicos: visión y alcance, WBS, ruta crítica, cronogramas/Gantt, estimación ágil y clásica (story points, planning poker, COCOMO), gestión de riesgos y cambios, adquisiciones y SLAs, métricas de flujo y entrega (lead time, cycle time, throughput, CFD, métricas DORA, OKR/KPI), herramientas (Jira, Linear, MS Project, Slack, Discord) y marcos de gobierno (ITIL, COBIT, ISO 21500/31000), incluyendo la práctica empresarial.",
+    "por_que": "Los proyectos de TI suelen fracasar por alcance descontrolado, estimaciones optimistas, riesgos no mitigados y falta de visibilidad del flujo real de entrega. Gobernar con métricas objetivas como DORA o lead time evita la falsa sensación de avance basada únicamente en horas trabajadas.",
+    "como_encaja": "Coordina la ejecución de Desarrollo en equipo con la viabilidad financiera de Economía del software y los compromisos de Ingeniería de requisitos. Acompaña desde el inicio formal y planificación hasta el seguimiento, control y cierre del proyecto.",
+    "ruta": "Empieza por definición de alcance, stakeholders, WBS y estimación; pasa a cronograma, ruta crítica y gestión de riesgos/cambios, y domina luego métricas modernas de entrega (lead/cycle time, DORA, OKRs), herramientas de seguimiento y marcos de gobierno (ITIL, COBIT, ISO).",
+    "grupo": "Gestión y profesión"
+  },
+  "hosting-paas-y-plataformas": {
+    "titulo": "Hosting, PaaS y Plataformas Gestionadas",
+    "rol": "Recorre las plataformas de despliegue rápido, edge y bases de datos como servicio que abstraen la infraestructura pesada: Vercel, Netlify, Cloudflare (Pages, Workers, R2, Tunnel), Fly.io, Railway, Render, Heroku, AWS Amplify, VPS tradicionales (DigitalOcean, Linode, Hetzner), plataformas BaaS/auth (Supabase, Firebase, Auth0/Clerk) y bases gestionadas (Neon, PlanetScale, MongoDB Atlas).",
+    "por_que": "No todos los productos justifican mantener un clúster de Kubernetes ni administrar VPCs desde el día uno. Saber cuándo elegir un PaaS o BaaS acelera el lanzamiento de semanas a horas, mientras que ignorar sus límites de coste, vendor lock-in o ejecución serverless genera sorpresas al escalar.",
+    "como_encaja": "Ofrece una alternativa pragmática o complementaria a Cloud / AWS y Contenerización y orquestación, integrándose con Desarrollo web y Frameworks y librerías. Se evalúa en decisiones de arquitectura de despliegue, prototipado rápido y proyectos de equipos pequeños o medianos.",
+    "ruta": "Distingue primero VPS frente a PaaS y plataformas edge (Vercel, Netlify, Cloudflare Workers, Fly.io, Railway/Render); luego explora servicios gestionados de datos y autenticación (Supabase, Firebase, Neon, Auth0/Clerk) comparando velocidad de entrega frente a portabilidad.",
+    "grupo": "Infraestructura y operación"
+  },
+  "ia-nueva-era-sección-ampliada": {
+    "titulo": "IA — Nueva Era (Sección Ampliada)",
+    "rol": "Cubre de forma exhaustiva la ingeniería de inteligencia artificial aplicada en 2026: modelos fundacionales y locales (Claude, GPT, Gemini, DeepSeek, Llama, Ollama, LM Studio), ingeniería de prompts y evaluación (CoT, eval-driven prompting, LLM-as-a-judge, RAGAS), arquitectura RAG (embeddings, chunking, búsqueda híbrida, GraphRAG, reranking), fine-tuning (LoRA/QLoRA, DPO, PEFT), agentes autónomos y protocolos (MCP, A2A, tool calling, LangGraph, CrewAI, Google ADK, OpenAI Agents SDK), asistentes de código (Claude Code, Cursor, Codex, Devin) y producción responsable (guardrails, latencia/coste de tokens, observabilidad con Langfuse/LangSmith, PII, AI Act/RGPD).",
+    "por_que": "La IA pasó de ser un experimento de laboratorio a formar parte central tanto de los productos que construimos como del propio flujo de programación. Tratar un LLM como una API determinista sin evaluaciones, citas, guardrails ni control de costes y PII produce alucinaciones en producción, vulnerabilidades de prompt injection y gastos impredecibles.",
+    "como_encaja": "Se apoya en Estadística y probabilidad, Álgebra lineal y APIs e integraciones, requiere patrones de Caching y mensajería y Observabilidad para operar con fiabilidad, y dialoga con Ética y legalidad profesional por el AI Act y los sesgos. Atraviesa hoy tanto la arquitectura de producto como la productividad diaria de ingeniería.",
+    "ruta": "Comienza por entender cuándo usar prompt, RAG o fine-tuning, modelos base y manejo de costes/latencia; avanza hacia prompting estructurado, RAG con búsqueda híbrida y evaluaciones (evals/RAGAS), luego domina tool calling, MCP y agentes multi-paso, y cierra con guardrails, seguridad frente a jailbreaks y observabilidad.",
+    "grupo": "Datos e IA"
+  },
+  "infraestructura-de-ti": {
+    "titulo": "Infraestructura de TI",
+    "rol": "Presenta los cimientos físicos y de plataforma empresarial sobre los que operan los servicios: centros de datos, servidores físicos, almacenamiento (bloques, archivos, objetos, RAID, SAN/NAS), virtualización e hipervisores, gestión de identidad corporativa (LDAP/Active Directory), correo (SMTP), modelos de servicio (IaaS, PaaS, SaaS, nube híbrida), inventario de activos, planeación de capacidad, monitoreo y recuperación ante desastres (RTO y RPO).",
+    "por_que": "Incluso en equipos 100% cloud, abstraerse por completo de qué es un almacenamiento en bloques frente a uno de objetos o de cuánto tiempo y datos se puede permitir perder la empresa (RTO/RPO) lleva a diseños frágiles y costosos. Sin inventario de activos ni plan de recuperación probado, un fallo de región o proveedor paraliza el negocio.",
+    "como_encaja": "Conecta los conceptos de hardware y kernel de Sistemas operativos con la capa gestionada de Cloud / AWS y las políticas de Seguridad. Aparece en diseño de infraestructura, planeación de capacidad, continuidad de negocio y auditorías operativas.",
+    "ruta": "Inicia con modelos IaaS/PaaS/SaaS, centros de datos y virtualización; domina los tipos de almacenamiento (bloque, archivo, objeto, RAID, SAN/NAS) y servicios base (LDAP/AD, SMTP), y cierra con planeación de capacidad, gestión de configuración y disaster recovery (RTO/RPO).",
+    "grupo": "Infraestructura y operación"
+  },
+  "ingeniería-de-requisitos": {
+    "titulo": "Ingeniería de Requisitos",
+    "rol": "Profundiza en la disciplina formal de descubrir, analizar, especificar, priorizar, validar y gestionar requisitos: stakeholders, entrevistas y workshops, user research, casos de uso, SRS (Software Requirements Specification), requisitos funcionales y no funcionales de calidad (rendimiento, disponibilidad, escalabilidad, seguridad, accesibilidad, legales/SLA), escenarios de atributos de calidad (ATAM), modelo Kano, MoSCoW, Definition of Ready y matrices de trazabilidad.",
+    "por_que": "Corregir un requisito mal entendido en producción cuesta órdenes de magnitud más que aclararlo antes de diseñar la arquitectura. Sin requisitos no funcionales medibles ni gestión formal de cambios, los equipos discuten sobre opiniones subjetivas y sufren desviación constante de alcance (scope creep).",
+    "como_encaja": "Provee la materia prima verificable para Arquitectura y diseño (especialmente escenarios de calidad y ATAM), Documentación funcional y Testing de aceptación, además de alimentar a Gestión de proyectos de TI. Domina la fase de descubrimiento, análisis y control de cambios.",
+    "ruta": "Comienza con stakeholders, técnicas de elicitación (entrevistas, workshops, user research) y distinción entre RF y RNF; profundiza en especificación (SRS, criterios de aceptación, escenarios de calidad/ATAM), priorización (Kano, MoSCoW) y cierra con validación, trazabilidad y gestión de cambios.",
+    "grupo": "Gestión y profesión"
+  },
+  "ingeniería-de-software-i": {
+    "titulo": "Ingeniería de Software I",
+    "rol": "Cubre los pilares iniciales de la ingeniería de software universitaria orientados al arranque ordenado de un proyecto: planificación y estimación de esfuerzo, gestión de riesgos del proceso y visión inicial de arquitectura del sistema.",
+    "por_que": "Pasar de programar ejercicios individuales a dirigir un proyecto de software exige anticipar riesgos técnicos y de calendario antes de comprometer fechas de entrega. Sin planificación ni gestión temprana de riesgos, los cuellos de botella emergen cuando ya no hay margen para corregir el rumbo.",
+    "como_encaja": "Sirve de puente académico entre Principios de ingeniería de software / Desarrollo de software y el enfoque de calidad y evolución de Ingeniería de software II, conectando además con Gestión de proyectos de TI. Se ubica en las etapas tempranas de inicio y planeación del proyecto.",
+    "ruta": "Estudia primero planificación y estimación, continúa con identificación y mitigación de riesgos del proceso y cierra enlazando esas restricciones con la definición inicial de arquitectura.",
+    "grupo": "Construcción de software"
+  },
+  "ingeniería-de-software-ii": {
+    "titulo": "Ingeniería de Software II",
+    "rol": "Se enfoca en la calidad medible, evolución y longevidad del software una vez construido: modelo de atributos de calidad ISO/IEC 25010, métricas de código, complejidad ciclomática y cobertura, deuda técnica, revisiones de código y refactoring, y los cuatro tipos de mantenimiento (correctivo, adaptativo, perfectivo y evolutivo).",
+    "por_que": "El grueso del coste de un sistema ocurre después de su primer lanzamiento, no durante la escritura inicial. Equipos que no miden complejidad, no gestionan su deuda técnica ni practican refactoring sistemático acaban atrapados en bases de código intocables donde cada corrección introduce regresiones.",
+    "como_encaja": "Continúa directamente a Ingeniería de software I, se instrumenta mediante Testing y Control de versiones y flujo de código, y aporta la base técnica para las decisiones financieras de Economía del software y Temas avanzados. Corresponde a las fases de aseguramiento de calidad, mantenimiento y evolución.",
+    "ruta": "Empieza por el marco ISO/IEC 25010 para definir qué significa calidad; pasa a métricas cuantitativas (complejidad ciclomática, cobertura), comprende el concepto y coste de la deuda técnica, y consolida las prácticas de refactoring, code review y mantenimiento.",
+    "grupo": "Construcción de software"
+  },
+  "lenguajes-runtimes-y-build": {
+    "titulo": "Lenguajes, Runtimes y Build",
+    "rol": "Reúne los lenguajes de programación más usados en la industria (Python, JavaScript, TypeScript, Java, Kotlin, C#/.NET, Go, Rust, C++, PHP, Ruby, SQL, Bash), sus entornos de ejecución (JVM, GraalVM, Node.js, Deno, Bun, WebAssembly, Uvicorn/Gunicorn), gestores de dependencias y build (npm/pnpm/yarn, Maven, Gradle, Makefile, Vite, Webpack/Turbopack) y herramientas transversales de flujo (FastAPI/Django/Flask, Pydantic, SQLAlchemy, Alembic, pytest, GitHub Actions, OpenAPI).",
+    "por_que": "Un ingeniero no solo escribe sintaxis: debe empaquetar dependencias reproducibles, configurar runtimes eficientes y entender qué ofrece cada ecosistema. Desconocer cómo funciona el gestor de paquetes, el bundler o el servidor WSGI/ASGI provoca builds lentos, vulnerabilidades en dependencias y fallos al desplegar en producción.",
+    "como_encaja": "Materializa los conceptos de Fundamentos de programación y Compiladores en herramientas concretas de trabajo diario, y prepara los artefactos que luego empaquetan Contenerización y orquestación y DevOps, CI/CD e IaC. Es indispensable durante toda la implementación y automatización de builds.",
+    "ruta": "Elige un lenguaje principal de tipado estático o dinámico (por ejemplo Python o TypeScript/Java/Go), aprende su runtime y gestor de paquetes/build (venv/pytest/FastAPI o Node/Bun/Vite/Gradle), y complementa con Bash, SQL y OpenAPI para automatizar e integrar.",
+    "grupo": "Construcción de software"
+  },
+  "liderazgo-técnico-y-gestión-de-personas": {
+    "titulo": "Liderazgo Técnico y Gestión de Personas",
+    "rol": "Aborda la transición de contribuidor individual a referente técnico o gestor: roles (Tech Lead, Staff Engineer, Engineering Manager), toma de decisiones técnicas, consenso y disidencia, influencia sin autoridad, comunicación técnica, mentoría, coaching, feedback constructivo, seguridad psicológica, gestión de conflictos, contratación y entrevistas técnicas, onboarding, planes de desarrollo (IDP), carga cognitiva, burnout y ética del liderazgo.",
+    "por_que": "A partir de cierto nivel de seniority, el mayor multiplicador de impacto no es escribir más código sino elevar la claridad técnica y la salud del equipo. Ignorar la carga cognitiva, evitar conversaciones difíciles o tomar decisiones autoritarias destruye la retención de talento y la calidad arquitectónica.",
+    "como_encaja": "Complementa la coordinación operativa de Desarrollo en equipo y Gestión de proyectos de TI, y se apoya en los criterios de Ética y legalidad profesional. Es crucial conforme se asumen responsabilidades de arquitectura, mentoría y dirección de equipos.",
+    "ruta": "Empieza por roles de liderazgo (Tech Lead, Staff, EM), comunicación técnica e influencia sin autoridad; profundiza en dinámicas humanas (seguridad psicológica, feedback, mentoría, prevención del burnout) y cierra con contratación, IDPs, gestión del cambio y toma de decisiones.",
+    "grupo": "Gestión y profesión"
+  },
+  "matemática-discreta": {
+    "titulo": "Matemática Discreta",
+    "rol": "Abarca las estructuras matemáticas finitas y contables que sustentan la computación: lógica proposicional, conjuntos, relaciones de orden y equivalencia, cardinalidad, inducción matemática, combinatoria, relaciones de recurrencia y teoría combinatoria de grafos y árboles.",
+    "por_que": "La computación es esencialmente discreta: sin lógica formal, inducción ni conteo combinatorio resulta difícil demostrar que un algoritmo termina, calcular la complejidad de una recurrencia o modelar dependencias y permisos sin contradicciones. Es el lenguaje formal detrás de las bases de datos, la criptografía y el análisis de algoritmos.",
+    "como_encaja": "Alimenta directamente a Estructuras de datos y algoritmos, Compiladores (autómatas y gramáticas), Bases de datos (álgebra relacional) y Métodos formales en Temas avanzados. Forma parte del núcleo fundacional de la carrera.",
+    "ruta": "Inicia con lógica proposicional, conjuntos y relaciones de equivalencia/orden; domina luego inducción matemática y recurrencias para razonar sobre algoritmos, y concluye con combinatoria, cardinalidad y grafos/árboles.",
+    "grupo": "Fundamentos y ciencias"
+  },
+  "matemáticas-i": {
+    "titulo": "Matemáticas I (Cálculo en una Variable)",
+    "rol": "Cubre el cálculo diferencial e integral de una variable real: límites y continuidad, derivadas y regla de la cadena, problemas de optimización (máximos y mínimos), integrales, teorema fundamental del cálculo, técnicas de integración y cálculo de áreas y volúmenes.",
+    "por_que": "Introduce el lenguaje matemático del cambio continuo y la optimización que exige el resto de las ciencias e ingenierías. Sin dominar derivadas, optimización e integración básica es imposible abordar cálculo multivariable, física clásica, estadística continua o descenso por gradiente.",
+    "como_encaja": "Es prerrequisito directo de Matemáticas II, Matemáticas III, Estadística y probabilidad y Física I — Mecánica, y sienta la base intuitiva para la optimización en IA. Corresponde al primer peldaño de ciencias básicas.",
+    "ruta": "Respeta la secuencia clásica: límites y continuidad, derivadas y regla de la cadena, aplicaciones a optimización, y finalmente el concepto de integral, el teorema fundamental y las técnicas de integración.",
+    "grupo": "Fundamentos y ciencias"
+  },
+  "matemáticas-ii": {
+    "titulo": "Matemáticas II (Cálculo Multivariable y Vectorial)",
+    "rol": "Extiende el cálculo a múltiples dimensiones: funciones de varias variables, derivadas parciales y gradiente, optimización con restricciones, coordenadas polares, cilíndricas y esféricas, integrales múltiples, integrales de línea y de superficie, y los teoremas vectoriales de Green, Stokes y Gauss.",
+    "por_que": "Tanto los fenómenos físicos tridimensionales como las funciones de pérdida en aprendizaje automático dependen de múltiples variables simultáneas. Sin entender gradientes ni optimización con restricciones, algoritmos de entrenamiento y simulaciones físicas quedan reducidos a fórmulas opacas.",
+    "como_encaja": "Construye sobre Matemáticas I y Álgebra lineal; habilita directamente Física II — Electromagnetismo, Ecuaciones diferenciales en Matemáticas III y la optimización en IA. Integra el bloque de matemáticas universitarias.",
+    "ruta": "Comienza por cálculo multivariable, derivadas parciales y gradiente; avanza hacia optimización con restricciones e integrales múltiples en distintos sistemas de coordenadas, y cierra con integrales de línea/superficie y teoremas de Green, Stokes y Gauss.",
+    "grupo": "Fundamentos y ciencias"
+  },
+  "matemáticas-iii": {
+    "titulo": "Matemáticas III (Series y Ecuaciones Diferenciales)",
+    "rol": "Aborda el análisis de procesos dinámicos y aproximaciones funcionales: sucesiones y series numéricas, series de Taylor y de Fourier, ecuaciones diferenciales ordinarias y en derivadas parciales (EDO/EDP), sistemas de ecuaciones diferenciales y la Transformada de Laplace.",
+    "por_que": "La dinámica de circuitos, el procesamiento de señales, la evolución de poblaciones o los gemelos digitales se describen mediante ecuaciones diferenciales y análisis frecuencial. Sin series de Taylor ni Fourier resulta difícil comprender cómo se aproximan funciones o cómo se comprimen y filtran señales.",
+    "como_encaja": "Integra herramientas de Matemáticas I, II y Álgebra lineal para fundamentar Física II (circuitos RLC y ondas), Simulación continua y métodos aproximados en Matemáticas IV. Se cursa en la etapa intermedia de ciencias básicas.",
+    "ruta": "Parte de sucesiones y series hasta llegar a Taylor y Fourier; estudia después EDO y sistemas de ecuaciones diferenciales, incorpora la Transformada de Laplace para resolver sistemas lineales y concluye con nociones de EDP.",
+    "grupo": "Fundamentos y ciencias"
+  },
+  "matemáticas-iv": {
+    "titulo": "Matemáticas IV (Análisis Numérico)",
+    "rol": "Conecta las matemáticas continuas con su ejecución finita en computadora: aritmética de punto flotante, error numérico y estabilidad, interpolación y ajuste de curvas, búsqueda de raíces (Newton-Raphson), métodos iterativos, integración numérica y resolución numérica de EDO.",
+    "por_que": "Las computadoras no operan con números reales infinitos sino con aritmética finita IEEE 754 donde el orden de las operaciones altera la precisión. Ignorar errores de redondeo, cancelación catastrófica o inestabilidad numérica provoca fallos silenciosos en cálculos financieros, gráficos 3D y simulaciones científicas.",
+    "como_encaja": "Lleva al plano computacional los problemas de Matemáticas I–III y Álgebra lineal, y sustenta directamente la precisión de Simulación numérica y Formatos y serialización (Decimal vs float, NaN/Infinity). Cierra el ciclo de matemáticas aplicadas.",
+    "ruta": "Empieza sin saltarte la base: aritmética de punto flotante, propagación del error y estabilidad; continúa con raíces (Newton-Raphson) e interpolación, y termina con integración numérica, métodos iterativos y resolución numérica de EDO.",
+    "grupo": "Fundamentos y ciencias"
+  },
+  "observabilidad": {
+    "titulo": "Observabilidad",
+    "rol": "Cubre los tres pilares para entender sistemas en producción —logs estructurados en JSON con redacción de PII, métricas con Prometheus y dashboards en Grafana, y trazas distribuidas con OpenTelemetry, Jaeger/Zipkin y Correlation/Request IDs— junto con prácticas operativas como SLIs, SLOs, SLAs, error budgets, alertas (Alertmanager, PagerDuty), APMs, sampling, runbooks y postmortems.",
+    "por_que": "En sistemas distribuidos y asíncronos no puedes predecir todos los modos de fallo antes de salir a producción. Sin logs correlacionados, métricas de negocio/sistema ni SLOs con presupuesto de error, los equipos tardan horas en diagnosticar caídas, sufren fatiga de alertas o exponen secretos y datos personales en archivos de log.",
+    "como_encaja": "Se instrumenta dentro del código de APIs y Servicios (middlewares, loggers), recolecta señales de Contenerización, Cloud / AWS y Bases de datos, y retroalimenta a Ingeniería de software II y Gestión de proyectos (DORA). Es indispensable en despliegue y operación 24/7.",
+    "ruta": "Comienza por logs estructurados (niveles, JSON, Correlation ID, redacción de PII); suma métricas y visualización (Prometheus, Grafana, Uptime Kuma) y tracing distribuido con OpenTelemetry; finaliza con SLI/SLO/error budget, alertas accionables, runbooks y postmortems.",
+    "grupo": "Infraestructura y operación"
+  },
+  "principios-de-ingeniería-de-software": {
+    "titulo": "Principios de Ingeniería de Software",
+    "rol": "Sintetiza los modelos clásicos y ágiles del ciclo de vida del software (SDLC: cascada, modelo V, espiral, prototipado, iterativo e incremental, Agile, Scrum, XP, Kanban, DevOps y CI/CD) junto con principios esenciales de construcción (cohesión y acoplamiento, diseño por contratos e inversión de dependencias, Clean Code y DRY/KISS/YAGNI).",
+    "por_que": "Elegir un modelo de proceso inadecuado —como cascada rígida en un producto exploratorio o Scrum sin ingeniería técnica en un entorno regulado— genera fricción crónica. Comprender los fundamentos detrás de cada metodología evita aplicar rituales vacíos sin respetar los principios de diseño y entrega.",
+    "como_encaja": "Establece el marco conceptual previo a Desarrollo de software, Desarrollo en equipo, Arquitectura y diseño y DevOps, CI/CD e IaC. Sirve de brújula metodológica al iniciar proyectos o transformar la forma de trabajar de un equipo.",
+    "ruta": "Revisa primero qué es el SDLC y la evolución desde modelos predictivos (cascada, V, espiral) hacia iterativos y ágiles (Scrum, XP, Kanban, DevOps/CI-CD); enlaza luego con los principios de diseño técnico (cohesión, acoplamiento, contratos, DRY/KISS/YAGNI).",
+    "grupo": "Construcción de software"
+  },
+  "productividad-conocimiento-y-colaboración": {
+    "titulo": "Productividad, Conocimiento y Colaboración",
+    "rol": "Reúne el conjunto de herramientas cotidianas que sostienen la memoria técnica y la coordinación diaria del ingeniero: gestión documental y wikis (Notion, Confluence, AppFlowy, Documentación técnica, ADRs), pizarras y diagramación rápida (Excalidraw, draw.io, Miro, Figma), seguimiento y objetivos (Jira, Linear, Trello, OKRs, retrospectivas), comunicación síncrona y asíncrona (Slack, Discord, Teams, Loom, Email) y gestión segura de credenciales (1Password, Bitwarden).",
+    "por_que": "El talento técnico pierde horas cada semana buscando decisiones antiguas en hilos de chat, compartiendo contraseñas por canales inseguros o manteniendo reuniones innecesarias por falta de comunicación asíncrona clara. Estandarizar cómo se documentan decisiones (ADRs) y dónde vive el conocimiento protege la velocidad del equipo al crecer.",
+    "como_encaja": "Da soporte operativo a Desarrollo en equipo, Arquitecturas de software (ADRs), Diseño de interfaces (Figma) y Documentación. Se utiliza de forma transversal todos los días de la vida profesional.",
+    "ruta": "Asegura primero higiene básica (gestor de contraseñas y flujo de comunicación); adopta después documentación viva y ADRs en Notion/Confluence junto con diagramación ligera (Excalidraw/Miro), e integra tableros de tareas, OKRs y retrospectivas.",
+    "grupo": "Gestión y profesión"
+  },
+  "redes-de-datos-vista-práctica-y-moderna": {
+    "titulo": "Redes de Datos (Vista Práctica y Moderna)",
+    "rol": "Explica el funcionamiento real de las redes desde la base hasta la nube y contenedores: modelos de capas, Ethernet, ARP, VLANs, IP, CIDR y subnetting, enrutamiento y BGP, TCP/UDP (sockets, handshake, TIME_WAIT, control de flujo y congestión), DNS (DoH/DoT, TTL, CoreDNS), HTTP/HTTPS, TLS y cadena de confianza, WebSockets, NAT, firewalls, VPN/WireGuard/Tailscale, CDNs, eBPF/Cilium, redes de Docker (bridge/veth) y primitivas de red en Kubernetes (CNI, ClusterIP, NodePort, Ingress, kube-proxy).",
+    "por_que": "Cuando falla una conexión entre servicios, vence un certificado TLS o aparece latencia intermitente en Kubernetes, las abstracciones de alto nivel se rompen. Sin dominar subnetting, DNS, estados TCP, mTLS y encabezados HTTP de seguridad (CORS, CSRF), depurar producción se reduce a probar cambios a ciegas.",
+    "como_encaja": "Se conecta por abajo con el stack TCP/IP de Sistemas operativos y por arriba con Contenerización y orquestación, Cloud / AWS, APIs e integraciones y Seguridad. Es esencial tanto al diseñar topologías seguras como al diagnosticar incidentes de conectividad y rendimiento.",
+    "ruta": "Afianza L2/L3 (MAC, ARP, IP, CIDR/subnetting, routing) y transporte (TCP/UDP, sockets, flujo y congestión); sigue con DNS, HTTP/TLS, certificados y WebSockets; luego aborda seguridad y borde (firewalls, VPN/WireGuard, Zero Trust, CDN, ataques DDoS/spoofing) y cierra con redes modernas en Docker y Kubernetes (CNI, Ingress, eBPF).",
+    "grupo": "Infraestructura y operación"
+  },
+  "seguridad": {
+    "titulo": "Seguridad",
+    "rol": "Cubre los fundamentos prácticos de seguridad en aplicaciones y cadena de suministro (AppSec y DevSecOps): OWASP Top 10, vulnerabilidades críticas (inyección SQL, XSS, CSRF, SSRF, broken auth, deserialización insegura, exposición de datos sensibles), criptografía aplicada (AES, RSA, hashing de contraseñas con bcrypt/Argon2), MFA, principio de menor privilegio, gestión de secretos, cabeceras de seguridad (CSP, HSTS), análisis automatizado (SAST, DAST, SCA, container scanning, SBOM con Snyk/Trivy/Dependabot), auditoría, pentesting y privacidad (GDPR).",
+    "por_que": "Una sola vulnerabilidad de autenticación rota, secreto filtrado en Git o dependencia comprometida puede derivar en robo masivo de datos, ransomware y responsabilidad legal. Tratar la seguridad como una auditoría al final del proyecto multiplica el coste de remediación y deja brechas abiertas durante meses.",
+    "como_encaja": "Atraviesa transversalmente todas las capas: valida entradas en APIs y Desarrollo web, protege contraseñas y datos en Bases de datos, audita imágenes en Contenerización y pipelines de DevOps, y cumple las exigencias de Ética y legalidad profesional. Debe integrarse desde requisitos y diseño hasta operación.",
+    "ruta": "Empieza por principios (menor privilegio, gestión de secretos), criptografía práctica (AES/RSA, bcrypt/Argon2) y MFA; domina después el OWASP Top 10 y cabeceras HTTP defensivas, y cierra integrando SAST/DAST/SCA, escaneo de contenedores y SBOM en el flujo de CI/CD.",
+    "grupo": "Infraestructura y operación"
+  },
+  "simulación": {
+    "titulo": "Simulación",
+    "rol": "Presenta el modelado y experimentación computacional de sistemas complejos: definición de sistema, modelo, estados y transiciones, generación de números aleatorios y reproducibilidad por semillas, simulación discreta por eventos (cola de eventos, reloj de simulación, teoría de colas M/M/1 y M/M/c), métodos de Monte Carlo, cadenas de Markov, dinámica de sistemas continua (EDO/PDE), simulación basada en agentes, gemelos digitales, diseño de experimentos, análisis de sensibilidad, verificación/validación/calibración y herramientas (SimPy, R, MATLAB/Simulink, NS-3, OMNeT++, NetLogo, AnyLogic, Arena).",
+    "por_que": "Probar cambios críticos directamente en redes reales, líneas logísticas, sistemas financieros o infraestructura de alta carga resulta prohibitivo o peligroso. Simular sin calibración, sin suficientes replicaciones o sin controlar semillas genera resultados vistosos pero estadísticamente engañosos.",
+    "como_encaja": "Combina las bases de Estadística y probabilidad, Matemáticas III y IV y Física, y se aplica en ingeniería de rendimiento para Sistemas distribuidos (planes de capacidad) y telecomunicaciones (Redes de datos). Aparece en análisis previo, dimensionamiento y optimización bajo incertidumbre.",
+    "ruta": "Comprende primero qué es un sistema, un modelo, estados y reproducibilidad con semillas; explora los paradigmas principales (discreta por eventos y teoría de colas, Monte Carlo, continua y basada en agentes) usando SimPy o R/MATLAB, y cierra con verificación, validación, calibración y análisis de sensibilidad.",
+    "grupo": "Fundamentos y ciencias"
+  },
+  "sistemas-distribuidos": {
+    "titulo": "Sistemas Distribuidos",
+    "rol": "Explora los desafíos fundamentales de coordinar múltiples nodos conectados por una red no fiable: modelos de consistencia (fuerte, secuencial, causal, eventual), teoremas límite (PACELC, FLP), relojes lógicos de Lamport y vectoriales, algoritmos de consenso (Raft, Paxos) y coordinación (ZooKeeper, etcd), elección de líder, quórums, replicación (líder-seguidor, multi-master), consistent hashing, fallos bizantinos, split-brain y patrones de tolerancia a fallos (timeouts, retry con backoff, circuit breaker, bulkhead, failover, sagas, 2PC).",
+    "por_que": "En cuanto un sistema cruza la frontera de una sola máquina, la red introduce particiones, relojes desincronizados y fallos parciales inevitables. Construir servicios distribuidos ignorando split-brain, idempotencia o el comportamiento de reintentos provoca corrupción de estado y caídas en cascada difíciles de reproducir.",
+    "como_encaja": "Profundiza los fundamentos teóricos detrás de Caching y mensajería, replicación/sharding en Bases de datos, Contenerización y orquestación (etcd/Kubernetes) y trazas en Observabilidad. Es decisivo al diseñar arquitecturas tolerantes a fallos y sistemas de alta disponibilidad.",
+    "ruta": "Asienta primero el problema del tiempo y el orden (relojes de Lamport y vectoriales, modelos de consistencia, PACELC, FLP); estudia luego replicación, quórum, consistent hashing, consenso (Raft/Paxos) y coordinadores (etcd), y aplica finalmente patrones de resiliencia (timeouts, backoff, circuit breaker, bulkhead, sagas).",
+    "grupo": "Infraestructura y operación"
+  },
+  "sistemas-operativos-lo-que-deberías-saber-hoy": {
+    "titulo": "Sistemas Operativos (Lo que Deberías Saber Hoy)",
+    "rol": "Combina los fundamentos internos del sistema operativo con el dominio práctico de Linux moderno: arranque (BIOS/UEFI, GRUB, systemd, targets), kernel vs espacio de usuario (syscalls, libc/glibc/musl, señales), procesos e hilos (PCB/TCB, context switch, planificador CFS, coroutines), sincronización y concurrencia (mutex, semáforos, spinlock vs futex, atomic/CAS, deadlock, lock-free, epoll/io_uring, reactor/proactor), memoria (virtual, MMU/TLB, paginación, page cache, OOM killer, cachés L1–L3, MESI, NUMA, false sharing), almacenamiento (inodos, ext4/XFS/Btrfs/ZFS, LVM, RAID, IOPS/latencia), aislamiento Linux (namespaces, cgroups, chroot, seccomp, AppArmor/SELinux, capacidades) y virtualización/red del kernel (KVM/QEMU, netfilter/nftables, eBPF, sysctl, SSH).",
+    "por_que": "Todo programa, base de datos y contenedor ejecuta syscalls, consume memoria virtual, sufre cambios de contexto y depende del I/O del kernel. Desconocer cómo actúan el page cache, el OOM killer, epoll, las líneas de caché o los cgroups impide diagnosticar fugas de memoria, degradación de rendimiento y fallos en contenedores.",
+    "como_encaja": "Explica la base física sobre la que corren Lenguajes y runtimes, Contenerización y orquestación (namespaces + cgroups = contenedores), Redes de datos (sockets, iptables/eBPF) y Bases de datos (fsync, IOPS, page cache). Es conocimiento de alto retorno en optimización, SRE y depuración de producción.",
+    "ruta": "Comienza por el panorama Linux (jerarquía de directorios, permisos, systemd, procesos/syscalls y SSH); pasa al núcleo de concurrencia y memoria (hilos, sincronización, memoria virtual, page cache, cachés CPU); sigue con sistemas de archivos e I/O asíncrono (epoll/io_uring) y culmina con namespaces, cgroups, virtualización y red del kernel.",
+    "grupo": "Infraestructura y operación"
+  },
+  "temas-avanzados-de-ingeniería-de-software": {
+    "titulo": "Temas Avanzados de Ingeniería de Software",
+    "rol": "Reúne cuatro áreas de madurez ingenieril avanzada: métodos formales y verificación (especificación y contratos formales, método de Hoare, lógicas temporales, model checking con SPIN/Promela y TLA+, pruebas de teoremas, refinamiento), ingeniería de la confiabilidad (MTBF/MTTR, tasa de fallos, modelos de crecimiento de confiabilidad, FMEA, recuperación y reinicio), modernización y reutilización (ingeniería inversa, refactoring de legacy, estrategia Strangler Fig, arquitectura basada en componentes, COTS, bibliotecas internas), mejora de procesos (CMMI, ISO 9001, ISO/IEC 15504/33000) y experimentación controlada en producción (A/B testing, hipótesis, grupos de control y significación estadística).",
+    "por_que": "Cuando los sistemas críticos no admiten errores sutiles de concurrencia, cuando el software heredado bloquea la evolución del negocio o cuando las decisiones de producto requieren evidencia causal, las prácticas básicas ya no alcanzan. Dominar Strangler Fig, TLA+, FMEA y experimentación controlada evita migraciones catastróficas y regresiones invisibles.",
+    "como_encaja": "Extiende Ingeniería de software II hacia sistemas de misión crítica, legado complejo y organización a escala; se conecta con Estadística y probabilidad (experimentos A/B y confiabilidad) y Sistemas distribuidos (verificación de protocolos en TLA+). Aparece en etapas de alta madurez técnica u organizacional.",
+    "ruta": "Aborda el capítulo por bloques según necesidad: empieza por modernización de legacy (ingeniería inversa, Strangler Fig, reutilización/componentes) y confiabilidad (MTBF/MTTR, FMEA); explora después experimentación controlada (A/B testing) y cierra con verificación formal (contratos, Hoare, model checking con TLA+/SPIN) y estándares de proceso (CMMI, ISO).",
+    "grupo": "Construcción de software"
+  },
+  "testing": {
+    "titulo": "Testing",
+    "rol": "Cubre la pirámide y estrategias modernas de verificación automatizada: pruebas unitarias en distintos ecosistemas (JUnit, Jest/Vitest, pytest, xUnit, Go test), dobles de prueba (mocks, stubs, fakes) y fixtures, TDD y BDD (Cucumber), pruebas de integración con dependencias reales (Testcontainers, SpringBootTest), pruebas de contrato (Pact), pruebas de API (Postman/Newman, REST Assured), pruebas extremo a extremo (Playwright, Cypress, Selenium), snapshot testing, accesibilidad automatizada (axe), pruebas de rendimiento (k6, JMeter, Gatling), cobertura y mutation testing.",
+    "por_que": "Sin una suite de pruebas automatizada rápida y confiable, cada cambio requiere verificación manual lenta y genera miedo a refactorizar. Abusar de mocks frágiles o depender únicamente de pruebas E2E lentas produce pipelines interminables que no detectan regresiones reales de integración ni caídas bajo carga.",
+    "como_encaja": "Verifica el código escrito con Fundamentos de programación y Frameworks, valida los contratos de APIs e integraciones, garantiza la calidad medida en Ingeniería de software II y se ejecuta automáticamente en cada pull request desde DevOps, CI/CD e IaC. Es parte integral e inseparable de la construcción de software.",
+    "ruta": "Domina primero pruebas unitarias, fixtures y dobles de prueba junto con TDD/BDD; sube a pruebas de integración (Testcontainers), API testing y contract testing (Pact); luego incorpora E2E (Playwright/Cypress) y accesibilidad, y cierra con pruebas de carga (k6) y calidad de tests (cobertura y mutation testing).",
+    "grupo": "Construcción de software"
+  },
+  "álgebra-lineal": {
+    "titulo": "Álgebra Lineal",
+    "rol": "Cubre los objetos y operaciones fundamentales de los espacios vectoriales y matrices: vectores y matrices, producto punto y normas, sistemas de ecuaciones lineales, rango e inversa, determinantes, espacios vectoriales y bases, transformaciones lineales, proyecciones ortogonales, mínimos cuadrados, eigenvalores/eigenvectores y descomposiciones matriciales (LU, QR, SVD).",
+    "por_que": "El álgebra lineal es el lenguaje nativo de los gráficos por computadora, las transformaciones geométricas, la compresión de datos y toda la inteligencia artificial moderna basada en embeddings y redes neuronales. Sin entender producto punto, proyecciones, mínimos cuadrados o SVD, los algoritmos de búsqueda semántica y aprendizaje automático resultan imposibles de razonar.",
+    "como_encaja": "Acompaña a Matemáticas I–IV y Estadística y probabilidad en el tronco científico; habilita directamente los embeddings y modelos de IA — nueva era, las rotaciones y sistemas de Física y los métodos iterativos de Análisis numérico. Se estudia en los primeros cursos y se reutiliza en especialidades de datos y gráficos.",
+    "ruta": "Inicia con vectores, producto punto, normas y matrices; domina sistemas lineales, rango, inversa y determinantes; avanza a espacios vectoriales, transformaciones lineales y proyecciones ortogonales/mínimos cuadrados, y concluye con eigenvalores, eigenvectores y descomposiciones LU, QR y SVD.",
+    "grupo": "Fundamentos y ciencias"
+  },
+  "ética-y-legalidad-profesional": {
+    "titulo": "Ética y Legalidad Profesional",
+    "rol": "Aborda la responsabilidad ética, social y jurídica del ingeniero de software: código de ética ACM/IEEE, integridad académica y profesional (citas, plagio, conflicto de interés, whistleblowing, comunicación honesta de incidentes), propiedad intelectual y licenciamiento de software (copyright, patentes, secretos empresariales, marcas, licencias MIT, BSD, Apache, GPL), protección de datos y privacidad (RGPD, habeas data, privacidad por diseño, minimización de datos, consentimiento informado), ética en IA (sesgos algorítmicos, explicabilidad, manipulación, deepfakes, supervisión humana) y sostenibilidad e impacto social.",
+    "por_que": "El código tiene consecuencias directas sobre derechos fundamentales, privacidad, empleo y seguridad física, además de implicaciones legales reales para quien lo diseña o aprueba. Mezclar licencias copyleft incompatibles en un producto propietario, recopilar datos sin base legal ni minimización o desplegar sistemas de IA opacos y sesgados expone a sanciones millonarias y daños éticos graves.",
+    "como_encaja": "Enmarca normativamente las decisiones técnicas de Seguridad, Bases de datos (privacidad y retención), IA — nueva era (AI Act, sesgos, deepfakes), Control de versiones (licencias de dependencias) y Liderazgo técnico. Atraviesa toda la carrera profesional desde la universidad hasta la dirección técnica.",
+    "ruta": "Comienza por código de ética ACM/IEEE, integridad profesional y comunicación honesta de incidentes; domina después propiedad intelectual y licencias open source (MIT, BSD, Apache, GPL) junto con protección de datos (RGPD, privacidad por diseño), y cierra con ética de IA (sesgos, explicabilidad, supervisión humana) y sostenibilidad.",
+    "grupo": "Gestión y profesión"
+  }
+}

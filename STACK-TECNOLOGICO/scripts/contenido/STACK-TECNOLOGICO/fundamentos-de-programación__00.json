@@ -1,0 +1,379 @@
+{
+  "Abstracción": {
+    "que": "Principio de programación orientada a objetos que consiste en modelar una entidad exponiendo únicamente su contrato esencial (qué hace) y ocultando los detalles accidentales de implementación (cómo lo hace). Permite trabajar con representaciones simplificadas de conceptos complejos mediante clases abstractas, interfaces o tipos de datos abstractos.",
+    "para": "Reduce la carga cognitiva al aislar al código cliente de la complejidad interna de un módulo o subsistema. Se utiliza siempre que distintas implementaciones comparten un propósito común —como motores de almacenamiento, pasarelas de pago o drivers de red— para poder intercambiarlas sin reescribir la lógica de negocio.",
+    "como": "El diseñador identifica los comportamientos invariantes de un dominio y los declara en una interfaz o clase abstracta sin cuerpo o con implementación parcial. Las clases concretas heredan o implementan dicha abstracción aportando el detalle específico (por ejemplo, consultas SQL frente a llamadas HTTP). En tiempo de compilación, los clientes declaran sus dependencias contra el tipo abstracto y el compilador verifica el cumplimiento del contrato. En tiempo de ejecución, el despacho dinámico enlaza la llamada al método de la instancia concreta inyectada.",
+    "practicas": [
+      "Abstracción vs. Encapsulamiento: la abstracción define qué es visible en la frontera del diseño (el modelo conceptual), mientras que el encapsulamiento protege el estado interno mediante modificadores de acceso para evitar manipulaciones indebidas.",
+      "Diseñar abstracciones basadas en casos de uso reales (Regla de Tres); crear interfaces genéricas prematuras antes de tener múltiples implementaciones genera sobreingeniería.",
+      "Mantener interfaces pequeñas y cohesivas (Interface Segregation Principle) para que los consumidores no dependan de métodos que no necesitan.",
+      "Evitar las abstracciones con fugas (leaky abstractions), donde detalles de la implementación subyacente —como códigos de error SQL o límites de red— se filtran a la firma del contrato."
+    ],
+    "ejemplo": "interface RepositorioPedidos {\n  guardar(pedido: Pedido): void;\n  buscarPorId(id: string): Pedido | null;\n}\n\nclass RepositorioPostgres implements RepositorioPedidos {\n  guardar(pedido: Pedido): void { /* INSERT INTO pedidos... */ }\n  buscarPorId(id: string): Pedido | null { /* SELECT * ... */ return null; }\n}",
+    "entrevista": "La abstracción separa el contrato del detalle de implementación para que el código cliente dependa de comportamientos estables y no de mecanismos volátiles."
+  },
+  "Backpressure": {
+    "que": "Mecanismo de control de flujo en sistemas asíncronos, reactivos y distribuidos mediante el cual un consumidor lento señala a un productor rápido que reduzca o detenga la emisión de datos. Su objetivo es evitar el desbordamiento de buffers y el agotamiento de memoria cuando las velocidades de producción y consumo no coinciden.",
+    "para": "Resuelve la saturación en pipelines de streaming, servidores HTTP no bloqueantes, colas de mensajes y comunicación entre microservicios bajo picos de tráfico. Se usa cuando un productor puede generar eventos más rápido de lo que la red, el disco o la CPU aguas abajo pueden procesarlos.",
+    "como": "En lugar de que el productor empuje elementos sin límite (push puro), el protocolo adopta un modelo híbrido pull-push: en Reactive Streams (`Mono`/`Flux`), el `Subscriber` solicita explícitamente `n` elementos mediante `Subscription.request(n)` y el `Publisher` no puede emitir más de esa cuota. A nivel de transporte, TCP implementa backpressure nativo reduciendo el tamaño de la ventana receptora (`TCP Window Size`) hasta cero cuando el buffer del socket se llena, frenando el `write()` en el emisor. Si no se propaga la señal hacia arriba, el consumidor debe aplicar estrategias explícitas como colas acotadas, rechazo con HTTP `429 Too Many Requests` o descarte selectivo.",
+    "practicas": [
+      "Preferir colas acotadas (bounded queues) frente a colas infinitas (`LinkedBlockingQueue` sin límite), ya que ocultar el problema en memoria acaba provocando `OutOfMemoryError` y latencias de cola enormes.",
+      "Propagar el backpressure de extremo a extremo (end-to-end) o definir explícitamente la política de desbordamiento: `buffer` acotado, `drop` (descartar nuevos), `latest` (quedarse con el último) o `error`.",
+      "En APIs y arquitecturas distribuidas, combinar backpressure local con load shedding (`429`/`503`) y circuit breakers para proteger la disponibilidad global del sistema.",
+      "No confundir backpressure con rate limiting: el rate limiting impone una cuota fija por tiempo o cliente, mientras que el backpressure es retroalimentación dinámica basada en la capacidad real del receptor."
+    ],
+    "ejemplo": "Flux.range(1, 10000)\n    .onBackpressureBuffer(100, BufferOverflowStrategy.DROP_OLDEST)\n    .subscribe(new BaseSubscriber<Integer>() {\n      @Override protected void hookOnSubscribe(Subscription s) { request(10); }\n      @Override protected void hookOnNext(Integer v) { procesar(v); request(1); }\n    });",
+    "entrevista": "El backpressure convierte un problema de desbordamiento de memoria en control de flujo explícito, haciendo que el ritmo del sistema lo marque el consumidor más lento."
+  },
+  "Bucles": {
+    "que": "Estructuras de control iterativas que permiten ejecutar repetidamente un bloque de instrucciones mientras se cumpla una condición booleana o existan elementos pendientes en una secuencia o colección. Constituyen la base algorítmica para recorrer datos, acumular resultados y procesar flujos continuos.",
+    "para": "Eliminan la duplicación manual de código cuando una operación debe aplicarse N veces o hasta alcanzar un estado de convergencia. Se utilizan tanto en recorridos acotados sobre arrays y rangos (`for`, `for-each`) como en esperas o procesos con condición dinámica (`while`, `do-while`).",
+    "como": "Al nivel de máquina, el compilador traduce un bucle en una etiqueta de inicio, una instrucción de comparación sobre registros o memoria y un salto condicional (`JMP` / `JNZ`) que devuelve el contador de programa (`PC`) al inicio del bloque mientras el predicado sea verdadero. En cada ciclo (iteración) se evalúa la guarda, se ejecuta el cuerpo y se actualiza la variable de control o el iterador subyacente (`hasNext()`/`next()`). Sentencias como `break` saltan inmediatamente fuera del bucle y `continue` saltan directamente a la reevaluación de la siguiente iteración.",
+    "practicas": [
+      "Preferir iteradores o bucles `for-each` frente a índices manuales siempre que no se necesite la posición numérica, evitando errores clásicos de off-by-one (`<=` vs `<`).",
+      "Garantizar una condición de terminación invariante y verificable en cada paso para evitar bucles infinitos que bloqueen el hilo o saturen la CPU.",
+      "Extraer la lógica interna a funciones o usar `continue` con retornos tempranos para evitar anidamientos profundos y bucles O(n²) accidentales dentro de iteraciones.",
+      "Evitar mutar la colección que se está recorriendo durante el bucle; en lenguajes como Java o Python esto dispara `ConcurrentModificationException` o salta elementos."
+    ],
+    "ejemplo": "for (const item of carrito) {\n  if (item.cantidad <= 0) continue;\n  total += item.precio * item.cantidad;\n  if (total > limiteMaximo) break;\n}",
+    "entrevista": "Un buen bucle garantiza terminación determinista, evita mutar la colección iterada y mantiene una complejidad temporal acorde al tamaño de entrada."
+  },
+  "Clases y objetos": {
+    "que": "En programación orientada a objetos, una clase es una plantilla o definición de tipo que agrupa atributos (datos) y métodos (comportamiento), mientras que un objeto es una instancia concreta creada en memoria a partir de esa clase con su propio estado e identidad.",
+    "para": "Permiten modelar entidades del dominio y componentes técnicos como unidades cohesivas que combinan estructura y operaciones válidas. Se utilizan para organizar bases de código medianas y grandes, facilitar la reutilización y razonar sobre invariantes de negocio en un solo lugar.",
+    "como": "La definición de la clase reside en el segmento de código/metadatos del runtime (por ejemplo, Metaspace en la JVM), donde se almacenan los descriptores de campos y la tabla de métodos virtuales (`vtable`). Al ejecutar el operador de instanciación (`new`), el asignador de memoria reserva espacio en el heap para los campos de instancia más la cabecera del objeto (puntero a su clase y metadata de sincronización/GC). Acto seguido se invoca al constructor para inicializar los atributos en un estado válido antes de devolver la referencia al código llamante.",
+    "practicas": [
+      "Asegurar que el constructor deje siempre al objeto en un estado completamente válido (invariantes cumplidos), evitando constructores vacíos seguidos de múltiples `setX()` obligatorios.",
+      "Distinguir entre Entidades (con identidad única y ciclo de vida, como `Usuario`) y Value Objects (definidos únicamente por sus atributos e inmutables, como `Dinero` o `Email`).",
+      "Mantener clases pequeñas y enfocadas en una única responsabilidad (SRP); una clase que crece indefinidamente tiende a convertirse en una God Class.",
+      "Sobrescribir de forma consistente igualdad y hash (`equals`/`hashCode` en Java, `__eq__`/`__hash__` en Python) cuando los objetos se comparen por valor o se usen en tablas hash."
+    ],
+    "ejemplo": "class CuentaBancaria {\n  #saldo;\n  constructor(titular, saldoInicial) {\n    if (saldoInicial < 0) throw new Error(\"Saldo negativo\");\n    this.titular = titular;\n    this.#saldo = saldoInicial;\n  }\n  depositar(monto) { this.#saldo += monto; }\n}\nconst cuenta = new CuentaBancaria(\"Ana\", 100);",
+    "entrevista": "La clase define el contrato y la estructura en tiempo de compilación, mientras que el objeto es la instancia en el heap que mantiene identidad y estado propio."
+  },
+  "Clean code": {
+    "que": "Conjunto de principios, convenciones y hábitos de ingeniería orientados a producir código legible, expresivo, simple de modificar y libre de ambigüedades para otros desarrolladores. Parte de la premisa de que el código se lee muchas más veces de las que se escribe.",
+    "para": "Frena la degradación progresiva de la velocidad de desarrollo (deuda técnica) a medida que un proyecto crece y cambia de manos. Se aplica diariamente en la nomenclatura, estructura de funciones, manejo de errores y organización modular para reducir el costo de mantenimiento y la tasa de defectos.",
+    "como": "El código limpio opera atacando la complejidad accidental en tres niveles: léxico, estructural y arquitectónico. A nivel léxico reemplaza abreviaturas crípticas y números mágicos por nombres que revelan intención (`diasHastaExpiracion` en lugar de `d`). A nivel estructural mantiene funciones cortas con un único nivel de abstracción, guard clauses para reducir el anidamiento y separación clara entre efectos secundarios y lógica pura. A nivel de equipo se sostiene mediante revisiones de código (PRs), linters automatizados, formateadores deterministas y pruebas unitarias que documentan el comportamiento esperado.",
+    "practicas": [
+      "Regla del Boy Scout: dejar cada archivo ligeramente más limpio de lo que se encontró al tocarlo para realizar una nueva funcionalidad o corrección.",
+      "Preferir código autoexplicativo frente a comentarios redundantes; reservar los comentarios únicamente para explicar el 'por qué' de una decisión o restricción externa, no el 'qué'.",
+      "Usar retornos tempranos (guard clauses) y funciones cohesivas con pocos parámetros (idealmente 0 a 3; agrupar en objetos de opciones si crecen).",
+      "No confundir Clean Code con sobre-fragmentación dogmática: partir una función de 10 líneas en 8 métodos diminutos empeora la legibilidad si obliga a saltar constantemente entre definiciones."
+    ],
+    "ejemplo": "function calcularDescuento(cliente: Cliente, total: number): number {\n  if (!cliente.esActivo) return 0;\n  if (total < MONTO_MINIMO_DESCUENTO) return 0;\n  return cliente.esVip ? total * 0.15 : total * 0.05;\n}",
+    "entrevista": "Clean code no es estética ni exceso de abstracciones, sino minimizar el tiempo que tarda cualquier ingeniero en entender el código y modificarlo sin introducir regresiones."
+  },
+  "Code smells": {
+    "que": "Síntomas superficiales en el diseño o estructura del código fuente que suelen indicar un problema más profundo de mantenibilidad, acoplamiento o violación de principios de diseño. No son bugs ni impiden la compilación, pero aumentan el riesgo de errores y dificultan la evolución del sistema.",
+    "para": "Sirven como señales tempranas de alerta durante revisiones de código o sesiones de programación para decidir cuándo y qué refactorizar. Ayudan a priorizar el pago de deuda técnica antes de que el código se vuelva rígido y frágil.",
+    "como": "El desarrollador o las herramientas de análisis estático (SonarQube, ESLint, PMD) inspeccionan el árbol de sintaxis abstracta (AST) y métricas como complejidad ciclomática, longitud de métodos, profundidad de anidamiento y grafo de dependencias. Patrones recurrentes como `Long Method`, `God Class`, `Feature Envy` (un método que usa más datos de otra clase que de la propia), `Primitive Obsession` o `Shotgun Surgery` (un cambio obliga a editar decenas de archivos) delatan responsabilidades mal ubicadas. Una vez identificado el smell, se aplica una técnica de refactoring catalogada —como Extract Method, Move Method o Replace Conditional with Polymorphism— verificando con tests que el comportamiento externo no cambia.",
+    "practicas": [
+      "Atacar primero los code smells en zonas de código con alta frecuencia de cambio (hotspots en Git), no en módulos estables que nadie toca.",
+      "Vigilar `Primitive Obsession`: reemplazar cadenas o enteros sin validar (emails, monedas, estados) por tipos o Value Objects dedicados.",
+      "Detectar `Feature Envy` y `Data Clumps` (grupos de parámetros que siempre viajan juntos) como candidatos directos para crear o mover métodos a una clase cohesiva.",
+      "Evitar corregir smells sin una red de seguridad de tests automatizados, ya que la reestructuración ciega puede introducir bugs silenciosos."
+    ],
+    "ejemplo": "// Primitive Obsession + Data Clump:\nfunction enviar(calle: string, ciudad: string, cp: string, pais: string) {}\n\n// Refactorizado con Value Object:\nfunction enviar(direccion: DireccionPostal) {}",
+    "entrevista": "Un code smell no es un bug inmediato, sino un indicador empírico de diseño frágil o acoplado que señala dónde conviene refactorizar antes de añadir nuevas reglas."
+  },
+  "Condicionales": {
+    "que": "Estructuras de control de flujo (`if/else`, `switch/match`, operador ternario) que evalúan expresiones booleanas o patrones para bifurcar la ejecución del programa hacia distintas ramas de código según el estado actual de los datos.",
+    "para": "Permiten que un algoritmo tome decisiones dinámicas en tiempo de ejecución: validar entradas, manejar casos borde, aplicar reglas de negocio diferenciadas o enrutar comandos.",
+    "como": "El runtime evalúa la expresión de condición reduciéndola a un valor verdadero o falso (o comparándola mediante `switch` o `pattern matching`), usando evaluación en cortocircuito (`&&`, `||`) para omitir subexpresiones innecesarias cuando el resultado ya está determinado. En hardware, el procesador ejecuta instrucciones de comparación (`CMP`) que actualizan las banderas de estado (`FLAGS`) y utiliza saltos condicionales junto con el predictor de saltos (branch predictor) para mantener lleno el pipeline de instrucciones. En el caso de `switch` densos sobre enteros o enums, el compilador suele optimizar la cadena de comparaciones en una tabla de saltos O(1).",
+    "practicas": [
+      "Usar guard clauses (retornos tempranos) para validar precondiciones al inicio de la función y evitar la 'pirámide de la perdición' de `if` anidados.",
+      "Aprovechar la evaluación en cortocircuito colocando primero las comprobaciones más baratas o las guardas de nulidad (`user != null && user.isActive()`).",
+      "Sustituir cadenas largas y repetitivas de `if/else` o `switch` sobre tipos por polimorfismo, tablas de despacho (mapas de estrategias) o `pattern matching` exhaustivo.",
+      "Evitar condiciones negadas dobles o complejas (`if (!noEsInvalido)`); extraer predicados complejos a variables o funciones booleanas con nombre claro."
+    ],
+    "ejemplo": "function tarifaEnvio(pesoKg: number, esExpress: boolean): number {\n  if (pesoKg <= 0) throw new Error(\"Peso inválido\");\n  const base = pesoKg <= 5 ? 10 : 20;\n  return esExpress ? base * 1.5 : base;\n}",
+    "entrevista": "Estructurar condicionales con guard clauses y tablas de despacho o polimorfismo elimina anidamientos profundos y mantiene baja la complejidad ciclomática."
+  },
+  "DRY - KISS - YAGNI": {
+    "que": "Trío de principios fundamentales de diseño de software: DRY (Don't Repeat Yourself) exige una única fuente de verdad para cada pieza de conocimiento; KISS (Keep It Simple, Stupid) prioriza la solución más simple que funcione; YAGNI (You Aren't Gonna Need It) prohíbe implementar funcionalidad especulativa que no se requiere hoy.",
+    "para": "Equilibran la mantenibilidad frente a la sobreingeniería: evitan inconsistencias por lógica duplicada sin caer en abstracciones prematuras, arquitecturas infladas o código especulativo que nadie usa pero todos deben mantener.",
+    "como": "DRY actúa consolidando reglas de negocio, constantes o validaciones compartidas en un único módulo o esquema para que un cambio futuro se haga en un solo lugar; sin embargo, no se aplica ciegamente a código que solo se parece sintácticamente pero evoluciona por razones distintas. KISS guía la elección de estructuras de datos directas, dependencias mínimas y flujos lineales comprensibles frente a meta-programación o patrones complejos innecesarios. YAGNI opera durante el diseño y la estimación posponiendo extensiones ('por si acaso algún día cambiamos de base de datos o necesitamos plugins') hasta que exista una necesidad verificada.",
+    "practicas": [
+      "Preferir una ligera duplicación temporal frente a una abstracción incorrecta (AHA: Avoid Hasty Abstractions); la duplicación de código accidental se refactoriza fácil, una mala abstracción compartida acopla módulos independientes.",
+      "Recordar que DRY aplica al conocimiento del dominio y reglas de negocio, no necesariamente a dos DTOs de capas distintas que hoy tienen los mismos campos.",
+      "Aplicar KISS sin confundir 'simple' con 'fácil' o 'desordenado': simple significa pocas partes móviles y bajo acoplamiento, no meter todo en un único archivo monolítico.",
+      "Validar cada interfaz, parámetro de configuración o bandera extra contra YAGNI antes de escribirlo, eliminando código muerto en lugar de comentarlo."
+    ],
+    "ejemplo": "// Violación de YAGNI + KISS:\ninterface IStorageProviderFactory { create(type: string, opts: Map<string, any>): IStorage; }\n// Solución KISS/YAGNI mientras solo exista almacenamiento local:\nfunction guardarArchivoLocal(ruta: string, datos: Buffer): Promise<void> { ... }",
+    "entrevista": "DRY evita duplicar conocimiento del negocio, mientras que KISS y YAGNI actúan como contrapeso para no construir abstracciones especulativas antes de necesitarlas."
+  },
+  "Encapsulamiento": {
+    "que": "Mecanismo de la programación orientada a objetos que agrupa datos y métodos dentro de una unidad (clase o módulo) y restringe el acceso directo a su estado interno, obligando a interactuar únicamente a través de una interfaz pública controlada.",
+    "para": "Protege las invariantes del objeto evitando que código externo corrompa su estado con valores inválidos, y permite modificar la representación interna (por ejemplo, cambiar un array por un `Map`) sin romper a los consumidores.",
+    "como": "Los lenguajes implementan el encapsulamiento mediante modificadores de visibilidad (`private`, `protected`, `public`, campos `#privados` en JS o convenciones/módulos) verificados por el compilador o el runtime. El objeto expone métodos con semántica de dominio (como `retirar(monto)`) que validan precondiciones, ejecutan transiciones atómicas de estado y actualizan los campos privados. Cuando se expone algún dato interno de tipo mutable (como una lista o fecha), el método devuelve una copia defensiva o una vista inmutable para impedir mutaciones silenciosas desde fuera.",
+    "practicas": [
+      "No confundir encapsulamiento con generar `getters` y `setters` públicos para todos los campos; un `setSaldo()` sin reglas rompe el encapsulamiento y convierte la clase en un contenedor anémico.",
+      "Aplicar el principio 'Tell, Don't Ask': en lugar de pedir el estado interno de un objeto para decidir fuera y luego mutarlo, pedirle al propio objeto que ejecute la operación.",
+      "Devolver copias defensivas o colecciones de solo lectura (`List.copyOf`, `ReadonlyArray`) al exponer colecciones internas.",
+      "Mantener la visibilidad lo más restrictiva posible por defecto (`private` o `package-private` / interno al módulo) y abrir acceso solo cuando exista una razón clara."
+    ],
+    "ejemplo": "public class Pedido {\n  private final List<Linea> lineas = new ArrayList<>();\n  public void agregarLinea(Linea l) {\n    if (l.cantidad() <= 0) throw new IllegalArgumentException();\n    lineas.add(l);\n  }\n  public List<Linea> getLineas() { return List.copyOf(lineas); }\n}",
+    "entrevista": "Encapsular no es poner getters y setters privados, sino ocultar la representación interna y garantizar las invariantes del objeto mediante métodos con semántica de negocio."
+  },
+  "Event loop": {
+    "que": "Patrón de ejecución de concurrencia en un único hilo (o por núcleo) que despacha eventos y callbacks de forma continua desde colas de tareas sin bloquearse esperando operaciones de entrada/salida (I/O). Es el núcleo de ejecución de runtimes como Node.js, navegadores web, Netty y `asyncio` en Python.",
+    "para": "Permite atender decenas de miles de conexiones de red o eventos de interfaz concurrentes consumiendo muy poca memoria, evitando el costo de crear y sincronizar miles de hilos del sistema operativo para cargas intensivas en I/O.",
+    "como": "El event loop gira en un ciclo continuo apoyado en el patrón Reactor y multiplexores de I/O del kernel (`epoll` en Linux, `kqueue` en macOS/BSD, `IOCP` en Windows). Cuando el código inicia una operación asíncrona (lectura de socket o temporizador), registra el descriptor de archivo en el sistema operativo y cede el control inmediatamente. Al completarse el evento de I/O, el kernel notifica al bucle, el cual encola el callback correspondiente y lo ejecuta secuencialmente en la pila de llamadas cuando queda libre. En JavaScript/Node.js, entre cada fase de macrotareas (`timers`, `poll`, `check`), el motor drena por completo la cola de microtareas (`Promise.then`, `queueMicrotask`).",
+    "practicas": [
+      "Nunca bloquear el event loop con operaciones síncronas de I/O o cálculo intensivo de CPU (compresión, criptografía pesada, parsing JSON gigante), ya que congela a todos los usuarios conectados.",
+      "Delegar tareas intensivas en CPU a worker threads, thread pools dedicados (`worker_threads`, `ExecutorService`) o colas de trabajo separadas.",
+      "Cuidar la inanición de la cola de macrotareas (starvation): encadenar recursivamente microtareas (`Promise` o `process.nextTick`) impide que el event loop avance a la fase de I/O.",
+      "Event loop vs. multithreading tradicional: el event loop brilla en cargas I/O-bound con alta concurrencia; para cómputo paralelo CPU-bound se necesitan múltiples hilos o procesos (cluster)."
+    ],
+    "ejemplo": "console.log('1. Inicio');\nsetTimeout(() => console.log('4. Macrotarea (timer)'), 0);\nPromise.resolve().then(() => console.log('3. Microtarea (Promise)'));\nconsole.log('2. Fin síncrono');",
+    "entrevista": "El event loop logra alta concurrencia en I/O en un solo hilo delegando la espera al multiplexor del kernel (`epoll`/`kqueue`) y ejecutando callbacks cortos sin bloquearse."
+  },
+  "Excepciones": {
+    "que": "Mecanismo estructurado de los lenguajes de programación para interrumpir el flujo normal de ejecución cuando ocurre una condición anómala en tiempo de ejecución y transferir el control al manejador adecuado en la pila de llamadas.",
+    "para": "Separa la lógica principal ('happy path') de la gestión de fallos y evita tener que comprobar manualmente códigos de retorno en cada llamada intermedia de la pila.",
+    "como": "Cuando se ejecuta `throw`/`raise`, el runtime construye un objeto de excepción que encapsula el tipo de error, un mensaje y una instantánea del stack trace actual. Acto seguido inicia el desenrollado de la pila (`stack unwinding`), saliendo de cada marco de función en sentido inverso mientras ejecuta bloques de limpieza (`finally`, destructores RAII o `with`/`try-with-resources`) para liberar archivos o locks. El proceso se detiene al encontrar un bloque `catch`/`except` compatible con el tipo de excepción; si ninguno lo captura hasta `main` o la raíz del hilo, el proceso o hilo termina abortando con el volcado de pila.",
+    "practicas": [
+      "Usar excepciones exclusivamente para situaciones excepcionales, nunca como mecanismo habitual de control de flujo (por ejemplo, para validar un formulario o controlar bucles), debido al costo de capturar el stack trace.",
+      "Capturar siempre las excepciones más específicas posibles; evitar bloques `catch (Exception e)` vacíos que tragan errores y ocultan bugs.",
+      "Garantizar la liberación de recursos determinista mediante `try-with-resources` (Java), `using` (C#) o `with` (Python) en lugar de depender de limpieza manual.",
+      "Preservar la excepción original como causa (`cause` / `raise ... from e`) al envolver errores de bajo nivel en excepciones de dominio."
+    ],
+    "ejemplo": "try (var reader = Files.newBufferedReader(ruta)) {\n  return reader.readLine();\n} catch (NoSuchFileException e) {\n  throw new ConfiguracionFaltanteException(\"Falta archivo: \" + ruta, e);\n}",
+    "entrevista": "Las excepciones permiten propagar fallos a través de la pila mediante stack unwinding sin contaminar el flujo normal, siempre que se reserven para anomalías reales y se liberen recursos de forma segura."
+  },
+  "Funciones y métodos": {
+    "que": "Bloques reutilizables y nombrados de código que encapsulan una tarea específica, aceptan parámetros de entrada y opcionalmente devuelven un valor. Se denomina función cuando existe de forma independiente y método cuando está asociado a una clase o instancia con acceso implícito a su estado (`this`/`self`).",
+    "para": "Descomponen problemas complejos en unidades comprensibles, promueven la reutilización, facilitan las pruebas unitarias aisladas y delimitan ámbitos (scopes) de variables locales.",
+    "como": "Al invocar una función, el runtime crea un marco de pila (`stack frame`) que almacena los argumentos pasados (por valor o por referencia a objeto), las variables locales y la dirección de retorno. En el caso de métodos de instancia, el compilador inyecta de forma implícita la referencia al objeto receptor (`this`/`self`) como primer argumento oculto y, si el método es polimórfico, resuelve su dirección real mediante la `vtable` del objeto. Al ejecutarse `return`, el valor resultante se coloca en el registro o pila del llamante y el `stack frame` se desapila liberando sus variables locales.",
+    "practicas": [
+      "Diseñar funciones pequeñas con responsabilidad única y un nivel uniforme de abstracción; si una función requiere comentarios de sección para dividir pasos, conviene extraer subfunciones.",
+      "Favorecer funciones puras (sin efectos secundarios y deterministas para las mismas entradas) en la lógica de negocio para simplificar el testing y la concurrencia.",
+      "Evitar argumentos booleanos ('flag arguments') que parten la función en dos comportamientos distintos; es más claro definir dos funciones con nombres explícitos.",
+      "Limitar la mutación de parámetros de entrada y documentar claramente si una función retorna `null`/`Optional` o lanza excepción."
+    ],
+    "ejemplo": "function calcularImpuesto(base: number, tasa = 0.21): number {\n  if (base < 0) throw new RangeError(\"Base negativa\");\n  return Number((base * tasa).toFixed(2));\n}",
+    "entrevista": "Mientras una función opera solo sobre sus argumentos explícitos, un método recibe implícitamente la referencia de la instancia para operar o respetar las invariantes de su clase."
+  },
+  "Generics": {
+    "que": "Mecanismo de programación paramétrica que permite definir clases, interfaces y funciones parametrizadas con tipos abstractos (`<T>`, `<K, V>`), los cuales se concretan al usarlos sin perder verificación estática.",
+    "para": "Elimina la duplicación de algoritmos y estructuras de datos para distintos tipos (como listas, repositorios o respuestas API) evitando conversiones inseguras (`casts`) desde `Object`/`any` y detectando incompatibilidades en tiempo de compilación.",
+    "como": "El compilador resuelve el polimorfismo paramétrico de dos formas principales según el lenguaje: mediante **borrado de tipos (type erasure)**, como en Java o TypeScript (donde el tipo se verifica al compilar y desaparece en bytecode/JS reemplazándose por `Object` o su cota superior más casts implícitos), o mediante **monomorfización**, como en Rust o C++ (donde el compilador genera código máquina especializado para cada tipo concreto usado). Además, los sistemas de tipos avanzados soportan cotas (`T extends Comparable<T>`) y varianza (`in`/`out`, `? extends`/`? super` PECS) para controlar la compatibilidad entre contenedores de subtipos.",
+    "practicas": [
+      "Usar cotas superiores (`extends`) cuando el algoritmo genérico necesite invocar métodos garantizados del parámetro de tipo.",
+      "En Java, aplicar la regla PECS (*Producer Extends, Consumer Super*): usar `? extends T` para leer elementos y `? super T` para escribirlos.",
+      "Tener en cuenta el type erasure en Java/TypeScript: en tiempo de ejecución no existe `new T()` ni `instanceof List<String>` sin pasar explícitamente un `Class<T>` o token de tipo.",
+      "No abusar de firmas con cuatro o más parámetros de tipo anidados si oscurecen la legibilidad de la API."
+    ],
+    "ejemplo": "interface RespuestaApi<T> {\n  datos: T;\n  codigo: number;\n}\nfunction primero<T>(lista: T[]): T | undefined {\n  return lista[0];\n}",
+    "entrevista": "Los generics ofrecen reutilización polimórfica con seguridad de tipos en compilación; la diferencia clave entre runtimes está entre type erasure (JVM/TS) y monomorfización (Rust/C++)."
+  },
+  "Herencia": {
+    "que": "Mecanismo de la programación orientada a objetos mediante el cual una subclase adquiere atributos y métodos de una superclase, estableciendo una relación jerárquica de especialización ('es-un' / *is-a*) y permitiendo extender o sobrescribir su comportamiento.",
+    "para": "Sirve para compartir código base común entre variantes estrechamente relacionadas y habilitar polimorfismo de subtipos en frameworks o jerarquías bien acotadas.",
+    "como": "Al compilar una clase derivada (`class Perro extends Animal`), el compilador concatena la disposición en memoria de los campos heredados con los propios de la subclase y construye su `vtable` copiando las referencias de los métodos de la superclase y reemplazando los sobrescritos (`@Override`). Durante la instanciación, el constructor de la subclase debe invocar obligatoriamente al constructor padre (`super()`) antes de inicializar sus propios miembros para garantizar que la base del objeto sea consistente. Si se invoca un método sobrescrito a través de una referencia de tipo padre, el despacho dinámico consulta la `vtable` real del objeto en memoria.",
+    "practicas": [
+      "Favor composition over inheritance: la herencia crea el acoplamiento más fuerte posible entre dos clases (fragile base class problem), por lo que conviene preferir composición e interfaces para reutilizar código.",
+      "Cumplir estrictamente el Principio de Sustitución de Liskov (LSP): cualquier subclase debe poder usarse donde se espera la clase padre sin alterar precondiciones, postcondiciones ni lanzar excepciones inesperadas.",
+      "Evitar jerarquías profundas (más de 2-3 niveles) y marcar como `final`/`sealed` las clases que no han sido diseñadas explícitamente para ser heredadas.",
+      "Nunca invocar métodos sobrescribibles desde el constructor de una clase padre, ya que en la subclase sus campos aún no habrán sido inicializados."
+    ],
+    "ejemplo": "class Notificacion {\n  constructor(protected destino: string) {}\n  enviar(msg: string): void { /* lógica común */ }\n}\nclass NotificacionEmail extends Notificacion {\n  override enviar(msg: string): void { /* envía SMTP a this.destino */ }\n}",
+    "entrevista": "La herencia modela especialización ('es-un') respetando Liskov, pero como acopla fuertemente la subclase a la implementación padre, suele ser mejor preferir composición e interfaces para reutilizar comportamiento."
+  },
+  "Hilos": {
+    "que": "Unidades más pequeñas de ejecución planificadas por el sistema operativo dentro de un mismo proceso, que comparten el mismo espacio de direcciones de memoria (heap, variables globales, descriptores de archivo) pero mantienen su propia pila de llamadas (stack) y registros de CPU.",
+    "para": "Permiten paralelismo real en múltiples núcleos de CPU para cálculos intensivos y concurrencia en operaciones bloqueantes, manteniendo el resto de la aplicación responsiva.",
+    "como": "El planificador del sistema operativo (OS scheduler) asigna rodajas de tiempo (time slices) a cada hilo en los núcleos disponibles y realiza cambios de contexto (`context switch`) guardando y restaurando registros y punteros de pila. Como todos los hilos comparten memoria en el heap y cachés L1/L2, las lecturas y escrituras concurrentes requieren primitivas de sincronización (`mutex`, `semaphore`, `atomic` / CAS, barreras de memoria) para evitar condiciones de carrera (race conditions) y problemas de visibilidad. Dado que un hilo nativo de SO consume del orden de ~1 MB de stack y cientos de nanosegundos/microsegundos por cambio de contexto, runtimes modernos ofrecen thread pools acotados o hilos virtuales ligeros (Java Virtual Threads / goroutines) multiplexados sobre pocos hilos del sistema.",
+    "practicas": [
+      "Usar siempre thread pools acotados (`ExecutorService`, `ThreadPoolExecutor`) en lugar de crear un hilo nuevo por cada petición (`new Thread()`), para evitar agotar la memoria o colapsar el scheduler.",
+      "Evitar estado mutable compartido entre hilos; cuando sea inevitable, protegerlo con inmutabilidad, estructuras concurrentes (`ConcurrentHashMap`) o locks en orden fijo para prevenir deadlocks.",
+      "No confundir concurrencia (estructurar múltiples tareas progresando) con paralelismo (ejecutar varias tareas simultáneamente en distintos núcleos).",
+      "Para cargas masivas bloqueantes en I/O en la JVM moderna, evaluar Virtual Threads (Project Loom) frente a pools clásicos de hilos de plataforma."
+    ],
+    "ejemplo": "ExecutorService pool = Executors.newFixedThreadPool(4);\nFuture<Integer> resultado = pool.submit(() -> calcularFactorial(20));\nInteger valor = resultado.get();\npool.shutdown();",
+    "entrevista": "Los hilos comparten el heap del proceso pero tienen stack propio, lo que habilita paralelismo real en múltiples núcleos a cambio de requerir sincronización contra race conditions y deadlocks."
+  },
+  "I-O": {
+    "que": "Mecanismo mediante el cual un programa intercambia datos con el exterior de la memoria principal: teclado y consola (stdin/stdout), sistema de archivos en disco, sockets de red o dispositivos periféricos.",
+    "para": "Hace útiles a los programas al permitirles leer entradas de usuario o configuraciones, persistir estado en disco y comunicarse con bases de datos o APIs externas.",
+    "como": "El programa en espacio de usuario no accede directamente al hardware; realiza llamadas al sistema (`syscalls` como `open`, `read`, `write`, `close` en POSIX) que cambian el procesador a modo kernel. El sistema operativo transfiere datos entre el dispositivo (a menudo mediante DMA y la caché de páginas del kernel) y un buffer en el espacio de usuario. Dado que acceder a disco o red es órdenes de magnitud más lento que acceder a RAM (microsegundos/milisegundos frente a nanosegundos), las bibliotecas estándar envuelven estos flujos en streams con buffering (`BufferedReader`, `BufWriter`) para agrupar muchas lecturas o escrituras pequeñas en pocas syscalls.",
+    "practicas": [
+      "Usar siempre streams con buffer (buffered I/O) al leer o escribir archivos línea a línea o byte a byte para minimizar el costo de cambiar constantemente a modo kernel.",
+      "Cerrar determinísticamente los descriptores de archivo y sockets con `try-with-resources`, `defer` o `with` para no agotar el límite de file descriptors del proceso (`EMFILE`).",
+      "Especificar explícitamente la codificación de caracteres (`UTF-8`) al convertir flujos de bytes en texto y no depender del encoding por defecto del sistema operativo.",
+      "Establecer timeouts en operaciones de I/O de red, ya que una lectura sin timeout puede dejar colgado indefinidamente un hilo o recurso."
+    ],
+    "ejemplo": "with open(\"registro.log\", \"a\", encoding=\"utf-8\") as archivo:\n    archivo.write(\"Evento procesado\\n\")",
+    "entrevista": "Las operaciones de I/O cruzan la frontera hacia el kernel mediante syscalls y son órdenes de magnitud más lentas que la RAM, por lo que exigen buffering, timeouts y cierre determinista de descriptores."
+  },
+  "Inmutabilidad": {
+    "que": "Propiedad de un objeto o estructura de datos cuyo estado no puede ser modificado después de su creación; cualquier transformación produce una nueva instancia con los datos actualizados en lugar de alterar la original.",
+    "para": "Elimina errores sutiles por mutaciones compartidas inesperadas (aliasing), garantiza seguridad por diseño en entornos multihilo sin necesidad de locks y simplifica el razonamiento sobre el flujo de datos y el caché.",
+    "como": "En programación orientada a objetos se implementa declarando la clase como no extensible (`final`), todos sus campos privados y de solo lectura (`final` / `readonly`), inicializándolos en el constructor y realizando copias defensivas tanto al recibir como al exponer colecciones mutables. En programación funcional o estructuras persistentes (como en Clojure, Scala o Redux), actualizar un árbol o mapa inmutable aplica *structural sharing*: solo se copian los nodos en el camino modificado (O(log n)) reutilizando intacto el resto de la estructura anterior. La ausencia de mutación permite calcular `hashCode` una sola vez y hace seguros los objetos como claves de mapas y cachés.",
+    "practicas": [
+      "Implementar los Value Objects y DTOs de mensajes o eventos como tipos inmutables (`record` en Java, `@dataclass(frozen=True)` en Python, `readonly` en TypeScript).",
+      "Tener cuidado con la inmutabilidad superficial (`const` en JS o `final` en Java): impiden reasignar la referencia, pero no impiden mutar las propiedades o elementos internos del objeto/lista si no se copian o congelan profundamente.",
+      "Equilibrar inmutabilidad con uso de memoria y GC: en bucles muy calientes o transformaciones grandes, usar builders mutables locales y congelar el resultado final.",
+      "Aprovechar la inmutabilidad en concurrencia para compartir configuraciones y snapshots entre hilos sin bloqueos."
+    ],
+    "ejemplo": "public record Dinero(BigDecimal monto, String moneda) {\n  public Dinero sumar(Dinero otro) {\n    if (!moneda.equals(otro.moneda)) throw new IllegalArgumentException();\n    return new Dinero(monto.add(otro.monto), moneda);\n  }\n}",
+    "entrevista": "Un objeto inmutable nunca cambia tras construirse, lo que elimina efectos secundarios por aliasing y lo vuelve thread-safe por naturaleza sin necesidad de sincronización."
+  },
+  "Interfaces": {
+    "que": "Contratos de tipo que declaran un conjunto de firmas de métodos (y opcionalmente propiedades o métodos por defecto) que una clase o estructura debe cumplir, sin imponer una jerarquía de herencia de implementación.",
+    "para": "Permiten desacoplar los módulos consumidores de las implementaciones concretas, habilitar la inyección de dependencias, facilitar el mocking en tests unitarios y componer múltiples capacidades en una misma clase.",
+    "como": "En lenguajes de tipado nominal (Java, C#), una clase declara explícitamente `implements` y el compilador verifica que defina todos los métodos requeridos; en runtime, las llamadas a través de una referencia de interfaz se despachan mediante tablas de interfaz (`itable`) o búsquedas en línea. En lenguajes de tipado estructural o duck typing (TypeScript, Go), cualquier tipo que posea los métodos requeridos satisface automáticamente la interfaz sin acoplarse explícitamente a ella. Esto permite aplicar el Principio de Inversión de Dependencias (DIP): la capa de dominio define la interfaz (puerto) y la capa de infraestructura la implementa (adaptador).",
+    "practicas": [
+      "Segregar interfaces grandes en contratos pequeños orientados al cliente (ISP), como `Lector` y `Escritor` en lugar de un único `RepositorioTotal`.",
+      "Nombrar interfaces por la capacidad o rol que representan (`Serializable`, `PasarelaPago`), evitando sufijos innecesarios como `IPasarelaPago` salvo convención estricta del lenguaje (C#).",
+      "No crear interfaces 1-a-1 mecánicas para cada clase de servicio si nunca habrá otra implementación ni se requiere aislar una frontera arquitectónica (en pruebas modernas muchos tests prefieren implementaciones reales en memoria o fakes).",
+      "Interfaz vs. Clase abstracta: usar interfaz para definir capacidades o contratos múltiples y clase abstracta solo cuando varias subclases necesiten compartir estado protegido y flujo plantilla."
+    ],
+    "ejemplo": "type Notificador interface {\n    Enviar(destinatario string, mensaje string) error\n}\nfunc ProcesarOrden(n Notificador) { _ = n.Enviar(\"ana@mail.com\", \"Lista\") }",
+    "entrevista": "Las interfaces invierten las dependencias permitiendo que la lógica de negocio defina contratos estables mientras la infraestructura aporta implementaciones intercambiables y testeables."
+  },
+  "Manejo de errores": {
+    "que": "Conjunto de estrategias, contratos de tipo y políticas operativas para detectar, representar, propagar, registrar y recuperarse de fallos previsibles o inesperados durante la ejecución de un programa.",
+    "para": "Evita fallos silenciosos, estados de datos corruptos y caídas abruptas de servicio, diferenciando errores de dominio esperados (saldo insuficiente, entrada inválida) de fallos técnicos transitorios o irrecuperables.",
+    "como": "Existen tres paradigmas principales según el lenguaje y la arquitectura: excepciones con desenrollado de pila (`try/catch`), valores de retorno explícitos o uniones discriminadas (`Result<T, E>` / `Either` en Rust, Go o programación funcional) y canales asíncronos (rechazo de `Promise` o señal `onError` en flujos reactivos). En sistemas distribuidos y APIs, los errores internos se traducen en la frontera a códigos protocolares estándar (como HTTP `4xx` para errores de cliente o `5xx` y RFC 9457 Problem Details para fallos del servidor) junto con un identificador de correlación para rastrear el fallo en logs sin filtrar trazas sensibles al usuario.",
+    "practicas": [
+      "Distinguir fallos de negocio/validación (manejables y esperados) de errores de programación/bugs (assertions o fallos rápidos que no deben ocultarse).",
+      "Aplicar 'Fail Fast': validar entradas y configuraciones críticas lo antes posible en la frontera del sistema o arranque, en lugar de propagar `null` hasta provocar un fallo distante.",
+      "Loguear cada error una única vez en la capa frontera con contexto útil (IDs de operación, nunca contraseñas o tokens), evitando registrar y relanzar en cada capa intermedia (log-and-rethrow).",
+      "Para errores transitorios de red o base de datos, combinar timeouts con reintentos idempotentes, exponential backoff + jitter y circuit breakers."
+    ],
+    "ejemplo": "type Resultado<T, E> = { ok: true; valor: T } | { ok: false; error: E };\nfunction dividir(a: number, b: number): Resultado<number, string> {\n  return b === 0 ? { ok: false, error: \"División por cero\" } : { ok: true, valor: a / b };\n}",
+    "entrevista": "Un buen manejo de errores distingue fallos recuperables de bugs, aplica fail-fast en la frontera, evita tragar excepciones y traduce errores internos a contratos claros sin filtrar detalles sensibles."
+  },
+  "Mono y Flux": {
+    "que": "Son los dos tipos fundamentales de publicadores (`Publisher` de Reactive Streams) en Project Reactor (Java/Spring): `Mono<T>` representa una secuencia asíncrona de 0 o 1 elemento, mientras que `Flux<T>` representa un flujo asíncrono de 0 a N elementos (finito o infinito).",
+    "para": "Modelan tanto operaciones individuales no bloqueantes (una consulta por ID o llamada HTTP en `Mono`) como flujos continuos de eventos, Server-Sent Events o consultas paginadas en streaming (`Flux`) con soporte integrado de backpressure.",
+    "como": "Al encadenar operadores declarativos (`map`, `flatMap`, `filter`, `onErrorResume`) no se ejecuta nada de inmediato; Reactor construye un grafo de suscripción inmutable. Solo cuando un consumidor llama a `subscribe()` (o el servidor WebFlux se suscribe al responder una petición), la señal `onSubscribe` fluye aguas abajo y `Subscription.request(n)` fluye aguas arriba. Los datos viajan en forma de señales `onNext(item)` respetando la demanda solicitada, terminando con `onComplete()` o `onError(Throwable)`. Operadores como `subscribeOn` y `publishOn` permiten cambiar el `Scheduler` (pool de hilos o event loop) en puntos específicos del pipeline.",
+    "practicas": [
+      "Nothing happens until you subscribe: olvidar suscribirse o no retornar el `Mono`/`Flux` en un endpoint WebFlux hace que la operación nunca se ejecute.",
+      "Usar `flatMap` para transformaciones asíncronas que devuelven otro `Mono`/`Flux`, reservando `map` exclusivamente para transformaciones síncronas en memoria.",
+      "Nunca llamar a `.block()` dentro de hilos del event loop de Reactor/Netty, ya que lanza `IllegalStateException` o provoca deadlocks por bloqueo.",
+      "Diferenciar `onErrorReturn` (valor constante de respaldo) de `onErrorResume` (flujo alternativo dinámico) para evitar que una excepción aborte todo un `Flux`."
+    ],
+    "ejemplo": "Flux<String> nombres = usuarioRepo.buscarActivos()\n    .filter(u -> u.edad() >= 18)\n    .flatMap(u -> servicioPerfil.obtenerAlias(u.id()))\n    .onErrorResume(e -> Mono.empty())\n    .take(50);",
+    "entrevista": "Mono (0..1) y Flux (0..N) son publicadores lazy de Project Reactor que solo se ejecutan al suscribirse y propagan demanda mediante backpressure de Reactive Streams."
+  },
+  "Patrones de diseño": {
+    "que": "Soluciones generales, probadas y reutilizables a problemas recurrentes de diseño orientado a objetos en un contexto determinado. El catálogo clásico del *Gang of Four* (GoF) los clasifica en creacionales (cómo instanciar), estructurales (cómo componer clases/objetos) y de comportamiento (cómo colaboran).",
+    "para": "Aportan un vocabulario técnico común al equipo (decir 'Strategy' o 'Adapter' comunica al instante la estructura y su intención) y resuelven problemas de acoplamiento, extensibilidad y variación sin reinventar soluciones frágiles.",
+    "como": "En lugar de ser fragmentos de código para copiar y pegar, cada patrón define roles participantes y relaciones basadas en principios como programar contra interfaces y preferir composición sobre herencia. Por ejemplo, **Factory Method** y **Singleton** encapsulan el control de instanciación; **Adapter** y **Decorator** envuelven objetos para traducir interfaces o añadir responsabilidades dinámicamente; y **Strategy** u **Observer** desacoplan algoritmos intercambiables o notificaciones de eventos entre objetos. Su implementación concreta varía según el lenguaje: en lenguajes con funciones de primera clase, `Strategy` o `Command` a menudo se simplifican a lambdas.",
+    "practicas": [
+      "No forzar patrones donde un diseño simple basta ('patternitis'); los patrones deben emerger al refactorizar código para eliminar rigidez o duplicación, no al revés.",
+      "Elegir el patrón por su intención y no por su diagrama de clases: `Decorator`, `Proxy` y `Adapter` comparten estructura envolvente pero tienen propósitos distintos (añadir conducta, controlar acceso, adaptar interfaz).",
+      "Aprovechar características modernas del lenguaje (lambdas, closures, records, enums con métodos) antes de crear decenas de clases ceremoniales del GoF clásico.",
+      "Conocer los riesgos de patrones como `Singleton` (estado global oculto que dificulta tests); preferir inyección de dependencias con ciclo de vida único."
+    ],
+    "ejemplo": "// Strategy simplificado con funciones de primera clase:\nconst estrategias = {\n  estandar: (m) => m * 1.0,\n  vip: (m) => m * 0.85,\n};\nconst calcular = (monto, tipo) => estrategias[tipo](monto);",
+    "entrevista": "Los patrones de diseño no son plantillas rígidas, sino un vocabulario compartido de soluciones a problemas recurrentes de acoplamiento que siempre deben justificar su complejidad."
+  },
+  "Polimorfismo": {
+    "que": "Capacidad de un lenguaje de programación para tratar valores de distintos tipos a través de una interfaz común, permitiendo que una misma operación o invocación adopte diferentes comportamientos según el tipo concreto subyacente.",
+    "para": "Hace posible extender un sistema con nuevos tipos o variantes sin modificar el código cliente existente (Principio Abierto/Cerrado), eliminando condicionales dispersos basados en `if/else` o `instanceof`.",
+    "como": "En POO destaca el **polimorfismo de subtipos (dinámico)** mediante enlace tardío (*dynamic dispatch*): el código llama a `metodo.procesar(pago)` sobre una referencia de tipo interfaz o clase base; en tiempo de ejecución, la máquina virtual consulta el puntero de clase del objeto real en el heap y salta a la implementación correspondiente en su `vtable` o `itable`. Otras formas clave son el **polimorfismo paramétrico** (Generics) y el **polimorfismo ad-hoc** (sobrecarga de funciones o *type classes*). En compiladores con optimización JIT (como HotSpot), cuando un sitio de llamada solo ve una o dos implementaciones reales (monomórfico/bimórfico), el runtime realiza *inline caching* para evitar el costo del salto indirecto.",
+    "practicas": [
+      "Reemplazar cadenas de `switch (tipo)` repetidas en varios lugares por polimorfismo cuando aparezcan nuevas variantes frecuentemente.",
+      "Respetar el Principio de Sustitución de Liskov (LSP) en todas las implementaciones para que el consumidor no necesite hacer comprobaciones `instanceof` o casts especiales.",
+      "Distinguir sobrecarga (mismo nombre con distintos parámetros resuelto en compilación) de sobreescritura (misma firma redefinida en subtipo y resuelta en tiempo de ejecución).",
+      "Usar interfaces o clases selladas (`sealed`) junto con `pattern matching` cuando el conjunto de variantes es cerrado y se añaden operaciones nuevas más que tipos nuevos."
+    ],
+    "ejemplo": "interface MetodoPago { void cobrar(BigDecimal monto); }\nclass Tarjeta implements MetodoPago { public void cobrar(BigDecimal m) { /* ... */ } }\nclass Transferencia implements MetodoPago { public void cobrar(BigDecimal m) { /* ... */ } }\nvoid procesar(MetodoPago metodo, BigDecimal m) { metodo.cobrar(m); }",
+    "entrevista": "El polimorfismo desacopla al cliente de las variantes concretas mediante despacho dinámico en runtime (subtipos) o abstracción paramétrica en compilación (generics)."
+  },
+  "Programación asíncrona": {
+    "que": "Modelo de ejecución en el que una tarea que implica espera (como llamadas de red, consultas a base de datos o acceso a disco) se inicia sin detener el hilo llamante, permitiendo que este continúe ejecutando otras tareas y reciba el resultado más adelante.",
+    "para": "Maximiza la utilización de hilos y la capacidad de respuesta de aplicaciones UI o servidores con alta concurrencia de I/O, reduciendo el consumo de memoria frente a bloquear un hilo dedicado por cada operación en espera.",
+    "como": "Al invocar una operación asíncrona, la aplicación registra la solicitud en el sistema operativo (I/O no bloqueante con `epoll`/`kqueue`/`io_uring`) o en un pool de trabajo y retorna inmediatamente un manejador futuro (`Promise`, `CompletableFuture`, `Task`) o registra un callback. El hilo queda libre para atender otros eventos o peticiones en el event loop o pool de ejecución. Cuando el recurso externo responde, el kernel o el driver notifica la finalización, el manejador pasa a estado resuelto y la continuación registrada se programa para ejecutarse con el resultado o error.",
+    "practicas": [
+      "No mezclar llamadas síncronas bloqueantes (drivers JDBC clásicos, `Thread.sleep`, lectura síncrona) dentro de flujos asíncronos compartidos, ya que bloquean el event loop o agotan el pool común.",
+      "Propagar siempre errores y cancelaciones (`AbortController`, timeouts) en todas las ramas asíncronas para evitar tareas huérfanas y fugas de recursos.",
+      "Lanzar en paralelo operaciones asíncronas independientes (`Promise.all`, `CompletableFuture.allOf`) en lugar de esperarlas secuencialmente una tras otra.",
+      "Recordar que asíncrono no significa necesariamente paralelo: un solo hilo en un event loop es asíncrono y concurrente para I/O, pero ejecuta el código JS/Python de una en una tarea."
+    ],
+    "ejemplo": "const [usuario, pedidos] = await Promise.all([\n  fetchUsuario(id),\n  fetchPedidos(id),\n]);",
+    "entrevista": "La programación asíncrona evita desperdiciar hilos esperando operaciones de I/O al desacoplar el inicio de la tarea de la recepción de su resultado."
+  },
+  "Programación reactiva": {
+    "que": "Paradigma declarativo de programación orientado a flujos de datos asíncronos (streams) y a la propagación automática de cambios, estructurado bajo las propiedades del *Reactive Manifesto* (responsivo, resiliente, elástico y guiado por mensajes) y la especificación *Reactive Streams*.",
+    "para": "Resulta ideal para construir servicios backend de muy alto rendimiento en I/O (gateways, streaming en tiempo real, WebSockets, pipelines de eventos) donde miles de flujos concurrentes se transforman, combinan y regulan con backpressure nativo.",
+    "como": "A diferencia del código imperativo que extrae datos uno a uno, el desarrollador compone operadores funcionales (`map`, `filter`, `flatMap`, `zip`, `retryWhen`) sobre flujos observables (`Flux`, `Observable`) que reaccionan cuando llega cada evento. La ejecución se apoya en el protocolo estándar **Reactive Streams** (`Publisher`, `Subscriber`, `Subscription`, `Processor`), que impone asíncronia no bloqueante y backpressure obligatorio gobernado por demanda (`request(n)`). Motores como Project Reactor o RxJS ejecutan estas etapas sobre event loops ligeros (como Netty), encadenando señales de datos, error y finalización sin bloquear hilos en esperas de red.",
+    "practicas": [
+      "Adoptar la programación reactiva de extremo a extremo (desde el controlador HTTP hasta el cliente web y driver de base de datos R2DBC/Mongo reactivo); si la base de datos es bloqueante, el beneficio reactivo se pierde.",
+      "Mantener los operadores puros y sin estado compartido mutable; usar operadores declarativos de contexto (`contextWrite`) en lugar de `ThreadLocal`, ya que las señales pueden cambiar de hilo.",
+      "Sopesar la curva de aprendizaje y depuración (stack traces asíncronos más complejos) frente a alternativas modernas como Virtual Threads en Java cuando solo se busca simplicidad con código imperativo no bloqueante.",
+      "Configurar timeouts, reintentos con backoff y fallbacks en cada flujo hacia servicios externos."
+    ],
+    "ejemplo": "webClient.get().uri(\"/precios\").retrieve()\n  .bodyToFlux(Precio.class)\n  .filter(p -> p.valor() > 0)\n  .timeout(Duration.ofSeconds(2))\n  .onErrorResume(e -> Flux.empty());",
+    "entrevista": "La programación reactiva modela los datos como flujos asíncronos componibles declarativamente, aportando resiliencia y control de flujo nativo mediante backpressure."
+  },
+  "Programación síncrona": {
+    "que": "Modelo de ejecución secuencial y bloqueante en el que cada instrucción o llamada a función espera a que la operación actual termine por completo —incluida cualquier espera de I/O— antes de ceder el control a la siguiente línea del hilo.",
+    "para": "Es el modelo más sencillo de leer, depurar y razonar de forma lineal. Resulta la opción óptima para scripts, utilidades CLI, lógica de negocio pura en memoria o servidores tradicionales con concurrencia moderada respaldados por hilos de plataforma o virtuales.",
+    "como": "Cada invocación se apila secuencialmente en el call stack del hilo actual y avanza el puntero de instrucción paso a paso. Cuando el programa solicita una operación externa (por ejemplo, `read()` sobre un socket bloqueante), la syscall suspende el hilo cambiándolo de estado `RUNNING` a `BLOCKED` en el kernel. El planificador del sistema operativo retira el hilo de la CPU hasta que llega la interrupción de red o disco con los datos; solo entonces el hilo vuelve a la cola de listos y reanuda la línea inmediatamente posterior a la llamada.",
+    "practicas": [
+      "Preferir código síncrono siempre que no exista un cuello de botella demostrado en concurrencia de I/O o requisitos de latencia en UI; la simplicidad del flujo lineal reduce drásticamente los bugs.",
+      "Establecer siempre timeouts estrictos en clientes HTTP y consultas SQL síncronas, porque un servidor lento puede dejar bloqueado todo el pool de hilos.",
+      "No ejecutar operaciones síncronas bloqueantes dentro de un hilo único compartido (como el hilo principal de una UI móvil/navegador o el event loop de Node.js/WebFlux).",
+      "Si se trabaja en JVM moderna (Java 21+), los Virtual Threads permiten conservar la claridad del código síncrono sin pagar el alto costo en RAM de los hilos nativos bloqueados."
+    ],
+    "ejemplo": "def obtener_usuario_sync(repo, user_id):\n    usuario = repo.buscar_por_id(user_id)  # Bloquea este hilo hasta respuesta DB\n    if not usuario:\n        raise ValueError(\"No encontrado\")\n    return usuario",
+    "entrevista": "La ejecución síncrona avanza paso a paso bloqueando el hilo durante las esperas de I/O, ofreciendo máxima simplicidad cognitiva a costa de limitar la concurrencia por hilo."
+  },
+  "Promesas y Futuros": {
+    "que": "Abstracciones que actúan como contenedor o proxy de un valor que todavía no existe, pero que estará disponible (o fallará) en el futuro tras completarse una operación asíncrona. Ejemplos clásicos son `Promise` en JavaScript, `CompletableFuture` en Java y `Future`/`Task` en Python o C#.",
+    "para": "Resuelven el anidamiento profundo de callbacks (*callback hell*), permitiendo componer cadenas de pasos asíncronos, manejar errores de forma centralizada y sincronizar múltiples tareas paralelas.",
+    "como": "Una promesa/futuro es una máquina de estados finitos que nace en estado `pending` y transiciona de forma irreversible una sola vez a `fulfilled` (con un valor) o `rejected` (con un error). El código consumidor adjunta transformaciones mediante métodos como `.then()` / `.thenApply()` y manejadores de fallo como `.catch()` / `.exceptionally()`, los cuales devuelven a su vez una nueva promesa encadenable. A nivel interno, el runtime mantiene una lista de reacciones pendientes y, al resolverse la operación, encola las continuaciones en la cola de microtareas o en un `Executor`.",
+    "practicas": [
+      "Siempre encadenar o manejar los rechazos (`.catch()`, `try/catch` en `await`) para evitar `UnhandledPromiseRejection`, que puede tumbar procesos en Node.js o silenciar fallos.",
+      "Usar combinadores explícitos según el caso de negocio: `Promise.all` (falla rápido si una falla), `Promise.allSettled` (espera todos los resultados/errores) o `Promise.race` (para timeouts).",
+      "Recordar diferencia entre `Promise` en JS (ejecución *eager*: inicia en cuanto se construye) y un `Mono`/`Observable` (ejecución *lazy*: inicia al suscribirse).",
+      "Evitar anidar `.then()` dentro de otros `.then()` y retornar siempre la promesa interna para mantener la cadena plana y propagar errores correctamente."
+    ],
+    "ejemplo": "fetch('/api/perfil')\n  .then((res) => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })\n  .then((perfil) => mostrarUsuario(perfil))\n  .catch((err) => registrarError(err));",
+    "entrevista": "Una Promesa o Futuro es una máquina de estados inmutable que representa el resultado eventual de una operación asíncrona y permite componer continuaciones y errores sin anidar callbacks."
+  },
+  "Refactoring": {
+    "que": "Proceso disciplinado de reestructurar el diseño interno del código fuente para mejorar su legibilidad, cohesión y mantenibilidad sin alterar en absoluto su comportamiento observable externo.",
+    "para": "Paga gradualmente la deuda técnica, elimina code smells y prepara la arquitectura del código para incorporar nuevas funcionalidades de manera segura y económica.",
+    "como": "Siguiendo la metodología sistematizada por Martin Fowler y el ciclo *Red-Green-Refactor* de TDD, el desarrollador parte de una suite de tests verdes que actúa como red de seguridad. Aplica transformaciones pequeñas, mecánicas y atómicas asistidas por el IDE (como *Extract Method*, *Rename Symbol*, *Inline Variable*, *Move Field* o *Replace Conditional with Polymorphism*), ejecutando las pruebas tras cada paso mínimo. De este modo el sistema permanece siempre compilable y verificable, evitando grandes reescrituras arriesgadas ('Big Bang rewrites') que rompen producción.",
+    "practicas": [
+      "Nunca mezclar en un mismo commit un refactoring estructural amplio con cambios de funcionalidad o corrección de bugs; separarlos facilita la revisión y el `git revert`.",
+      "Contar con pruebas automatizadas sólidas antes de refactorizar código crítico; si no existen, escribir primero tests de caracterización que fijen el comportamiento actual.",
+      "Aplicar la 'Regla de Tres' y refactorizar justo antes de añadir una característica ('haz que el cambio sea fácil, y luego haz el cambio fácil') en lugar de limpiar código que nadie va a tocar.",
+      "Apoyarse en las herramientas automáticas de refactoring del IDE basadas en el AST para reducir errores manuales de tipeo."
+    ],
+    "ejemplo": "// Antes: función larga con cálculo mezclado\n// Después de Extract Method:\nfunction procesarFactura(factura) {\n  const subtotal = calcularSubtotal(factura.items);\n  const impuestos = calcularImpuestos(subtotal, factura.pais);\n  return subtotal + impuestos;\n}",
+    "entrevista": "Refactorizar es mejorar la estructura interna del código en pasos pequeños y verificados por tests sin cambiar el comportamiento externo, y nunca debe mezclarse con cambios funcionales."
+  },
+  "Spring WebFlux": {
+    "que": "Framework web reactivo y no bloqueante incluido en Spring Framework (desde Spring 5) que funciona sobre Reactive Streams y Project Reactor (`Mono` y `Flux`), ejecutándose por defecto sobre Netty con un modelo de event loop.",
+    "para": "Se utiliza para construir microservicios, API gateways (como Spring Cloud Gateway) y endpoints de streaming con altísima concurrencia de I/O y consumo mínimo de memoria en hilos, sustituyendo el modelo de 'un hilo por petición' de Spring MVC.",
+    "como": "Al llegar una petición HTTP a Netty, un hilo del event loop decodifica la entrada y despacha la petición a través de una cadena reactiva `WebHandler` hacia un controlador anotado (`@RestController` devolviendo `Mono`/`Flux`) o una ruta funcional (`RouterFunction`/`HandlerFunction`). En lugar de bloquear el hilo esperando la base de datos o un servicio externo, el handler devuelve el grafo reactivo (`Publisher`) a WebFlux, que se suscribe de forma asíncrona y libera el hilo del event loop inmediatamente. Conforme llegan chunks de datos desde drivers no bloqueantes (R2DBC, MongoDB Reactivo, `WebClient`), los adaptadores de codecs los serializan y envían por el socket respetando el backpressure de TCP/HTTP.",
+    "practicas": [
+      "Prohibido ejecutar llamadas bloqueantes (JDBC, JPA/Hibernate, `RestTemplate`, `Thread.sleep`) en hilos de WebFlux; usar `WebClient` y drivers R2DBC, o aislar código heredado en `Schedulers.boundedElastic()`.",
+      "Elegir Spring MVC (especialmente con Virtual Threads en Java 21+) cuando el stack dependa de JPA/JDBC o el equipo priorice simplicidad imperativa; WebFlux brilla en gateways, streaming y alta concurrencia I/O pura.",
+      "Usar BlockHound en desarrollo y tests para detectar automáticamente cualquier llamada bloqueante accidental dentro de hilos no bloqueantes.",
+      "Propagar metadatos de trazabilidad (traceId, seguridad) usando `Reactor Context` en lugar de `ThreadLocal`/MDC tradicional."
+    ],
+    "ejemplo": "@RestController\nclass ProductoController {\n  @GetMapping(value = \"/productos\", produces = MediaType.TEXT_EVENT_STREAM_VALUE)\n  Flux<Producto> listar() { return repo.findAll().take(100); }\n}",
+    "entrevista": "Spring WebFlux sustituye el modelo thread-per-request de los servlets por un event loop sobre Netty y Project Reactor, logrando escalar concurrencia I/O siempre que toda la cadena sea no bloqueante."
+  },
+  "async-await": {
+    "que": "Azúcar sintáctico soportado en lenguajes como JavaScript/TypeScript, Python (`asyncio`), C# y Rust que permite escribir y leer código asíncrono basado en Promesas/Futuros con apariencia de flujo secuencial síncrono.",
+    "para": "Elimina la complejidad visual de cadenas largas de `.then()` y callbacks, permitiendo usar estructuras familiares como `try/catch`, `if` y bucles `for` sobre operaciones no bloqueantes.",
+    "como": "Al marcar una función como `async`, el compilador o intérprete la transforma internamente en una máquina de estados (similar a un generador o corrutina) y hace que devuelva siempre una Promesa/Futuro/Coroutine. Cuando la ejecución alcanza la palabra clave `await`, el runtime evalúa la expresión asíncrona; si no está resuelta, guarda el estado actual de las variables locales y suspende la función devolviendo el control al event loop o scheduler. Una vez que la promesa se resuelve, la continuación se encola (en microtask queue en JS o en el event loop de Python/executor de Rust) para reanudar exactamente en la línea posterior al `await` o lanzar una excepción hacia el `try/catch` circundante si falló.",
+    "practicas": [
+      "Evitar el antipatrón de 'await secuencial innecesario': si dos llamadas no dependen entre sí, iniciarlas juntas y esperarlas con `Promise.all` / `asyncio.gather` para no duplicar la latencia total.",
+      "No usar `async` dentro de `Array.prototype.forEach()`, ya que `forEach` ignora las promesas devueltas y no espera a que terminen; usar `for...of` (secuencial) o `Promise.all(items.map(...))` (concurrente).",
+      "Envolver los puntos de espera críticos en `try/catch` o manejar la promesa resultante para no dejar excepciones sin capturar.",
+      "En C# (`.ConfigureAwait(false)` en librerías) o Python (`asyncio.to_thread` para código bloqueante), vigilar en qué contexto o hilo se reanuda o ejecuta la tarea."
+    ],
+    "ejemplo": "async function cargarDashboard(id: string) {\n  try {\n    const [perfil, alertas] = await Promise.all([api.perfil(id), api.alertas(id)]);\n    return { perfil, alertas };\n  } catch (err) {\n    throw new Error(\"Fallo al cargar dashboard\", { cause: err });\n  }\n}",
+    "entrevista": "async/await compila una función asíncrona en una máquina de estados suspendible que devuelve una promesa y permite escribir flujos no bloqueantes con control de errores try/catch."
+  }
+}

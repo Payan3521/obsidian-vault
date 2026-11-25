@@ -1,0 +1,119 @@
+{
+  "Seguimiento de experimentos": {
+    "que": "El seguimiento de experimentos (experiment tracking) es el registro sistemático y versionado de cada ejecución de entrenamiento, fine-tuning o evaluación de prompts y flujos RAG. Captura de forma inmutable hiperparámetros, versiones de código y datasets, métricas por paso y artefactos resultantes como pesos o adaptadores LoRA.",
+    "para": "Resuelve la pérdida de trazabilidad cuando se iteran decenas de prompts, hiperparámetros o datasets y resulta imposible saber qué combinación produjo el mejor rendimiento. Se usa desde la fase de prototipado hasta la optimización continua para comparar ejecuciones, garantizar reproducibilidad y auditar decisiones antes de promover un modelo.",
+    "como": "Un SDK integrado en el script de entrenamiento o evaluación (como MLflow, Weights & Biases o Langfuse) abre una sesión o run contra un servidor de tracking mediante HTTP/gRPC. Al iniciar, registra el commit de Git, variables de entorno, semillas aleatorias, hash del dataset y parámetros (learning rate, temperatura, top-k del retriever). Durante la ejecución emite métricas en streaming por época o lote y al finalizar sube los artefactos binarios o trazas a un almacenamiento de objetos (S3, GCS) guardando su URI en la base de datos de metadatos.",
+    "practicas": [
+      "Seguimiento de experimentos vs. logging de producción: el primero compara configuraciones en desarrollo/evaluación; el segundo monitoriza tráfico real y latencia.",
+      "Registrar siempre el hash criptográfico del dataset y la plantilla exacta del prompt junto al commit de Git; guardar solo hiperparámetros rompe la reproducibilidad.",
+      "Usar etiquetas estandarizadas (equipo, tarea, modelo base, dataset) para filtrar y agrupar miles de runs sin contaminar el espacio de trabajo.",
+      "Evitar guardar pesos completos en cada checkpoint menor dentro del tracker; almacenar solo deltas/adaptadores o referencias al bucket para no saturar el almacenamiento."
+    ],
+    "ejemplo": "import mlflow\n\nwith mlflow.start_run(run_name=\"qwen-rag-v3\"):\n    mlflow.log_params({\"chunk_size\": 512, \"top_k\": 5, \"lr\": 2e-5})\n    mlflow.log_metric(\"faithfulness\", 0.91, step=1)\n    mlflow.log_artifact(\"prompts/system_v3.txt\")",
+    "entrevista": "El experiment tracking convierte la iteración con modelos y prompts de un proceso artesanal en ingeniería reproducible al vincular cada métrica con su código, datos y parámetros exactos."
+  },
+  "Separación de entornos de IA": {
+    "que": "La separación de entornos de IA es el aislamiento lógico y físico de recursos de cómputo, datos, claves de API, índices vectoriales y registros de modelos en etapas diferenciadas como desarrollo, staging y producción. Incluye tanto aplicaciones basadas en APIs de LLM como pipelines propios de entrenamiento e inferencia.",
+    "para": "Evita que experimentos con prompts inestables, pruebas de carga o fugas de datos de prueba corrompan índices vectoriales productivos, agoten cuotas compartidas de tokens o expongan PII real en entornos de desarrollo. Es imprescindible en equipos multi-desarrollador y sistemas regulados.",
+    "como": "Cada entorno se aprovisiona mediante Infraestructura como Código (Terraform, Helm) con VPCs, namespaces de Kubernetes, cuentas cloud o proyectos de proveedor LLM independientes. Las credenciales y endpoints se inyectan mediante gestores de secretos distintos por entorno y los AI Gateways aplican límites de cuota (rate limits y presupuestos) separados. Los datos productivos se anonimizan o se sustituyen por datasets sintéticos antes de llegar a dev/staging, y los artefactos solo avanzan mediante promoción controlada en el Model Registry y GitOps.",
+    "practicas": [
+      "Separar las API keys y proyectos de facturación por entorno para que una prueba de evaluación masiva en dev no active el rate limit de producción.",
+      "Aislar las bases de datos vectoriales y feature stores por entorno; compartir un índice con distinto namespace lógico suele derivar en borrados o mezclas accidentales.",
+      "Error típico: usar datos reales de clientes en staging sin anonimización ni control de retención en el proveedor LLM (riesgo de entrenamiento sobre datos o fuga PII).",
+      "Mantener paridad de configuración entre staging y producción (misma versión exacta de modelo, cuantización y parámetros de decoding) para detectar regresiones reales."
+    ],
+    "ejemplo": "# values-staging.yaml vs values-prod.yaml (Helm / GitOps)\nllmGateway:\n  environment: staging\n  modelAlias: \"llama-3.1-70b-instruct@staging\"\n  rateLimitRpm: 120\n  vectorIndex: \"docs-knowledge-staging\"\n  piiRedaction: strict",
+    "entrevista": "Separar entornos en IA no es solo aislar código, sino aislar índices vectoriales, cuotas de API, pesos de modelos y datos de evaluación para evitar regresiones y fugas de información."
+  },
+  "Shadow deployment de modelo": {
+    "que": "El shadow deployment (despliegue en sombra o dark launch) es una estrategia de liberación en la que un modelo candidato recibe una copia en tiempo real del tráfico de producción mientras el modelo vigente sigue sirviendo todas las respuestas al usuario. Las salidas del modelo sombra se registran para evaluación asíncrona sin impactar la experiencia del cliente.",
+    "para": "Permite validar latencia real, consumo de memoria GPU, formato de salida y calidad semántica frente a distribuciones reales de producción antes de exponer a usuarios a posibles alucinaciones o degradación. Se utiliza especialmente al cambiar de modelo base, cuantización, system prompt o arquitectura RAG.",
+    "como": "Un proxy o AI Gateway (Envoy, LiteLLM, Kong) duplica de forma asíncrona (fire-and-forget) la petición entrante hacia el endpoint del modelo sombra con un timeout acotado para no bloquear la ruta crítica. La respuesta del modelo estable se devuelve inmediatamente al usuario, mientras un worker o pipeline de evaluación captura ambos pares entrada/salida junto al trace_id. Finalmente, un proceso offline calcula métricas comparativas (latencia p95, coste por petición, tasa de error JSON, LLM-as-a-judge) para decidir la promoción.",
+    "practicas": [
+      "Shadow deployment vs. Canary release: en shadow el usuario nunca ve la respuesta del modelo nuevo (riesgo cero de UX, pero doble coste de inferencia); en canary un porcentaje de usuarios recibe la nueva salida.",
+      "Deshabilitar o mockear en modo sombra cualquier tool call o escritura con efectos secundarios (enviar emails, modificar BD, cobrar) para no duplicar acciones reales.",
+      "Muestrear un porcentaje del tráfico (p. ej. 5-10%) si el tráfico es alto y el coste de GPU o tokens del doble procesamiento resulta prohibitivo.",
+      "Propagar el mismo trace_id y contexto recuperado (chunks RAG) a ambas ejecuciones para aislar la evaluación del generador frente al retriever."
+    ],
+    "ejemplo": "# Duplicación de tráfico en Envoy (shadowing al 10%)\nroute:\n  cluster: llm_prod_v1\n  request_mirror_policies:\n    - cluster: llm_shadow_v2\n      runtime_fraction:\n        default_value: { numerator: 10, denominator: HUNDRED }",
+    "entrevista": "El shadow deployment valida un modelo nuevo con tráfico real de producción a coste cero de riesgo para el usuario, siempre que se bloqueen los efectos secundarios de sus tool calls."
+  },
+  "Sostenibilidad de IA": {
+    "que": "La sostenibilidad de IA (Green AI) es el conjunto de prácticas arquitectónicas y métricas operativas orientadas a medir y minimizar el consumo energético, la huella de carbono y el uso de agua asociados al entrenamiento, ajuste e inferencia de modelos. Equilibra la capacidad predictiva con la eficiencia computacional por petición.",
+    "para": "Responde al crecimiento exponencial del gasto eléctrico y de refrigeración en centros de datos con GPU, además de reducir directamente la factura cloud y cumplir objetivos ESG o normativas de reporte energético como el EU AI Act. Se aplica al elegir tamaños de modelo, diseñar pipelines de inferencia y planificar entrenamientos.",
+    "como": "Se instrumenta mediante contadores de potencia de GPU (NVML/DCGM) y herramientas como CodeCarbon o ML CO2 Impact que multiplican el consumo en kWh por la intensidad de carbono de la red eléctrica regional (gCO2eq/kWh) y el factor PUE del centro de datos. En operación se reduce la energía por token aplicando cuantización (INT8/FP8/AWQ), speculative decoding, batching continuo (vLLM, TensorRT-LLM), semantic caching y enrutamiento de tareas simples a modelos pequeños (SLMs). Para entrenamientos largos, se programan jobs en regiones o franjas horarias con mayor mix de energía renovable.",
+    "practicas": [
+      "Red Green AI vs. Green-by-design: no solo medir emisiones post-mortem, sino optimizar la arquitectura (SLMs, RAG frente a contextos gigantes, caching de respuestas frecuentes).",
+      "Error típico: desplegar un modelo frontier de cientos de miles de millones de parámetros para tareas de clasificación o extracción que un modelo destilado de 7B resuelve con igual precisión y una fracción de energía.",
+      "Medir energía por cada 1.000 tokens generados (Wh/1k tokens) junto a la latencia y el coste, no únicamente el consumo total del clúster.",
+      "Preferir fine-tuning parametrizado (LoRA/QLoRA) sobre reentrenamientos completos cuando no sea estrictamente necesario."
+    ],
+    "ejemplo": "from codecarbon import EmissionsTracker\n\nwith EmissionsTracker(project_name=\"rag-eval\", measure_power_secs=10) as tracker:\n    run_batch_inference(prompts)\nprint(f\"CO2 emitido: {tracker.final_emissions:.4f} kg\")",
+    "entrevista": "Hacer sostenible un sistema de IA consiste en medir Wh y CO2 por petición y aplicar cuantización, caching y model routing hacia modelos pequeños sin sacrificar la calidad requerida."
+  },
+  "System card": {
+    "que": "Un System Card es un documento técnico estandarizado que describe las capacidades, arquitectura de seguridad, limitaciones, evaluaciones de riesgo y mitigaciones de un sistema de IA completo puesto en producción. A diferencia de un documento centrado en pesos aislados, abarca la interacción entre modelos, filtros de entrada/salida, herramientas y políticas de uso.",
+    "para": "Sirve para comunicar de forma transparente a reguladores, auditores, clientes y equipos internos cómo se comporta el sistema completo bajo pruebas adversarias (red teaming) y qué salvaguardas existen frente a riesgos sistémicos. Se publica al lanzar modelos fundacionales o sistemas de IA de alto impacto.",
+    "como": "Se elabora consolidando resultados de evaluaciones automatizadas, pruebas de red teaming humano y automatizado, y análisis de seguridad previos al despliegue. Documenta la composición del sistema (modelos base, clasificadores de moderación, sandboxes de herramientas), las métricas cuantitativas en benchmarks de sesgo, toxicidad, ciberseguridad o CBRN, y las mitigaciones implementadas (RLHF, DPO, refusals, guardrails). Se versiona junto a cada lanzamiento mayor del sistema y se actualiza si cambian las capacidades o el alcance operativo.",
+    "practicas": [
+      "System Card vs. Model Card: el Model Card documenta un modelo individual (arquitectura, entrenamiento, métricas); el System Card cubre el producto integrado con guardrails, RAG, plugins y políticas.",
+      "Incluir resultados desagregados por subgrupos y escenarios de fallo conocidos en lugar de promedios agregados que oculten sesgos.",
+      "Documentar explícitamente la fecha de corte de conocimiento, las pruebas de red teaming realizadas y las limitaciones que las mitigaciones actuales no logran cubrir.",
+      "Tratar el System Card como artefacto vivo vinculado al proceso de release gate y no como un PDF estático de marketing."
+    ],
+    "ejemplo": "## System Card: Asistente Soporte v2.4\n- **Componentes:** LLM Base + Guardrail Llama-Guard + RAG Corporativo\n- **Evaluación Red Team:** 2.500 ataques prompt injection (tasa de contención: 98.4%)\n- **Mitigaciones:** Filtrado PII pre-prompt y sandboxing read-only de tools\n- **Fuera de alcance:** Asesoramiento legal o médico vinculante",
+    "entrevista": "Mientras una model card describe los pesos de un modelo, una system card documenta el comportamiento, los riesgos y las salvaguardas de todo el sistema compuesto en producción."
+  },
+  "Tarjeta de modelo": {
+    "que": "Una tarjeta de modelo (Model Card) es una ficha técnica estructurada que acompaña a un modelo entrenado para resumir su arquitectura, datos de entrenamiento, métricas de evaluación, sesgos conocidos y condiciones de uso previsto. Propuesta originalmente por Mitchell et al. (2019), es el estándar de documentación en registros como Hugging Face Hub.",
+    "para": "Resuelve la opacidad de los binarios o checkpoints de modelos permitiendo a ingenieros y auditores evaluar en minutos si un modelo es apto para un dominio, idioma o restricción legal antes de integrarlo. Es clave para reutilización segura, gobernanza interna y cumplimiento normativo.",
+    "como": "Suele almacenarse como un archivo `README.md` con metadatos YAML en el repositorio del modelo dentro del Model Registry (Hugging Face, MLflow, Vertex AI). Se genera combinando metadatos automáticos del tracking de experimentos (hiperparámetros, licencia, CO2, hashes de datasets) con secciones redactadas sobre uso previsto, usos prohibidos y análisis de errores por subpoblación. En pipelines CI/CD de MLOps, una puerta de validación comprueba la existencia y completitud de los campos obligatorios antes de permitir la transición a `Production`.",
+    "practicas": [
+      "Model Card vs. Data Card: la primera detalla el modelo y su evaluación; la segunda documenta la procedencia, consentimiento, distribución y limpieza del dataset.",
+      "Detallar métricas desagregadas (por idioma, longitud de entrada, dominio o grupo demográfico) para hacer visibles las caídas de rendimiento.",
+      "Especificar explícitamente la licencia (Apache 2.0, Llama Community License, etc.) y restricciones de uso comercial o redistribución.",
+      "Automatizar el rellenado de métricas y versiones desde el experiment tracker para evitar divergencias entre la ficha y los pesos reales."
+    ],
+    "ejemplo": "---\nlanguage: [es, en]\nlicense: apache-2.0\nbase_model: mistralai/Mistral-7B-v0.3\ndatasets: [org/soporte-es-clean-v2]\nmetrics: [f1, exact_match]\n---\n# Model Card: soporte-es-lora-v2",
+    "entrevista": "La tarjeta de modelo actúa como la hoja de especificaciones de un componente hardware: define para qué fue diseñado un modelo, cómo rinde por segmentos y bajo qué límites falla."
+  },
+  "Tarjeta de sistema": {
+    "que": "La tarjeta de sistema es la adaptación y práctica en español del concepto de System Card: un expediente técnico integral que describe el comportamiento emergente, las garantías de seguridad y los límites operativos de una aplicación o plataforma basada en múltiples modelos e integraciones. Sitúa la evaluación en el plano sociotécnico y arquitectónico del sistema completo.",
+    "para": "Sirve para alinear a ingeniería, seguridad, producto y cumplimiento legal (como la documentación técnica exigida por el EU AI Act o la norma ISO/IEC 42001) sobre los riesgos reales cuando un LLM interactúa con herramientas, bases de datos y usuarios finales. Se usa en auditorías previas al lanzamiento y revisiones periódicas de riesgo.",
+    "como": "Se construye integrando tres capas de evidencia: el diagrama de flujo de datos entre modelos, orquestadores y APIs externas; la batería de evaluaciones de extremo a extremo (alucinación, fuga de contexto RAG, ejecución indebida de herramientas); y la matriz de controles operativos (rate limiting, human-in-the-loop, kill switches). Cada cambio en un prompt de sistema, un guardrail o el modelo subyacente dispara la actualización de la sección correspondiente antes de aprobar el despliegue.",
+    "practicas": [
+      "No reciclar la tarjeta del modelo proveedor como tarjeta de sistema propia: añadir RAG, memoria o tool-calling introduce vectores de fallo nuevos (p. ej. indirect prompt injection).",
+      "Incluir un inventario claro de permisos de herramientas (lectura vs. escritura) y qué acciones requieren confirmación humana explícita.",
+      "Vincular cada riesgo identificado con su métrica de monitorización continua en producción y su runbook de respuesta a incidentes.",
+      "Mantener trazabilidad entre la versión de la tarjeta de sistema y los hashes de configuración (prompts, modelos y políticas de guardrail) desplegados."
+    ],
+    "ejemplo": "system_card_metadata:\n  system_id: \"copilot-finanzas-prod\"\n  risk_tier: \"high-impact\"\n  models_used: [\"gpt-4o-2024-08-06\", \"text-embedding-3-large\"]\n  guardrails: [\"lakera-prompt-guard\", \"regex-iban-masker\"]\n  human_in_the_loop_required: [\"transfer_funds\", \"close_account\"]",
+    "entrevista": "Una tarjeta de sistema evalúa los riesgos emergentes de todo el flujo —prompts, RAG, guardrails y herramientas— porque la seguridad del conjunto no equivale a la del modelo aislado."
+  },
+  "Trazabilidad de LLM": {
+    "que": "La trazabilidad de LLM (LLM Tracing) es la captura distribuida y jerárquica de cada paso ejecutado durante una petición a una aplicación basada en modelos de lenguaje. Modela cada interacción como una traza (trace) compuesta por spans anidados para llamadas al LLM, búsquedas vectoriales, re-ranking, guardrails y ejecución de herramientas.",
+    "para": "Resuelve la depuración de flujos agénticos y pipelines RAG complejos donde una respuesta errónea o lenta puede originarse en un chunk mal recuperado, un fallo de tool calling o un bucle del agente. Se usa continuamente en staging y producción para análisis de causa raíz, optimización de latencia/coste y auditoría.",
+    "como": "Se instrumenta mediante SDKs compatibles con OpenTelemetry (OpenLLMetry, Langfuse, Phoenix/Arize, LangSmith) que inyectan identificadores `trace_id` y `parent_span_id` en el contexto de ejecución. Cada operación genera un span con timestamps, entradas y salidas serializadas, modelo utilizado, parámetros de decoding, conteo de tokens (prompt/completion/cached), coste estimado y estado de error. Los spans se envían de forma asíncrona por lotes vía OTLP/HTTP a un backend de observabilidad donde se reconstruye el árbol de ejecución y se asocia con feedback del usuario o evaluadores automáticos.",
+    "practicas": [
+      "Trazabilidad vs. Logging tradicional: los logs son líneas planas difíciles de correlacionar en flujos multi-paso; las trazas preservan la jerarquía causal padre-hijo y los tiempos exactos de cada span.",
+      "Aplicar enmascaramiento (redaction) de PII y secretos antes de exportar payloads de prompts/respuestas al collector de trazas.",
+      "Propaga siempre el `trace_id` hacia el frontend para que el botón de feedback del usuario (pulgar arriba/abajo) quede enlazado a la traza exacta.",
+      "Usar muestreo dinámico (100% de errores y latencias anómalas, porcentaje configurable del tráfico sano) si el volumen de trazas dispara el coste de almacenamiento."
+    ],
+    "ejemplo": "from opentelemetry import trace\ntracer = trace.get_tracer(\"rag.pipeline\")\n\nwith tracer.start_as_current_span(\"retrieve_docs\") as span:\n    docs = vector_db.search(query, k=4)\n    span.set_attribute(\"rag.docs_count\", len(docs))\n    span.set_attribute(\"rag.top_score\", docs[0].score)",
+    "entrevista": "El LLM tracing aplica spans distribuidos tipo OpenTelemetry para reconstruir paso a paso qué recuperó el RAG, qué herramientas invocó el agente y dónde se consumieron la latencia y los tokens."
+  },
+  "Versionado de modelos": {
+    "que": "El versionado de modelos es la identificación unívoca, inmutable y trazable de cada iteración de un modelo entrenado o adaptado (pesos, tokenizador, configuración y metadatos) a lo largo de su ciclo de vida. En LLMOps abarca también la fijación explícita de versiones de modelos propietarios o checkpoints servidos tras una API.",
+    "para": "Evita regresiones silenciosas cuando un proveedor actualiza un modelo tras un alias móvil (como `-latest`) o cuando un equipo sobrescribe un checkpoint en almacenamiento sin saber qué versión sirve cada entorno. Permite hacer rollbacks instantáneos, pruebas A/B fiables y auditorías de reproducibilidad.",
+    "como": "Un Model Registry (MLflow Model Registry, Hugging Face Hub, Vertex AI, DVC) asigna a cada registro inmutable un número de versión incremental o digest SHA-256 junto a punteros mutables de ciclo de vida (aliases como `@champion`, `@challenger` o etapas `staging`/`production`). Para artefactos grandes de varios gigabytes, sistemas tipo Git-LFS o DVC almacenan punteros ligeros en Git mientras los tensores (`safetensors`) residen en almacenamiento de objetos direccionado por contenido. En despliegues contra APIs externas, se fijan identificadores con fecha o snapshot exacto en la configuración versionada en Git.",
+    "practicas": [
+      "Versionado semántico vs. snapshot/hash: usar semver para contratos de servicio y compatibilidad de API, pero fijar siempre hashes de commit/SHA-256 o snapshots fechados para los pesos exactos.",
+      "Error clásico: apuntar producción a alias genéricos como `gpt-4o` o `main` sin pinnear la versión; una actualización silenciosa del proveedor puede romper prompts calibrados o salidas JSON.",
+      "Versionar conjuntamente el modelo, el tokenizador, el chat template y la configuración de cuantización, ya que alterar cualquiera cambia la distribución de salida.",
+      "Mantener al menos la versión N-1 caliente o cacheada en el clúster de inferencia para ejecutar rollbacks en segundos sin descargar decenas de GB en plena incidencia."
+    ],
+    "ejemplo": "# Pinning explícito en configuración de servicio\nmodel_registry:\n  uri: \"models:/soporte-llama3-lora/14\"\n  alias: \"champion\"\n  weights_sha256: \"9f86d081884c7d659a2feaa0c55ad015\"\n  external_fallback: \"claude-sonnet-4-20250514\"",
+    "entrevista": "Versionar modelos significa tratar pesos, tokenizador, plantilla de chat y snapshots de API como artefactos inmutables direccionados por hash para garantizar rollbacks inmediatos y cero deriva silenciosa."
+  }
+}

@@ -1,0 +1,171 @@
+{
+  "API testing (Postman-Newman, REST Assured)": {
+    "que": "Pruebas automatizadas sobre la capa de servicio que validan endpoints HTTP/REST, GraphQL o gRPC directamente sin pasar por la interfaz gráfica. Verifican códigos de estado, cabeceras, contratos de esquema (JSON Schema u OpenAPI), serialización y reglas de negocio expuestas por la API.",
+    "para": "Detecta regresiones en contratos de datos, autenticación, autorización y manejo de errores antes de que afecten al frontend o a clientes externos. Se emplea en pipelines CI/CD como una capa de verificación mucho más rápida, determinista y económica de mantener que las pruebas de navegador.",
+    "como": "Un runner o cliente programático construye peticiones HTTP con método, ruta, parámetros, cabeceras y cuerpo contra el servicio desplegado en un entorno efímero o local. En el flujo de Postman, las colecciones incluyen scripts de aserción en JavaScript (`pm.test`, `pm.expect`) que el CLI `newman` ejecuta de forma desatendida en CI dentro de un entorno Node.js. En Java, REST Assured expone un DSL fluido (`given().when().then()`) sobre HTTPClient que deserializa respuestas JSON o XML y evalúa matchers de Hamcrest o expresiones JsonPath.",
+    "practicas": [
+      "Validar la estructura completa mediante JSON Schema o especificación OpenAPI además de aserciones puntuales, para detectar campos eliminados o cambios silenciosos de tipo.",
+      "Aislar cada prueba creando y limpiando sus propios datos o reiniciando la base efímera; evitar cadenas implícitas donde un test depende del estado dejado por otro.",
+      "Postman/Newman agiliza el trabajo colaborativo con QA y la conversión de pruebas exploratorias a CI; REST Assured encaja mejor cuando se requiere tipado estático, reutilización de DTOs y ejecución integrada en Maven o Gradle.",
+      "No confundir pruebas funcionales de API con contract testing: comprobar un endpoint levantado no garantiza que todos sus consumidores reales esperen ese mismo contrato."
+    ],
+    "ejemplo": "given()\n  .contentType(ContentType.JSON)\n  .body(\"{\\\"email\\\":\\\"ana@dev.io\\\"}\")\n.when()\n  .post(\"/api/v1/users\")\n.then()\n  .statusCode(201)\n  .body(\"id\", notNullValue())\n  .body(matchesJsonSchemaInClasspath(\"schemas/user.json\"));",
+    "entrevista": "Las pruebas de API validan contratos de datos, seguridad y lógica de negocio directamente sobre HTTP con mucha mayor velocidad y estabilidad que las pruebas de interfaz gráfica."
+  },
+  "Accesibilidad (axe)": {
+    "que": "Pruebas automatizadas y manuales que verifican que una interfaz web cumple las pautas de accesibilidad (WCAG y WAI-ARIA) para personas con discapacidades visuales, motoras, auditivas o cognitivas. Motores como `axe-core` inspeccionan el DOM renderizado en busca de barreras estructurales y de contraste.",
+    "para": "Evita excluir a usuarios de lectores de pantalla o navegación exclusiva por teclado y reduce el riesgo legal frente a normativas de cumplimiento como EAA o ADA. Se integra en pruebas de componentes, flujos E2E y auditorías continuas de CI.",
+    "como": "El motor `axe-core` se inyecta en la página renderizada por un navegador real (o DOM simulado) y ejecuta reglas deterministas contra el árbol de accesibilidad y los estilos CSS computados. Evalúa atributos ARIA (`role`, `aria-label`, `aria-expanded`), asociación de `<label>` en formularios, jerarquía de encabezados, orden de foco (`tabindex`) y ratio de contraste entre primer plano y fondo. Cada infracción reporta los nodos exactos y su severidad (`critical`, `serious`, `moderate`, `minor`), integrándose fácilmente mediante `@axe-core/playwright` o `jest-axe`.",
+    "practicas": [
+      "Combinar auditorías automáticas (que solo cubren una fracción de los criterios WCAG) con pruebas manuales de navegación por teclado (Tab, Enter, Escape) y lector de pantalla.",
+      "Aplicar la primera regla de ARIA: usar HTML semántico nativo (`<button>`, `<nav>`, `<main>`) antes de añadir atributos ARIA manuales sobre elementos `<div>`.",
+      "Ejecutar el análisis de axe sobre estados dinámicos (modales abiertos, menús desplegables, alertas de validación) y no únicamente en la carga inicial de la página.",
+      "Bloquear en CI las regresiones `critical` y `serious`, evitando desactivar reglas globales y documentando cualquier exclusión puntual de componentes de terceros."
+    ],
+    "ejemplo": "import { test, expect } from '@playwright/test';\nimport AxeBuilder from '@axe-core/playwright';\n\ntest('checkout sin violaciones WCAG AA', async ({ page }) => {\n  await page.goto('/checkout');\n  const results = await new AxeBuilder({ page })\n    .withTags(['wcag2a', 'wcag2aa']).analyze();\n  expect(results.violations).toEqual([]);\n});",
+    "entrevista": "Automatizar `axe-core` en el pipeline frena regresiones objetivas de contraste, etiquetas y ARIA, pero siempre debe complementarse con pruebas reales de teclado y lector de pantalla."
+  },
+  "Cobertura (JaCoCo, Istanbul)": {
+    "que": "Métrica cuantitativa que indica qué porcentaje del código fuente de producción se ejecuta durante una suite de pruebas. Herramientas como JaCoCo (JVM) e Istanbul/`c8` (JavaScript/TypeScript) miden cobertura de líneas, sentencias, funciones y ramas condicionales (`branch coverage`).",
+    "para": "Sirve como mapa de puntos ciegos para localizar lógica crítica, bifurcaciones `else` o bloques `catch` que jamás han sido ejercitados por ningún test. Se utiliza como apoyo en revisiones de código y umbrales de calidad en CI, no como prueba de que las aserciones sean suficientes.",
+    "como": "Se apoya en instrumentación de código o contadores nativos del runtime. JaCoCo adjunta un agente a la máquina virtual (`-javaagent:jacocoagent.jar`) que instrumenta el bytecode en tiempo de carga insertando sondas booleanas en cada bloque básico y vuelca los resultados a un archivo `.exec` para generar reportes XML/HTML. En el ecosistema Node.js, Istanbul (`nyc`) reescribe el AST insertando contadores, mientras que herramientas modernas como `c8` leen los contadores nativos del motor V8 (`NODE_V8_COVERAGE`) y los traducen al código original mediante source maps.",
+    "practicas": [
+      "Priorizar la cobertura de ramas (`branch coverage`) frente a la cobertura de líneas: una sola línea con un operador ternario o `&&` esconde dos caminos lógicos distintos.",
+      "No convertir un porcentaje fijo (p. ej. 90%) en un fin absoluto (Ley de Goodhart), ya que es trivial alcanzar cobertura alta ejecutando código sin aserciones reales.",
+      "Excluir código autogenerado, DTOs triviales y puntos de entrada de arranque para que el indicador refleje la cobertura real sobre la lógica de negocio.",
+      "Preferir la cobertura nativa de V8 (`c8` en Vitest) frente a instrumentación Babel de Istanbul en proyectos TypeScript/ESM modernos por menor sobrecarga y mayor fidelidad."
+    ],
+    "ejemplo": "npx vitest run --coverage --coverage.provider=v8 \\\n  --coverage.thresholds.branches=80\n\n# En Maven con JaCoCo:\nmvn verify jacoco:report",
+    "entrevista": "La cobertura señala qué código nunca se ha ejecutado, no qué código está bien verificado; por eso vigilo la cobertura de ramas en dominio crítico y valido la fuerza de las aserciones con mutation testing."
+  },
+  "Contract testing (Pact)": {
+    "que": "Técnica de pruebas para sistemas distribuidos que verifica que un consumidor y un proveedor respetan un acuerdo explícito (contrato) sobre el formato de peticiones HTTP o eventos asíncronos. Pact implementa *Consumer-Driven Contract Testing* (CDCT), donde los contratos nacen desde las necesidades reales del consumidor.",
+    "para": "Elimina la dependencia de entornos compartidos E2E donde habría que desplegar decenas de microservicios a la vez para comprobar compatibilidad. Garantiza que un equipo pueda desplegar un servicio de forma independiente en CI/CD sin romper a sus consumidores en producción.",
+    "como": "El flujo de Pact se divide en dos fases desacopladas conectadas por un *Pact Broker*. En el pipeline del consumidor, el test levanta un servidor mock local de Pact, ejecuta el cliente HTTP real y, si cumple las expectativas definidas, serializa las interacciones en un contrato JSON que sube al Broker. En el pipeline del proveedor, el verificador descarga los contratos pendientes del Broker, prepara el contexto mediante *provider states*, reproduce cada petición contra el servicio real y publica el resultado para que `pact-broker can-i-deploy` autorice el despliegue.",
+    "practicas": [
+      "Aplicar el principio de tolerancia en el consumidor: verificar únicamente los campos y tipos que realmente utiliza para no impedir al proveedor añadir propiedades nuevas.",
+      "Integrar `can-i-deploy` con etiquetas de entorno (`main`, `prod`) en el Pact Broker como puerta automática previa al despliegue.",
+      "No usar Pact para probar reglas de negocio internas ni carga del proveedor; el contrato valida únicamente la sintaxis, cabeceras, estados y estructura del intercambio.",
+      "Distinguir CDCT (Pact) de validación contra esquema OpenAPI: Pact garantiza explícitamente que el proveedor no elimina ni altera campos consumidos por un cliente concreto."
+    ],
+    "ejemplo": "await provider.addInteraction({\n  state: 'existe usuario 42',\n  uponReceiving: 'petición de perfil',\n  withRequest: { method: 'GET', path: '/users/42' },\n  willRespondWith: {\n    status: 200,\n    body: { id: integer(42), name: string('Ana') }\n  }\n});",
+    "entrevista": "El contract testing dirigido por el consumidor con Pact sustituye integraciones E2E lentas y frágiles por contratos verificados de forma asíncrona, habilitando despliegues independientes seguros mediante `can-i-deploy`."
+  },
+  "Fixtures": {
+    "que": "Estado inicial determinista, conjunto de datos de entrada o recurso de entorno preparado de antemano para ejecutar una prueba de forma reproducible. Puede materializarse como archivos estáticos (JSON, SQL), funciones generadoras (*builders*/*factories*) o inyectores del propio framework (`@pytest.fixture`, `test.extend`).",
+    "para": "Garantiza aislamiento y repetibilidad haciendo que cada prueba arranque siempre en un estado conocido, sin depender de ejecuciones previas. Evita duplicar bloques extensos de preparación (*Arrange*) a lo largo de toda la suite.",
+    "como": "En frameworks como pytest, las fixtures son funciones decoradas con `@pytest.fixture` que se inyectan automáticamente al declarar su nombre como parámetro del test. El runner gestiona su ciclo de vida según el `scope` (`function`, `class`, `module`, `session`), ejecutando la inicialización antes del `yield` y garantizando la limpieza (*teardown*) posterior al `yield` incluso ante fallos. Para modelos complejos se combinan con los patrones *Test Data Builder* u *Object Mother* para instanciar entidades válidas sobrescribiendo solo los campos relevantes del caso.",
+    "practicas": [
+      "Preferir factories o builders en código antes que archivos fixture globales compartidos: modificar un JSON compartido suele romper pruebas no relacionadas.",
+      "Mantener el `scope` lo más reducido posible para evitar estado mutable compartido entre tests; reservar `session` solo para recursos costosos e inmutables (como levantar un contenedor).",
+      "Dejar visibles dentro del test los valores concretos que justifican la aserción, ocultando en la fixture únicamente los atributos obligatorios irrelevantes.",
+      "Asegurar siempre el *teardown* mediante `yield`, `try/finally` o transacciones con rollback para impedir contaminación entre pruebas."
+    ],
+    "ejemplo": "@pytest.fixture\ndef db_session():\n    conn = create_test_connection()\n    tx = conn.begin()\n    yield conn\n    tx.rollback()\n    conn.close()",
+    "entrevista": "Las buenas fixtures garantizan aislamiento y limpieza automática, priorizando builders locales con valores explícitos para la aserción sobre datasets globales compartidos."
+  },
+  "Mocks - Stubs - Fakes": {
+    "que": "Categorías de *test doubles* que reemplazan dependencias reales para aislar la unidad bajo prueba. Un **Stub** devuelve respuestas fijas preconfiguradas; un **Mock** registra llamadas para verificar si se invocaron métodos esperados con ciertos argumentos; y un **Fake** ofrece una implementación funcional simplificada (como un repositorio en memoria).",
+    "para": "Permite probar código de forma rápida y determinista sin invocar servicios externos lentos, relojes del sistema, pasarelas de pago o sistemas de archivos. También facilita simular fallos excepcionales como timeouts de red o errores HTTP 503.",
+    "como": "Requieren que la dependencia esté desacoplada mediante interfaces o inyección de dependencias, o bien interceptada a nivel de módulo. Motores como Mockito (Java) o Vitest/Jest (`vi.fn()`, `vi.spyOn()`) crean proxies dinámicos en memoria (usando generación de bytecode con ByteBuddy o `Proxy` de ES6) que capturan llamadas y retornan valores definidos (`when(...).thenReturn(...)`, `mockResolvedValue`). Un Fake implementa directamente la interfaz del puerto real respaldada por estructuras simples como un `Map` o SQLite en memoria.",
+    "practicas": [
+      "Evitar mockear librerías de terceros directamente o clases de datos (DTOs); encapsular el acceso externo en un adaptador propio y simular ese límite.",
+      "Preferir Fakes o estado real frente a Mocks en flujos complejos: abusar de mocks acopla la prueba a la secuencia exacta de llamadas internas y se rompe al refactorizar.",
+      "Usar Stubs para consultas (*queries*) que proveen datos de entrada y reservar Mocks/Spies para comandos (*commands*) cuyo efecto secundario externo (p. ej. emitir un evento) debe verificarse.",
+      "Considerar una señal de alarma de diseño cuando un test necesita cinco o más mocks en el setup: suele indicar acoplamiento excesivo en la clase probada."
+    ],
+    "ejemplo": "// Stub (provee datos) vs Mock (verifica interacción)\nconst repoStub = { findById: vi.fn().mockResolvedValue({ id: 1, active: true }) };\nconst mailerMock = { sendWelcome: vi.fn() };\n\nawait activateUser(1, repoStub, mailerMock);\nexpect(mailerMock.sendWelcome).toHaveBeenCalledWith(1);",
+    "entrevista": "Uso Stubs para controlar entradas, Mocks solo para verificar efectos secundarios clave en los límites del sistema, y Fakes cuando necesito comportamiento realista sin acoplar los tests a la implementación interna."
+  },
+  "Mutation testing": {
+    "que": "Técnica de evaluación de la calidad de una suite de pruebas que mide su capacidad de detectar errores inyectando fallos sintácticos deliberados (mutantes) en el código fuente o bytecode. Herramientas como PITest (Java), Stryker (JS/TS/C#) y Mutmut (Python) automatizan la generación y prueba de mutantes.",
+    "para": "Supera la limitación de la cobertura tradicional, que solo confirma que una línea se ejecutó pero no si las aserciones validaron el resultado. Se usa en módulos críticos (cálculo financiero, seguridad, reglas de negocio) para descubrir aserciones débiles o ausentes.",
+    "como": "El motor analiza el código y aplica operadores de mutación sobre expresiones existentes: cambia operadores relacionales (`>` por `>=`), aritméticos (`+` por `-`), literales booleanos o elimina llamadas `void`. Luego ejecuta la suite contra cada mutante; si al menos un test falla, el mutante es **eliminado** (*killed*), pero si todos pasan, el mutante **sobrevió** (*survived*), exponiendo una brecha en las pruebas. Para optimizar tiempos, herramientas como PITest ejecutan primero un mapeo de cobertura y solo lanzan contra cada mutante los tests que cubren esa línea.",
+    "practicas": [
+      "No ejecutar mutation testing completo en cada commit debido a su alto coste de CPU; usarlo en modo incremental sobre archivos modificados en el PR o en ejecuciones nocturnas.",
+      "Inspeccionar los mutantes supervivientes con criterio para descartar mutantes equivalentes (cambios sintácticos que no alteran el comportamiento observable) y código muerto.",
+      "Concentrar el análisis en lógica de dominio pura y algoritmos críticos más que en capas de configuración o pegamento.",
+      "Combinarlo con cobertura de ramas: primero se asegura qué caminos se ejecutan y luego la mutación demuestra que los `assert` protegen esos caminos."
+    ],
+    "ejemplo": "# Ejecutar Stryker en modo incremental sobre el proyecto\nnpx stryker run --incremental\n\n# En Maven con PITest sobre un paquete concreto\nmvn org.pitest:pitest-maven:mutationCoverage -DtargetClasses=com.app.billing.*",
+    "entrevista": "La cobertura mide qué código ejecutaron nuestros tests, pero el mutation testing mide la eficacia real de las aserciones comprobando si la suite falla cuando introducimos bugs sintéticos."
+  },
+  "Performance (k6, JMeter, Gatling)": {
+    "que": "Pruebas no funcionales que evalúan latencia, capacidad de respuesta (*throughput*), estabilidad y uso de recursos bajo distintos regímenes de tráfico: carga nominal (*load*), estrés hasta rotura (*stress*), picos súbitos (*spike*) y duración prolongada (*soak*). Destacan k6, Apache JMeter y Gatling.",
+    "para": "Identifica cuellos de botella antes de producción: consultas sin índice, agotamiento de pools de conexiones, contención de bloqueos o fugas de memoria. Permite validar SLOs analizando percentiles altos (p95, p99) bajo concurrencia real.",
+    "como": "Los generadores simulan miles de usuarios virtuales (*VUs*) o tasas de llegada constantes ejecutando flujos HTTP/gRPC con *think times* y validaciones de respuesta. JMeter utiliza un hilo del sistema operativo por usuario virtual, lo que eleva el consumo de RAM; Gatling emplea E/S asíncrona no bloqueante sobre Netty/Akka; y k6 ejecuta scripts JavaScript sobre un motor en Go impulsado por goroutines ligeras. Al finalizar, evalúan métricas de latencia, RPS y errores frente a umbrales (`thresholds`) configurados para aprobar o fallar el pipeline.",
+    "practicas": [
+      "Analizar percentiles p95 y p99 junto con la tasa de error y no confiar en el promedio, que oculta colas largas que degradan la experiencia de muchos usuarios.",
+      "Evitar la *omisión coordinada* utilizando ejecutores de tasa de llegada constante (*open model* / `constant-arrival-rate`) para no frenar el generador cuando el servidor se ralentiza.",
+      "Probar en un entorno aislado con recursos conocidos y monitorizar al propio generador de carga para asegurar que no sea él el cuello de botella.",
+      "Preferir k6 o Gatling en pipelines modernos por definir escenarios como código versionable en Git; reservar JMeter para protocolos específicos (JDBC, JMS, LDAP) o equipos habituados a su interfaz gráfica."
+    ],
+    "ejemplo": "import http from 'k6/http';\nimport { check } from 'k6';\nexport const options = {\n  vus: 50, duration: '2m',\n  thresholds: { http_req_duration: ['p(95)<250'], http_req_failed: ['rate<0.01'] }\n};\nexport default function () {\n  const res = http.get('https://api.example.com/products');\n  check(res, { 'status 200': (r) => r.status === 200 });\n}",
+    "entrevista": "Las pruebas de rendimiento deben versionarse como código y evaluarse con umbrales en p95/p99 bajo modelos de tasa de llegada constante, porque los promedios esconden la degradación en colas largas."
+  },
+  "Pruebas de integración (Testcontainers, SpringBootTest)": {
+    "que": "Pruebas que verifican la colaboración real entre múltiples componentes de una aplicación y su infraestructura externa (bases de datos SQL/NoSQL, brokers de mensajería, cachés o servicios HTTP). En Java/Spring combinan el contexto gestionado por `@SpringBootTest` con contenedores Docker reales orquestados mediante Testcontainers.",
+    "para": "Captura fallos invisibles para los mocks unitarios: consultas SQL incompatibles con el motor real, scripts de migración Flyway/Liquibase rotos, mapeos ORM incorrectos, configuraciones transaccionales y filtros de seguridad HTTP.",
+    "como": "Al iniciar la suite, Testcontainers interactúa con el socket del daemon Docker para levantar imágenes reales (PostgreSQL, Kafka, Redis) expuestas en puertos efímeros disponibles y espera sus *healthchecks*. Spring Boot enlaza automáticamente esas coordenadas dinámicas mediante `@ServiceConnection` o `@DynamicPropertySource` al arrancar el `ApplicationContext` completo (`@SpringBootTest`) o parcial (*slices*). Al finalizar la JVM, el contenedor auxiliar Ryuk elimina automáticamente todos los contenedores y redes creados.",
+    "practicas": [
+      "Compartir contenedores a nivel de suite (singleton o reutilización en clase base) y limpiar solo los datos entre tests, evitando recrear contenedores y contextos en cada archivo.",
+      "No usar bases en memoria como H2 para probar código dirigido a PostgreSQL o MySQL: las diferencias en dialectos SQL, bloqueos y tipos generan falsas garantías.",
+      "Emplear *test slices* como `@DataJpaTest` o `@WebMvcTest` cuando basta probar la capa de persistencia o web, reservando `@SpringBootTest` completo para flujos transversales clave.",
+      "Equilibrar la cantidad de tests de integración respecto a los unitarios para evitar pipelines lentos y pesados en consumo de memoria."
+    ],
+    "ejemplo": "@SpringBootTest\n@Testcontainers\nclass OrderRepositoryIT {\n  @Container @ServiceConnection\n  static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>(\"postgres:16-alpine\");\n  @Autowired OrderRepository repo;\n  @Test void persistsOrder() { assertThat(repo.save(new Order())).isNotNull(); }\n}",
+    "entrevista": "Combinar `@SpringBootTest` o *slices* con Testcontainers frente a bases en memoria como H2 nos da fidelidad real de motor SQL, migraciones y serialización sin sacrificar reproducibilidad en CI."
+  },
+  "Pruebas extremo a extremo (Playwright, Cypress, Selenium)": {
+    "que": "Pruebas automatizadas que ejecutan flujos completos de usuario sobre un navegador real, validando la integración total entre frontend (HTML/CSS/JS), backend, red y persistencia. Herramientas principales incluyen Playwright, Cypress y Selenium.",
+    "para": "Verifican que los recorridos críticos de negocio (registro, autenticación, carrito y pago) funcionan realmente desde la perspectiva del usuario final. Se mantienen en menor número que las pruebas unitarias o de API por su mayor coste de ejecución y susceptibilidad al entorno.",
+    "como": "Cada herramienta automatiza el navegador mediante una arquitectura distinta: Selenium envía comandos HTTP bajo el estándar W3C WebDriver a un binario puente (`chromedriver`/`geckodriver`); Cypress ejecuta las pruebas dentro del mismo proceso y bucle de eventos del navegador mediante un proxy local; y Playwright se comunica directamente por WebSocket vía Chrome DevTools Protocol (CDP) y canales equivalentes en Firefox y WebKit. Las herramientas modernas aplican *auto-waiting* comprobando visibilidad y estabilidad del elemento antes de actuar, además de capturar trazas y red.",
+    "practicas": [
+      "Restringir las pruebas E2E a recorridos críticos y *happy paths* de negocio, delegando combinaciones y validaciones exhaustivas a pruebas unitarias y de API.",
+      "Seleccionar elementos mediante atributos accesibles y semánticos (`getByRole`, `getByLabel`, `data-testid`) en lugar de XPaths absolutos o clases CSS de diseño.",
+      "Eliminar esperas fijas (`sleep`); apoyarse en el *auto-waiting* nativo y aserciones con reintento automático (`await expect(locator).toBeVisible()`).",
+      "Preparar el estado previo vía peticiones API en lugar de recorrer pantallas de login o creación en cada test, y ejecutar cada caso en un `BrowserContext` aislado en paralelo."
+    ],
+    "ejemplo": "test('usuario completa compra', async ({ page }) => {\n  await page.goto('/products');\n  await page.getByRole('button', { name: 'Añadir' }).click();\n  await page.getByRole('link', { name: 'Carrito' }).click();\n  await expect(page.getByText('Total: $25')).toBeVisible();\n});",
+    "entrevista": "Reservo las pruebas E2E para los flujos críticos de negocio en navegador real, reduciendo el flakiness al preparar datos vía API y usar selectores accesibles con *auto-waiting* y trazas en Playwright."
+  },
+  "Pruebas unitarias (JUnit, Jest-Vitest, pytest, xUnit, Go test)": {
+    "que": "Pruebas automatizadas de grano fino que validan en milisegundos el comportamiento de una unidad aislada de código (función, método o clase) sin depender de red, disco ni bases de datos reales. Constituyen la base de la pirámide de pruebas en cualquier stack (JUnit 5, Jest/Vitest, pytest, xUnit, `go test`).",
+    "para": "Brindan retroalimentación instantánea mientras se programa y protegen la lógica de negocio frente a regresiones al refactorizar. Su bajo coste permite cubrir exhaustivamente casos límite, valores nulos, desbordamientos y manejo de excepciones.",
+    "como": "Se estructuran siguiendo el patrón **AAA** (*Arrange, Act, Assert*): inicializan entradas y dobles necesarios, invocan la función objetivo y verifican el retorno, el cambio de estado o el error esperado. El *test runner* descubre archivos o métodos marcados por convención o anotación (`@Test`, `test()`, `def test_*`, `[Fact]`, `func Test*`), los aísla (frecuentemente en hilos o workers paralelos en Vitest/Jest/Go) y reporta tiempos y diffs estructurados ante fallos.",
+    "practicas": [
+      "Validar comportamiento observable y contratos públicos, no detalles privados de implementación, para evitar que refactorizaciones válidas rompan decenas de tests.",
+      "Cumplir las propiedades FIRST: Rápidas, Aisladas, Repetibles, Autovalidables (sin revisión manual) y Oportunas.",
+      "Evitar lógica condicional (`if`, bucles complejos) en el cuerpo del test y usar pruebas parametrizadas (`@ParameterizedTest`, `test.each`, *table-driven tests* en Go) para probar múltiples entradas.",
+      "Preferir Vitest en proyectos modernos Vite/TypeScript/ESM por su velocidad sin transpilación duplicada, y `testing` estándar en Go con subtests (`t.Run`)."
+    ],
+    "ejemplo": "func TestDiscount(t *testing.T) {\n  cases := []struct{ total, want float64 }{{100, 90}, {50, 50}}\n  for _, tc := range cases {\n    if got := ApplyDiscount(tc.total); got != tc.want {\n      t.Errorf(\"ApplyDiscount(%v) = %v; want %v\", tc.total, got, tc.want)\n    }\n  }\n}",
+    "entrevista": "Las pruebas unitarias deben ser deterministas, ejecutarse en milisegundos sin I/O real y verificar comportamiento observable mediante casos parametrizados en lugar de acoplarse a detalles internos."
+  },
+  "Snapshot testing": {
+    "que": "Técnica de verificación que serializa una salida compleja (árbol DOM/HTML, estructura JSON o captura visual de pantalla) y la compara automáticamente contra una versión de referencia aprobada y versionada en el repositorio. Se usa habitualmente en Jest/Vitest (`toMatchSnapshot`), Playwright (`toHaveScreenshot`) o Verify.",
+    "para": "Detecta cambios inesperados en estructuras grandes o salidas visuales donde escribir decenas de aserciones individuales sería poco práctico. En variantes visuales (*visual regression*), atrapa roturas de CSS, superposición de textos o cambios de layout invisibles para pruebas de DOM.",
+    "como": "Durante la primera corrida, el runner serializa el valor producido (con un *pretty-printer* determinista) o guarda la imagen PNG de referencia en un archivo `.snap` o directorio de capturas junto al test. En ejecuciones posteriores, vuelve a serializar el resultado actual y calcula un diff estructural o píxel a píxel contra la referencia; cualquier diferencia hace fallar el test. Cuando el cambio es legítimo, se actualiza la referencia con el flag `-u` (`--updateSnapshot`) o se usa `toMatchInlineSnapshot()` para incrustar la salida en el propio test.",
+    "practicas": [
+      "Nunca ejecutar `-u` para actualizar snapshots sin inspeccionar el diff línea por línea; aprobar snapshots masivos sin leerlos convierte la prueba en ruido.",
+      "Mantener los snapshots pequeños y específicos (preferir `toMatchInlineSnapshot()`) para que un cambio menor de marcado no invalide archivos gigantes.",
+      "Normalizar o enmascarar valores dinámicos (fechas, UUIDs, contadores) antes de capturar el snapshot para evitar fallos aleatorios.",
+      "En snapshots visuales de navegador, ejecutar siempre bajo el mismo entorno (p. ej. Docker Linux) porque el renderizado de fuentes y anti-aliasing difiere entre sistemas operativos."
+    ],
+    "ejemplo": "import { formatInvoice } from './invoice';\n\ntest('serializa factura resumida', () => {\n  const out = formatInvoice({ id: 'F-01', total: 120 });\n  expect(out).toMatchInlineSnapshot(`\"Factura F-01: $120.00\"`);\n});",
+    "entrevista": "El snapshot testing es una red eficaz contra regresiones estructurales o visuales siempre que los snapshots sean pequeños, deterministas y revisados con rigor en cada pull request."
+  },
+  "TDD - BDD (Cucumber)": {
+    "que": "Enfoques de desarrollo guiados por pruebas donde la especificación ejecutable precede al código de producción. **TDD** (*Test-Driven Development*) es una disciplina de diseño de software en micro-ciclos de código, mientras **BDD** (*Behavior-Driven Development*) formaliza el comportamiento esperado del sistema en lenguaje natural compartido mediante sintaxis Gherkin (`Given/When/Then`) en herramientas como Cucumber.",
+    "para": "TDD fomenta código modular, desacoplado y libre de funcionalidad innecesaria (YAGNI), garantizando cobertura desde el inicio. BDD alinea a producto, QA y desarrollo reduciendo ambigüedades en los criterios de aceptación, los cuales pasan a ser documentación viva ejecutable.",
+    "como": "TDD opera mediante el bucle **Red-Green-Refactor**: escribir un test unitario que falle (Red), implementar lo mínimo imprescindible para que pase (Green) y refactorizar eliminando duplicación con la seguridad de los tests en verde (Refactor). En BDD con Cucumber, los escenarios se redactan en archivos `.feature` usando palabras clave Gherkin (`Feature`, `Scenario`, `Given`, `When`, `Then`). El runner de Cucumber empareja cada línea textual mediante expresiones regulares o *Cucumber Expressions* con funciones en código (*Step Definitions*) que ejecutan las acciones y aserciones reales.",
+    "practicas": [
+      "En TDD, avanzar en incrementos pequeños: no escribir diez tests fallidos a la vez ni adelantar abstracciones complejas antes del paso de refactorización.",
+      "Redactar escenarios BDD en estilo declarativo centrado en el dominio ('el cliente confirma el pedido'), nunca imperativo de interfaz ('hace clic en #btn-pay'), para no acoplar las `.feature` a cambios visuales.",
+      "No introducir Cucumber si negocio o QA no colaboran leyendo los archivos `.feature`: mantener Gherkin solo entre programadores añade una capa de indirección innecesaria.",
+      "Distinguir sus niveles: TDD guía la arquitectura interna en segundos; BDD especifica criterios de aceptación observables de extremo a extremo."
+    ],
+    "ejemplo": "Feature: Devolución de pedidos\n  Scenario: Devolución dentro del plazo\n    Given un pedido entregado hace 5 días por $100\n    When el cliente solicita la devolución\n    Then el estado pasa a \"REEMBOLSADO\"\n    And se emite un crédito de $100",
+    "entrevista": "TDD es una disciplina técnica de diseño en ciclos Red-Green-Refactor, mientras BDD extiende ese enfoque a la colaboración con negocio mediante especificaciones ejecutables centradas en comportamiento observable."
+  }
+}

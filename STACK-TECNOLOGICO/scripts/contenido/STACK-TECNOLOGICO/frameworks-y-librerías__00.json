@@ -1,0 +1,327 @@
+{
+  "ASP.NET Core": {
+    "que": "Framework web multiplataforma y de código abierto mantenido por Microsoft sobre el runtime .NET para construir APIs, servicios en tiempo real y aplicaciones web. Unifica MVC, Minimal APIs, Razor Pages, Blazor y SignalR bajo un único modelo de ejecución modular.",
+    "para": "Resuelve la necesidad de desarrollar backends empresariales de alto rendimiento con tipado fuerte en C# o F#, sin atarse a Windows ni a servidores propietarios como IIS. Se emplea habitualmente en microservicios de alta carga, backends financieros, APIs REST/gRPC y plataformas corporativas integradas con el ecosistema Azure y SQL Server.",
+    "como": "Una aplicación arranca mediante WebApplication.CreateBuilder, que configura el contenedor nativo de inyección de dependencias (IServiceCollection), la configuración jerárquica y el logging. El servidor Kestrel —construido sobre System.IO.Pipelines y sockets asíncronos— acepta conexiones HTTP/1.1, HTTP/2 o HTTP/3 y las transforma en un HttpContext. Cada petición atraviesa un pipeline secuencial de middlewares configurados en orden explícito (enrutamiento, autenticación, autorización, CORS) hasta llegar al Endpoint Routing. Finalmente, el endpoint seleccionado ejecuta un controlador MVC o un delegado de Minimal API y serializa la respuesta con System.Text.Json.",
+    "practicas": [
+      "Usa Minimal APIs para microservicios ligeros y controladores MVC cuando necesites filtros complejos o convenciones extensas de API.",
+      "Error típico: registrar un servicio Scoped (como DbContext de Entity Framework) dentro de un Singleton, lo que provoca excepciones o estado corrupto entre peticiones.",
+      "Habilita la compilación AOT nativa (PublishAot) en servicios serverless o contenedores pequeños para reducir drásticamente el arranque en frío y el consumo de memoria.",
+      "ASP.NET Core vs Spring Boot: ambos ofrecen ecosistemas empresariales maduros con DI y tipado estático, pero ASP.NET Core destaca en throughput por petición y menor huella de memoria frente a la JVM tradicional."
+    ],
+    "ejemplo": "var builder = WebApplication.CreateBuilder(args);\nbuilder.Services.AddEndpointsApiExplorer();\nvar app = builder.Build();\n\napp.MapGet(\"/orders/{id:int}\", async (int id, OrderRepo repo) =>\n    await repo.FindAsync(id) is Order o ? Results.Ok(o) : Results.NotFound());\n\napp.Run();",
+    "entrevista": "ASP.NET Core combina el servidor Kestrel de altísimo rendimiento con un pipeline de middlewares explícito e inyección de dependencias nativa, permitiéndonos construir APIs tipadas de baja latencia tanto con Minimal APIs como con MVC."
+  },
+  "Actix - Axum": {
+    "que": "Dos de los frameworks web asíncronos más influyentes del ecosistema Rust: Actix Web, basado originalmente en el modelo de actores y actix-rt, y Axum, desarrollado por el equipo de Tokio sobre la pila modular hyper y tower. Ambos aprovechan el sistema de tipos y el borrow checker de Rust para garantizar seguridad de memoria y concurrencia sin recolector de basura.",
+    "para": "Resuelven la construcción de servicios HTTP de latencia ultrabaja, proxies, gateways y microservicios donde el coste por milisegundo y el consumo de RAM son críticos. Se eligen frente a runtimes con garbage collector cuando se requiere rendimiento predecible sin pausas stop-the-world y binarios estáticos ligeros.",
+    "como": "En Axum, las peticiones HTTP entrantes son parseadas por hyper sobre el runtime tokio y envueltas en el trait tower::Service, lo que permite componer middlewares genéricos (timeouts, tracing, rate limiting) como capas reutilizables. El enrutador (axum::Router) despacha la ruta y ejecuta extractores tipados (FromRequest, State, Json, Path) en tiempo de compilación antes de invocar al handler async. Actix Web sigue un enfoque de worker threads independientes (uno por núcleo físico), cada uno con su propio bucle de eventos local (LocalSet), evitando contención entre hilos al manejar estado local y clonando solo estado compartido inmutable (web::Data<Arc<T>>).",
+    "practicas": [
+      "Prefiere Axum si ya dependes del ecosistema tokio, tower y tonic, ya que comparte exactamente los mismos traits de servicio y middleware.",
+      "Error típico: ejecutar operaciones bloqueantes síncronas (E/S de disco pesada o cálculo intensivo de CPU) dentro de un handler async sin usar tokio::task::spawn_blocking, bloqueando el hilo del executor.",
+      "Modela los extractores personalizados y errores de dominio implementando IntoResponse para evitar lógica repetitiva de códigos HTTP en cada ruta.",
+      "Actix Web vs Axum: Actix suele exprimir un margen ligeramente mayor en benchmarks sintéticos gracias a su arquitectura thread-per-core, mientras que Axum ofrece una ergonomía más idiomática basada en traits estándar de tower."
+    ],
+    "ejemplo": "use axum::{routing::get, Json, Router};\nuse serde::Serialize;\n\n#[derive(Serialize)]\nstruct Health { status: &'static str }\n\nasync fn health() -> Json<Health> { Json(Health { status: \"ok\" }) }\n\nlet app = Router::new().route(\"/health\", get(health));",
+    "entrevista": "Actix Web y Axum llevan el rendimiento de Rust a servicios HTTP sin recolector de basura: Actix optimiza mediante hilos locales sin contención y Axum compone extractores tipados y middlewares sobre hyper y tower."
+  },
+  "Angular": {
+    "que": "Framework frontend completo (batteries-included) mantenido por Google y escrito en TypeScript para construir aplicaciones web de una sola página (SPA) y con renderizado en servidor (SSR). Integra de serie enrutamiento, formularios reactivos, cliente HTTP, inyección de dependencias jerárquica y su propio compilador de plantillas.",
+    "para": "Resuelve la estandarización y mantenibilidad en aplicaciones web grandes con equipos numerosos, donde elegir y ensamblar decenas de librerías externas genera deuda técnica. Es muy utilizado en portales empresariales, banca, ERP y sistemas internos con reglas de negocio complejas.",
+    "como": "En tiempo de compilación, el compilador Ivy transforma cada componente (@Component) y su plantilla HTML en instrucciones incrementales de DOM, realizando verificación estricta de tipos sobre las expresiones del template. Históricamente la detección de cambios se apoyaba en Zone.js para interceptar eventos asíncronos y recorrer el árbol de componentes; en Angular moderno se combina con Signals y modos zoneless para rastrear dependencias de estado de forma granular y actualizar solo las vistas afectadas. Su sistema de inyección de dependencias (Injector) resuelve servicios siguiendo la jerarquía del árbol de componentes y rutas, permitiendo lazy loading e hidratación no destructiva en SSR.",
+    "practicas": [
+      "Adopta Standalone Components y ChangeDetectionStrategy.OnPush junto con Signals para reducir drásticamente los ciclos innecesarios de detección de cambios.",
+      "Error típico: suscribirse manualmente a un Observable de RxJS en componentes sin cancelar la suscripción (takeUntilDestroyed o pipe async), provocando fugas de memoria.",
+      "Usa bloques @defer en plantillas para cargar de forma diferida componentes pesados sin complicar manualmente la configuración del bundler.",
+      "Angular vs React: Angular impone arquitectura, DI y herramientas oficiales unificadas (CLI, Router, Forms), mientras que React es una librería de UI que delega esas decisiones al ecosistema."
+    ],
+    "ejemplo": "@Component({\n  selector: 'app-counter',\n  standalone: true,\n  template: `<button (click)=\"inc()\">{{ count() }} (x2: {{ doubled() }})</button>`\n})\nexport class CounterComponent {\n  count = signal(0);\n  doubled = computed(() => this.count() * 2);\n  inc() { this.count.update(v => v + 1); }\n}",
+    "entrevista": "Angular ofrece una plataforma integral con TypeScript estricto, inyección de dependencias jerárquica y reactividad moderna basada en Signals e Ivy, ideal para escalar aplicaciones complejas con convenciones homogéneas."
+  },
+  "Astro": {
+    "que": "Framework web orientado a sitios ricos en contenido que introduce la arquitectura de islas (Islands Architecture) con filosofía zero-JavaScript by default. Permite combinar plantillas .astro con componentes interactivos de React, Vue, Svelte o Solid en el mismo proyecto.",
+    "para": "Resuelve el problema de enviar megabytes de JavaScript y ejecutar hidratación completa en páginas cuyo contenido es mayoritariamente estático, penalizando el rendimiento en móviles y el SEO. Se usa en blogs, documentación, e-commerce y sitios corporativos donde el tiempo de carga inicial (LCP/INP) es prioritario.",
+    "como": "Durante el build (SSG) o en cada petición (SSR mediante adaptadores), Astro ejecuta el código del frontmatter (---) exclusivamente en el servidor para consultar datos y renderizar HTML puro y CSS optimizado. Cualquier componente de UI importado de React o Svelte se renderiza estáticamente a HTML sin enviar su runtime al navegador, salvo que lleve una directiva client:* (client:load, client:visible, client:idle). Cada directiva crea una isla independiente en el DOM que solo descarga e hidrata su propio JavaScript cuando se cumple la condición indicada (por ejemplo, al entrar en el viewport vía IntersectionObserver). Además, ofrece View Transitions nativas y Server Islands para mezclar caché estática en CDN con fragmentos dinámicos personalizados.",
+    "practicas": [
+      "Usa client:visible o client:idle en lugar de client:load para componentes secundarios (carruseles, comentarios) situados bajo el pliegue.",
+      "Error típico: intentar acceder a APIs del navegador (window, localStorage) dentro del bloque frontmatter de un archivo .astro, que solo corre en el servidor.",
+      "Aprovecha las Content Collections con esquemas Zod para validar en tiempo de compilación el frontmatter de archivos Markdown y MDX.",
+      "Astro vs Next.js: Astro minimiza el JS enviado al cliente aislando la interactividad en islas; Next.js hidrata la aplicación React completa (salvo Server Components) y brilla en apps altamente interactivas."
+    ],
+    "ejemplo": "---\nimport BuyButton from '../components/BuyButton.tsx';\nconst product = await fetchProduct(Astro.params.slug);\n---\n<article>\n  <h1>{product.title}</h1>\n  <BuyButton client:visible productId={product.id} />\n</article>",
+    "entrevista": "Astro aplica arquitectura de islas para entregar HTML puro por defecto e hidratar únicamente los componentes interactivos bajo demanda con directivas client:*, logrando métricas Web Vitals excepcionales."
+  },
+  "Express": {
+    "que": "Microframework web minimalista y no opinado para Node.js que envuelve los módulos nativos http y https para gestionar enrutamiento y cadenas de middleware. Durante más de una década ha sido el estándar de facto y la base sobre la que se construyeron muchos otros frameworks del ecosistema JavaScript.",
+    "para": "Resuelve la verbosidad del módulo http nativo de Node.js facilitando la creación rápida de APIs REST, proxies BFF y servidores HTTP sencillos con una curva de aprendizaje mínima. Sigue siendo común en servicios ligeros, prototipos rápidos y sistemas heredados con amplia compatibilidad de middlewares.",
+    "como": "Una instancia express() actúa como función callback compatible con http.createServer. Al recibir una petición IncomingMessage, Express normaliza los objetos req y res (añadiendo helpers como res.json, req.params y req.query) y los pasa secuencialmente por una pila interna de capas (Router y Layer). Cada middleware recibe (req, res, next) y decide si responde al cliente o delega el control invocando next(). Si se pasa un argumento a next(err) —o en Express 5 si una promesa rechaza—, el flujo salta directamente a los middlewares de manejo de errores con aridad de 4 parámetros (err, req, res, next).",
+    "practicas": [
+      "En Express 4, envuelve siempre los handlers async para capturar promesas rechazadas y pasarlas a next(err), evitando caídas del proceso por UnhandledPromiseRejection.",
+      "Error típico: olvidar helmet(), límites de tamaño en express.json({ limit: '100kb' }) y validación de esquemas (Zod/Joi), exponiendo el servidor a ataques DoS o datos malformados.",
+      "Define siempre un middleware final de manejo de errores centralizado para no filtrar stack traces internos en producción.",
+      "Express vs Fastify: Express tiene el mayor ecosistema histórico de middlewares; Fastify ofrece mayor rendimiento, validación JSON Schema nativa y soporte de async/await de serie."
+    ],
+    "ejemplo": "import express from 'express';\nconst app = express();\napp.use(express.json());\n\napp.get('/users/:id', (req, res) => {\n  res.json({ id: req.params.id });\n});\napp.use((err, _req, res, _next) => res.status(500).json({ error: err.message }));\napp.listen(3000);",
+    "entrevista": "Express es un pipeline lineal de middlewares sobre http en Node.js: su simplicidad y ecosistema lo hicieron ubicuo, aunque exige disciplina en manejo de errores asíncronos, seguridad y validación que no trae por defecto."
+  },
+  "Fastify": {
+    "que": "Framework web para Node.js enfocado en alto rendimiento, baja sobrecarga de CPU y memoria, y una arquitectura basada en esquemas JSON y plugins encapsulados. Está diseñado desde cero para evitar cuellos de botella en enrutamiento y serialización JSON.",
+    "para": "Resuelve los límites de rendimiento y desorden arquitectónico de Express en APIs de alto tráfico, microservicios Node.js y gateways BFF. Se utiliza cuando se requiere máximo throughput en Node.js junto con validación automática de contratos, tipado TypeScript y observabilidad integrada.",
+    "como": "Fastify utiliza find-my-way, un enrutador basado en árbol radix que resuelve rutas y parámetros dinámicos en tiempo proporcional a la longitud de la URL sin iterar listas de expresiones regulares. Para validación y serialización, compila los esquemas JSON Schema definidos en cada ruta mediante Ajv (entrada) y fast-json-stringify (salida), generando funciones JavaScript especializadas mucho más rápidas que JSON.stringify. Además, gestiona la arquitectura mediante un árbol encapsulado de plugins (fastify.register), donde los hooks del ciclo de vida (onRequest, preHandler, onSend) y decoradores solo afectan al contexto hijo salvo que se usen utilidades como fastify-plugin.",
+    "practicas": [
+      "Define siempre el esquema response además de body y params: fast-json-stringify acelera la serialización y filtra automáticamente campos sensibles no declarados.",
+      "Error típico: depender de decoradores registrados en un plugin hermano sin comprender la encapsulación del grafo acíclico de plugins.",
+      "Aprovecha el logger Pino integrado (request.log) con redaction de cabeceras sensibles en lugar de usar console.log, que puede bloquear la salida estándar.",
+      "Fastify vs Express: Fastify ofrece validación JSON Schema nativa, encapsulación real de plugins y mejor throughput, manteniendo una curva de migración muy accesible."
+    ],
+    "ejemplo": "import Fastify from 'fastify';\nconst app = Fastify({ logger: true });\n\napp.post('/items', {\n  schema: { body: { type: 'object', required: ['name'], properties: { name: { type: 'string' } } } }\n}, async (req) => ({ created: req.body.name }));\n\nawait app.listen({ port: 3000 });",
+    "entrevista": "Fastify logra un throughput sobresaliente en Node.js gracias a su router radix (find-my-way), serialización compilada con fast-json-stringify, validación con Ajv y un sistema de plugins encapsulados."
+  },
+  "Gin - Echo": {
+    "que": "Los dos frameworks web HTTP más populares del lenguaje Go sobre la librería estándar net/http: Gin (optimizado para velocidad sin reflexión) y Echo (enfocado en extensibilidad, manejo idiomático de errores y middlewares integrados). Ambos proporcionan enrutamiento rápido, binding de payloads y utilidades de respuesta.",
+    "para": "Resuelven las limitaciones de enrutamiento avanzado, agrupación de rutas y serialización/validación declarativa frente al mux básico tradicional de net/http. Son el estándar habitual en Go para construir APIs REST, backends de microservicios y servicios de infraestructura cloud-native.",
+    "como": "Ambos emplean un radix tree (árbol de prefijos comprimido, en Gin basado en httprouter) para emparejar métodos y rutas dinámicas sin asignaciones innecesarias de memoria en el heap. Para evitar presión sobre el recolector de basura bajo miles de goroutines concurrentes, Gin reutiliza objetos *gin.Context mediante un sync.Pool entre peticiones, y Echo gestiona de forma similar echo.Context. Al llegar una petición, net/http ejecuta una goroutine, atraviesa la cadena de middlewares y llama al handler; Gin acumula fallos en c.Errors mientras Echo retorna explícitamente un error desde cada handler (func(echo.Context) error), centralizando las respuestas en un HTTPErrorHandler.",
+    "practicas": [
+      "En Gin, nunca pases *gin.Context directamente a una goroutine en segundo plano sin llamar antes a c.Copy(), porque el contexto original se recicla en el sync.Pool al terminar la petición.",
+      "Error típico: olvidar configurar ReadHeaderTimeout, ReadTimeout y WriteTimeout en el http.Server subyacente, dejando el servicio expuesto a ataques Slowloris.",
+      "Implementa graceful shutdown escuchando SIGINT/SIGTERM y llamando a srv.Shutdown(ctx) para drenar conexiones activas antes de detener contenedores.",
+      "Gin vs Echo: Gin tiene mayor adopción histórica y velocidad bruta marginal; Echo destaca por devolver error explícitamente en los handlers y contar con middlewares integrados más completos."
+    ],
+    "ejemplo": "e := echo.New()\ne.Use(middleware.Logger(), middleware.Recover())\ne.GET(\"/users/:id\", func(c echo.Context) error {\n    return c.JSON(http.StatusOK, map[string]string{\"id\": c.Param(\"id\")})\n})\ne.Logger.Fatal(e.Start(\":8080\"))",
+    "entrevista": "Gin y Echo extienden net/http con enrutamiento por radix tree y reciclaje de contextos vía sync.Pool para reducir asignaciones, diferenciándose principalmente en el retorno explícito de errores de Echo frente al estilo imperativo de Gin."
+  },
+  "GraphQL": {
+    "que": "Lenguaje de consulta y especificación de ejecución para APIs creado por Meta (hoy mantenido por la GraphQL Foundation) que expone un esquema fuertemente tipado como grafo de tipos y relaciones. Permite al cliente declarar exactamente qué campos necesita en una sola petición mediante queries, mutations y subscriptions.",
+    "para": "Resuelve los problemas de over-fetching (recibir datos sobrantes) y under-fetching (hacer múltiples viajes HTTP en cascada) en clientes heterogéneos como apps móviles, SPAs o BFFs que agregan varios microservicios. Resulta idóneo cuando distintos consumidores requieren proyecciones muy variables sobre un mismo modelo de dominio rico en relaciones.",
+    "como": "El servidor define un contrato mediante SDL (Schema Definition Language) compuesto por tipos, escalares y resolvers. Al recibir una petición HTTP POST con la consulta y sus variables, el motor ejecuta cuatro fases: Parsing (convierte el texto en un AST), Validation (comprueba el AST contra el esquema tipado), Execution (recorre el árbol invocando funciones resolver(parent, args, context, info) concurrentemente por nivel) y Serialization. Para evitar el problema de consultas N+1 al resolver relaciones anidadas, se agrupan las lecturas por tick del bucle de eventos usando DataLoader. En arquitecturas distribuidas, sistemas como Apollo Federation componen múltiples subgrafos en un único supergrafo.",
+    "practicas": [
+      "Usa siempre DataLoader (agrupación en lote y caché por petición) en resolvers de relaciones para evitar el problema N+1 contra la base de datos.",
+      "Error típico: exponer el esquema sin límites de profundidad (query depth), análisis de complejidad ni persisted queries, permitiendo consultas anidadas maliciosas que saturan el servidor.",
+      "Recuerda que GraphQL suele responder HTTP 200 OK incluso con errores en el campo errors[], lo que invalida el caching HTTP clásico por URL si no se usan APQ o cachés normalizadas en cliente.",
+      "GraphQL vs REST: GraphQL optimiza la flexibilidad del cliente y el tipado de grafo sobre un único endpoint; REST aprovecha mejor la semántica HTTP nativa (verbos, códigos de estado y caché CDN)."
+    ],
+    "ejemplo": "type Order { id: ID!, total: Float!, items: [String!]! }\ntype Query { order(id: ID!): Order }\n\nquery GetOrder($id: ID!) {\n  order(id: $id) { id total }\n}",
+    "entrevista": "GraphQL reemplaza múltiples endpoints rígidos por un esquema tipado consultable bajo demanda, donde el verdadero reto en producción es controlar la complejidad de consultas y mitigar el problema N+1 con DataLoader."
+  },
+  "Material UI": {
+    "que": "Librería de componentes React (MUI) que implementa el sistema de diseño Material Design de Google con soporte integrado de tematización, accesibilidad (WAI-ARIA) y estilizado CSS-in-JS mediante Emotion (o Pigment CSS en generación estática). Incluye decenas de componentes complejos listos para producción como tablas, diálogos, selectores y menús.",
+    "para": "Resuelve el coste de construir desde cero un sistema de diseño accesible y consistente en aplicaciones React corporativas o paneles administrativos complejos. Se elige cuando la velocidad de entrega de interfaces funcionales con estética homogénea prima sobre una identidad visual totalmente artesanal.",
+    "como": "MUI envuelve la aplicación en un ThemeProvider que inyecta tokens de diseño (paleta, tipografía, espaciado, breakpoints) a través de React Context. Cada componente procesa props de estilo declarativas (sx), variantes del tema y estados (disabled, error) generando reglas CSS con especificidad controlada mediante el motor de estilos (@emotion/react en runtime o Pigment CSS en build-time para evitar penalización de hidratación en SSR). Muchos componentes implementan gestión de foco, navegación por teclado y portales DOM (Modal, Popper) sobre primitivas base desacopladas.",
+    "practicas": [
+      "Centraliza estilos reutilizables en theme.components (styleOverrides y variants) en lugar de repetir objetos sx extensos en cada pantalla.",
+      "Error típico: importar desde la raíz sin tree-shaking adecuado en builds antiguos o mezclar versiones de Emotion, inflando el tamaño del bundle.",
+      "En Next.js App Router, utiliza el adaptador @mui/material-nextjs para sincronizar la inyección de estilos en SSR y evitar flash of unstyled content (FOUC).",
+      "Material UI vs shadcn-ui: MUI entrega componentes completos y opinados como dependencia de paquete; shadcn-ui copia código editable en tu repositorio basado en Tailwind y primitivas headless."
+    ],
+    "ejemplo": "import { ThemeProvider, createTheme, Button } from '@mui/material';\n\nconst theme = createTheme({ palette: { primary: { main: '#1976d2' } } });\n\nexport const SaveAction = () => (\n  <ThemeProvider theme={theme}>\n    <Button variant=\"contained\" sx={{ borderRadius: 2 }}>Guardar</Button>\n  </ThemeProvider>\n);",
+    "entrevista": "Material UI acelera el desarrollo React proporcionando componentes accesibles y tematizables bajo Material Design, aunque conviene controlar el coste de CSS-in-JS en runtime mediante tematización centralizada o compilación estática."
+  },
+  "NestJS": {
+    "que": "Framework backend progresivo para Node.js construido con TypeScript que adopta una arquitectura modular inspirada en Angular, combinando programación orientada a objetos, funcional y reactiva. Opera por defecto sobre Express, aunque puede intercambiarse fácilmente por Fastify mediante adaptadores.",
+    "para": "Resuelve la falta de estructura arquitectónica en proyectos Node.js grandes donde Express puro deriva en código acoplado y difícil de mantener. Se utiliza ampliamente en APIs empresariales, microservicios (sobre HTTP, gRPC, Kafka o RabbitMQ) y servidores GraphQL que exigen convenciones claras y alta testabilidad.",
+    "como": "NestJS organiza la aplicación en Módulos (@Module) que declaran controladores, proveedores y exportaciones, formando un grafo de dependencias resuelto al arranque por su contenedor de Inversión de Control (IoC) apoyado en metadatos de TypeScript (reflect-metadata). Una petición HTTP entrante recorre un ciclo de vida determinista: primero Middlewares, luego Guards (autenticación/autorización), Interceptors (transformación o caché con RxJS), Pipes (validación y coerción con class-validator), el método del Controller y finalmente Interceptors de salida o Exception Filters si se lanzó una excepción. Este desacoplamiento permite reemplazar dependencias por mocks en pruebas con Test.createTestingModule.",
+    "practicas": [
+      "Usa el adaptador FastifyAdapter en servicios con alta demanda de throughput sin perder la estructura de módulos y decoradores de NestJS.",
+      "Error típico: crear dependencias circulares entre módulos (forwardRef) o marcar servicios como REQUEST-scoped innecesariamente, forzando la re-instanciación de toda la cadena en cada petición.",
+      "Activa ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }) globalmente para sanear DTOs de entrada de forma automática.",
+      "NestJS vs Spring Boot: NestJS traslada el modelo de módulos, DI y decoradores de Spring/Angular al ecosistema TypeScript, ofreciendo arranque más ligero que la JVM pero sobre un runtime single-threaded."
+    ],
+    "ejemplo": "@Controller('orders')\nexport class OrdersController {\n  constructor(private readonly ordersService: OrdersService) {}\n\n  @UseGuards(AuthGuard)\n  @Get(':id')\n  findOne(@Param('id', ParseIntPipe) id: number) {\n    return this.ordersService.findById(id);\n  }\n}",
+    "entrevista": "NestJS aporta arquitectura empresarial a Node.js mediante un contenedor IoC, módulos encapsulados y un pipeline ordenado de Guards, Pipes e Interceptors independiente del motor HTTP subyacente."
+  },
+  "Next.js": {
+    "que": "Meta-framework full-stack para React desarrollado por Vercel que añade enrutamiento basado en sistema de archivos, renderizado híbrido (SSR, SSG, ISR), React Server Components (RSC) y optimización automática de activos. Permite ejecutar lógica de servidor y cliente en una misma base de código.",
+    "para": "Resuelve las carencias de una SPA pura en React: SEO limitado, waterfalls de peticiones cliente-servidor, configuración compleja de bundlers y ausencia de capa BFF integrada. Es el estándar dominante para aplicaciones web modernas en React que requieren tanto velocidad inicial como alta interactividad.",
+    "como": "En el App Router, las rutas definidas bajo app/ son por defecto React Server Components: se ejecutan exclusivamente en el servidor (accediendo directo a bases de datos o secretos) y transmiten un stream con el payload RSC y HTML pre-renderizado al navegador sin incluir su código en el bundle JS del cliente. Los componentes marcados con 'use client' actúan como fronteras de hidratación para la interactividad. Next.js integra además múltiples capas de caché (Request Memoization, Data Cache con revalidateTag/revalidatePath, Full Route Cache y Router Cache), Server Actions como RPC para mutaciones y Streaming con Suspense sobre HTTP.",
+    "practicas": [
+      "Empuja la directiva 'use client' lo más abajo posible en el árbol de componentes para minimizar el JavaScript enviado al navegador.",
+      "Error típico: asumir que un Server Action es seguro solo por correr en el servidor; al exponerse como endpoint HTTP invocable por terceros, exige validar siempre sesión, permisos y esquema de entrada.",
+      "Evita fugas de datos sensibles pasando entidades completas de ORM desde Server Components a Client Components; serializa únicamente DTOs con los campos necesarios.",
+      "Next.js vs Remix: Next.js apuesta por React Server Components y caché granular integrada; Remix se apoya en estándares web nativos (Request/Response, formularios HTML y loader/action)."
+    ],
+    "ejemplo": "// app/products/[id]/page.tsx (Server Component)\nexport default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {\n  const { id } = await params;\n  const product = await db.product.findUnique({ where: { id } });\n  return <ProductView name={product.name} />;\n}",
+    "entrevista": "Next.js combina renderizado híbrido por ruta con React Server Components y Streaming, reduciendo el JavaScript en el cliente mientras unifica frontend y BFF en una sola arquitectura."
+  },
+  "Nuxt": {
+    "que": "Meta-framework full-stack de código abierto para Vue 3 que ofrece renderizado universal (SSR, SSG, híbrido por ruta), enrutamiento automático por archivos y un motor de servidor multiplataforma integrado llamado Nitro. Sigue el principio de convención sobre configuración con auto-importación tipada de componentes y composables.",
+    "para": "Resuelve la complejidad de configurar SSR, code-splitting, gestión de metadatos SEO y endpoints API en aplicaciones Vue de producción. Se utiliza en sitios de comercio electrónico, portales con alto tráfico orgánico y aplicaciones empresariales basadas en el ecosistema Vue.",
+    "como": "En desarrollo y build, Nuxt escanea los directorios pages/, components/ y composables/ generando tipos TypeScript (.nuxt/types) y rutas de vue-router automáticamente. La capa de servidor Nitro compila los endpoints de server/api/ y el renderizador SSR de Vue en un artefacto agnóstico al entorno (Node.js, Cloudflare Workers, Deno) basado en primitivas h3 (defineEventHandler). Durante el renderizado universal, helpers como useFetch y useAsyncData ejecutan la lectura en el servidor, serializan el resultado dentro del payload HTML inicial y evitan que el cliente vuelva a pedir el mismo dato durante la hidratación.",
+    "practicas": [
+      "Usa useFetch o useAsyncData en lugar de fetch crudo dentro de <script setup> para evitar dobles peticiones (servidor + cliente) y errores de hydration mismatch.",
+      "Error típico: almacenar estado por usuario en variables globales fuera de useState(), provocando contaminación de datos entre peticiones concurrentes en SSR.",
+      "Configura routeRules en nuxt.config.ts para combinar rutas estáticas prerenderizadas, SWR en caché CDN y secciones SPA solo de cliente en una misma aplicación.",
+      "Nuxt vs Next.js: ambos ofrecen renderizado híbrido y SSR, pero Nuxt destaca por la portabilidad agnóstica de Nitro y las convenciones cero-configuración del ecosistema Vue."
+    ],
+    "ejemplo": "<script setup lang=\"ts\">\nconst route = useRoute();\nconst { data: user } = await useFetch(`/api/users/${route.params.id}`);\n</script>\n<template>\n  <h1>{{ user?.name }}</h1>\n</template>",
+    "entrevista": "Nuxt lleva a Vue a producción full-stack mediante convenciones automáticas, hidratación sin doble fetching con useAsyncData y el motor Nitro capaz de desplegar el mismo servidor en Node o Edge."
+  },
+  "Qwik": {
+    "que": "Framework web orientado al rendimiento extremo que reemplaza la hidratación tradicional por resumabilidad (resumability) y ejecución diferida de JavaScript a nivel de evento. Fue diseñado para lograr arranques prácticamente instantáneos (O(1)) sin importar el tamaño total de la aplicación.",
+    "para": "Resuelve el cuello de botella del Time to Interactive (TTI) y el Total Blocking Time (TBT) en aplicaciones de e-commerce y sitios grandes donde hidratar árboles enormes de componentes bloquea el hilo principal en móviles. Se emplea cuando la velocidad de primera interacción impacta directamente en métricas de negocio.",
+    "como": "Tras recibir el HTML SSR, los frameworks clásicos descargan y ejecutan todo el código de los componentes para reconstruir event listeners y estado en memoria (hydration). Qwik, mediante su Optimizer basado en SWC, divide el código en pequeños chunks independientes marcados con el sufijo $ (component$, onClick$, useTask$). En el servidor renderiza HTML y serializa el estado junto con punteros a handlers directamente en atributos HTML (como on:click). En el navegador solo carga un diminuto Qwikloader (~1 KB) que escucha eventos globales; únicamente cuando el usuario interactúa, descarga y ejecuta el fragmento exacto necesario reanudando el estado del servidor.",
+    "practicas": [
+      "Respeta las reglas del símbolo $: cualquier valor capturado dentro de un bloque $ debe ser serializable para persistirse en el HTML.",
+      "Error típico: colocar lógica pesada dentro de useVisibleTask$ (análogo a useEffect al montar), lo que fuerza descarga inmediata de JS y anula la ventaja de la resumabilidad.",
+      "Configura estrategias de prefetching en segundo plano para que el chunk de una acción crítica ya esté en caché antes del primer clic del usuario.",
+      "Qwik vs Astro: Astro elimina JS aislando componentes interactivos (que sí se hidratan); Qwik permite una aplicación entera interactiva con descarga de JS bajo demanda mediante resumabilidad."
+    ],
+    "ejemplo": "import { component$, useSignal } from '@builder.io/qwik';\n\nexport const Counter = component$(() => {\n  const count = useSignal(0);\n  return <button onClick$={() => count.value++}>{count.value}</button>;\n});",
+    "entrevista": "Qwik elimina la hidratación serializando el estado y los punteros de eventos en el HTML SSR, de modo que el navegador solo descarga y reanuda el fragmento exacto de JavaScript cuando el usuario interactúa."
+  },
+  "React": {
+    "que": "Librería declarativa de código abierto creada por Meta para construir interfaces de usuario mediante árboles de componentes componibles y flujo de datos unidireccional. En su arquitectura moderna abarca tanto renderizado en cliente como primitivas de servidor (React Server Components y Actions).",
+    "para": "Resuelve la complejidad de mantener sincronizado el estado de la aplicación con mutaciones imperativas manuales del DOM. Es el estándar más extendido de la industria para construir desde interfaces embebidas hasta aplicaciones web complejas (con Next.js o Remix) y móviles (con React Native).",
+    "como": "Cada componente retorna una descripción inmutable de la UI (elementos JSX). React gestiona las actualizaciones mediante la arquitectura Fiber, que representa cada nodo como una unidad de trabajo en una lista enlazada priorizable, habilitando renderizado concurrente e interrumpible (startTransition). Al cambiar el estado (useState, useReducer), React ejecuta la fase de Render (calcula el nuevo árbol Fiber de forma pura y reconcilia diferencias usando key en listas) y luego la fase de Commit (aplica las mutaciones mínimas al DOM real de forma síncrona y dispara useLayoutEffect y useEffect). El React Compiler automatiza la memoización en build para reducir re-renders sin abusar de useMemo o useCallback manuales.",
+    "practicas": [
+      "Mantén los componentes puros durante el render y deriva valores calculados directamente en el cuerpo del componente en lugar de sincronizar estados redundantes en useEffect.",
+      "Error típico: usar índices de array (index) como key en listas reordenables o filtrables, corrompiendo el estado local asociado a cada elemento.",
+      "No abuses de React Context para estado que cambia a alta frecuencia, ya que fuerza re-renderizado en todos los componentes consumidores.",
+      "React vs SolidJS: React vuelve a ejecutar la función del componente y reconcilia un Virtual DOM Fiber; SolidJS ejecuta el componente una sola vez y actualiza nodos DOM concretos mediante señales."
+    ],
+    "ejemplo": "import { useState } from 'react';\n\nexport function SearchBox({ onSearch }: { onSearch: (q: string) => void }) {\n  const [query, setQuery] = useState('');\n  return (\n    <form onSubmit={(e) => { e.preventDefault(); onSearch(query); }}>\n      <input value={query} onChange={(e) => setQuery(e.target.value)} />\n    </form>\n  );\n}",
+    "entrevista": "React modela la UI como función pura del estado usando el motor Fiber para priorizar y reconciliar cambios de forma concurrente, manteniendo un flujo de datos unidireccional predecible."
+  },
+  "Remix": {
+    "que": "Framework web full-stack para React (integrado en la arquitectura de React Router v7) construido sobre los estándares nativos de la web (Request, Response, FormData, cabeceras Cache-Control). Prioriza el funcionamiento progresivo sobre formularios y enlaces HTML antes que la gestión de estado complejo en cliente.",
+    "para": "Resuelve los acoplamientos artificiales entre cliente y servidor en aplicaciones React con múltiples mutaciones, validación de formularios y rutas anidadas. Brilla en aplicaciones dinámicas centradas en flujos transaccionales (dashboards, SaaS, e-commerce) donde la consistencia tras cada mutación es clave.",
+    "como": "Cada ruta puede exportar una función loader (lectura GET en servidor) y una action (mutación POST/PUT/DELETE en servidor), además del componente React. Al navegar o enviar un componente <Form>, Remix intercepta el envío en el cliente vía fetch hacia la action del servidor, manteniendo compatibilidad HTML clásica si JavaScript aún no carga. Tras completarse la action, Remix revalida automáticamente en paralelo únicamente los loaders de las rutas activas afectadas y sincroniza la UI sin gestionar cachés manuales. Las rutas anidadas cargan datos y capturan fallos de forma aislada (ErrorBoundary), eliminando waterfalls de red.",
+    "practicas": [
+      "Delega la mayoría del estado servidor-cliente y mutaciones a loader, action y useFetcher antes de introducir librerías externas de estado global.",
+      "Error típico: usar useEffect para pedir datos iniciales de una ruta en lugar de un loader, reintroduciendo waterfalls cliente-servidor y estados de carga redundantes.",
+      "Usa useFetcher para mutaciones parciales (botones de favorito, edición en línea) que no deben disparar navegación de URL.",
+      "Remix vs Next.js: Remix se apoya en el ciclo HTTP estándar (loader/action, formularios y caché CDN vía headers), mientras Next.js introduce React Server Components y caché interna propia."
+    ],
+    "ejemplo": "export async function loader({ params }: LoaderFunctionArgs) {\n  return json(await db.task.findUnique({ where: { id: params.id } }));\n}\nexport async function action({ request, params }: ActionFunctionArgs) {\n  const form = await request.formData();\n  await db.task.update({ where: { id: params.id }, data: { title: String(form.get('title')) } });\n  return redirect('/tasks');\n}",
+    "entrevista": "Remix simplifica el ciclo lectura-mutación en React apoyándose en estándares web y rutas anidadas: cada ruta carga datos en paralelo vía loader, muta por action con FormData y revalida automáticamente."
+  },
+  "SolidJS": {
+    "que": "Librería declarativa de interfaces de usuario para la web con sintaxis JSX familiar a React, pero basada en reactividad de grano fino (fine-grained reactivity) sin Virtual DOM. Las actualizaciones de estado propagan cambios directamente a los nodos y atributos reales del DOM involucrados.",
+    "para": "Resuelve la sobrecarga de memoria y CPU de re-ejecutar componentes y comparar árboles de Virtual DOM en interfaces altamente dinámicas como gráficos en tiempo real, editores o tableros de alta frecuencia. Se elige cuando se busca rendimiento cercano al JavaScript imperativo puro manteniendo la ergonomía de JSX y TypeScript.",
+    "como": "En SolidJS, la función de cada componente se ejecuta una sola vez al montarse para construir los nodos DOM reales y suscribir dependencias. Su compilador de Babel transforma el JSX en clonación eficiente de plantillas HTML (template()) y envuelve las lecturas dinámicas en bloques reactivos (createEffect). El núcleo reactivo sigue el patrón Observer síncrono mediante createSignal, createMemo y createEffect: al invocar el getter count() dentro de un efecto o expresión JSX, se registra automáticamente en una pila global de seguimiento; cuando se ejecuta setCount(), únicamente se re-evalúan los cálculos y nodos DOM exactos que leyeron esa señal.",
+    "practicas": [
+      "Nunca desestructures las props en la firma de un componente, porque rompe el proxy reactivo y pierde actualizaciones posteriores; accede mediante props.campo o splitProps.",
+      "Error típico: usar Array.prototype.map en JSX en lugar de <For each={items}>, provocando la recreación innecesaria de nodos DOM cuando cambia el arreglo.",
+      "Combina createResource con <Suspense> para integrar peticiones asíncronas directamente en el grafo reactivo (con soporte SSR en SolidStart).",
+      "SolidJS vs React: Solid ofrece mayor velocidad y menor uso de memoria sin Virtual DOM ni reglas de hooks dependientes del orden, a costa de un ecosistema más pequeño y cuidado estricto con props."
+    ],
+    "ejemplo": "import { createSignal } from 'solid-js';\n\nexport function Counter() {\n  const [count, setCount] = createSignal(0);\n  return <button onClick={() => setCount(c => c + 1)}>Clicks: {count()}</button>;\n}",
+    "entrevista": "SolidJS prescinde del Virtual DOM compilando JSX a plantillas nativas y ejecutando cada componente una única vez, de modo que las señales actualizan quirúrgicamente solo los nodos de texto o atributos afectados."
+  },
+  "Spring Boot": {
+    "que": "Framework líder del ecosistema Java y Kotlin construido sobre Spring Framework para crear microservicios y aplicaciones empresariales listas para producción con mínima configuración manual. Proporciona autoconfiguración, servidores embebidos (Tomcat, Jetty, Undertow) y herramientas integradas de observabilidad.",
+    "para": "Resuelve la enorme configuración XML y conflictos de dependencias que históricamente sufrían las aplicaciones Java EE y Spring tradicionales. Es el estándar dominante en banca, seguros, telecomunicaciones y backends corporativos complejos que exigen estabilidad, transacciones ACID, seguridad robusta y un ecosistema maduro.",
+    "como": "Al arrancar SpringApplication.run, se crea el ApplicationContext (contenedor IoC) y se escanean paquetes en busca de componentes (@Service, @Repository, @RestController). Mediante @SpringBootApplication se activa la autoconfiguración condicional (@ConditionalOnClass, @ConditionalOnMissingBean), registrando beans según los starters en el classpath (como spring-boot-starter-web o data-jpa). El servidor embebido despacha las peticiones HTTP al DispatcherServlet, que las enruta hacia los controladores envueltos por proxies dinámicos AOP para aplicar @Transactional o @Cacheable. Con Virtual Threads (Java 21+, spring.threads.virtual.enabled=true), el servidor escala miles de operaciones bloqueantes sin agotar hilos del sistema operativo.",
+    "practicas": [
+      "Usa inyección por constructor en lugar de @Autowired sobre campos privados para garantizar inmutabilidad, detectar ciclos y facilitar pruebas unitarias sin levantar el contexto Spring.",
+      "Error típico: mantener spring.jpa.open-in-view=true por defecto, reteniendo conexiones de base de datos abiertas durante toda la serialización JSON y ocultando consultas N+1.",
+      "Habilita Spring Boot Actuator (/actuator/health y métricas Micrometer/Prometheus) protegiendo los endpoints administrativos tras red interna o autenticación.",
+      "Spring Boot vs Spring WebFlux: Spring Boot MVC con Virtual Threads (Java 21+) simplifica el modelo imperativo con gran concurrencia; WebFlux usa programación reactiva no bloqueante (Reactor/Netty) útil en streaming o backpressure estricto."
+    ],
+    "ejemplo": "@RestController\n@RequestMapping(\"/api/orders\")\npublic class OrderController {\n    private final OrderService service;\n    public OrderController(OrderService service) { this.service = service; }\n    @GetMapping(\"/{id}\")\n    public ResponseEntity<OrderDto> get(@PathVariable Long id) {\n        return ResponseEntity.ok(service.findById(id));\n    }\n}",
+    "entrevista": "Spring Boot elimina la fricción de Spring mediante starters y autoconfiguración condicional, combinando un contenedor IoC con proxies AOP, Actuator para producción y escalabilidad moderna con Virtual Threads."
+  },
+  "Svelte - SvelteKit": {
+    "que": "Svelte es un framework de UI basado en compilación que convierte componentes declarativos en JavaScript imperativo mínimo sin Virtual DOM; SvelteKit es su meta-framework oficial full-stack para enrutamiento, SSR, adaptadores de despliegue y mutaciones progresivas. En Svelte 5, su reactividad se basa en Runes ($state, $derived, $effect).",
+    "para": "Resuelve el tamaño de bundle y el coste en tiempo de ejecución de frameworks con Virtual DOM manteniendo una sintaxis HTML, CSS y JS muy cercana a la web estándar. Se emplea tanto en widgets embebidos ligeros como en aplicaciones web completas con SSR, herramientas interactivas y paneles de visualización.",
+    "como": "Durante la compilación, Svelte analiza estáticamente cada archivo .svelte (HTML, <script> y <style> con CSS encapsulado mediante clases hash). En Svelte 5, las Runes compilan las variables reactivas en señales finas ($state, $derived) que actualizan únicamente las instrucciones concretas del DOM afectadas sin comparar árboles en memoria. SvelteKit añade enrutamiento por directorios (src/routes/+page.svelte), carga de datos tipada en servidor (+page.server.ts con funciones load) y manejo de formularios mediante actions con mejora progresiva (use:enhance). Al compilar para producción, un Adapter (adapter-node, adapter-auto, adapter-static) empaqueta el proyecto para Node, Edge o archivos estáticos.",
+    "practicas": [
+      "Usa +page.server.ts en lugar de +page.ts cuando necesites acceder a secretos, bases de datos o reducir el código enviado al navegador.",
+      "Error típico: colocar lógica dependiente de window o document fuera de onMount o comprobaciones browser, provocando fallos durante el SSR de SvelteKit.",
+      "Aprovecha el manejo nativo de formularios con actions y use:enhance para mantener funcionalidad incluso antes de que cargue el JavaScript.",
+      "SvelteKit vs Next.js: SvelteKit compila los componentes eliminando el runtime del Virtual DOM y ofrece CSS encapsulado nativo; Next.js cuenta con un ecosistema React mucho más amplio."
+    ],
+    "ejemplo": "<script lang=\"ts\">\n  let count = $state(0);\n  let doubled = $derived(count * 2);\n</script>\n<button onclick={() => count++}>\n  {count} (doble: {doubled})\n</button>\n<style>button { padding: 0.5rem 1rem; }</style>",
+    "entrevista": "Svelte traslada el trabajo del navegador al compilador generando actualizaciones quirúrgicas de DOM basadas en señales (Runes), mientras SvelteKit completa el stack con SSR, carga de datos por ruta y adaptadores agnósticos."
+  },
+  "Tailwind CSS": {
+    "que": "Framework CSS utility-first que proporciona clases atómicas componibles (flex, px-4, text-slate-900) junto con un motor de compilación que genera únicamente el CSS utilizado en el proyecto. Reemplaza las hojas de estilo semánticas tradicionales escritas a mano por composición directa en el marcado o en componentes.",
+    "para": "Resuelve la proliferación de CSS muerto (append-only stylesheets), las colisiones globales de nombres y el cambio constante de contexto entre HTML y archivos .css. Es estándar en proyectos frontend modernos (React, Vue, Astro, Next.js) para iterar rápido manteniendo consistencia estricta mediante tokens de diseño.",
+    "como": "El motor Oxide (escrito en Rust en Tailwind v4, sucesor del motor JIT en JS de v3) escanea el árbol de archivos del proyecto (HTML, TSX, Vue, Svelte) detectando posibles tokens de clase sin ejecutar JavaScript de la aplicación. A partir del tema definido (@theme en CSS en v4 o tailwind.config en v3), genera bajo demanda solo las reglas CSS referenciadas, aplicando variantes responsivas (md:), de estado (hover:, aria-expanded:) y capas CSS (@layer). En producción, herramientas como Lightning CSS minifican, eliminan duplicados y añaden prefijos de navegador en milisegundos.",
+    "practicas": [
+      "No concatenes nombres de clases dinámicamente ('bg-' + color + '-500'), porque el escáner estático no podrá detectarlas en build; mapea objetos con cadenas literales completas.",
+      "Error típico: abusar de @apply para recrear clases semánticas enormes en archivos CSS, perdiendo las ventajas de tamaño y localidad de Tailwind.",
+      "Combina clsx y tailwind-merge (cn()) en componentes reutilizables para resolver colisiones de clases utilitarias pasadas por props.",
+      "Tailwind vs CSS-in-JS (Emotion/Styled): Tailwind genera CSS estático en compilación con cero sobrecarga en runtime e incompatibilidad nula con React Server Components."
+    ],
+    "ejemplo": "export function Alert({ children }: { children: React.ReactNode }) {\n  return (\n    <div className=\"flex items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900\">\n      {children}\n    </div>\n  );\n}",
+    "entrevista": "Tailwind CSS compila bajo demanda únicamente las clases utilitarias presentes en el código fuente, eliminando CSS muerto y sobrecarga de runtime mientras impone una escala consistente de diseño."
+  },
+  "TanStack Query": {
+    "que": "Librería de gestión de estado asíncrono del servidor (server state) para JavaScript y TypeScript con adaptadores oficiales para React, Vue, Solid, Svelte y Angular. Gestiona fetching, caché, deduplicación, reintentos, paginación y sincronización en segundo plano con APIs remotas.",
+    "para": "Resuelve el error arquitectónico de guardar respuestas de APIs en gestores de estado global de cliente (como Redux), lo que obliga a programar manualmente indicadores de carga, caché, invalidación y condiciones de carrera. Se utiliza en prácticamente cualquier SPA o aplicación híbrida que consuma APIs REST o GraphQL.",
+    "como": "Se apoya en un QueryClient central que mantiene una caché en memoria indexada por claves deterministas (queryKey, ej. ['orders', id]) siguiendo la estrategia stale-while-revalidate. Cuando múltiples componentes montados piden la misma queryKey, TanStack Query deduplica la petición de red y suscribe observadores (QueryObserver) al mismo registro en caché. Los datos pasan de estado fresh a stale tras staleTime; si están stale, entrega al instante los datos cacheados mientras revalida en segundo plano ante foco de ventana o reconexión. Las escrituras usan useMutation, permitiendo actualizaciones optimistas con rollback en onError e invalidación automática mediante queryClient.invalidateQueries.",
+    "practicas": [
+      "Incluye todas las dependencias usadas por el fetcher (filtros, página, ID) dentro de queryKey para que cada combinación tenga su entrada aislada y se recargue al cambiar.",
+      "Error típico: dejar staleTime: 0 por defecto en datos casi estáticos (catálogos, configuración) causando refetches constantes, o copiar datos de useQuery en un useState local.",
+      "Usa factories de queryOptions para compartir tipado estricto de claves y funciones queryFn entre useQuery, prefetchQuery y SSR.",
+      "TanStack Query vs Zustand/Redux: TanStack Query gestiona estado remoto asíncrono (caché, frescura, sincronización); Zustand y Redux gestionan estado síncrono exclusivo del cliente (modales, borradores UI)."
+    ],
+    "ejemplo": "const { data, isPending } = useQuery({\n  queryKey: ['user', userId],\n  queryFn: () => fetch(`/api/users/${userId}`).then(r => r.json()),\n  staleTime: 60_000,\n});",
+    "entrevista": "TanStack Query separa el estado del servidor del estado de UI del cliente, aplicando stale-while-revalidate, deduplicación de peticiones, reintentos e invalidación declarativa indexada por queryKey."
+  },
+  "Vue": {
+    "que": "Framework progresivo de código abierto creado por Evan You para construir interfaces web declarativas mediante componentes de un solo archivo (.vue SFC) que encapsulan plantilla, lógica y estilos. Combina un sistema de reactividad automática basado en Proxy de JavaScript con un Virtual DOM optimizado por compilador.",
+    "para": "Resuelve la complejidad de adopción gradual en aplicaciones web: puede integrarse desde un pequeño widget progresivo hasta una plataforma empresarial compleja (junto a Pinia, Vue Router o Nuxt). Destaca en equipos que valoran una separación clara entre HTML/CSS estándar y lógica TypeScript mediante la Composition API.",
+    "como": "En Vue 3, la reactividad (ref, reactive, computed) envuelve los objetos de estado en un Proxy ES6 que intercepta las operaciones get (registrando qué efecto o render depende de esa propiedad mediante track()) y set (disparando actualizaciones con trigger()). Al compilar plantillas HTML dentro de <template>, el compilador de Vue analiza estáticamente los nodos dinámicos frente a los estáticos (static hoisting) y añade PatchFlags numéricas al Virtual DOM, de modo que el runtime solo compara los atributos o textos que realmente pueden cambiar. En <script setup>, los composables permiten reutilizar lógica reactiva sin colisiones de nombres ni mixins heredados.",
+    "practicas": [
+      "Prefiere <script setup lang=\"ts\"> y la Composition API sobre la antigua Options API para lograr mejor inferencia de tipos y reutilización mediante composables.",
+      "Error típico: desestructurar un objeto reactive() perdiendo la reactividad de sus propiedades primitivas; usa toRefs(state) o prefiere ref().",
+      "Usa watchEffect para sincronizaciones simples con dependencias implícitas y watch explícito cuando necesites comparar el valor previo o ejecución perezosa.",
+      "Vue vs React: Vue rastrea automáticamente qué propiedades reactivas lee cada componente vía Proxy evitando re-renders innecesarios por defecto; React requiere memoización o compilador tras cada cambio de estado padre."
+    ],
+    "ejemplo": "<script setup lang=\"ts\">\nimport { ref, computed } from 'vue';\nconst count = ref(1);\nconst triple = computed(() => count.value * 3);\n</script>\n<template>\n  <button @click=\"count++\">{{ count }} -> {{ triple }}</button>\n</template>",
+    "entrevista": "Vue 3 combina reactividad automática basada en Proxy con un compilador de plantillas que aplica static hoisting y PatchFlags sobre el Virtual DOM, ofreciendo una curva de aprendizaje limpia mediante <script setup> y composables."
+  },
+  "Zustand - Redux": {
+    "que": "Dos librerías de gestión de estado global del lado del cliente en el ecosistema React: Redux (estandarizada con Redux Toolkit), basada en un único store inmutable y flujo unidireccional mediante acciones y reducers; y Zustand, una librería minimalista basada en hooks y suscripciones selectivas sin proveedores obligatorios.",
+    "para": "Resuelven el prop drilling y la coordinación de estado complejo compartido entre ramas distantes de la UI (carrito de compra, estado de editor, preferencias, flujos multipaso). Hoy se reservan para estado del cliente, delegando los datos remotos a herramientas como TanStack Query o RTK Query.",
+    "como": "En Redux Toolkit (RTK), las transiciones se modelan mediante createSlice, que usa Immer internamente para permitir sintaxis aparentemente mutable que produce un nuevo árbol inmutable; al invocar dispatch(action), los middlewares (como Thunks) interceptan la acción, ejecutan el reducer puro y notifican a los componentes suscritos vía useSelector. Zustand crea un store ligero fuera del árbol React (create) apoyado en useSyncExternalStore; los componentes leen porciones mediante selectores (useStore(s => s.count)) y solo se re-renderizan cuando el valor seleccionado cambia según igualdad referencial (o useShallow).",
+    "practicas": [
+      "Usa siempre selectores granulares (useStore(s => s.user) en lugar de useStore()) para evitar re-renders de todo el componente ante cualquier cambio ajeno en el store.",
+      "Error típico: duplicar en Redux o Zustand los datos crudos de endpoints REST cuando ya usas TanStack Query o RTK Query, generando estados desincronizados.",
+      "Si usas Redux moderno, emplea exclusivamente Redux Toolkit (configureStore, createSlice) y evita el boilerplate clásico manual de tipos de acción y switch.",
+      "Zustand vs Redux: Zustand ofrece mínima ceremonia y cero <Provider> (ideal para la mayoría de apps); Redux Toolkit aporta trazabilidad estricta con Redux DevTools, middlewares potentes y convenciones rígidas para equipos muy grandes."
+    ],
+    "ejemplo": "import { create } from 'zustand';\n\nconst useCartStore = create<{ items: number; add: () => void }>((set) => ({\n  items: 0,\n  add: () => set((state) => ({ items: state.items + 1 })),\n}));",
+    "entrevista": "Zustand y Redux Toolkit resuelven el estado global del cliente mediante selectores granulares e inmutabilidad: Zustand minimiza el boilerplate usando useSyncExternalStore, mientras RTK aporta trazabilidad estricta por acciones y reducers."
+  },
+  "gRPC": {
+    "que": "Framework de Llamadas a Procedimiento Remoto (RPC) de alto rendimiento y código abierto creado por Google (CNCF) que utiliza HTTP/2 como transporte y Protocol Buffers (Protobuf) como formato de serialización binario y lenguaje de definición de contratos (IDL). Soporta generación automática de clientes y servidores en más de una docena de lenguajes.",
+    "para": "Resuelve la sobrecarga de parsear JSON textual, la falta de contratos estrictos y la rigidez del modelo petición-respuesta clásico en comunicaciones internas entre microservicios. Es el estándar preferido para comunicación servicio-a-servicio de baja latencia, streaming bidireccional y sistemas políglotas (Go, Rust, Java, C#, Python).",
+    "como": "El contrato se define en archivos .proto declarando mensajes tipados (con etiquetas numéricas por campo) y servicios rpc. El compilador protoc genera stubs de cliente y servidor fuertemente tipados. En ejecución, gRPC serializa los mensajes en binario compacto con Protobuf y los envía como tramas DATA con prefijo de 5 bytes sobre flujos multiplexados de HTTP/2, permitiendo múltiples llamadas concurrentes en una sola conexión TCP y soporte nativo de unary, server, client y bidirectional streaming. Además propaga metadatos (trazas OpenTelemetry), cancelaciones y deadlines en cabeceras HTTP/2 (grpc-timeout), devolviendo el estado final en HTTP Trailers (grpc-status).",
+    "practicas": [
+      "Propaga siempre deadlines explícitos en cada llamada cliente para evitar cascadas de bloqueos (cascading failures) cuando un servicio aguas abajo se degrada.",
+      "Error típico: usar balanceo de carga L4 (TCP/IP) ingenuo en Kubernetes frente a pods gRPC; al reutilizar HTTP/2 una conexión TCP persistente, todo el tráfico puede quedar fijado a un único pod si no se usa balanceo L7 (Envoy/Linkerd) o client-side load balancing.",
+      "Nunca reutilices números de campo ni cambies el tipo de un campo existente en archivos .proto; marca los eliminados como reserved para mantener compatibilidad hacia adelante y atrás.",
+      "gRPC vs REST: gRPC ofrece menor latencia, contratos binarios estrictos y streaming nativo entre microservicios; REST/JSON sigue siendo superior para APIs públicas de navegadores y caché HTTP estándar."
+    ],
+    "ejemplo": "syntax = \"proto3\";\npackage billing;\n\nservice InvoiceService {\n  rpc GetInvoice (InvoiceRequest) returns (InvoiceResponse);\n}\nmessage InvoiceRequest { string id = 1; }\nmessage InvoiceResponse { string id = 1; double amount = 2; }",
+    "entrevista": "gRPC combina contratos binarios en Protobuf con multiplexación y streaming nativo sobre HTTP/2, logrando comunicación políglota de baja latencia siempre que se gestione correctamente el balanceo L7 y los deadlines."
+  },
+  "shadcn-ui": {
+    "que": "Colección de componentes de UI reutilizables, accesibles y de código abierto para React (con ports comunitarios en Vue y Svelte) basada en primitivas headless (como Radix UI o Base UI) y estilizada con Tailwind CSS. A diferencia de las librerías tradicionales, no se instala como paquete npm cerrado, sino que se copia el código fuente en tu repositorio.",
+    "para": "Resuelve el dilema entre construir componentes accesibles complejos desde cero (diálogos, menús desplegables, combobox con soporte ARIA y teclado) o quedar atrapado bajo estilos rígidos difíciles de personalizar de librerías cerradas. Se ha convertido en el estándar de facto para construir sistemas de diseño propios en proyectos React, Next.js y Tailwind.",
+    "como": "Al ejecutar la CLI (npx shadcn@latest add dialog), la herramienta consulta el registro JSON de componentes, instala únicamente las primitivas headless subyacentes (ej. @radix-ui/react-dialog) junto con utilidades como class-variance-authority (CVA) y tailwind-merge, y escribe los archivos .tsx directamente en tu carpeta components/ui/. Las primitivas headless gestionan la lógica compleja (trampa de foco, cierre con Escape, portales, atributos aria-* y navegación por teclado), mientras tus archivos locales aplican estilos mediante clases Tailwind mapeadas a variables CSS (--background, --primary).",
+    "practicas": [
+      "Trata los archivos generados en components/ui/ como código propio: adapta sus variantes CVA y tokens CSS a tu sistema de diseño en lugar de sobreescribir estilos desde fuera.",
+      "Error típico: actualizar ciegamente componentes con la CLI tras haberlos personalizado manualmente sin revisar el diff de Git, perdiendo cambios locales.",
+      "Aprovecha las variables CSS del tema para soportar modo claro y oscuro instantáneo sin duplicar prefijos dark: en cada componente.",
+      "shadcn-ui vs Material UI: shadcn-ui te da propiedad total del código con accesibilidad de Radix y ligereza de Tailwind, pero asumes el mantenimiento de actualizaciones en tu repositorio."
+    ],
+    "ejemplo": "// components/ui/button.tsx (propiedad del proyecto)\nconst buttonVariants = cva(\"inline-flex items-center rounded-md text-sm font-medium\", {\n  variants: { variant: { default: \"bg-primary text-primary-foreground\", ghost: \"hover:bg-accent\" } },\n  defaultVariants: { variant: \"default\" },\n});",
+    "entrevista": "shadcn-ui invierte el modelo tradicional de librería npm: copia componentes estilizados con Tailwind y CVA sobre primitivas headless accesibles directamente en tu repositorio, dándote control total sin sacrificar accesibilidad WAI-ARIA."
+  },
+  "tRPC": {
+    "que": "Librería para TypeScript que permite construir APIs RPC con seguridad de tipos de extremo a extremo (end-to-end type safety) sin generación previa de código, esquemas .proto ni archivos OpenAPI. Comparte directamente los tipos de entrada y salida desde el backend hacia el cliente mediante inferencia del compilador de TypeScript.",
+    "para": "Resuelve la fricción de mantener sincronizados manualmente contratos, DTOs y clientes HTTP en monorepos TypeScript donde frontend y backend pertenecen al mismo equipo (por ejemplo, Next.js o monorepos pnpm/Turborepo). Se utiliza cuando la velocidad de iteración con refactorización segura en todo el stack prima frente a exponer una API pública multi-lenguaje.",
+    "como": "En el servidor, se definen procedimientos (query, mutation y subscription) agrupados en un router junto con validadores de runtime como Zod o Valibot (.input(z.object(...))). El servidor exporta únicamente el tipo (export type AppRouter = typeof appRouter) sin incluir código ejecutable del backend. En el cliente (frecuentemente integrado sobre TanStack Query mediante @trpc/react-query), un Proxy de JavaScript intercepta llamadas tipadas como trpc.user.byId.useQuery({ id }) y las traduce en peticiones HTTP estándar (GET con batching opcional para queries y POST para mutations), validando el payload en tiempo de ejecución con el esquema Zod del servidor.",
+    "practicas": [
+      "Usa import type { AppRouter } en el cliente para garantizar que ni una sola dependencia de servidor (ORM, secretos) se filtre al bundle del navegador.",
+      "Error típico: elegir tRPC para APIs públicas consumidas por terceros o clientes móviles nativos en Swift/Kotlin, donde OpenAPI/REST o GraphQL ofrecen interoperabilidad real.",
+      "Activa httpBatchLink para agrupar múltiples queries lanzadas en el mismo tick del navegador en una única petición HTTP, evitando waterfalls.",
+      "tRPC vs GraphQL: tRPC elimina esquemas intermedios y codegen dentro de un monorepo TypeScript puro; GraphQL destaca cuando hay múltiples clientes heterogéneos y equipos desacoplados."
+    ],
+    "ejemplo": "const appRouter = router({\n  getUser: publicProcedure\n    .input(z.object({ id: z.string() }))\n    .query(({ input }) => db.user.findUnique({ where: { id: input.id } })),\n});\nexport type AppRouter = typeof appRouter;",
+    "entrevista": "tRPC logra seguridad de tipos end-to-end en monorepos TypeScript sin codegen ni esquemas intermedios, exportando el tipo AppRouter del servidor y validando en runtime con Zod sobre un cliente Proxy."
+  }
+}

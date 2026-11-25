@@ -1,0 +1,392 @@
+{
+  "Lock-free": {
+    "que": "Propiedad de un algoritmo o estructura de datos concurrente que garantiza que, ante ejecución simultánea de múltiples hilos, al menos uno progresará en un número finito de pasos sin usar bloqueos mutuos (mutex). Se sitúa entre la programación con locks y la garantía más estricta de wait-free (donde todos los hilos progresan en tiempo acotado).",
+    "para": "Elimina bloqueos por contención, deadlocks, inversión de prioridades y la sobrecarga de context switches en rutas críticas de muy alta concurrencia. Se utiliza en colas de mensajes de baja latencia (ring buffers), allocators, contadores de métricas y estructuras internas del kernel o motores de trading/audio.",
+    "como": "Se construye sobre primitivas atómicas de hardware como Compare-And-Swap (CAS, instrucción `LOCK CMPXCHG` en x86) o Load-Linked/Store-Conditional (LL/SC en ARM) combinadas con barreras de memoria (`acquire`, `release`, `seq_cst`). Cada hilo lee un puntero o estado, calcula la transición localmente e intenta publicarla con CAS en un bucle de reintento hasta que tiene éxito. Para evitar corrupción al liberar nodos mientras otro hilo los lee y prevenir el problema ABA (un puntero reutilizado con el mismo valor), se emplean contadores de versión (tagged pointers), Hazard Pointers o Epoch-Based Reclamation (como RCU).",
+    "practicas": [
+      "Mide antes de abandonar un mutex o futex: bajo contención extrema, un bucle CAS puede saturar el bus de caché con tráfico MESI y rendir peor que un bloqueo que duerme.",
+      "Previene siempre el problema ABA añadiendo etiquetas de versión de 64 bits (DWCAS) o usando reclamación diferida (EBR/Hazard Pointers) antes de liberar memoria.",
+      "Usa `std::memory_order_acquire`/`release` solo tras demostrar que `seq_cst` es un cuello de botella y verifica la lógica con herramientas como Relacy, Loom (Rust) o TSan.",
+      "Lock-free vs Wait-free: lock-free garantiza progreso global del sistema (un hilo individual puede sufrir starvation), mientras que wait-free acota los pasos de cada hilo."
+    ],
+    "ejemplo": "// Pila lock-free (esbozo C++ con prevención básica en lectura)\nvoid push(Node* new_node) {\n  Node* old_head = head.load(std::memory_order_relaxed);\n  do {\n    new_node->next = old_head;\n  } while (!head.compare_exchange_weak(\n      old_head, new_node,\n      std::memory_order_release,\n      std::memory_order_relaxed));\n}",
+    "entrevista": "Un algoritmo lock-free sustituye la exclusión mutua por bucles sobre operaciones atómicas CAS, garantizando progreso global del sistema sin deadlocks a cambio de gestionar manualmente el orden de memoria y la reclamación segura (ABA)."
+  },
+  "MMU - TLB": {
+    "que": "La MMU (Memory Management Unit) es el bloque de hardware integrado en la CPU encargado de traducir cada dirección virtual generada por un programa en una dirección física de RAM y verificar permisos de acceso. El TLB (Translation Lookaside Buffer) es la caché asociativa de altísima velocidad dentro de la MMU que almacena las traducciones recientes para evitar consultar las tablas de páginas en memoria principal.",
+    "para": "Hacen posible que la memoria virtual sea práctica en ejecución real: sin la MMU no habría aislamiento entre procesos ni paginación, y sin el TLB cada acceso a memoria requeriría múltiples lecturas extra a RAM solo para resolver la dirección. Su eficiencia determina el rendimiento de cargas con grandes huellas de memoria como bases de datos, máquinas virtuales y compiladores.",
+    "como": "Cuando la CPU ejecuta una instrucción con una dirección virtual, la MMU extrae el número de página virtual (VPN) y busca en el TLB en paralelo (1 ciclo típico en L1 dTLB/iTLB). Si hay acierto (TLB hit), combina el marco físico obtenido con el offset y comprueba los bits de lectura, escritura y ejecución (NX). Si hay fallo (TLB miss), el hardware realiza un page table walk recorriendo los 4 o 5 niveles de tablas en RAM (en x86-64: CR3 -> PML4 -> PDPT -> PD -> PT), carga la entrada en el TLB o lanza un Page Fault si la página no es válida. En sistemas multiprocesador, modificar una tabla de páginas exige invalidar entradas obsoletas en los TLB remotos mediante interrupciones IPI (TLB shootdown).",
+    "practicas": [
+      "Usa Huge Pages (2 MiB o 1 GiB) o Transparent Huge Pages (THP) con cautela en bases de datos y JVM grandes para cubrir más RAM con menos entradas de TLB y reducir misses.",
+      "Minimiza cambios frecuentes de contexto entre procesos distintos si tu carga sufre por vaciado de TLB, aunque los procesadores modernos mitigan esto con PCID (x86) o ASID (ARM).",
+      "Prefiere estructuras contiguas en memoria (arrays, arenas) frente a grafos de punteros dispersos para mantener alta localidad espacial en las páginas activas del TLB.",
+      "Vigila los TLB shootdowns provocados por llamadas intensivas a `munmap`/`mprotect` desde múltiples hilos, ya que generan interrupciones entre núcleos muy costosas."
+    ],
+    "ejemplo": "# Medir fallos de TLB de datos e instrucciones en Linux con perf\nperf stat -e dTLB-loads,dTLB-load-misses,iTLB-loads,iTLB-load-misses ./mi_binario\n# Ver soporte y asignación de HugePages\ngrep -i huge /proc/meminfo",
+    "entrevista": "La MMU traduce direcciones virtuales a físicas recorriendo tablas de páginas y validando permisos, mientras el TLB cachea esas traducciones en hardware para que el acceso a memoria no multiplique su latencia por cinco."
+  },
+  "Memoria virtual": {
+    "que": "Abstracción del sistema operativo apoyada en hardware que proporciona a cada proceso su propio espacio de direcciones lineal, privado y aparentemente contiguo, desacoplado de la disposición real y del tamaño de la RAM física.",
+    "para": "Resuelve tres problemas fundamentales: aísla los espacios de memoria para que un proceso no pueda leer ni corromper la memoria de otro ni la del kernel; permite cargar programas mayores que la RAM física disponible o dispersos en marcos no contiguos; y facilita compartir bibliotecas o páginas bajo Copy-on-Write sin duplicar datos innecesariamente.",
+    "como": "El kernel mantiene para cada proceso un descriptor de espacio de direcciones (`mm_struct` en Linux con áreas `vm_area_struct` para texto, datos, heap, stack y mappings) y sus tablas de páginas. Cada dirección generada por la CPU es virtual y se divide en índice de página y desplazamiento; la MMU traduce dinámicamente la página virtual a un marco físico (frame) o delega en el kernel si la página aún no está asignada en RAM. De este modo, dos procesos pueden tener exactamente las mismas direcciones virtuales (por ejemplo `0x400000`) apuntando a marcos físicos distintos, mientras que las páginas de código de `libc` apuntan al mismo marco físico en modo solo lectura.",
+    "practicas": [
+      "Distingue siempre entre VSZ (memoria virtual reservada, barata) y RSS (memoria física realmente residente en RAM) al diagnosticar consumo con `ps` o `top`.",
+      "Aprovecha `fork()` seguido de `execve()` sabiendo que Copy-on-Write evita copiar toda la RAM del padre, pero vigila procesos como Redis durante snapshots (`BGSAVE`) si mutan mucha memoria.",
+      "No desactives ASLR (Address Space Layout Randomization) en producción: la memoria virtual permite aleatorizar las direcciones base de pila, heap y bibliotecas para frenar exploits.",
+      "Memoria virtual vs Swap: la memoria virtual existe aunque no haya partición swap configurada; el swap solo es un respaldo secundario para páginas anónimas."
+    ],
+    "ejemplo": "# Inspeccionar el mapa de memoria virtual de un proceso en Linux\ncat /proc/$$/maps | head -n 8\n# Ver resumen de memoria virtual (VmSize) y residente (VmRSS)\ngrep -E 'VmSize|VmRSS|VmSwap' /proc/$$/status",
+    "entrevista": "La memoria virtual da a cada proceso la ilusión de un espacio privado y contiguo, usando tablas de páginas y la MMU para aislar procesos, compartir memoria física de solo lectura y asignar RAM bajo demanda."
+  },
+  "Memory leak - Fragmentación": {
+    "que": "Un memory leak (fuga de memoria) ocurre cuando un programa reserva memoria dinámica que deja de necesitar pero nunca libera (o mantiene referencias vivas inaccesibles lógicamente en entornos con GC), causando un crecimiento sostenido del consumo. La fragmentación es el desperdicio de memoria asignable: interna cuando sobra espacio dentro de un bloque asignado, y externa cuando hay suficiente memoria libre total pero dividida en huecos no contiguos demasiado pequeños.",
+    "para": "Comprender ambos fenómenos evita caídas silenciosas por agotamiento de memoria (OOM), latencias erráticas por presión en el recolector de basura y sobredimensionamiento innecesario de servidores en producción.",
+    "como": "En lenguajes manuales (C/C++), un leak ocurre al perder el último puntero devuelto por `malloc`/`new` antes de llamar a `free`/`delete`; en lenguajes con GC (Java, Go, JS), ocurre por colecciones estáticas, listeners no desregistrados o closures que retienen grafos de objetos. La fragmentación externa surge en allocators de propósito general cuando se intercalan asignaciones de tamaños variables y vidas distintas, dejando huecos que no satisfacen peticiones grandes. Los allocators modernos (`jemalloc`, `tcmalloc`, `ptmalloc2` y `SLUB` en el kernel) mitigan esto clasificando peticiones en size classes y arenas por hilo, lo que reduce la fragmentación externa a cambio de cierta fragmentación interna acotada.",
+    "practicas": [
+      "En C/C++ usa RAII (`std::unique_ptr`, `std::vector`) y valida siempre pruebas de estrés con AddressSanitizer/LeakSanitizer (`-fsanitize=address,leak`) o Valgrind.",
+      "Si un proceso muestra RSS creciendo pero los heap dumps del lenguaje son pequeños, sospecha fragmentación del allocator (`glibc malloc` arenas) o memoria nativa fuera del heap (JNI, `DirectByteBuffer`).",
+      "Considera `jemalloc` o `tcmalloc` para servicios multihilo con millones de objetos pequeños donde `ptmalloc2` retiene demasiada memoria fragmentada sin devolverla al SO.",
+      "Memory leak vs Fragmentación: en un leak la memoria viva crece sin límite; en la fragmentación el uso lógico es estable pero el RSS sigue alto por huecos no reutilizables."
+    ],
+    "ejemplo": "# Compilar con LeakSanitizer para detectar fugas al terminar el proceso\ngcc -g -fsanitize=address,leak app.c -o app && ./app\n# Ver fragmentación y arenas de glibc en tiempo de ejecución\nMALLOC_ARENA_MAX=2 ./mi_servidor",
+    "entrevista": "Un memory leak retiene memoria lógicamente muerta hasta agotar el proceso, mientras la fragmentación desperdicia RAM en huecos no contiguos o bloques sobredimensionados y se combate con size classes, arenas o pool allocators."
+  },
+  "Monitor - condition variables": {
+    "que": "Un monitor es una abstracción de sincronización que encapsula datos compartidos junto con las operaciones seguras sobre ellos garantizando exclusión mutua automática. Una condition variable (variable de condición) es la cola de espera asociada al mutex de un monitor que permite a un hilo suspenderse atómicamente hasta que otro hilo señale que una condición lógica sobre el estado compartido podría cumplirse.",
+    "para": "Resuelve la coordinación entre hilos (como productor-consumidor o espera de cambio de estado) sin recurrir a espera activa (busy-waiting) ni provocar condiciones de carrera entre comprobar un predicado y dormirse.",
+    "como": "El hilo consumidor adquiere primero el mutex del monitor y evalúa el predicado dentro de un bucle `while (!condicion)`. Si es falso, invoca `wait(mutex)`, operación atómica que libera el mutex y suspende el hilo en la cola de la condition variable en un solo paso indivisible. Cuando el productor modifica el estado protegido por el mismo mutex, llama a `signal()`/`notify_one()` (despierta a un hilo) o `broadcast()`/`notify_all()` (despierta a todos); el hilo despertado readquiere el mutex antes de retornar de `wait()` y vuelve a comprobar el predicado bajo la semántica Mesa estándar (que admite spurious wakeups y robo de turno por otro hilo).",
+    "practicas": [
+      "Envuelve siempre `wait()` en un bucle `while (!predicado)` y nunca en un `if`, debido a los despertados espurios (spurious wakeups) y a la competencia de otros hilos antes de readquirir el mutex.",
+      "Modifica el estado compartido siempre con el mutex adquirido antes de llamar a `notify_one`/`notify_all` para evitar señales perdidas (lost wakeups).",
+      "Usa `notify_all()` cuando distintos hilos esperan predicados diferentes sobre la misma variable de condición; de lo contrario podrías despertar al hilo equivocado y provocar bloqueo.",
+      "Monitor (mutex + condvar) vs Semáforo: un semáforo recuerda incrementos pasados aunque nadie esté esperando; una condition variable no tiene contador y sus señales sin hilos dormidos se descartan."
+    ],
+    "ejemplo": "// Patrón estándar en C++20 / POSIX\nstd::unique_lock<std::mutex> lk(mtx);\ncv.wait(lk, [&] { return !cola.empty() || detenido; });\nif (!cola.empty()) {\n  auto item = std::move(cola.front());\n  cola.pop_front();\n  lk.unlock(); // procesar fuera del lock\n}",
+    "entrevista": "Un monitor combina un mutex con condition variables para esperar cambios de estado sin polling, liberando el lock atómicamente al dormir y exigiendo siempre reevaluar el predicado en un bucle `while` al despertar."
+  },
+  "Mount - particiones MBR-GPT - UEFI": {
+    "que": "El particionado divide un dispositivo de bloques en regiones lógicas mediante tablas como MBR (Master Boot Record, legado de 32 bits limitado a 2 TiB y 4 particiones primarias) o GPT (GUID Partition Table, estándar moderno de 64 bits con copia de respaldo y hasta 128 particiones por defecto). Montar (`mount`) es la operación del kernel que acopla el sistema de archivos de una partición o dispositivo a un directorio del árbol único VFS.",
+    "para": "Permite organizar el almacenamiento físico para arranque del sistema (particularmente con firmware UEFI), separar sistemas de archivos con distintas propiedades o cuotas (p.ej. `/var`, `/home`) y exponer discos, USB o recursos de red bajo una jerarquía unificada de directorios.",
+    "como": "Durante el arranque, el firmware UEFI lee la tabla GPT ubicada a partir del sector LBA 1 (con un Protective MBR en LBA 0 para compatibilidad), localiza la ESP (EFI System Partition, formateada en FAT32) mediante su GUID de tipo y ejecuta el cargador `.efi` (como GRUB o systemd-boot). Una vez cargado el kernel, `systemd` lee `/etc/fstab` (o unidades `.mount`) y ejecuta la syscall `mount(2)`, que inicializa el superbloque del driver del filesystem (ext4, XFS, etc.) y sustituye la resolución del directorio punto de montaje en la caché de dentries (VFS) para redirigir las rutas hacia la nueva raíz.",
+    "practicas": [
+      "Referencia siempre particiones en `/etc/fstab` por `UUID=` o `PARTUUID=` en lugar de `/dev/sda1`, ya que el orden de enumeración de discos en el kernel puede cambiar entre reinicios.",
+      "Monta directorios públicos o ejecutables no confiables (`/tmp`, `/var/tmp`, unidades externas) con banderas defensivas como `nodev,nosuid,noexec`.",
+      "Asegúrate de que en discos de más de 2 TiB o sistemas UEFI modernos el particionado sea GPT con partición ESP (`/boot/efi`) en FAT32 y no MBR híbrido.",
+      "Usa `findmnt` y `lsblk -f` para inspeccionar puntos de montaje reales, opciones activas y sistemas de archivos en lugar de parsear `mount` sin formato."
+    ],
+    "ejemplo": "# Ver árbol de discos, particiones GPT/MBR, UUID y puntos de montaje\nlsblk -f\n# Entrada segura en /etc/fstab por UUID\n# UUID=a1b2-c3d4 /mnt/datos ext4 defaults,noatime,nodev,nosuid 0 2\nsudo mount -o ro,noexec /dev/nvme0n1p3 /mnt/auditoria",
+    "entrevista": "GPT reemplaza a MBR superando el límite de 2 TiB con redundancia de tabla y soporte nativo para la partición FAT32 de UEFI, mientras `mount` engancha cada sistema de archivos al árbol VFS mediante su superbloque."
+  },
+  "Mutex": {
+    "que": "Primitiva de sincronización binaria (Mutual Exclusion) con concepto estricto de propiedad (ownership) que garantiza que como máximo un hilo ejecute simultáneamente una sección crítica o acceda a un recurso protegido.",
+    "para": "Protege invariantes de estructuras de datos compartidas (listas, mapas, contadores compuestos) frente a condiciones de carrera cuando múltiples hilos leen y escriben en memoria compartida.",
+    "como": "Internamente suele implementarse sobre una palabra atómica en memoria (en Linux mediante `futex` en `pthread_mutex_t`): al invocar `lock()`, el hilo intenta cambiar el estado de libre a ocupado con una instrucción atómica (CAS o `XCHG`) en espacio de usuario. Si no hay contención, entra inmediatamente sin syscall. Si otro hilo ya posee el mutex, el aspirante entra en cola y el kernel lo pone en estado bloqueado hasta que el hilo propietario invoca `unlock()`, momento en que solo ese propietario puede liberar el lock y despertar a un hilo en espera.",
+    "practicas": [
+      "Mantén los bloqueos lo más cortos posible y nunca hagas llamadas de red, disco o sleeps dentro de un mutex.",
+      "Usa siempre guardas RAII (`std::lock_guard`, `defer mu.Unlock()`, `try/finally`) para garantizar la liberación incluso ante excepciones o retornos tempranos.",
+      "Si adquieres múltiples mutexes, impón un orden global estricto o usa adquisición conjunta (`std::scoped_lock`) para evitar deadlocks.",
+      "Mutex vs Semáforo binario: en un mutex solo el hilo que adquirió el lock puede liberarlo (lo que habilita priority inheritance contra inversión de prioridades), mientras que en un semáforo cualquier hilo puede hacer `post`."
+    ],
+    "ejemplo": "// Go: proteger un mapa compartido con sync.Mutex y defer\ntype SafeCache struct {\n  mu sync.Mutex\n  m  map[string]string\n}\nfunc (c *SafeCache) Set(k, v string) {\n  c.mu.Lock()\n  defer c.mu.Unlock()\n  c.m[k] = v\n}",
+    "entrevista": "Un mutex garantiza exclusión mutua con propiedad estricta del hilo bloqueador, resolviendo el caso sin contención en userspace mediante operaciones atómicas y suspendiendo en el kernel solo si hay colisión."
+  },
+  "Namespaces (PID, mount, network, user, IPC, UTS, cgroup)": {
+    "que": "Mecanismo de aislamiento del kernel Linux que virtualiza recursos globales del sistema para que cada grupo de procesos perciba su propia instancia independiente de IDs de proceso (PID), puntos de montaje (mount), pila de red (network), usuarios/grupos (user), colas SysV/POSIX (IPC), hostname/dominio (UTS) y jerarquía de cgroups.",
+    "para": "Constituyen el pilar de visibilidad y aislamiento sobre el que se construyen los contenedores (Docker, containerd, Podman, sandboxes de Chrome) sin requerir la virtualización de hardware completo de una máquina virtual.",
+    "como": "Cada `task_struct` apunta a una estructura `nsproxy` con referencias a sus namespaces activos. Se crean nuevos namespaces mediante las syscalls `clone()` (con flags como `CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWNS`) o `unshare()`, y un proceso existente puede adjuntarse a otro namespace mediante `setns()` abriendo los descriptores en `/proc/<pid>/ns/`. En un `PID namespace`, el primer proceso toma el PID 1 interno (asumiendo responsabilidades de `init` para recolectar zombies) mientras en el host conserva un PID normal; en un `User namespace`, el UID 0 interno puede mapearse a un UID sin privilegios en el host (rootless containers).",
+    "practicas": [
+      "Combina siempre namespaces (qué puede *ver* el proceso) con cgroups (cuánto puede *consumir*) y seccomp/capabilities (qué syscalls puede *llamar*); los namespaces por sí solos no limitan CPU ni RAM.",
+      "Ejecuta un proceso `init` mínimo (como `tini` o `dumb-init`) como PID 1 dentro de contenedores para reenviar señales y cosechar procesos huérfanos/zombies.",
+      "Prioriza contenedores rootless aprovechando `User namespaces` para que un escape de contenedor no otorgue UID 0 real en el host.",
+      "Recuerda que un contenedor no es una VM: todos los namespaces siguen compartiendo el mismo kernel del host y su superficie de syscalls."
+    ],
+    "ejemplo": "# Lanzar un shell aislado con PID, mount, UTS y user namespace propios\nunshare --user --map-root-user --pid --fork --mount-proc --uts bash\n# Inspeccionar los namespaces de un proceso\nls -l /proc/$$/ns",
+    "entrevista": "Los namespaces de Linux virtualizan la visibilidad de recursos del kernel por grupo de procesos (PID, red, mount, usuarios, IPC, UTS, cgroup), formando junto con cgroups la base del aislamiento en contenedores sin hipervisor."
+  },
+  "Network namespace": {
+    "que": "Es uno de los namespaces del kernel Linux que proporciona a los procesos asociados una instancia completamente aislada de la pila de red: interfaces propias, direcciones IP, tablas de rutas, reglas de firewall (netfilter/nftables) y espacios de puertos TCP/UDP.",
+    "para": "Permite ejecutar múltiples servicios escuchando en el mismo puerto (p.ej. `:80`) sin colisiones en un mismo host, implementar multi-tenancy de red en Kubernetes/Docker, simular topologías complejas localmente y aislar aplicaciones sin conectividad externa.",
+    "como": "Al crear un network namespace (`ip netns add` o `CLONE_NEWNET`), el kernel instancia una nueva `struct net` que inicialmente solo contiene una interfaz loopback (`lo`) apagada. Para comunicar el namespace con el host o con otros namespaces se crea un par de interfaces virtuales `veth` (una tubería bidireccional de capa 2): un extremo se mueve dentro del namespace (`ip link set veth1 netns ns1`) y el otro se deja en el namespace raíz conectado a un Linux bridge (como `docker0` o `cni0`), aplicando enrutamiento IP y reglas de SNAT/DNAT con netfilter para salir a la red física.",
+    "practicas": [
+      "Al crear un network namespace nuevo, recuerda levantar manualmente la interfaz `lo` (`ip link set lo up`) o el tráfico a `127.0.0.1` fallará dentro del entorno aislado.",
+      "Para depurar conectividad dentro de un contenedor que no tiene herramientas instaladas (`tcpdump`, `curl`), entra a su network namespace desde el host con `nsenter -t <PID> -n tcpdump ...`.",
+      "En Kubernetes, todos los contenedores de un mismo Pod comparten el mismo network namespace (creado por el contenedor `pause`), por eso se comunican por `localhost`.",
+      "Network namespace vs VRF: un network namespace aísla toda la pila de red y puertos entre procesos; VRF (Virtual Routing and Forwarding) solo separa tablas de enrutamiento L3."
+    ],
+    "ejemplo": "# Crear un namespace de red, conectarlo vía veth y capturar tráfico dentro\nsudo ip netns add lab\nsudo ip link add veth-host type veth peer name veth-lab\nsudo ip link set veth-lab netns lab\nsudo ip netns exec lab ip addr add 10.0.0.2/24 dev veth-lab\nsudo ip netns exec lab ip link set lo up && sudo ip netns exec lab ip link set veth-lab up",
+    "entrevista": "Un network namespace instancia una pila TCP/IP independiente con sus propias interfaces, rutas, puertos y reglas netfilter, interconectándose típicamente al host mediante pares `veth` y bridges virtuales."
+  },
+  "PCB - TCB": {
+    "que": "El PCB (Process Control Block) es la estructura de datos del sistema operativo que representa toda la información administrativa y de estado de un proceso, mientras que el TCB (Thread Control Block) almacena el contexto específico de ejecución de cada hilo. En Linux ambos se unifican bajo `struct task_struct`, donde los hilos de un mismo proceso comparten punteros a memoria y archivos.",
+    "para": "Permiten al planificador del kernel suspender una ejecución en cualquier punto, guardar exactamente su estado y reanudarla después en la misma u otra CPU sin pérdida de información, además de gestionar permisos, señales y recursos abiertos.",
+    "como": "Cada PCB/TCB guarda identificadores (PID, TGID, PPID), estado de planificación (running, interruptible, etc.), registros de CPU salvados (puntero de instrucción RIP/PC, puntero de pila RSP/SP, registros generales), puntero al espacio de direcciones (`mm_struct` con la dirección base de tablas de páginas CR3), tabla de descriptores de archivos (`files_struct`), credenciales (`cred`) y estadísticas de CPU. Durante un context switch, el kernel guarda los registros del hilo saliente en su TCB/pila de kernel, carga los del TCB entrante y, solo si pertenece a un proceso distinto (distinto `mm_struct`), cambia el registro CR3 de la MMU.",
+    "practicas": [
+      "Ten presente que cada hilo en kernel consume su propio `task_struct` y pila de kernel (8-16 KiB en Linux) más su stack en userspace; miles de hilos nativos desperdician memoria y cache de CPU.",
+      "Comprende la diferencia en Linux entre PID (identificador del hilo a nivel kernel) y TGID (Thread Group ID, el PID POSIX visible para el usuario compartido por todos los hilos del proceso).",
+      "Evita almacenar excesivos datos en Thread-Local Storage (TLS) si creas y destruyes hilos con frecuencia; usa thread pools para reutilizar TCBs.",
+      "Al depurar procesos colgados en estado `D` (uninterruptible sleep), inspecciona el stack del kernel de su `task_struct` en `/proc/<pid>/stack`."
+    ],
+    "ejemplo": "# Ver hilos (LWP/TCB) de un proceso y su TGID vs SPID en Linux\nps -eLf | grep nginx\n# Ver estado y pila de kernel del descriptor de tarea de un PID\ncat /proc/1/status | grep -E 'Pid|Tgid|Threads|State'",
+    "entrevista": "El PCB y el TCB almacenan el estado vivo de procesos e hilos (registros, estado, memoria y descriptores) para habilitar cambios de contexto; en Linux se implementan con `task_struct` compartiendo recursos según el modelo de clonación."
+  },
+  "POSIX threads": {
+    "que": "Estándar IEEE 1003.1c (`pthreads`) que define la API portátil en C para crear, sincronizar y gestionar hilos en sistemas tipo Unix. En Linux moderno se implementa mediante NPTL (Native POSIX Thread Library) dentro de glibc/musl bajo un modelo 1:1 donde cada pthread corresponde a un hilo planificable del kernel.",
+    "para": "Es la base de bajo nivel de la concurrencia nativa en C/C++ y el sustrato sobre el que implementan sus runtimes lenguajes como Java (Platform Threads), Python (CPython threads) o Rust (`std::thread`) en sistemas Unix.",
+    "como": "Al llamar a `pthread_create()`, la biblioteca reserva una pila de usuario (por defecto ~2-8 MiB en glibc según `ulimit -s`), configura Thread-Local Storage y ejecuta la syscall `clone()` compartiendo memoria (`CLONE_VM`), archivos (`CLONE_FILES`), señales (`CLONE_SIGHAND`) y grupo de hilos (`CLONE_THREAD`). La sincronización se articula con `pthread_mutex_t`, `pthread_cond_t` y `pthread_rwlock_t`. Un hilo finaliza retornando o invocando `pthread_exit()`, requiriendo que otro hilo llame a `pthread_join()` para recuperar su valor de retorno y liberar su descriptor y pila, salvo que haya sido marcado como detached (`pthread_detach`).",
+    "practicas": [
+      "Haz siempre `pthread_join()` o marca el hilo con `pthread_detach()` (o atributo `PTHREAD_CREATE_DETACHED`); de lo contrario el hilo queda en estado zombi reteniendo su pila en RAM.",
+      "Ajusta el tamaño de pila con `pthread_attr_setstacksize()` si vas a lanzar cientos de hilos en arquitecturas con memoria limitada, evitando reservar 8 MiB virtuales por defecto.",
+      "Enlaza explícitamente con `-pthread` al compilar en GCC/Clang para activar tanto la biblioteca como macros thread-safe del preprocesador.",
+      "Evita `pthread_cancel()` asíncrono sobre código complejo porque puede dejar mutexes bloqueados o recursos sin liberar; usa flags atómicos de parada cooperativa."
+    ],
+    "ejemplo": "#include <pthread.h>\nvoid* worker(void* arg) { return arg; }\nint main() {\n  pthread_t t;\n  pthread_create(&t, NULL, worker, NULL);\n  pthread_join(t, NULL);\n  return 0;\n}",
+    "entrevista": "POSIX threads es la API estándar de hilos en Unix que en Linux (NPTL) mapea 1:1 cada hilo de usuario a una tarea del kernel vía `clone()`, compartiendo espacio de direcciones y sincronizándose con mutexes y condition variables."
+  },
+  "POST - BIOS - UEFI": {
+    "que": "Secuencia inicial de firmware previa al sistema operativo: POST (Power-On Self-Test) verifica la integridad básica del hardware al encender la máquina; BIOS (Basic Input/Output System) es el firmware heredado de 16 bits que arranca desde el MBR; UEFI (Unified Extensible Firmware Interface) es el estándar moderno de 32/64 bits con soporte nativo para particiones GPT, red y Secure Boot.",
+    "para": "Inicializan la placa base, controladores de memoria y periféricos antes de que exista un kernel en RAM, proporcionando el puente estandarizado para localizar, validar y transferir el control al gestor de arranque (bootloader).",
+    "como": "Al pulsar encendido, la CPU salta al vector de reset en la memoria flash de la placa y ejecuta el POST comprobando reloj, RAM y buses PCIe. En BIOS legacy, tras el POST se entra en modo real de 16 bits, se lee el primer sector (512 bytes, MBR) del disco elegido y se ejecuta su código de arranque con servicios por interrupciones (`INT 13h`). En UEFI, el firmware pasa a modo protegido/largo de 64 bits, inicializa drivers modulares (DXE), lee la tabla GPT, monta la partición ESP en FAT32 y carga un binario `.efi` (como `grubx64.efi` o el kernel directamente vía EFISTUB), verificando su firma criptográfica si Secure Boot está activo.",
+    "practicas": [
+      "Usa UEFI nativo con GPT en instalaciones modernas (desactivando CSM/Legacy BIOS) para soportar discos >2 TiB, arranque más rápido y Secure Boot.",
+      "Mantén copia de seguridad de los binarios y entradas NVRAM de arranque (`efibootmgr`), ya que corromper la partición ESP impide iniciar el sistema aunque el rootfs esté sano.",
+      "No desactives Secure Boot sin motivo en equipos corporativos o servidores expuestos; firma tus módulos de kernel propios (DKMS/MOK) en su lugar.",
+      "POST vs BIOS/UEFI: POST no es un firmware alternativo, sino la fase de autodiagnóstico inicial que ejecutan tanto BIOS como UEFI antes de ceder el control."
+    ],
+    "ejemplo": "# Verificar si Linux arrancó en modo UEFI y listar entradas NVRAM\nls /sys/firmware/efi/efivars >/dev/null && echo \"Modo UEFI\"\nefibootmgr -v",
+    "entrevista": "Tras ejecutar el POST de verificación de hardware, BIOS arranca en 16 bits leyendo los 512 bytes del MBR, mientras UEFI opera en 64 bits leyendo directamente binarios `.efi` desde una partición GPT/FAT32 y validándolos con Secure Boot."
+  },
+  "Page cache - Buffer cache": {
+    "que": "Cachés en memoria RAM administradas por el kernel del sistema operativo para acelerar la lectura y escritura sobre almacenamiento secundario. La Page Cache almacena páginas de archivos leídos/escritos a través del VFS o mapeados con `mmap`, mientras que la Buffer Cache almacena bloques crudos de dispositivo y metadatos de bajo nivel.",
+    "para": "Ocultan la enorme diferencia de latencia entre la RAM (nanosegundos) y SSD/HDD (microsegundos a milisegundos), evitando accesos repetidos a disco y permitiendo agrupar escrituras pequeñas en ráfagas secuenciales.",
+    "como": "En Linux moderno ambas cachés están unificadas bajo la estructura `address_space` vinculada a cada inodo: al ejecutar `read()`, el kernel busca el offset pedido en el árbol XArray/radix de la Page Cache; si está presente (cache hit), copia los bytes al buffer de usuario sin tocar el disco. En `write()` con E/S bufferizada, los datos se escriben en una página en RAM que se marca como `dirty`, retornando rápido al programa mientras hilos de fondo del kernel (`flush-*` / `bdi-flush`) la vuelcan a disco según umbrales (`vm.dirty_ratio`, `vm.dirty_background_ratio`) o ante `fsync()`. La Buffer Cache residual envuelve bloques individuales (`struct buffer_head`) para metadatos del filesystem o lecturas directas de `/dev/sdX`.",
+    "practicas": [
+      "No te alarmes si `free -h` muestra poca memoria libre en un servidor sano: Linux usa la RAM ociosa para Page Cache y la reclama instantáneamente (`available`) si una app la necesita.",
+      "Llama a `fsync()` o `fdatasync()` explícitamente tras escribir datos críticos (WAL de bases de datos), porque `write()` solo garantiza copia en Page Cache y se pierde ante corte eléctrico.",
+      "Usa `O_DIRECT` solo en motores que gestionan su propia caché en espacio de usuario (PostgreSQL shared_buffers/InnoDB buffer pool) para evitar doble caching y contención innecesaria.",
+      "Ajusta `vm.dirty_background_ratio` y `vm.dirty_ratio` en servidores con mucha RAM para evitar picos largos de latencia cuando el kernel vuelca gigabytes de páginas sucias de golpe."
+    ],
+    "ejemplo": "# Ver desglose de Page Cache y Buffers en Linux\nfree -h\ngrep -E 'Cached|Buffers|Dirty|Writeback' /proc/meminfo\n# Limpiar caches en entorno de benchmark (NUNCA en prod sin motivo)\nsync; echo 3 | sudo tee /proc/sys/vm/drop_caches",
+    "entrevista": "La Page Cache unificada de Linux mantiene en RAM ociosa las páginas de archivos y bloques de disco para responder lecturas sin E/S física y diferir escrituras como páginas `dirty` hasta que `fsync()` o el flusher las persisten."
+  },
+  "Paginación - Page fault": {
+    "que": "La paginación es el esquema de gestión de memoria que divide el espacio virtual en bloques fijos llamados páginas (típicamente 4 KiB) y la RAM física en marcos (frames) del mismo tamaño, eliminando la necesidad de asignar memoria contigua. Un Page Fault (fallo de página) es la excepción de hardware lanzada por la MMU cuando un proceso accede a una dirección virtual cuya página no está mapeada en la tabla de páginas o carece de permisos.",
+    "para": "Sustenta el aislamiento de procesos, la carga perezosa de programas (demand paging), el uso de memoria compartida y mecanismos eficientes como Copy-on-Write sin requerir memoria contigua.",
+    "como": "Cuando la MMU encuentra el bit `Present = 0` en la entrada de tabla de páginas (PTE) o una violación de permiso, detiene la instrucción actual y dispara la interrupción de fallo de página (#PF, vector 14 en x86) guardando la dirección culpable en el registro CR2. El manejador del kernel consulta las áreas virtuales (`VMA`) del proceso: si la dirección no pertenece a ninguna región válida o viola permisos (p.ej. escribir en código), envía `SIGSEGV`. Si es legítima, clasifica el fallo en minor fault (la página ya está en RAM —como Copy-on-Write o Page Cache— y basta enlazar la PTE) o major fault (requiere leer desde disco o swap bloqueando al hilo), actualiza la PTE y reejecuta la instrucción que falló.",
+    "practicas": [
+      "Monitoriza los major page faults (`majflt`), no solo los minor (`minflt`), porque los major implican lecturas de disco que disparan la latencia P99 de un servicio.",
+      "En aplicaciones de tiempo real o baja latencia financiera, usa `mlockall(MCL_CURRENT | MCL_FUTURE)` al arranque para prefaultear páginas y evitar page faults en ejecución.",
+      "Evalúa Huge Pages (2 MiB) para cargas masivas en memoria: reducen el número de entradas en la tabla de páginas y el coste de gestión de marcos.",
+      "Minor vs Major Page Fault: un minor fault se resuelve en microsegundos asignando un marco en RAM sin E/S; un major fault detiene el hilo hasta leer desde almacenamiento."
+    ],
+    "ejemplo": "# Observar minor y major page faults por segundo de un PID\npidstat -r -p <PID> 1\n# Ver fallos acumulados de un comando específico\n/usr/bin/time -v ./mi_programa 2>&1 | grep 'page faults'",
+    "entrevista": "La paginación mapea bloques fijos virtuales a marcos físicos arbitrarios, y un page fault es la trampa de hardware mediante la cual el kernel resuelve demand paging, Copy-on-Write (minor), carga desde disco (major) o accesos inválidos (`SIGSEGV`)."
+  },
+  "Permisos y usuarios (rwx, chmod, chown, umask, ACL)": {
+    "que": "Modelo de Control de Acceso Discrecional (DAC) en sistemas POSIX basado en identidad de usuario (UID), grupo primario/secundarios (GID) y tríadas de bits de permiso (`rwx`: lectura, escritura, ejecución) para propietario, grupo y otros. Se complementa con herramientas de cambio (`chmod`, `chown`), máscara de creación por defecto (`umask`) y Listas de Control de Acceso (POSIX ACL) para permisos más granulares.",
+    "para": "Protege la confidencialidad e integridad de archivos de configuración, secretos, ejecutables y directorios compartidos en sistemas multiusuario o servicios aislados por usuario del sistema.",
+    "como": "Al abrir o ejecutar un archivo, el kernel (VFS) compara el EUID y los grupos suplementarios del proceso contra el UID/GID almacenados en el inodo del archivo, evaluando en cascada: si coincide el propietario usa sus 3 bits, si no los de grupo, y en última instancia los de otros. En directorios, `r` permite listar nombres, `w` crear/borrar entradas y `x` atravesar el directorio. Bits especiales amplían el modelo: `setuid` (4000) y `setgid` (2000) heredan privilegios o grupo, y `sticky bit` (1000) impide borrar archivos ajenos en `/tmp`. Cuando se crea un archivo nuevo, los bits solicitados (0666 archivo, 0777 dir) se filtran mediante `permiso & ~umask`, mientras que las ACL (`setfacl`) añaden entradas por usuario o grupo extra en atributos extendidos del inodo.",
+    "practicas": [
+      "Aplica principio de mínimo privilegio: usa `umask 027` en servidores para que archivos nuevos no sean legibles por `others`, y `0600` estrictos en claves privadas SSH o credenciales.",
+      "Evita `chmod 777` como solución rápida en despliegues; suele esconder un error de grupo compartido (`chown :grupo` + bit `setgid 2775`) o de usuario del servicio.",
+      "Recuerda que quitar `r` pero dejar `x` en un directorio permite acceder a archivos si se conoce su nombre exacto, mientras que quitar `x` bloquea todo acceso incluso con `r`.",
+      "Permisos POSIX vs ACL: si `ls -l` muestra un signo `+` al final de los permisos (`-rw-r--r--+`), el archivo tiene ACL activas y debes inspeccionarlo con `getfacl`."
+    ],
+    "ejemplo": "# Permisos de clave privada y carpeta compartida con setgid + ACL\nchmod 600 ~/.ssh/id_ed25519\nchmod 2770 /srv/proyecto && chown root:devs /srv/proyecto\nsetfacl -m u:ci_runner:rx /srv/proyecto/build.sh\ngetfacl /srv/proyecto/build.sh",
+    "entrevista": "El modelo POSIX evalúa propietario, grupo y otros contra las credenciales del proceso mediante los bits `rwx` del inodo filtrados por `umask` al crearse, ampliándose con bits especiales (`setuid`/`sticky`) y POSIX ACLs cuando hacen falta múltiples usuarios o grupos."
+  },
+  "Planificador (CFS, Round Robin, prioridades)": {
+    "que": "Subsistema del kernel que decide qué hilo listo (runnable) ocupa cada núcleo de CPU y durante cuánto tiempo, equilibrando equidad, latencia de respuesta y rendimiento global. Incluye algoritmos de tiempo real como Round Robin (`SCHED_RR`) y FIFO (`SCHED_FIFO`), junto al planificador clásico de propósito general de Linux CFS (Completely Fair Scheduler) y su sucesor EEVDF.",
+    "para": "Multiplexa miles de hilos sobre un número limitado de núcleos físicos, evitando que tareas intensivas de cálculo congelen la interfaz o servicios interactivos, y garantizando plazos estrictos en tareas de tiempo real.",
+    "como": "En `SCHED_RR`, cada hilo de igual prioridad recibe un quantum fijo y rota circularmente en una cola FIFO al agotarlo, siendo siempre preferente sobre tareas normales. Para tareas normales (`SCHED_OTHER`), CFS modela una CPU ideal asignando a cada tarea un reloj virtual (`vruntime`) que avanza en proporción inversa al peso derivado de su valor `nice`: las tareas con mayor prioridad acumulan `vruntime` más lento. El planificador mantiene las tareas listas ordenadas en un árbol rojo-negro por `vruntime` y elige siempre el nodo más a la izquierda (el que menos tiempo ponderado ha recibido); desde Linux 6.6, EEVDF añade plazos virtuales elegibles para mejorar la latencia.",
+    "practicas": [
+      "No asignes `SCHED_FIFO` o `SCHED_RR` con prioridad alta a procesos sin control de bucle, ya que pueden monopolizar el núcleo e impedir que incluso el shell de rescate responda.",
+      "Considera que demasiados hilos computacionales por encima del número de vCPUs degradan el rendimiento por overhead de cambio de contexto y pérdida de localidad de caché.",
+      "En Linux moderno, usa cgroups (`cpu.weight` y `cpu.max`) para repartir CPU entre servicios/contenedores de forma predecible en lugar de ajustar `nice` proceso a proceso.",
+      "CFS vs Round Robin: Round Robin da el mismo slice sin compensar bloqueos; CFS/EEVDF bonifican naturalmente a hilos que duermen por I/O porque su `vruntime` queda rezagado."
+    ],
+    "ejemplo": "# Consultar política de planificación y prioridad de un PID\nchrt -p <PID>\n# Ejecutar un worker con menor prioridad CPU (nice +10) y política batch\nnice -n 10 chrt -b 0 ./procesar_lote.sh",
+    "entrevista": "Mientras Round Robin asigna quantums fijos por turnos en tiempo real, CFS ordena las tareas normales en un árbol rojo-negro según su `vruntime` ponderado por `nice`, ejecutando siempre la tarea más rezagada para garantizar equidad y baja latencia a procesos interactivos."
+  },
+  "Proceso": {
+    "que": "Instancia en ejecución de un programa que constituye la unidad básica de aislamiento y asignación de recursos en el sistema operativo. Encapsula un espacio de direcciones virtual privado, una tabla de descriptores de archivos, credenciales de seguridad, manejadores de señales y al menos un hilo de ejecución.",
+    "para": "Proporciona un dominio de fallos independiente: si un proceso colapsa por un puntero nulo o un OOM, el resto de procesos y el kernel continúan intactos, lo que es esencial en servidores multiproceso, shells y sandboxes.",
+    "como": "En sistemas POSIX un proceso nace normalmente mediante `fork()` (o `clone()`), que duplica el descriptor del padre compartiendo páginas bajo Copy-on-Write (CoW), seguido a menudo de `execve()`, que reemplaza la imagen de memoria por un binario ELF nuevo conservando PID y descriptores marcados sin `FD_CLOEXEC`. Durante su vida transita por estados (new, ready, running, blocked/sleeping, stopped y terminated). Al terminar con `exit()`, el kernel libera memoria y archivos pero retiene su entrada en la tabla de procesos (estado zombi `Z`) con el código de salida hasta que el proceso padre ejecuta `waitpid()`, momento en que se destruye por completo.",
+    "practicas": [
+      "Asegúrate de que todo proceso padre invoque `wait()`/`waitpid()` (o maneje `SIGCHLD`) sobre sus hijos; si no, acumulará procesos zombis que agotan la tabla de PIDs.",
+      "Marca siempre descriptores sensibles con `FD_CLOEXEC` (`O_CLOEXEC`) al abrir archivos o sockets para no filtrarlos accidentalmente tras `fork()` + `execve()`.",
+      "Si un proceso padre muere antes que su hijo, el hijo pasa a ser huérfano y es adoptado por PID 1 (`systemd` o `init`), que se encargará de recolectarlo.",
+      "Proceso vs Hilo: los procesos aíslan memoria y fallos con cambios de contexto más pesados (cambio de CR3/TLB), mientras los hilos comparten memoria y son más baratos de crear y comunicar."
+    ],
+    "ejemplo": "# Ver árbol jerárquico de procesos, estados y posibles zombies (Z)\nps aux | awk '$8 ~ /Z/ {print}'\npstree -p -a $$",
+    "entrevista": "Un proceso es un entorno aislado de memoria, archivos y permisos que en Unix se crea clonando vía `fork()` con Copy-on-Write y cargando un nuevo binario con `execve()`, permaneciendo como zombi tras morir hasta que su padre recoge su estado con `waitpid()`."
+  },
+  "Quantum - nice - prioridades": {
+    "que": "El quantum (time slice) es la ventana máxima de tiempo de CPU que un planificador asigna a un hilo antes de poder expropiarlo en favor de otro. El valor `nice` (de -20 máxima prioridad a +19 mínima, 0 por defecto) ajusta la prioridad relativa de procesos normales en espacio de usuario, mapeándose a pesos internos del planificador del kernel.",
+    "para": "Permite equilibrar capacidad de respuesta interactiva frente a throughput de cálculo puro y priorizar servicios críticos (bases de datos, audio, UI) frente a tareas de fondo (backups, indexación).",
+    "como": "En Linux existen 140 niveles de prioridad interna: 0 a 99 corresponden a prioridades de tiempo real (`SCHED_FIFO`/`SCHED_RR`) que siempre prevalecen, y 100 a 139 corresponden a los valores `nice` -20 a +19. En el planificador CFS, cada nivel `nice` cambia el peso de la tarea en un factor aproximado de 1.25x (un escalón de +1 reduce ~10% la cuota relativa de CPU respecto a un competidor). El quantum efectivo no es una constante rígida en CFS, sino una fracción proporcional al peso de la tarea dentro de la latencia objetivo (`sched_latency` / `base_slice` en EEVDF), acotada por un mínimo (`min_granularity`) para evitar que cambios de contexto excesivos consuman toda la CPU.",
+    "practicas": [
+      "Un quantum demasiado corto aumenta la interactividad pero dispara el coste de context switches y fallos de caché L1/L2; uno demasiado largo eleva la latencia de cola.",
+      "Recuerda que un usuario sin privilegios solo puede *aumentar* el valor `nice` (bajar su prioridad); reducirlo por debajo de 0 requiere `root` o la capability `CAP_SYS_NICE`.",
+      "Para prioridades de I/O de disco (backups o compresiones), combina `nice` de CPU con `ionice -c 3` (idle) para no saturar también el almacenamiento.",
+      "En sistemas modernos con contenedores, prioriza `CPUWeight` de systemd/cgroups antes que `nice` si necesitas reparto garantizado entre grupos enteros de procesos."
+    ],
+    "ejemplo": "# Lanzar compresión en segundo plano con mínima prioridad CPU e I/O\nnice -n 19 ionice -c 3 tar -czf backup.tar.gz /var/data\n# Cambiar nice de un proceso en ejecución (requiere root si baja de 0)\nsudo renice -n -5 -p <PID>",
+    "entrevista": "El quantum equilibra latencia frente a sobrecarga de cambio de contexto, mientras el valor `nice` (-20 a +19) ajusta exponencialmente el peso del proceso en el planificador normal por debajo de las prioridades de tiempo real."
+  },
+  "RAID 0-1-5-6-10": {
+    "que": "Conjunto de configuraciones estándar (Redundant Array of Independent Disks) que combinan múltiples discos físicos en una unidad lógica para aumentar rendimiento, tolerancia a fallos o ambos. RAID 0 hace striping sin redundancia; RAID 1 espeja datos; RAID 5 y 6 reparten datos y paridad simple o doble; y RAID 10 anida striping sobre pares en espejo.",
+    "para": "Protege la disponibilidad del almacenamiento ante fallos físicos de discos sin detener el sistema y multiplica IOPS o ancho de banda secuencial en servidores de bases de datos, NAS y almacenamiento empresarial.",
+    "como": "RAID 0 divide los datos en franjas (stripes) repartidas entre N discos: suma rendimiento y capacidad pero un fallo destruye todo el array. RAID 1 escribe idéntico en 2 discos (lecturas paralelas, 50% de capacidad). RAID 5 distribuye franjas con un bloque de paridad XOR por fila (capacidad N-1, tolera 1 disco caído, pero cada escritura aleatoria sufre una penalización de lectura-modificación-escritura de 4 I/O). RAID 6 añade una segunda paridad independiente (Reed-Solomon P+Q, tolera 2 fallos, capacidad N-2). RAID 10 crea espejos RAID 1 agrupados bajo un stripe RAID 0, tolerando al menos 1 fallo por espejo sin cálculo de paridad ni penalización severa de escritura.",
+    "practicas": [
+      "Nunca confundas RAID con un backup: RAID protege contra fallo físico de disco, no contra borrado accidental, corrupción lógica o ransomware.",
+      "Evita RAID 5 en discos HDD de gran capacidad (>4 TB) porque la probabilidad de un error irrecuperable de lectura (URE) durante las horas de rebuild provoca pérdida total; usa RAID 6 o RAID 10.",
+      "Para bases de datos transaccionales con alta escritura aleatoria, elige RAID 10 (o NVMe redundantes) y evita la penalización de paridad de RAID 5/6.",
+      "Si usas RAID por software (`mdadm` o ZFS) activa la verificación periódica (scrubbing) para detectar corrosión silenciosa (bit rot) antes de perder un disco."
+    ],
+    "ejemplo": "# Crear un RAID 10 por software en Linux con mdadm\nsudo mdadm --create /dev/md0 --level=10 --raid-devices=4 /dev/sd[b-e]\n# Consultar estado y progreso de reconstrucción\ncat /proc/mdstat",
+    "entrevista": "RAID 0 prioriza velocidad sin tolerancia a fallos, RAID 1 espeja datos, RAID 5/6 intercambian capacidad por paridad con penalización de escritura y largos rebuilds, y RAID 10 combina rendimiento y reconstrucción rápida sacrificando el 50% del espacio."
+  },
+  "Race condition": {
+    "que": "Defecto de concurrencia en el que el comportamiento o resultado correcto de un sistema depende de la secuencia o temporización no determinista con que múltiples hilos, procesos o manejadores de eventos acceden y mutan un recurso compartido.",
+    "para": "Comprender e identificar race conditions es vital para evitar corrupción silenciosa de datos, caídas intermitentes imposibles de reproducir en local y vulnerabilidades de seguridad como TOCTOU (Time-of-Check to Time-of-Use).",
+    "como": "Ocurre típicamente cuando una operación lógica compuesta —como leer-modificar-escribir (`contador++`) o comprobar-luego-actuar (`if (!existe) crear()`)— no se ejecuta de forma atómica ni protegida por exclusión mutua. Un cambio de contexto del planificador o la ejecución simultánea en dos núcleos entrelaza las instrucciones de ambos flujos: el hilo A lee el valor 10, el hilo B lee 10, ambos suman 1 y escriben 11 en lugar de 12 (lost update). También puede darse en archivos del sistema operativo o llamadas a API externas sin control de concurrencia optimista o locks.",
+    "practicas": [
+      "Ejecuta tus suites de pruebas concurrentes con detectores dinámicos como ThreadSanitizer (`-fsanitize=thread` en C/C++), `go test -race` o `cargo test` con Loom.",
+      "Prefiere inmutabilidad, aislamiento por actor/canal (message passing) o operaciones atómicas antes que compartir estado mutable entre hilos.",
+      "Evita patrones TOCTOU en el sistema de archivos (como verificar permisos con `access()` y luego llamar a `open()`); opera directamente sobre el descriptor abierto (`openat`, `fstat`).",
+      "Data race vs Race condition: una data race es un acceso simultáneo sin sincronización donde al menos uno escribe (undefined behavior en C/C++); una race condition puede ocurrir incluso usando mutexes individuales si falta atomicidad entre dos operaciones separadas."
+    ],
+    "ejemplo": "# Detectar data races automáticamente en Go o C/C++\ngo test -race ./...\ng++ -std=c++20 -O1 -g -fsanitize=thread concurrent.cpp -o concurrent && ./concurrent",
+    "entrevista": "Una race condition ocurre cuando la corrección de un programa depende del entrelazado no determinista de operaciones sobre estado compartido, y se resuelve haciendo atómica toda la invariante lógica o eliminando la mutabilidad compartida."
+  },
+  "Reactor (Mono-Flux)": {
+    "que": "Project Reactor es la librería reactiva estándar para la JVM (implementación de la especificación Reactive Streams y base de Spring WebFlux) que modela flujos de datos asíncronos y no bloqueantes mediante dos tipos centrales: `Mono<T>` (0 o 1 elemento) y `Flux<T>` (0 a N elementos).",
+    "para": "Permite construir servicios web y pipelines de streaming altamente concurrentes sobre pocos hilos de event loop (como Netty), escalando a decenas de miles de conexiones simultáneas sin el consumo de memoria ni los bloqueos de un modelo de hilo por petición.",
+    "como": "Nada ocurre hasta que un consumidor invoca `subscribe()`, lo que propaga una señal hacia arriba y establece una `Subscription` bidireccional. El consumidor regula la velocidad de emisión solicitando explícitamente `request(n)` elementos (backpressure) para no desbordarse. Los operadores (`map`, `flatMap`, `filter`) ensamblan un grafo lazy de etapas por donde fluyen señales `onNext`, `onError` y `onComplete`, ejecutándose normalmente en el hilo del event loop salvo que se indique explícitamente `subscribeOn()` o `publishOn()` hacia un `Scheduler` dedicado.",
+    "practicas": [
+      "Nunca invoques operaciones bloqueantes (`Thread.sleep`, JDBC clásico, `RestTemplate`, `.block()`) dentro de los hilos del event loop (`parallel` o Netty `nioEventLoop`), o congelarás todo el servidor.",
+      "Si debes integrar librerías bloqueantes inevitables, aíslalas explícitamente con `subscribeOn(Schedulers.boundedElastic())`.",
+      "Usa `flatMap` para operaciones asíncronas concurrentes sin orden estricto, y `concatMap` cuando necesites preservar el orden secuencial.",
+      "Activa `BlockHound` en entornos de test/CI para detectar automáticamente llamadas bloqueantes ocultas en rutas no bloqueantes."
+    ],
+    "ejemplo": "Flux.fromIterable(userIds)\n    .flatMap(id -> webClient.get().uri(\"/users/{id}\", id)\n        .retrieve().bodyToMono(User.class), 8) // concurrencia máx 8\n    .filter(User::isActive)\n    .onErrorResume(err -> Mono.empty())\n    .subscribe(log::info);",
+    "entrevista": "Project Reactor modela flujos asíncronos lazy con `Mono` (0..1) y `Flux` (0..N) bajo Reactive Streams, combinando composición no bloqueante, `Scheduler`s explícitos y backpressure basado en demanda (`request(n)`)."
+  },
+  "Reactor pattern - Proactor pattern": {
+    "que": "Patrones de arquitectura para manejar E/S concurrente sin dedicar un hilo bloqueado por conexión. En el patrón Reactor, un bucle de eventos espera notificaciones de *disponibilidad* (el socket está listo para leer/escribir) y el código de usuario realiza la E/S de forma síncrona no bloqueante; en el patrón Proactor, la aplicación envía la operación de E/S al sistema operativo y recibe notificación de *completitud* una vez el kernel ya copió los datos en el buffer.",
+    "para": "Son los cimientos de servidores modernos de alta concurrencia como Nginx, Node.js, Redis y Netty (Reactor), así como motores de alto rendimiento sobre Windows IOCP o Linux `io_uring` (Proactor).",
+    "como": "En Reactor (basado en `epoll`, `kqueue` o `poll`), un Event Loop registra los descriptores de archivo en un demultiplexor (`epoll_wait`), duerme hasta que uno tiene datos listos y despacha el handler asociado para que llame a `read()`/`write()` sin bloquearse. En Proactor (basado en AIO, IOCP o `io_uring`), el programa entrega al kernel el descriptor, el buffer de destino y el tamaño mediante una cola de envío (Submission Queue); el kernel ejecuta toda la transferencia DMA/red asíncronamente en segundo plano y deposita el evento terminado en una cola de completitud (Completion Queue) para que la aplicación procese el buffer ya relleno.",
+    "practicas": [
+      "En cualquier arquitectura Reactor (Node, Netty, Tokio/Nginx), mantén los callbacks cortos y libres de cómputo pesado o bloqueos para no detener el event loop para todas las demás conexiones.",
+      "Ten presente que en Linux el acceso tradicional a archivos de disco siempre se comporta como listo ante `epoll` aunque bloquee; para disco realmente asíncrono se necesita un thread pool o `io_uring`.",
+      "Al usar `io_uring` (Proactor en Linux), vigila el ciclo de vida de los buffers registrados para que no sean liberados en espacio de usuario mientras el kernel sigue escribiendo en ellos.",
+      "Reactor vs Proactor: Reactor notifica *cuándo puedes empezar* la E/S (synchronous non-blocking I/O); Proactor notifica *cuando el kernel ya terminó* la E/S (asynchronous I/O)."
+    ],
+    "ejemplo": "// Esbozo conceptual de bucle Reactor sobre epoll en Linux\nint nfds = epoll_wait(epfd, events, MAX_EVENTS, -1);\nfor (int i = 0; i < nfds; i++) {\n  if (events[i].events & EPOLLIN) {\n    handle_nonblocking_read(events[i].data.fd);\n  }\n}",
+    "entrevista": "El patrón Reactor demultiplexa eventos de disponibilidad (`epoll`/`kqueue`) para que el programa lea sin bloquear, mientras Proactor delega la transferencia completa al kernel (`io_uring`/IOCP) y solo notifica la operación ya terminada."
+  },
+  "SSH": {
+    "que": "Secure Shell (RFC 4251-4254) es un protocolo de red criptográfico que establece un canal autenticado y cifrado sobre redes inseguras (por defecto TCP puerto 22) para administración remota de terminales, transferencia segura de archivos (SFTP/SCP) y tunelización de tráfico.",
+    "para": "Sustituye a protocolos en texto plano como Telnet y FTP en la operación diaria de servidores, automatización (Ansible, Git sobre SSH), acceso a máquinas detrás de bastiones (`ProxyJump`) y reenvío seguro de puertos hacia bases de datos internas.",
+    "como": "Tras establecer la conexión TCP, cliente y servidor negocian algoritmos compatibles y ejecutan un intercambio de claves efímero (como `curve25519-sha256`) para derivar una clave simétrica de sesión con Perfect Forward Secrecy (ChaCha20-Poly1305 o AES-GCM). El servidor firma el intercambio con su clave privada de host, que el cliente verifica contra `~/.ssh/known_hosts` para evitar ataques MitM. A continuación, el cliente se autentica —idealmente firmando un reto criptográfico con su clave privada (`Ed25519`) mediante `ssh-agent` sin enviarla por la red— y multiplexa sobre la misma conexión canales independientes de terminal PTY, SFTP o reenvío TCP (`-L`, `-R`, `-D`).",
+    "practicas": [
+      "Deshabilita `PasswordAuthentication` y `PermitRootLogin` en `/etc/ssh/sshd_config`, exigiendo claves públicas `Ed25519` (o certificados SSH emitidos por una CA interna).",
+      "Usa `ssh -J bastion host-interno` (`ProxyJump`) y `AgentForwarding` solo cuando sea imprescindible (y nunca hacia servidores no confiables).",
+      "Verifica siempre el fingerprint del servidor la primera vez antes de aceptar `known_hosts`; no desactives `StrictHostKeyChecking` en scripts de producción.",
+      "Prefiere SFTP sobre el protocolo heredado SCP, y usa `ControlMaster` en `~/.ssh/config` para reutilizar sesiones y acelerar conexiones repetidas."
+    ],
+    "ejemplo": "# Túnel local seguro para acceder a Postgres remoto vía bastión sin exponer el puerto\nssh -N -J usuario@bastion.ejemplo.com -L 15432:127.0.0.1:5432 db-interna\n# Generar clave moderna recomendada\nssh-keygen -t ed25519 -C \"devops@empresa\"",
+    "entrevista": "SSH negocia una clave de sesión efímera con Forward Secrecy, autentica el host contra `known_hosts` y valida al usuario mediante firma asimétrica, multiplexando shells, SFTP y túneles TCP sobre un único canal cifrado."
+  },
+  "Sección crítica": {
+    "que": "Segmento de código en un programa concurrente que accede a uno o más recursos compartidos mutables (variables, estructuras de datos, periféricos) cuya integridad requiere que no haya ejecución concurrente simultánea por múltiples hilos o procesos.",
+    "para": "Delimitar exactamente las secciones críticas permite razonar sobre la corrección de programas paralelos, evitando condiciones de carrera sin paralizar todo el sistema bajo bloqueos innecesariamente amplios.",
+    "como": "Para que la protección de una sección crítica sea correcta debe cumplir tres condiciones formales: exclusión mutua (solo un flujo dentro a la vez), progreso (si nadie está dentro y alguien quiere entrar, la decisión no puede posponerse indefinidamente) y espera acotada (ningún flujo espera infinitamente mientras otros entran repetidamente). En la práctica se implementa rodeando el bloque con primitivas de sincronización como mutexes, spinlocks o semáforos binarios, o bien sustituyéndola por operaciones atómicas cuando la sección se reduce a una sola palabra en memoria.",
+    "practicas": [
+      "Mantén la sección crítica mínima: prepara cálculos y asignaciones de memoria antes de entrar, y realiza logging o E/S después de salir.",
+      "Documenta claramente qué lock protege cada estructura de datos compartida (p.ej. con anotaciones estáticas `GUARDED_BY` de Clang) para evitar accesos olvidados sin lock.",
+      "Nunca invoques callbacks externos desconocidos ni código que pueda volver a pedir el mismo lock no reentrante desde dentro de una sección crítica.",
+      "Si la mayoría de accesos a la sección crítica solo leen sin mutar, evalúa usar un `RWLock` (shared/exclusive lock) o RCU en lugar de exclusión total."
+    ],
+    "ejemplo": "// Preparar el payload fuera de la sección crítica para reducir contención\nstd::string msg = format_log(event); // sin lock\n{\n  std::lock_guard<std::mutex> lock(queue_mutex);\n  log_queue.push_back(std::move(msg)); // sección crítica mínima\n}",
+    "entrevista": "Una sección crítica es el bloque de acceso a estado compartido mutable que exige exclusión mutua, progreso y espera acotada, y debe reducirse al mínimo estricto excluyendo cálculos e I/O para preservar escalabilidad."
+  },
+  "Semáforo": {
+    "que": "Primitiva de sincronización ideada por Edsger Dijkstra consistente en un contador entero no negativo manipulado únicamente mediante dos operaciones atómicas: `wait` (`P` / `sem_wait`) para adquirir un permiso decrementando el contador y `post` (`V` / `sem_post`) para liberarlo incrementándolo.",
+    "para": "Controla el acceso concurrente a un pool finito de N recursos idénticos (counting semaphore, como conexiones de base de datos o slots de worker) y permite señalizar eventos entre un hilo productor y otro consumidor.",
+    "como": "Cuando un hilo ejecuta `sem_wait()`, el contador se comprueba atómicamente: si es mayor que cero, se decrementa en 1 y el hilo continúa; si es cero, el hilo se bloquea en la cola de espera del semáforo dentro del kernel (por ejemplo mediante `futex` en Linux). Cuando otro hilo invoca `sem_post()`, el contador se incrementa y, si había hilos dormidos esperando, el kernel despierta a uno de ellos. A diferencia del mutex, el semáforo no pertenece a ningún hilo concreto: un hilo puede hacer `wait()` y otro distinto hacer `post()`.",
+    "practicas": [
+      "Usa mutexes (y no semáforos binarios) para proteger datos compartidos, ya que el mutex impone propiedad (ownership) y permite al kernel aplicar priority inheritance.",
+      "Usa semáforos contadores cuando realmente necesites limitar concurrencia máxima a N unidades o señalizar entre hilos distintos (o incluso entre procesos vía `shm_open` / `sem_open`).",
+      "Ten cuidado con excepciones o retornos prematuros tras `sem_wait()`: encapsula el permiso con RAII (`acquire`/`release`) para no fugar slots permanentemente.",
+      "Ten presente que `sem_post()` en POSIX es *async-signal-safe*, lo que permite despertar un hilo desde un manejador de señales UNIX de forma segura (a diferencia de un mutex)."
+    ],
+    "ejemplo": "// Limitar concurrencia máxima de peticiones en Python asyncio o POSIX\nsem_t pool_slots;\nsem_init(&pool_slots, 0, 4); // máximo 4 hilos simultáneos\nsem_wait(&pool_slots);\nprocesar_peticion();\nsem_post(&pool_slots);",
+    "entrevista": "Un semáforo es un contador atómico sin concepto de propiedad que bloquea en cero al hacer `wait` y despierta al hacer `post`, ideal para acotar pools de N recursos y señalizar entre hilos, a diferencia del mutex que protege exclusión mutua con dueño."
+  },
+  "Signal (SIGINT-SIGTERM-SIGKILL-SIGSEGV-SIGHUP)": {
+    "que": "Mecanismo de interrupción asíncrona de software en sistemas POSIX que notifica a un proceso eventos del kernel o de otros procesos. Destacan `SIGINT` (interrupción de teclado Ctrl+C, 2), `SIGTERM` (petición de cierre elegante, 15), `SIGKILL` (terminación forzada inmediata, 9), `SIGSEGV` (violación de acceso a memoria, 11) y `SIGHUP` (desconexión de terminal o señal de recarga, 1).",
+    "para": "Permite al sistema operativo reportar fallos fatales de hardware (`SIGSEGV`), a los usuarios interrumpir comandos (`SIGINT`), y a orquestadores como `systemd` o Kubernetes detener procesos limpiamente (`SIGTERM` antes de `SIGKILL`) o recargar configuración sin reiniciar (`SIGHUP`).",
+    "como": "Una señal se genera (`kill(2)`, tecla del driver TTY o excepción de la MMU) y queda marcada como pendiente en el `task_struct` del proceso destino. Antes de que el kernel retorne al proceso en espacio de usuario, inspecciona las señales pendientes no enmascaradas: para `SIGKILL` (y `SIGSTOP`), el kernel ejecuta la acción por defecto sin posibilidad de captura ni ignorado, destruyendo el proceso inmediatamente. Para `SIGTERM`, `SIGINT` o `SIGHUP`, si el proceso registró un manejador con `sigaction()`, el kernel guarda el contexto en la pila del usuario y salta al handler; de lo contrario aplica la terminación por defecto.",
+    "practicas": [
+      "Implementa siempre graceful shutdown escuchando `SIGTERM` (y `SIGINT`): cierra sockets de escucha, drena peticiones en vuelo y vacía buffers antes de salir dentro del `terminationGracePeriodSeconds`.",
+      "Dentro de un signal handler clásico solo puedes llamar a funciones *async-signal-safe* (`write`, `_exit`, atomic flags); nunca llames a `printf`, `malloc` ni adquieras un `mutex` o provocarás deadlocks.",
+      "En aplicaciones Linux modernas multihilo, bloquea las señales en todos los hilos con `pthread_sigmask` y recíbelas síncronamente en un único hilo dedicado mediante `sigwait()` o `signalfd()`.",
+      "Usa `kill -15 <pid>` (`SIGTERM`) primero y reserva `kill -9 <pid>` (`SIGKILL`) solo como último recurso, porque `SIGKILL` no permite cerrar transacciones ni borrar archivos lock/PID."
+    ],
+    "ejemplo": "// Patrón seguro en C: flag volatile sig_atomic_t con sigaction\nstatic volatile sig_atomic_t stop = 0;\nvoid on_term(int sig) { stop = 1; }\n// En main:\nstruct sigaction sa = { .sa_handler = on_term };\nsigaction(SIGTERM, &sa, NULL);",
+    "entrevista": "Las señales son notificaciones asíncronas del kernel donde `SIGTERM` y `SIGINT` permiten limpieza controlada antes de salir, `SIGHUP` suele recargar configuración, `SIGSEGV` delata accesos inválidos a memoria y `SIGKILL` termina el proceso en el kernel sin poder interceptarse."
+  },
+  "Spinlock vs mutex vs futex": {
+    "que": "Tres implementaciones progresivas de bloqueo mutuo según cómo manejan la espera ante contención. El spinlock realiza espera activa (busy-waiting) en bucle consumiendo CPU; el mutex clásico suspende el hilo en el kernel liberando la CPU; el futex (Fast Userspace Mutex) en Linux combina vía rápida atómica en espacio de usuario sin syscall con suspensión selectiva en el kernel únicamente cuando hay colisión.",
+    "para": "Elegir el mecanismo adecuado evita desperdiciar núcleos en bucles inútiles o pagar miles de ciclos en cambios de contexto cuando la contención es casi nula.",
+    "como": "Un spinlock ejecuta un bucle sobre una variable atómica (`test-and-set` o ticket/MCS lock, a menudo usando instrucción `PAUSE` en x86 para reducir consumo eléctrico y pipeline stalls) hasta adquirir el lock sin ceder la CPU. Un mutex puramente de kernel siempre requeriría una syscall para entrar y salir. El futex (usado internamente por `pthread_mutex_t` en glibc, Go y Rust) mantiene un entero de 32 bits en memoria compartida: si está a 0, un `CAS` en userspace lo pone a 1 en pocos nanosegundos sin entrar al kernel; solo si ya estaba ocupado, el hilo invoca la syscall `futex(FUTEX_WAIT)` para dormirse en una tabla hash de colas del kernel hasta que el propietario llama a `futex(FUTEX_WAKE)` al detectar contendientes.",
+    "practicas": [
+      "Nunca uses un spinlock en espacio de usuario salvo en casos muy especiales con afinidad de CPU fija y tiempo real; si el hilo propietario es expropiado por el planificador, los demás quemarán todo su quantum girando sin avanzar.",
+      "Usa spinlocks dentro del kernel en manejadores de interrupción (top-half) donde dormir está prohibido porque no hay contexto de proceso.",
+      "En aplicaciones de usuario estándar confía en mutexes basados en futex (`std::mutex`, `pthread_mutex_t`), opcionalmente adaptativos en secciones cortísimas.",
+      "Recuerda que los futexes también funcionan entre distintos procesos compartiendo memoria vía `mmap`, permitiendo sincronización IPC ultrarrápida sin semáforos SysV."
+    ],
+    "ejemplo": "// Esquema de futex en Linux (syscall directa)\n// Fast path en userspace:\nif (__atomic_compare_exchange_n(&lock, &expected_zero, 1, ...)) return;\n// Slow path solo si hay contención:\nsyscall(SYS_futex, &lock, FUTEX_WAIT, 1, NULL, NULL, 0);",
+    "entrevista": "El spinlock quema CPU en espera activa (solo apto para el kernel o secciones nanosegundo sin preempción), el mutex tradicional duerme en el kernel, y el futex logra velocidad de userspace sin syscall en ausencia de contención delegando al kernel solo cuando hay que dormir."
+  },
+  "Stack TCP-IP del kernel": {
+    "que": "Subsistema de red integrado en el núcleo del sistema operativo (p.ej. `net/ipv4` y `net/core` en Linux) que implementa el procesamiento completo de paquetes desde la tarjeta de red (L2) hasta los sockets de las aplicaciones en espacio de usuario (L4), gestionando enrutamiento, cortafuegos y control de congestión.",
+    "para": "Centraliza de forma segura, estandarizada y optimizada el transporte de paquetes para todos los procesos del sistema, evitando que cada programa deba implementar Ethernet, IP, TCP, retransmisiones y seguridad de red por su cuenta.",
+    "como": "Cuando llega una trama a la NIC, esta la escribe por DMA en un ring buffer en RAM y dispara una interrupción que activa el modo polling NAPI del driver, envolviendo el paquete en una estructura `sk_buff`. El paquete atraviesa la capa de enlace, pasa por hooks de Netfilter/XDP/TC, entra al subsistema IP donde se valida la cabecera y se consulta la tabla de enrutamiento (FIB), y sube a TCP/UDP donde se verifica checksum, se actualiza la máquina de estados (p.ej. colas SYN y Accept en TCP) y se deposita en el buffer de recepción del socket (`sk_receive_queue`). Finalmente el kernel despierta al proceso bloqueado en `recv()`/`epoll_wait()` y copia los datos al buffer de espacio de usuario.",
+    "practicas": [
+      "Ajusta `net.core.somaxconn` y `tcp_max_syn_backlog` en servidores con ráfagas de conexiones para evitar descartes silenciosos en las colas del handshake TCP.",
+      "Habilita `BBR` (`net.ipv4.tcp_congestion_control=bbr`) en enlaces WAN con pérdida o alto BDP (Bandwidth-Delay Product) frente al clásico `cubic` para mejorar throughput.",
+      "Usa `ss -s` y `nstat -az` para inspeccionar colas, retransmisiones y sockets `TIME_WAIT` en lugar del obsoleto `netstat`.",
+      "Para latencias extremas (millones de PPS en DDoS o HFT), considera bypass parcial/total con XDP (eBPF en el driver antes de crear `sk_buff`) o DPDK."
+    ],
+    "ejemplo": "# Inspeccionar parámetros clave del stack TCP/IP y colas de sockets\nsysctl net.core.somaxconn net.ipv4.tcp_congestion_control\nss -tinp | head -n 10\nnstat -az TcpRetransSegs TcpExtListenDrops",
+    "entrevista": "El stack TCP/IP del kernel recibe paquetes vía DMA y NAPI en estructuras `sk_buff`, aplica Netfilter, enruta por IP y gestiona estados y buffers TCP antes de copiar la carga útil hacia los sockets en espacio de usuario."
+  },
+  "Starvation - Livelock": {
+    "que": "Dos fallos de vivacidad (liveness) en sistemas concurrentes donde los hilos no progresan aunque no estén atrapados en un deadlock pasivo. En Starvation (inanición), un hilo listo nunca recibe CPU o acceso a un recurso porque otros hilos acaparan el turno continuamente; en Livelock, dos o más hilos permanecen activos cambiando de estado repetidamente en reacción mutua sin avanzar ningún trabajo útil.",
+    "para": "Diagnosticarlos resuelve bloqueos sutiles en producción donde la CPU puede estar al 0% (starvation de un worker esperando un lock injusto) o al 100% (livelock de reintentos sincronizados) sin que aparezca un ciclo clásico de deadlock.",
+    "como": "La inanición aparece típicamente con planificadores de prioridad estricta sin envejecimiento (aging) o con `RWLock` que priorizan indefinidamente a lectores entrantes dejando al escritor esperando por siempre. El livelock ocurre cuando, por ejemplo, dos hilos intentan adquirir dos locks en orden inverso y usan `try_lock()`: ambos adquieren el primero, fallan al intentar el segundo, sueltan el primero educadamente al unísono y vuelven a repetir exactamente la misma secuencia infinitamente (como dos personas cediéndose el paso en un pasillo).",
+    "practicas": [
+      "En `RWLock` de sistemas con escritura frecuente, usa implementaciones con equidad o preferencia a escritores (`PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP`) para evitar starvation de escrituras.",
+      "Rompe los livelocks en protocolos de reintento o `try_lock()` introduciendo retroceso exponencial aleatorio (*exponential backoff with jitter*) o imponiendo un orden global de locks.",
+      "Evita algoritmos spin-retry sin límite ni pausa si la prioridad entre hilos es asimétrica (causa clásica de inanición en sistemas de tiempo real).",
+      "Deadlock vs Livelock vs Starvation: en deadlock todos duermen bloqueados esperando; en livelock ejecutan código sin avanzar; en starvation otros sí avanzan pero una víctima queda excluida indefinidamente."
+    ],
+    "ejemplo": "// Livelock típico con try_lock sin backoff aleatorio ni orden global\nwhile (true) {\n  lockA.lock();\n  if (lockB.try_lock()) break; // éxito\n  lockA.unlock(); // ambos sueltan y reintentan a la vez -> livelock\n  // Solución: usar std::scoped_lock(lockA, lockB) o sleep aleatorio\n}",
+    "entrevista": "A diferencia del deadlock donde los hilos duermen en espera circular, en la starvation un hilo queda indefinidamente postergado por injusticia de planificación/locks, y en el livelock los hilos siguen ejecutándose y retrocediendo mutuamente sin completar trabajo."
+  },
+  "Swap - Overcommit - OOM killer": {
+    "que": "Mecanismos con los que Linux gestiona la escasez de RAM física. Swap es espacio en disco (o comprimido en RAM vía `zram`) donde se mueven páginas anónimas inactivas; Memory Overcommit permite al kernel prometer más memoria virtual (`malloc`) que la RAM física disponible; y el OOM killer (Out-Of-Memory killer) es el último recurso del kernel para matar procesos cuando la memoria física y swap se agotan realmente.",
+    "para": "Overcommit maximiza el aprovechamiento de RAM (muchos procesos reservan memoria que nunca tocan); Swap actúa como colchón de seguridad frente a picos temporales y permite hibernar; y el OOM killer impide que el sistema operativo completo quede congelado ante una fuga descontrolada.",
+    "como": "Según `vm.overcommit_memory` (0 heurístico por defecto, 1 siempre permitido, 2 estricto limitado a RAM×ratio+swap), `malloc()`/`mmap()` devuelven éxito creando áreas virtuales sin reservar marcos físicos hasta el primer acceso (demand paging). Cuando la RAM se llena, el demonio `kswapd` intenta reclamar páginas limpias de Page Cache y expulsar páginas anónimas poco usadas a swap según `vm.swappiness`. Si una petición de marco físico no puede satisfacerse ni tras reclamar caché ni swappear, el kernel calcula el `oom_score` de los procesos (proporcional a su consumo de RAM y ajustado por `oom_score_adj`) y envía `SIGKILL` al de mayor puntuación (o al contenedor que superó su cgroup `memory.max`).",
+    "practicas": [
+      "Nunca desactives swap a ciegas sin medir tu carga: tener algo de swap o `zram` permite al kernel mover páginas frías (como buffers olvidados) para dejar RAM para Page Cache activa; solo desactívalo donde la latencia de paginación sea inaceptable (algunos nodos Kubernetes históricos).",
+      "Protege procesos críticos del sistema (como `sshd` o la base de datos primaria) ajustando `oom_score_adj` hacia valores negativos (-500 a -1000).",
+      "En contenedores, monitoriza eventos OOM del cgroup (`memory.events` -> `oom_kill`), porque un contenedor puede morir por OOM aunque el host tenga gigabytes libres.",
+      "Distingue entre fallo en asignación (`overcommit_memory=2` devolviendo `ENOMEM`) y muerte tardía por OOM killer cuando finalmente se hace page fault sobre memoria ya prometida."
+    ],
+    "ejemplo": "# Ver puntuación OOM actual de un proceso y logs recientes del OOM killer\ncat /proc/<PID>/oom_score\ndmesg -T | grep -i -E 'oom|killed process'\n# Ver parámetro de overcommit y swappiness\nsysctl vm.overcommit_memory vm.swappiness",
+    "entrevista": "Linux promete más memoria virtual que RAM física mediante overcommit bajo la premisa del demand paging, usa swap como válvula de escape para páginas frías y recurre al OOM killer con `SIGKILL` sobre el mayor `oom_score` cuando el agotamiento real amenaza al sistema."
+  }
+}

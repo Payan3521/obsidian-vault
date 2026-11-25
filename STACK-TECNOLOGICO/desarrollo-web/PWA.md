@@ -9,7 +9,7 @@ tags:
 nivel: conocer
 estrella: false
 relacionado_con:
-  - "[[HTML - CSS (2)]]"
+  - "[[HTML - CSS]]"
   - "[[SPA]]"
   - "[[SSR - CSR]]"
 ---
@@ -20,11 +20,11 @@ relacionado_con:
 
 ## Contexto en el mapa
 
-**Bases y renderizado:** ➕ [[HTML - CSS (2)]], ➕ [[SPA]], ➕ [[SSR - CSR]], ➕ [[PWA]].
+**Bases y renderizado:** ➕ [[HTML - CSS]], ➕ [[SPA]], ➕ [[SSR - CSR]], ➕ [[PWA]].
 
 ## Relaciones
 
-- [[HTML - CSS (2)]]
+- [[HTML - CSS]]
 - [[SPA]]
 - [[SSR - CSR]]
 

@@ -1,0 +1,392 @@
+{
+  "Agentes no-code": {
+    "que": "Los agentes no-code son sistemas autónomos construidos mediante interfaces gráficas declarativas —sin escribir código de orquestación— en los que un LLM planifica acciones y decide qué herramientas invocar para cumplir un objetivo. A diferencia de una automatización lineal, el flujo de control no está prefijado por reglas estáticas, sino gobernado por el razonamiento del modelo en tiempo de ejecución.",
+    "para": "Sirven para delegar tareas operativas ambiguas (triage de tickets, enriquecimiento de leads, soporte nivel 1 o seguimiento de correos) cuando el equipo necesita iterar rápido sin involucrar desarrollo backend. Resultan ideales en validación de hipótesis de producto y operaciones internas donde las reglas cambian con frecuencia.",
+    "como": "El constructor define un trigger de entrada (webhook, correo o evento SaaS), un prompt de sistema con el rol y restricciones, una memoria de sesión o base documental RAG y un catálogo de herramientas tipadas (conectores OAuth, HTTP o MCP). Cuando llega un evento, la plataforma (como Zapier Agents, Lindy o n8n AI Agent) ejecuta un bucle ReAct (Reason + Act) invocando al LLM con los esquemas JSON de cada herramienta. El modelo emite una llamada a función, el motor ejecuta la acción contra la API externa y devuelve el resultado como observación hasta alcanzar una condición de parada o límite de iteraciones.",
+    "practicas": [
+      "Usa flujos deterministas (webhooks + routers) para pasos críticos de negocio y reserva el agente no-code solo para la clasificación o redacción.",
+      "Configura siempre un límite máximo de iteraciones (max steps) y presupuestos de tokens para evitar bucles infinitos de reintentos con coste descontrolado.",
+      "Exige confirmación humana (Human-in-the-Loop) antes de acciones destructivas o externas irreversibles como enviar correos masivos o emitir reembolsos.",
+      "Agentes no-code vs. Workflows de IA: el agente elige dinámicamente la siguiente herramienta; el workflow sigue un grafo DAG predefinido con menor latencia y mayor predictibilidad."
+    ],
+    "ejemplo": "trigger: \"new_support_email\"\nagent:\n  model: \"gpt-4.1-mini\"\n  max_steps: 5\n  tools: [\"search_kb_rag\", \"get_order_status\", \"draft_gmail_reply\"]\n  guardrail: \"Nunca emitir reembolsos sin aprobación en Slack #ops\"",
+    "entrevista": "Los agentes no-code aceleran la entrega de automatizaciones adaptativas sustituyendo el código de orquestación por un bucle ReAct configurable, pero en producción exigen límites de pasos, validación de esquemas y aprobación humana en acciones de escritura."
+  },
+  "AnythingLLM": {
+    "que": "AnythingLLM es una aplicación open-source todo-en-uno (disponible en versión desktop y servidor Docker) diseñada para desplegar entornos privados de chat con documentos mediante RAG y agentes locales. Integra en un único despliegue la interfaz web, el pipeline de ingesta documental, la base vectorial y el enrutamiento hacia múltiples proveedores LLM.",
+    "para": "Resuelve la necesidad de equipos y usuarios individuales de consultar repositorios privados de PDFs, bases de código o wikis con privacidad total y sin construir desde cero un stack de LangChain, servidor vectorial y frontend. Se utiliza habitualmente como portal interno de conocimiento en empresas o como entorno local sobre Ollama.",
+    "como": "La arquitectura divide los documentos en workspaces aislados (colecciones lógicas con su propio historial, prompt de sistema y espacio vectorial). Al subir un archivo, el collector extrae el texto, aplica chunking configurable y genera embeddings mediante el modelo seleccionado, almacenándolos por defecto en LanceDB embebido (o en Chroma, Qdrant, Pinecone o PGVector). En cada consulta, recupera los fragmentos más cercanos por similitud coseno, construye el contexto aumentado y lo envía al LLM configurado (Ollama, OpenAI, Anthropic, Bedrock o LM Studio), soportando además habilidades de agente y servidores MCP.",
+    "practicas": [
+      "Separa dominios sensibles en workspaces distintos para evitar contaminación de contexto entre departamentos y facilitar el control de acceso (RBAC en modo Docker).",
+      "Ajusta el tamaño de chunk y el solapamiento (overlap) según la densidad técnica de tus PDFs; fragmentos demasiado cortos rompen tablas y código.",
+      "Usa el modo de consulta estricta (query mode) en lugar de chat libre cuando necesites que el modelo responda exclusivamente a partir de la documentación indexada.",
+      "AnythingLLM vs. Open WebUI: AnythingLLM prioriza el empaquetado RAG multi-workspace listo para documentos de negocio; Open WebUI destaca en experiencia multi-modelo, pipelines Python y administración estilo ChatGPT."
+    ],
+    "ejemplo": "docker run -d -p 3001:3001 \\\n  -v ${HOME}/anythingllm:/app/server/storage \\\n  -e STORAGE_DIR=\"/app/server/storage\" \\\n  -e VECTOR_DB=\"lancedb\" \\\n  -e LLM_PROVIDER=\"ollama\" \\\n  mintplexlabs/anythingllm:latest",
+    "entrevista": "AnythingLLM encapsula en un solo runtime el pipeline de ingesta, el almacenamiento vectorial con LanceDB y el enrutamiento multi-LLM, permitiendo desplegar RAG privado por workspaces en minutos."
+  },
+  "Asistentes personalizados": {
+    "que": "Un asistente personalizado es una especialización declarativa de un modelo fundacional que empaqueta instrucciones de sistema persistentes, conocimiento de dominio y acceso a herramientas externas bajo una interfaz reutilizable. Convierte un LLM generalista en un especialista consistente para un rol o proceso concreto.",
+    "para": "Sirve para eliminar la repetición de prompts largos, estandarizar el formato de salida en un equipo (revisión de PRs, redacción de RFCs, análisis SQL) y dotar al modelo de contexto corporativo sin necesidad de entrenar ni hacer fine-tuning sobre los pesos del modelo.",
+    "como": "Internamente opera como una capa de configuración previa a la inferencia: el sistema antepone el system prompt y las reglas de formato al historial del usuario, inyecta fragmentos relevantes mediante búsqueda semántica (RAG) o prompt caching de archivos adjuntos, y expone descriptores JSON de herramientas (function calling / OpenAPI / MCP). Cuando la tarea excede el texto puro, el runtime intercepta la petición de herramienta del modelo, ejecuta la API o sandbox de código correspondiente y reinyecta el resultado en el contexto.",
+    "practicas": [
+      "Define criterios de rechazo explícitos y formato de salida (Markdown, JSON, tabla) en las instrucciones del sistema para reducir la variabilidad entre sesiones.",
+      "Versiona el prompt de sistema y los documentos adjuntos en un repositorio Git aunque el asistente viva en una plataforma SaaS.",
+      "No confíes el cumplimiento estricto de políticas de seguridad solo al system prompt; valida permisos y datos sensibles en el backend de las herramientas conectadas.",
+      "Asistente personalizado vs. Fine-tuning: usa asistentes con RAG e instrucciones cuando el conocimiento cambia rápido o necesitas citas; reserva el fine-tuning para adaptar estilo, sintaxis muy específica o reducir latencia de prompts masivos."
+    ],
+    "ejemplo": "name: \"Revisor-Arquitectura-RFC\"\nmodel: \"claude-sonnet-4\"\ninstructions: |\n  Evalúa RFCs buscando cuellos de botella, SPOF y costes.\n  Responde con: 1) Riesgos críticos, 2) Alternativas, 3) Preguntas abiertas.\nknowledge: [\"adr-estándares-2026.md\", \"slos-plataforma.md\"]\ntools: [\"mcp-jira-read\"]",
+    "entrevista": "Un asistente personalizado combina ingeniería de contexto (system prompt + RAG o prompt caching) con tool calling tipado para especializar un modelo fundacional sin asumir el coste ni la rigidez del fine-tuning."
+  },
+  "Automatización con IA": {
+    "que": "La automatización con IA es la integración de pasos de inferencia probabilística (clasificación, extracción, síntesis o decisión semántica) dentro de flujos de procesos digitales que antes solo admitían lógica booleana o expresiones regulares. Une el mundo de los datos no estructurados con sistemas transaccionales estructurados.",
+    "para": "Resuelve la automatización de procesos intensivos en texto, imágenes o audio —como lectura de facturas heterogéneas, enrutamiento de incidencias o conciliación documental— donde las reglas tradicionales fallan ante variaciones mínimas del formato de entrada.",
+    "como": "Un orquestador (cron, cola de mensajes o iPaaS como Make/n8n/Temporal) captura un evento y normaliza el payload de entrada. En los nodos cognitivos invoca un LLM con Structured Outputs (JSON Schema estricto) o embeddings para transformar texto libre en entidades tipadas y puntuaciones de confianza. Los nodos posteriores aplican lógica determinista sobre ese JSON (bifurcaciones, escrituras en base de datos, llamadas REST), registrando trazas y derivando a cola humana cualquier resultado por debajo del umbral de confianza.",
+    "practicas": [
+      "Usa siempre Structured Outputs / JSON Schema en nodos de extracción para garantizar que el paso siguiente reciba tipos válidos y no texto conversacional.",
+      "Diseña rutas de fallback basadas en umbral de confianza o validación determinista (p. ej. verificar que el total de factura coincide con la suma de líneas).",
+      "Implementa idempotencia en los pasos de escritura (idempotency keys) para que un reintento del LLM o del webhook no duplique registros en el ERP o CRM.",
+      "Mantén los prompts pequeños y atómicos (un paso = una tarea) en vez de pedir cinco transformaciones complejas en una sola llamada."
+    ],
+    "ejemplo": "{\n  \"name\": \"clasificar_ticket\",\n  \"strict\": true,\n  \"schema\": {\n    \"type\": \"object\",\n    \"properties\": {\n      \"categoria\": { \"type\": \"string\", \"enum\": [\"billing\", \"bug\", \"auth\"] },\n      \"urgencia\": { \"type\": \"integer\", \"minimum\": 1, \"maximum\": 5 }\n    },\n    \"required\": [\"categoria\", \"urgencia\"]\n  }\n}",
+    "entrevista": "La automatización con IA combina la flexibilidad de los LLM para interpretar datos no estructurados con flujos deterministas y Structured Outputs que garantizan contratos de datos seguros hacia los sistemas transaccionales."
+  },
+  "Chainlit": {
+    "que": "Chainlit es un framework open-source en Python diseñado específicamente para construir interfaces de usuario conversacionales y de aplicaciones basadas en LLMs y agentes. A diferencia de herramientas de tableros de datos genéricos, incluye primitivas nativas para streaming, pasos intermedios de razonamiento y trazabilidad.",
+    "para": "Sirve para llevar prototipos hechos en Python (LangChain, LlamaIndex, OpenAI SDK o LangGraph) a una interfaz web profesional lista para usuarios internos o demos de producto sin escribir frontend en React. Es especialmente útil cuando el usuario necesita inspeccionar qué herramientas o documentos consultó un agente.",
+    "como": "Funciona sobre un servidor ASGI (FastAPI + Socket.IO) que mantiene sesiones persistentes por WebSocket entre el navegador React y los handlers asíncronos decorados en Python (`@cl.on_chat_start`, `@cl.on_message`, `@cl.step`). Cada llamada a una herramienta o recuperador RAG envuelta en un Step se transmite en tiempo real como un bloque colapsable independiente del mensaje final. Además gestiona subida de archivos multimedia, botones de acción (`cl.Action`), autenticación OAuth/JWT y persistencia de historiales y feedback humano mediante su capa de datos o Literal AI.",
+    "practicas": [
+      "Usa funciones `async def` y clientes LLM asíncronos (`AsyncOpenAI`) dentro de los handlers para no bloquear el event loop de ASGI bajo concurrencia.",
+      "Envuelve las llamadas de herramientas y recuperación RAG en `@cl.step` para dar observabilidad al usuario sin ensuciar la respuesta final.",
+      "Activa la capa de persistencia (PostgreSQL / SQLAlchemy) y feedback (`thumbs up/down`) desde el inicio para recolectar pares de evaluación reales.",
+      "Chainlit vs. Streamlit: Chainlit usa WebSockets asíncronos orientados a chat y pasos de agente; Streamlit re-ejecuta el script completo en cada interacción, lo que complica flujos agénticos complejos."
+    ],
+    "ejemplo": "import chainlit as cl\n\n@cl.step(type=\"tool\")\nasync def buscar_docs(query: str) -> str:\n    return f\"Contexto recuperado para: {query}\"\n\n@cl.on_message\nasync def main(msg: cl.Message):\n    ctx = await buscar_docs(msg.content)\n    await cl.Message(content=f\"Respuesta usando [{ctx}]\").send()",
+    "entrevista": "Chainlit ofrece una arquitectura ASGI con WebSockets y decoradores `@cl.step` pensada de origen para chat asíncrono, streaming y trazabilidad de agentes en Python, evitando las re-ejecuciones de script de frameworks generalistas."
+  },
+  "ChatGPT Deep Research": {
+    "que": "ChatGPT Deep Research es una capacidad agéntica de investigación profunda integrada en ChatGPT (impulsada por una variante optimizada de modelos de razonamiento como o3) capaz de navegar la web de forma autónoma durante varios minutos y sintetizar informes extensos con citas.",
+    "para": "Resuelve tareas de investigación compleja que requerirían decenas de búsquedas manuales y lectura cruzada de fuentes primarias: análisis competitivo, revisión de literatura técnica, comparación regulatoria o due diligence tecnológico antes de tomar decisiones de arquitectura.",
+    "como": "Al recibir una consulta, el modelo realiza primero una breve fase de desambiguación opcional y genera un plan de búsqueda iterativo. A través de un bucle multi-paso ejecutado en segundo plano, formula consultas de búsqueda, abre URLs completas, lee PDFs o tablas largas y decide nuevas rutas de indagación cuando encuentra huecos o contradicciones. Finalmente consolida la evidencia en un reporte estructurado de formato largo con hipervínculos directos a cada fuente verificada.",
+    "practicas": [
+      "Responde con precisión a las preguntas iniciales de aclaración (alcance temporal, geografía, perfil técnico) porque redirigen todo el árbol de búsquedas posterior.",
+      "Especifica explícitamente qué tipo de fuentes priorizar o excluir (p. ej. documentación oficial, papers peer-reviewed, RFCs y no blogs promocionales).",
+      "Audita siempre las citas de datos numéricos o versiones críticas abriendo los enlaces del informe; la síntesis larga aún puede interpretar mal una tabla compleja.",
+      "ChatGPT Deep Research vs. búsqueda web estándar: el modo estándar hace una o dos búsquedas rápidas para responder en segundos; Deep Research invierte minutos en razonar, pivotar consultas y contrastar decenas de documentos."
+    ],
+    "ejemplo": "Prompt de arranque:\n\"Compara motores de búsqueda vectorial (Qdrant, pgvector, Milvus) para 50M de embeddings de 1536 dims.\nPrioriza benchmarks reproducibles de 2025-2026 y documentación oficial de arquitectura.\nEntrega matriz comparativa de latencia p99, uso de RAM y soporte de filtrado híbrido.\"",
+    "entrevista": "ChatGPT Deep Research traslada los modelos de razonamiento al ámbito de la recuperación de información mediante un bucle agéntico autónomo de búsqueda, lectura profunda y replanificación con citas verificables."
+  },
+  "Chatbot UI": {
+    "que": "Chatbot UI es una interfaz web open-source (iniciada por Mckay Wrigley y ampliamente adoptada como patrón de referencia) construida sobre Next.js que ofrece un cliente unificado estilo ChatGPT para conectarse a múltiples proveedores de LLM mediante sus APIs.",
+    "para": "Sirve para que desarrolladores y organizaciones desplieguen rápidamente un frontend propio de chat donde los usuarios traigan sus API keys o usen claves corporativas centralizadas, evitando depender de una única interfaz SaaS y manteniendo control sobre los datos y prompts.",
+    "como": "El frontend en Next.js + Tailwind gestiona conversaciones, carpetas, plantillas de prompts y presets de parámetros (`temperature`, `max_tokens`, `system prompt`). En su arquitectura moderna se apoya en Supabase (PostgreSQL + pgvector + Auth) para persistencia de historiales, autenticación y recuperación básica de archivos adjuntos, comunicándose con endpoints de OpenAI, Anthropic, Google o servidores locales compatibles mediante rutas API de Next.js con Server-Sent Events (SSE) para streaming.",
+    "practicas": [
+      "En despliegues corporativos, proxyfica las llamadas desde el servidor backend para no exponer las API keys de la empresa en el navegador del cliente.",
+      "Aprovecha la exportación/importación de presets y prompts para estandarizar parámetros de inferencia reproducibles entre miembros del equipo.",
+      "Si necesitas RAG avanzado, SSO empresarial complejo o pipelines Python extensibles, evalúa alternativas más activas y completas como Open WebUI o LibreChat.",
+      "Configura políticas de retención en PostgreSQL/Supabase para cumplir normativas de privacidad (GDPR) sobre los historiales guardados."
+    ],
+    "ejemplo": "# Variables mínimas de entorno para levantar cliente compatible\nNEXT_PUBLIC_SUPABASE_URL=https://tu-proyecto.supabase.co\nNEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...\nOPENAI_API_KEY=sk-proj-...\nANTHROPIC_API_KEY=sk-ant-...",
+    "entrevista": "Chatbot UI ejemplifica la arquitectura de cliente ligero en Next.js con streaming SSE y persistencia en Postgres/pgvector para desacoplar la experiencia conversacional del proveedor concreto de modelos."
+  },
+  "Claude Projects": {
+    "que": "Claude Projects es una funcionalidad de espacios de trabajo persistentes en Claude que permite agrupar instrucciones de sistema dedicadas y una biblioteca de documentos o archivos de código compartidos como contexto base para múltiples conversaciones.",
+    "para": "Resuelve el problema de tener que reenviar archivos de arquitectura, guías de estilo o fragmentos de código en cada nuevo chat, manteniendo coherencia técnica en proyectos de ingeniería, diseño de producto o documentación a lo largo del tiempo.",
+    "como": "Cada proyecto almacena un bloque de Project Instructions y un conjunto de Project Knowledge files. Cuando la suma de tokens del conocimiento cabe dentro de la ventana de contexto del modelo, Claude lo carga de forma íntegra aprovechando Prompt Caching (almacenamiento en caché de los prefijos KV de atención en servidor) para reducir latencia y coste en turnos sucesivos. Si la base documental supera el límite de contexto directo, la plataforma activa automáticamente recuperación RAG sobre los archivos del proyecto.",
+    "practicas": [
+      "Mantén el Project Knowledge limpio y por debajo del umbral de contexto directo cuando sea posible para aprovechar lectura íntegra y prompt caching sin pérdidas por chunking.",
+      "Incluye un archivo índice (`ARCHITECTURE.md` o `GLOSSARY.md`) que explique qué contiene cada documento adjunto para orientar al modelo.",
+      "Separa las reglas inmutables del repositorio en Project Instructions y deja los requisitos puntuales de la tarea para el prompt del chat.",
+      "Claude Projects vs. Claude Code / IDE agents: Projects es ideal para diseño, análisis y documentación sin acceso a tu disco; para editar múltiples archivos y correr tests en local usa herramientas conectadas al repositorio o MCP."
+    ],
+    "ejemplo": "# Project Instructions\nActúa como Staff Backend Engineer en este repositorio Go.\nRespeta las convenciones de errores descritas en docs/error-handling.md.\nAntes de proponer cambios de esquema SQL, verifica compatibilidad backward con migraciones previas.",
+    "entrevista": "Claude Projects combina instrucciones persistentes con carga directa en ventana de contexto optimizada mediante prompt caching —y fallback automático a RAG si crece demasiado— para mantener coherencia a nivel de proyecto."
+  },
+  "Claude Research": {
+    "que": "Claude Research es la capacidad de investigación agéntica de Anthropic integrada en Claude que planifica y ejecuta búsquedas en múltiples pasos tanto en la web pública como en fuentes internas conectadas (Google Workspace, herramientas MCP) para responder preguntas complejas con citas.",
+    "para": "Sirve para sintetizar respuestas fundamentadas que cruzan información pública actualizada con conocimiento interno de la empresa —por ejemplo, cruzar el estado de un RFC en Google Docs con especificaciones recientes de un estándar web— sin intervención manual paso a paso.",
+    "como": "El sistema opera bajo un patrón de orquestador multi-búsqueda: ante una petición compleja, Claude descompone la pregunta en múltiples líneas de investigación y lanza búsquedas paralelas y secuenciales usando tool calls (Web Search y conectores autenticados vía MCP/OAuth). Inspecciona los resultados recuperados, evalúa si existen lagunas o contradicciones, refina las consultas y redacta una respuesta final donde cada afirmación relevante queda trazada con citas clicables al documento o URL origen.",
+    "practicas": [
+      "Conecta explícitamente solo los espacios de trabajo o integraciones necesarias para evitar que el agente explore documentos irrelevantes o ruidosos.",
+      "Formula preguntas con criterios claros de contraste (fechas, sistemas involucrados, métricas buscadas) para mejorar la descomposición inicial en subconsultas.",
+      "Verifica en organizaciones los permisos OAuth de cada usuario, ya que el agente solo debe acceder a documentos internos autorizados para quien consulta.",
+      "Claude Research vs. ChatGPT Deep Research: Claude Research destaca por su velocidad iterativa e integración directa con contexto interno corporativo (Drive/MCP) junto a la web."
+    ],
+    "ejemplo": "Consulta recomendada:\n\"Revisa nuestras notas de postmortem de Q3 en Drive y contrástalas con las mejores prácticas actuales de circuit breakers en Envoy.\nGenera un plan de mitigación priorizado citando tanto los incidentes internos como la documentación oficial.\"",
+    "entrevista": "Claude Research aplica descomposición de consultas y ejecución agéntica sobre herramientas de búsqueda web e integraciones empresariales conectadas, generando síntesis trazables con atribución explícita de fuentes."
+  },
+  "Codeium": {
+    "que": "Codeium es una plataforma de asistencia de programación con IA (cuya evolución insignia en IDEs agénticos es Windsurf) que proporciona autocompletado de código de baja latencia, chat contextual, refactorización inline e indexación semántica de repositorios para múltiples editores.",
+    "para": "Sirve para acelerar la escritura de código repetitivo, entender bases de código extensas y generar pruebas unitarias directamente dentro de VS Code, JetBrains, Vim/Neovim o Eclipse sin cambiar de editor.",
+    "como": "El plugin captura la ventana local alrededor del cursor (prefijo y sufijo del archivo activo más pestañas recientemente abiertas) y la envía a modelos propietarios optimizados para Fill-In-the-Middle (FIM) y predicción rápida en streaming. Para el chat y menciones `@`, un motor de indexación local construye un grafo de símbolos y embeddings de los archivos del repositorio (respetando `.gitignore` y `.codeiumignore`) para recuperar definiciones y llamadas relevantes antes de invocar al modelo principal.",
+    "practicas": [
+      "Configura `.codeiumignore` para excluir archivos `.env`, secretos, builds y fixtures gigantes del indexado contextual.",
+      "Revisa la política de retención cero de datos (Zero Data Retention) y telemetría en entornos corporativos antes de habilitarlo en código propietario.",
+      "Usa nombres de funciones y tipos descriptivos o comentarios breves justo encima del cursor: la calidad de la predicción FIM depende directamente del contexto inmediato.",
+      "Codeium vs. Continue.dev: Codeium ofrece una experiencia gestionada optimizada con modelos propios de baja latencia; Continue.dev es 100% open-source y te deja conectar tus propios modelos locales o API keys."
+    ],
+    "ejemplo": "# .codeiumignore\n.env*\nsecrets/\ndist/\nnode_modules/\n*.min.js",
+    "entrevista": "Codeium combina modelos rápidos de Fill-In-the-Middle para autocompletado en tiempo real con indexación contextual del repositorio para enriquecer el chat y la refactorización dentro del IDE."
+  },
+  "Continue.dev": {
+    "que": "Continue.dev es una extensión open-source (Apache 2.0) para VS Code y JetBrains que convierte cualquier IDE en un asistente de código configurable, permitiendo conectar libremente modelos locales o en la nube para chat, edición inline y autocompletado.",
+    "para": "Resuelve la necesidad de equipos que exigen soberanía total de datos, uso de modelos on-premise (Ollama, vLLM, LM Studio) o flexibilidad para combinar distintos LLMs según la tarea (uno pequeño y rápido para tab-autocomplete y uno potente para arquitectura) sin vendor lock-in.",
+    "como": "Toda la lógica se gobierna declarativamente mediante un archivo `config.yaml` (o `config.json` legado) donde se declaran bloques de `models` por rol (`chat`, `edit`, `autocomplete`, `embed`, `rerank`), `context` providers (`@codebase`, `@diff`, `@terminal`, `@docs`) y servidores `mcpServers`. Al escribir código, consulta el modelo de autocompletado vía FIM; al chatear con `@codebase`, indexa el repositorio usando embeddings locales o remotos en una base embebida (LanceDB/SQLite) y aplica opcionalmente un reranker antes de enviar el prompt al LLM elegido.",
+    "practicas": [
+      "Asigna modelos especializados por rol: un modelo ligero de código (p. ej. Qwen2.5-Coder 1.5B/7B) para `autocomplete` y un modelo frontera para `chat` y `edit`.",
+      "Comparte el `config.yaml` o reglas en `.continue/rules/` dentro del repositorio Git para que todo el equipo comparta convenciones y conectores MCP.",
+      "Usa `@diff` y `@terminal` explícitamente en lugar de depender siempre de `@codebase` para reducir ruido y latencia en depuración.",
+      "Configura un modelo de reranking si usas `@codebase` en monorepos grandes para mejorar la precisión de los fragmentos recuperados."
+    ],
+    "ejemplo": "# ~/.continue/config.yaml\nname: Local + Cloud Dev\nmodels:\n  - name: Claude Sonnet (Chat)\n    provider: anthropic\n    model: claude-sonnet-4-20250514\n    roles: [chat, edit]\n  - name: Qwen Coder (Autocomplete)\n    provider: ollama\n    model: qwen2.5-coder:7b\n    roles: [autocomplete]",
+    "entrevista": "Continue.dev desacopla la experiencia de copiloto en el IDE del proveedor de modelos mediante una configuración declarativa por roles, indexación local del codebase y soporte nativo de MCP."
+  },
+  "Custom GPTs": {
+    "que": "Los Custom GPTs son asistentes configurables alojados dentro de ChatGPT que encapsulan instrucciones de sistema, archivos de conocimiento para recuperación RAG, herramientas integradas (Code Interpreter, Web Search, generación de imágenes) y conectores externos mediante OpenAPI.",
+    "para": "Sirven para distribuir flujos de trabajo especializados a usuarios no técnicos o equipos enteros dentro de una organización (ChatGPT Team/Enterprise) sin necesidad de desarrollar, alojar ni mantener una aplicación web independiente.",
+    "como": "Al crear un GPT se configuran tres capas: el bloque `Instructions` que actúa como system prompt prioritario, la sección `Knowledge` que trocea e indexa los archivos subidos en un almacén vectorial interno consultado vía herramienta `file_search`, y `Actions`, donde se declara un esquema OpenAPI 3.0 con autenticación (API Key u OAuth 2.0). Durante la conversación, el modelo decide cuándo invocar `python` (sandbox efímero de Code Interpreter), buscar en los archivos adjuntos o emitir peticiones HTTP hacia los endpoints declarados en el esquema.",
+    "practicas": [
+      "Incluye instrucciones explícitas de protección contra prompt injection si el GPT tiene conocimiento propietario, aunque nunca metas secretos reales en archivos de Knowledge.",
+      "Define `description` claras y parámetros estrictos en cada operación del esquema OpenAPI para que el modelo elija el endpoint correcto a la primera.",
+      "Prefiere documentos en Markdown o texto limpio frente a PDFs complejos con múltiples columnas para maximizar la calidad del `file_search`.",
+      "Custom GPTs vs. Assistants API / Responses API: los Custom GPTs viven solo dentro de la UI de ChatGPT; si necesitas embeber el asistente en tu propio producto debes usar la API."
+    ],
+    "ejemplo": "openapi: 3.1.0\ninfo: { title: Inventario API, version: 1.0.0 }\npaths:\n  /productos/{sku}:\n    get:\n      operationId: getProductoBySku\n      parameters:\n        - name: sku\n          in: path\n          required: true\n          schema: { type: string }",
+    "entrevista": "Los Custom GPTs empaquetan prompt de sistema, RAG gestionado sobre archivos y function calling HTTP basado en especificaciones OpenAPI 3.0 dentro del entorno gestionado de ChatGPT."
+  },
+  "Dify": {
+    "que": "Dify es una plataforma LLMOps open-source para construir, desplegar y operar aplicaciones de IA generativa en producción de forma visual y programática. Integra en un mismo stack un diseñador de workflows y agentes, un motor RAG avanzado, gestión de prompts, evaluación y una pasarela API.",
+    "para": "Resuelve la brecha entre un prototipo en notebook y una aplicación productiva con API REST, control de costes, observabilidad y edición por equipos multidisciplinares. Se usa para lanzar copilotos internos, chatbots RAG empresariales y microservicios de procesamiento de texto.",
+    "como": "Su arquitectura basada en microservicios (API en Python/Flask, workers Celery, frontend Next.js, PostgreSQL, Redis y base vectorial como Weaviate/Qdrant/PGVector) separa el diseño visual de la ejecución distribuida. El motor RAG realiza ETL documental (Unstructured/extractores propios), chunking padre-hijo, búsqueda híbrida (BM25 + vectorial) y reranking (Cohere/BGE). Los workflows funcionan como grafos dirigidos con nodos LLM, código Python/JS sandboxed, peticiones HTTP, condicionales e iteradores, exponiendo cada aplicación automáticamente como endpoint REST con streaming SSE y trazas de latencia/tokens.",
+    "practicas": [
+      "Activa la búsqueda híbrida con reranking en los datasets de Dify cuando trabajes con códigos de error, SKUs o nombres propios que fallan con búsqueda vectorial pura.",
+      "Usa nodos de código o validación de esquema entre nodos LLM para garantizar que las ramas condicionales reciban valores deterministas.",
+      "Conecta Dify a plataformas de observabilidad externas (Langfuse, Arize Phoenix o OpenTelemetry) para auditar regresiones de calidad al cambiar de modelo.",
+      "Dify vs. Flowise/Langflow: Dify destaca como plataforma productiva completa (gestión de datasets, usuarios, logs y APIs versionadas); Flowise y Langflow se centran más en la composición rápida tipo librería LangChain."
+    ],
+    "ejemplo": "curl -X POST 'https://api.dify.ai/v1/workflows/run' \\\n  -H 'Authorization: Bearer app-xxxxxxxx' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n    \"inputs\": {\"ticket\": \"Error 502 en checkout\"},\n    \"response_mode\": \"streaming\",\n    \"user\": \"user-42\"\n  }'",
+    "entrevista": "Dify actúa como una plataforma LLMOps completa que combina orquestación visual en grafo, pipeline RAG con búsqueda híbrida y reranking, y exposición productiva vía API con observabilidad integrada."
+  },
+  "Espacios de trabajo de IA": {
+    "que": "Los espacios de trabajo de IA (AI Workspaces) son entornos colaborativos o de desarrollo donde el contexto persistente —archivos, reglas de proyecto, memoria compartida, historial y herramientas conectadas— se organiza por ámbito de trabajo en lugar de reiniciarse en cada chat efímero.",
+    "para": "Resuelven la fragmentación del contexto cuando un ingeniero o equipo trabaja de forma continua sobre un mismo producto, evitando repetir especificaciones técnicas y asegurando que distintas sesiones e integrantes partan del mismo estado y convenciones.",
+    "como": "Un workspace vincula una raíz lógica (un repositorio Git, una carpeta de documentos o un conjunto de conectores SaaS) con artefactos declarativos de configuración (como archivos de reglas `.cursorrules`, `AGENTS.md`, `CLAUDE.md`, definiciones MCP y almacenes vectoriales indexados). Al abrir una sesión dentro del espacio, el runtime ensambla automáticamente el grafo de contexto combinando las reglas de proyecto, los archivos activos y la memoria de largo plazo antes de invocar al modelo.",
+    "practicas": [
+      "Define un archivo de instrucciones en la raíz del repositorio (`AGENTS.md` o equivalente) con comandos de build, arquitectura y restricciones de estilo.",
+      "Mantén un espacio de trabajo por contexto acotado (un microservicio o dominio) en lugar de mezclar documentación de diez proyectos distintos en un solo índice.",
+      "Revisa periódicamente la memoria o archivos fijados del workspace para purgar decisiones arquitectónicas obsoletas que inducirían respuestas erróneas.",
+      "Trata las reglas del workspace como código: revísalas en Pull Requests junto a los cambios que modifican las convenciones del proyecto."
+    ],
+    "ejemplo": "# Estructura típica de un AI Workspace en repositorio\nmi-servicio/\n├── AGENTS.md            # Comandos de test, arquitectura y límites\n├── .mcp.json            # Servidores MCP permitidos (postgres-ro, jira)\n└── docs/adr/            # Decisiones arquitectónicas indexables",
+    "entrevista": "Los espacios de trabajo de IA convierten el contexto efímero del chat en infraestructura versionable de proyecto mediante reglas declarativas, índices acotados y servidores MCP compartidos."
+  },
+  "Extension de navegador con IA": {
+    "que": "Una extensión de navegador con IA es un complemento (Chrome/Edge/Firefox bajo Manifest V3) que incrusta un copiloto en el panel lateral o menú contextual del navegador con capacidad de leer el DOM de la página activa e interactuar con servicios LLM.",
+    "para": "Sirve para resumir artículos, traducir documentación técnica, extraer tablas de páginas web, redactar respuestas en correos/formularios o automatizar tareas ligeras directamente sobre la pestaña que el usuario está viendo sin copiar y pegar texto manualmente.",
+    "como": "Se compone de un *Content Script* inyectado en la pestaña para extraer texto legible (frecuentemente usando algoritmos tipo Readability para limpiar menús y anuncios) o capturar eventos del DOM, un *Service Worker* en segundo plano que gestiona autenticación y llamadas `fetch` en streaming hacia APIs de LLM (o hacia WebGPU / Chrome Prompt API local), y un *Side Panel* en React/HTML que renderiza la conversación. Los permisos granulares en `manifest.json` (`activeTab`, `sidePanel`, `storage`) limitan qué sitios puede leer la extensión.",
+    "practicas": [
+      "Solicita el permiso `activeTab` bajo demanda en lugar de `<all_urls>` para reducir la superficie de exposición y facilitar la aprobación en tiendas y entornos corporativos.",
+      "Sanitiza el texto extraído del DOM y delimítalo claramente en el prompt para mitigar ataques de *indirect prompt injection* ocultos en páginas web maliciosas.",
+      "Usa `sidePanel` de Manifest V3 en lugar de inyectar iframes pesados directamente en el DOM de la página anfitriona para evitar conflictos de CSS y CSP.",
+      "Implementa chunking o resumen jerárquico si la página excede el límite de tokens, priorizando el contenido principal (`<main>`, `<article>`) sobre el `innerText` bruto."
+    ],
+    "ejemplo": "// manifest.json (Manifest V3 mínimo)\n{\n  \"manifest_version\": 3,\n  \"name\": \"DevDocs AI Copilot\",\n  \"version\": \"1.0\",\n  \"permissions\": [\"activeTab\", \"sidePanel\", \"scripting\"],\n  \"side_panel\": { \"default_path\": \"sidepanel.html\" }\n}",
+    "entrevista": "Una extensión de navegador con IA bajo Manifest V3 usa Content Scripts para extraer y limpiar el DOM activo, un Service Worker para gestionar las peticiones en streaming al LLM y el Side Panel con permisos acotados por `activeTab`."
+  },
+  "Flowise": {
+    "que": "Flowise es una herramienta visual low-code open-source desarrollada en Node.js/TypeScript para diseñar, probar y desplegar flujos de LLMs, cadenas RAG y sistemas multi-agente sobre el ecosistema LangChain.js.",
+    "para": "Sirve para prototipar e implementar rápidamente chatbots conectados a bases de datos vectoriales, APIs internas y múltiples modelos de lenguaje mediante una interfaz de nodos arrastrables, generando al instante endpoints REST y widgets embebibles para sitios web.",
+    "como": "El frontend basado en React Flow serializa la topología del grafo (nodos de LLM, document loaders, text splitters, vector stores, memorias y herramientas) en un JSON estructurado que el backend Express/TypeScript compila dinámicamente en instancias ejecutables de LangChain.js o grafos de AgentFlows (inspirados en LangGraph). Soporta persistencia en SQLite o PostgreSQL, ejecución en streaming vía Socket.IO/SSE, colas con Redis para escalado horizontal y herramientas personalizadas en JavaScript dentro de nodos de función.",
+    "practicas": [
+      "Protege siempre los Chatflows expuestos mediante API Keys generadas en Flowise y restringe los dominios permitidos en la configuración CORS del widget.",
+      "Separa el pipeline de ingesta documental (Document Stores con upsert programado) del flujo de consulta en tiempo real para no re-embeber archivos en cada petición.",
+      "Activa el modo de trazas (LangSmith, Langfuse o logs locales) porque depurar fallos de formato entre nodos visuales sin traza por paso resulta lento.",
+      "Flowise vs. Langflow: Flowise corre sobre Node.js/TypeScript (ideal si tu stack es JS/TS y buscas embebido rápido); Langflow corre sobre Python/FastAPI con acceso directo al ecosistema científico de datos de Python."
+    ],
+    "ejemplo": "// Invocar un chatflow desplegado en Flowise\nconst res = await fetch(\"http://localhost:3000/api/v1/prediction/FLOW_ID\", {\n  method: \"POST\",\n  headers: { \"Authorization\": \"Bearer API_KEY\", \"Content-Type\": \"application/json\" },\n  body: JSON.stringify({ question: \"¿Cuál es el SLA del servicio de pagos?\" })\n});",
+    "entrevista": "Flowise traduce grafos visuales de React Flow en pipelines ejecutables de LangChain.js sobre Node.js, ofreciendo Document Stores integrados, streaming y exposición inmediata como API o widget."
+  },
+  "Gemini CLI": {
+    "que": "Gemini CLI es un agente de desarrollo open-source para terminal creado por Google que lleva los modelos Gemini directamente al shell del sistema operativo con acceso a archivos locales, comandos bash, búsqueda web y servidores MCP.",
+    "para": "Resuelve tareas de ingeniería desde la línea de comandos —refactorizar módulos, diagnosticar fallos en logs de compilación, automatizar migraciones o generar scripts— aprovechando la amplia ventana de contexto de Gemini sin depender de un IDE específico.",
+    "como": "Se distribuye como paquete Node.js (`@google/gemini-cli`) que inicia un bucle agéntico en terminal (TUI interactivo o modo headless `-p`). Recibe contexto del directorio de trabajo y archivos de memoria (`GEMINI.md`), y expone al modelo herramientas nativas (`read_file`, `write_file`, `replace`, `run_shell_command`, `google_web_search`) además de herramientas externas descubiertas mediante servidores MCP configurados en `settings.json`. Ante cada acción mutante o comando de shell solicita confirmación al usuario salvo que se autorice explícitamente o se ejecute en modo sandbox (Docker/macOS Seatbelt).",
+    "practicas": [
+      "Crea un archivo `GEMINI.md` en la raíz del proyecto documentando arquitectura, comandos de test y convenciones para orientar al agente en cada sesión.",
+      "Ejecuta el agente con sandboxing activado o en ramas Git limpias para poder revertir cambios con `git diff` y `git checkout` si el agente edita archivos no deseados.",
+      "Usa el modo no interactivo (`gemini -p \"...\"`) en tuberías Unix o scripts de CI/CD para resumir diffs, revisar PRs o clasificar logs automáticamente.",
+      "Gemini CLI vs. OpenAI Codex CLI: ambos comparten el patrón de agente de terminal con sandbox y archivos de contexto (`GEMINI.md` vs. `AGENTS.md`), diferenciándose en el ecosistema nativo de modelos, límites de contexto y herramientas integradas como Google Search grounding."
+    ],
+    "ejemplo": "# Instalar y ejecutar en modo headless analizando el último diff\nnpm install -g @google/gemini-cli\ngit diff HEAD~1 | gemini -p \"Detecta posibles condiciones de carrera o fugas de memoria en este diff\"",
+    "entrevista": "Gemini CLI implementa un bucle agéntico directamente sobre la terminal con herramientas de sistema de archivos, ejecución shell protegida por sandbox, grounding web y extensibilidad mediante MCP."
+  },
+  "Gemini Gems": {
+    "que": "Los Gemini Gems son versiones personalizadas y reutilizables del asistente Gemini dentro de Google Gemini y Google Workspace, definidas mediante instrucciones de rol persistentes y archivos de referencia asociados.",
+    "para": "Sirven para convertir tareas recurrentes —como redactar documentación técnica, revisar consultas SQL, preparar guiones de soporte o traducir especificaciones— en atajos compartibles con comportamiento predecible dentro del ecosistema Google.",
+    "como": "Cada Gem almacena un bloque de instrucciones de sistema que se inyecta de manera prioritaria antes de cada turno de conversación, junto con archivos de conocimiento adjuntos (PDFs, código, texto o documentos vinculados desde Google Drive). Durante la inferencia, Gemini combina esas instrucciones con su ventana de contexto larga y las extensiones activas de Workspace (Gmail, Docs, Drive) para responder manteniendo el tono, las reglas y el formato configurados en el Gem.",
+    "practicas": [
+      "Estructura las instrucciones del Gem en cuatro bloques claros: Rol, Contexto/Fuentes, Pasos de razonamiento y Formato exacto de salida.",
+      "Incluye dos o tres ejemplos concretos de entrada y salida esperada (few-shot prompting) dentro de las instrucciones para estabilizar el formato.",
+      "Vincula documentos vivos de Google Docs cuando la referencia cambie semanalmente para no tener que resubir archivos estáticos manualmente.",
+      "Gemini Gems vs. NotebookLM: usa un Gem cuando quieras un asistente versátil guiado por rol y estilo con conocimiento general + archivos; usa NotebookLM cuando la respuesta deba restringirse estrictamente a tus fuentes con citas exactas."
+    ],
+    "ejemplo": "# Plantilla de instrucciones para Gem \"SQL Reviewer\"\nRol: DBA especialista en PostgreSQL 16.\nReglas:\n- Identifica sequential scans potenciales, índices faltantes y locks peligrosos en migraciones.\n- Entrega siempre: 1) Diagnóstico, 2) Consulta optimizada, 3) Índice recomendado (CREATE INDEX CONCURRENTLY).",
+    "entrevista": "Los Gemini Gems encapsulan system prompts reutilizables y archivos de referencia —incluyendo documentos vivos de Google Drive— para estandarizar flujos de trabajo especializados dentro del ecosistema Gemini."
+  },
+  "Gestores de referencias con IA": {
+    "que": "Los gestores de referencias con IA son plataformas bibliográficas (como Zotero enriquecido con plugins, Elicit, Paperpile o SciSpace) que combinan la gestión clásica de metadatos académicos (DOI, BibTeX, CSL) con búsqueda semántica, extracción estructurada y RAG sobre colecciones de artículos.",
+    "para": "Resuelven el cuello de botella de descubrir literatura relevante, filtrar cientos de resultados y extraer metodología, tamaño muestral o métricas de decenas de PDFs al redactar tesis, estados del arte o informes técnicos basados en evidencia.",
+    "como": "El sistema ingesta registros bibliográficos y PDFs completos, parsea su estructura científica (título, autores, secciones, tablas y bibliografía citada) y genera embeddings por sección o párrafo en un índice vectorial. Frente a una consulta en lenguaje natural, ejecuta recuperación semántica y grafo de citaciones (Forward/Backward snowballing vía Semantic Scholar o OpenAlex), y pasa los fragmentos recuperados a un LLM para sintetizar matrices comparativas donde cada celda enlaza al párrafo exacto y al registro BibTeX original.",
+    "practicas": [
+      "Mantén los metadatos limpios (DOI verificado y claves de cita consistentes) antes de ejecutar resúmenes automáticos para evitar atribuir hallazgos al paper equivocado.",
+      "Usa matrices de extracción estructurada (columnas como dataset, métrica, limitación) en lugar de resúmenes narrativos libres para comparar estudios objetivamente.",
+      "Desconfía de citas bibliográficas generadas de memoria por un chat genérico; exige siempre recuperación ligada al DOI real en OpenAlex, Crossref o PubMed.",
+      "Combina búsqueda por grafo de citas con búsqueda semántica por embeddings para no perder trabajos fundacionales que usan terminología antigua."
+    ],
+    "ejemplo": "@article{vaswani2017attention,\n  title={Attention is all you need},\n  author={Vaswani, Ashish and others},\n  journal={NeurIPS},\n  year={2017}\n}\n% Extraído vía RAG: Métrica = BLEU 28.4 (WMT14 EN-DE), Complejidad = O(n^2 * d)",
+    "entrevista": "Los gestores de referencias con IA unen la precisión determinista de los metadatos DOI/BibTeX y grafos de citaciones con RAG estructurado para comparar hallazgos sin alucinar referencias."
+  },
+  "Google Deep Research": {
+    "que": "Google Deep Research es una funcionalidad agéntica de Gemini (disponible en Gemini Advanced y como agente en la Gemini API Interactions) que planifica de forma autónoma investigaciones web extensas, navega decenas de sitios y compila informes detallados con citas.",
+    "para": "Sirve para abordar investigaciones técnicas, estudios de mercado o análisis de estado del arte donde hace falta explorar múltiples ángulos, contrastar fuentes actualizadas y producir un documento largo estructurado exportable a Google Docs.",
+    "como": "Al recibir un objetivo, el agente genera primero un plan de investigación multi-paso que el usuario puede editar y aprobar antes de iniciar la ejecución. Luego entra en un bucle asíncrono donde los modelos Gemini invocan Google Search, seleccionan páginas relevantes, leen su contenido completo y reajustan dinámicamente las siguientes búsquedas en función de los hallazgos parciales. Tras varios minutos de exploración iterativa, consolida toda la evidencia en un reporte estructurado con enlaces inline y sección de fuentes consultadas.",
+    "practicas": [
+      "Revisa y edita el plan de investigación propuesto antes de aprobarlo: añadir un criterio o eliminar una rama irrelevante mejora drásticamente el informe final.",
+      "Solicita explícitamente tablas comparativas con criterios medibles (licencia, latencia, arquitectura, costes) para evitar prosa excesivamente descriptiva.",
+      "Exporta el resultado a Google Docs para revisión colaborativa y verificación manual de las fuentes críticas citadas.",
+      "Google Deep Research vs. Perplexity: Perplexity prioriza respuestas rápidas con citas en segundos o modo Pro acotado; Deep Research ejecuta sesiones largas de planificación y navegación profunda para informes extensos."
+    ],
+    "ejemplo": "# Plan de investigación típico aprobado por el usuario:\n1. Identificar especificaciones RFC y estándares W3C recientes sobre Passkeys/WebAuthn.\n2. Comparar soporte nativo en iOS, Android y navegadores desktop en 2026.\n3. Analizar riesgos de recuperación de cuenta y costes de implementación.",
+    "entrevista": "Google Deep Research introduce una fase explícita de planificación editable seguida de un bucle agéntico de búsqueda en Google y síntesis de larga duración con citas trazables."
+  },
+  "Gradio": {
+    "que": "Gradio es una librería open-source en Python (mantenida por Hugging Face) que permite crear interfaces web interactivas para modelos de machine learning, LLMs y pipelines multimodales con unas pocas líneas de código Python.",
+    "para": "Sirve para construir rápidamente demos visuales, herramientas internas de evaluación de modelos y prototipos de chatbots o procesamiento de audio/imagen/vídeo que cualquier usuario pueda probar desde el navegador sin conocimientos de frontend.",
+    "como": "Expone tres niveles de abstracción: `gr.Interface` (mapeo directo de función Python a componentes de entrada/salida), `gr.ChatInterface` (chat con historial y streaming) y `gr.Blocks` (layouts complejos con eventos reactivos). Internamente levanta un servidor FastAPI con frontend en Svelte, gestiona colas asíncronas (`queue()`) para soportar inferencias largas o GPUs limitadas vía WebSockets/SSE, y genera automáticamente tanto una API REST/cliente Python (`gradio_client`) como un túnel temporal o despliegue directo en Hugging Face Spaces.",
+    "practicas": [
+      "Habilita `.queue(default_concurrency_limit=...)` en modelos pesados o de GPU para evitar errores OOM cuando varios usuarios envíen peticiones simultáneas.",
+      "Usa `gr.Blocks` en lugar de `gr.Interface` en cuanto necesites pestañas, estado de sesión (`gr.State`) o actualización encadenada de componentes.",
+      "Aprovecha los generadores (`yield`) en Python para emitir tokens en streaming o resultados intermedios de pipelines de difusión/audio.",
+      "Gradio vs. Streamlit: Gradio sobresale en componentes multimodales nativos (audio, webcam, imagen, chat), colas para ML y exposición automática como API; Streamlit destaca en analítica de datos tabular y dashboards."
+    ],
+    "ejemplo": "import gradio as gr\n\ndef responder(mensaje, historial):\n    yield f\"Procesando: {mensaje}...\"\n    yield f\"Respuesta técnica a: {mensaje}\"\n\ndemo = gr.ChatInterface(fn=responder, title=\"Asistente RAG\")\ndemo.queue().launch()",
+    "entrevista": "Gradio convierte funciones y generadores Python sobre FastAPI en interfaces multimodales con streaming, gestión de colas para GPU y cliente API autogenerado, siendo el estándar de facto para demos ML."
+  },
+  "Herramientas de investigación con IA": {
+    "que": "Las herramientas de investigación con IA son sistemas diseñados específicamente para búsqueda, verificación y síntesis de conocimiento (como Perplexity, NotebookLM, Elicit, Consensus o modos Deep Research) que priorizan la fundamentación en fuentes externas frente al recuerdo paramétrico del modelo.",
+    "para": "Resuelven el problema de las alucinaciones en LLMs generalistas cuando se necesita información actualizada, trazabilidad documental, estado del arte científico o verificación de hechos con citas auditables.",
+    "como": "Implementan arquitecturas de *Grounded Generation* y recuperación agéntica: primero traducen la pregunta en consultas booleanas, semánticas o híbridas contra índices web o repositorios científicos (Semantic Scholar, PubMed, índices propios), aplican reordenamiento por relevancia y autoridad de fuente, y restringen al LLM generador para que sintetice únicamente los pasajes recuperados emitiendo marcadores de cita (`[1]`, `[2]`) alineados con cada afirmación.",
+    "practicas": [
+      "Distingue entre herramientas de fuentes abiertas (búsqueda web en tiempo real como Perplexity) y de fuentes cerradas (corpus del usuario como NotebookLM) según el riesgo de ruido.",
+      "Verifica la fuente primaria detrás de una cita: a veces el resumen refleja correctamente el enlace, pero la página enlazada es secundaria o está desactualizada.",
+      "Formula consultas neutras y no sesgadas (*\"evidencia a favor y en contra de X\"*) para evitar que la recuperación semántica solo traiga artículos confirmatorios.",
+      "Usa herramientas especializadas en papers (Elicit, Consensus) para literatura científica y motores web agénticos para documentación viva o actualidad técnica."
+    ],
+    "ejemplo": "Flujo de evaluación de rigor:\n1. Descubrimiento amplio -> Perplexity / Deep Research\n2. Filtrado de literatura -> Elicit / Consensus (por metodología y muestra)\n3. Lectura profunda y síntesis cerrada -> NotebookLM sobre los PDFs descargados",
+    "entrevista": "Las herramientas de investigación con IA mitigan las alucinaciones mediante recuperación híbrida y generación restringida con atribución obligatoria a fuentes primarias verificables."
+  },
+  "Integración de IA en producto": {
+    "que": "La integración de IA en producto es la disciplina de ingeniería de software que incorpora capacidades basadas en LLMs (copilotos, clasificación, búsqueda semántica, extracción o generación) dentro de aplicaciones reales manteniendo estándares de latencia, fiabilidad, seguridad y coste.",
+    "para": "Resuelve el paso crítico entre una prueba de concepto atractiva y una funcionalidad sostenible en producción que aporte valor medible al usuario final sin degradar el tiempo de respuesta, romper contratos de API ni disparar la factura de tokens.",
+    "como": "Se implementa mediante una capa de abstracción o *AI Gateway* que desacopla el producto de un proveedor único, aplica caché semántica o de prompts, transmite respuestas por streaming (SSE/WebSockets) para reducir el Time-To-First-Token percibido, y valida entradas y salidas con guardrails (PII masking, JSON Schema, moderación). De forma paralela, un pipeline de telemetría (OpenTelemetry/Langfuse) registra latencia, coste por usuario, tasas de error y feedback implícito (aceptación/edición) para ejecutar evaluaciones continuas (evals) antes de actualizar prompts o modelos.",
+    "practicas": [
+      "Diseña la UX asumiendo fallos probabilísticos: ofrece estados de carga en streaming, edición fácil por parte del usuario y degradación elegante (fallback determinista o modelo secundario).",
+      "Mide métricas de producto reales (tasa de aceptación, tiempo ahorrado, reintentos) y no solo métricas sintéticas de laboratorio.",
+      "Aplica límites de tasa (rate limiting) y presupuestos de tokens por tenant/usuario para proteger el margen de negocio ante abusos o bucles.",
+      "Trata prompts, esquemas y conjuntos de evaluación como código versionado con pruebas automáticas en CI antes de desplegar cambios a producción."
+    ],
+    "ejemplo": "Usuario -> Frontend (SSE)\n          -> Backend API + Guardrails (PII / Auth / Rate Limit)\n          -> AI Gateway (Fallback: Claude Sonnet -> GPT-4.1)\n          -> Telemetría & Evals (Latencia, Coste/Tenant, Tasa de aceptación)",
+    "entrevista": "Integrar IA en producto consiste en envolver componentes probabilísticos con arquitectura resiliente —streaming, AI Gateways, Structured Outputs, guardrails y evals continuos— para garantizar UX predecible y costes controlados."
+  },
+  "Langflow": {
+    "que": "Langflow es un IDE visual open-source en Python (FastAPI + React Flow) para diseñar, depurar y desplegar flujos de aplicaciones de IA y sistemas multi-agente mediante componentes conectables ejecutados sobre Python.",
+    "para": "Sirve para construir rápidamente pipelines complejos de RAG y agentes con visibilidad inmediata de los datos que entran y salen de cada componente, permitiendo a desarrolladores Python extender cualquier nodo directamente con código personalizado.",
+    "como": "Cada nodo en el lienzo corresponde a una clase Python tipada que declara sus entradas, salidas y lógica de ejecución; al pulsar ejecutar, el motor de grafos en FastAPI resuelve las dependencias topológicas y ejecuta los componentes secuencialmente o en paralelo (incluyendo bucles de agentes). Permite inspeccionar el output de cada nodo de forma aislada en el Playground, almacenar claves de forma cifrada, exportar flujos como JSON versionable en Git y servirlos automáticamente como API REST o servidor MCP.",
+    "practicas": [
+      "Exporta periódicamente los flujos en JSON e inclúyelos en control de versiones Git para revisar cambios entre iteraciones.",
+      "Crea componentes Python personalizados para lógica de negocio compleja en lugar de encadenar diez nodos visuales difíciles de mantener.",
+      "Usa el Playground integrado y variables globales para separar credenciales de desarrollo y producción antes de exponer el endpoint REST.",
+      "Langflow vs. código puro (LangGraph/LlamaIndex): Langflow acelera el prototipado y la colaboración con perfiles mixtos, pero en lógica altamente concurrente o tests unitarios estrictos suele migrarse el núcleo a código Python puro."
+    ],
+    "ejemplo": "uv tool install langflow\nlangflow run --host 0.0.0.0 --port 7860\n# El flujo queda expuesto automáticamente en:\n# POST http://localhost:7860/api/v1/run/<flow_id>",
+    "entrevista": "Langflow ofrece un entorno visual sobre FastAPI y Python donde cada nodo es una clase extensible e inspeccionable, facilitando depurar pipelines RAG/agénticos y exponerlos al instante vía API o MCP."
+  },
+  "Lectura de papers con IA": {
+    "que": "La lectura de papers con IA es el flujo metodológico y técnico que combina parsers documentales especializados en maquetación científica con LLMs de contexto largo o RAG para comprender, auditar y contrastar artículos académicos rápidamente sin perder rigor.",
+    "para": "Resuelve la sobrecarga de mantenerse al día en áreas de rápido avance (como IA, sistemas distribuidos o bioinformática), permitiendo filtrar en minutos si un paper merece lectura completa, descifrar notación matemática densa y localizar detalles experimentales ocultos en apéndices.",
+    "como": "El paso crítico previo al LLM es la extracción estructural del PDF (que suele tener doble columna, fórmulas LaTeX, figuras y tablas): herramientas como Marker, Nougat o GROBID convierten el PDF en Markdown/XML preservando jerarquía de secciones y ecuaciones. Luego se aplica una lectura en varias pasadas con el modelo: primero triaje (problema, hipótesis, contribución principal y limitaciones), después análisis de metodología y ablaciones, exigiendo citas de sección/página y verificación visual de figuras y tablas originales.",
+    "practicas": [
+      "Nunca pases un PDF científico de doble columna con extracción de texto plana rota; usa parsers conscientes del layout (Marker, Docling, PyMuPDF4LLM) o modelos multimodales sobre páginas renderizadas.",
+      "Pide al modelo analizar explícitamente las tablas de ablación, hiperparámetros y sección de limitaciones, no solo resumir el abstract.",
+      "Solicita traducciones intuitivas de ecuaciones junto a la definición exacta de cada símbolo según la notación del propio paper.",
+      "Contrasta siempre los números clave del resumen generado mirando la tabla original del PDF para detectar confusiones entre métricas o datasets."
+    ],
+    "ejemplo": "Pasadas recomendadas sobre un paper:\n1) \"Extrae en 5 líneas: problema, método propuesto, baseline principal y dataset.\"\n2) \"Resume las tablas de ablación y qué componente aporta la mayor ganancia real.\"\n3) \"Lista limitaciones declaradas y supuestos implícitos no validados.\"",
+    "entrevista": "La lectura rigurosa de papers con IA depende primero de una extracción fiel de layout, tablas y ecuaciones —vía Docling, Marker o visión multimodal— y luego de prompts dirigidos a ablaciones, supuestos y evidencia empírica."
+  },
+  "LlamaIndex": {
+    "que": "LlamaIndex es un framework open-source de orquestación de datos para aplicaciones LLM (en Python y TypeScript) especializado en ingerir, estructurar, indexar y consultar fuentes de datos heterogéneas mediante técnicas avanzadas de RAG y flujos agénticos.",
+    "para": "Sirve para conectar modelos de lenguaje con datos privados complejos —bases SQL, PDFs con tablas, APIs SaaS, grafos de conocimiento y repositorios documentales— superando las limitaciones del RAG ingenuo de chunking fijo.",
+    "como": "Se estructura en capas modulares: conectores de ingesta (`LlamaHub` y `LlamaParse` para documentos complejos), transformaciones y chunking jerárquico/semántico, índices especializados (`VectorStoreIndex`, `SummaryIndex`, `PropertyGraphIndex`) y motores de consulta (`QueryEngine`, `Retriever`, `RouterQueryEngine`) que combinan recuperación híbrida, sub-preguntas y reranking. Para orquestación compleja utiliza `Workflows`, un motor asíncrono dirigido por eventos tipados en Python que reemplaza las cadenas rígidas por pasos desacoplados con ciclos, paralelismo y observabilidad.",
+    "practicas": [
+      "Usa `LlamaParse` o parsers estructurales cuando tus documentos contengan tablas financieras, diagramas o encabezados anidados que se corrompen con `pypdf` básico.",
+      "Combina recuperación vectorial y lexical (BM25) más un `SentenceTransformerRerank` o Cohere Rerank para mejorar el recall@k sin saturar el contexto.",
+      "Adopta `Workflows` basados en eventos en lugar de cadenas heredadas cuando necesites reintentos, bifurcaciones o coordinación multi-agente.",
+      "LlamaIndex vs. LangChain: LlamaIndex brilla en indexación avanzada, parsing documental y estrategias de recuperación de datos; LangChain/LangGraph suele preferirse para control fino de grafos de estado agénticos generales."
+    ],
+    "ejemplo": "from llama_index.core import VectorStoreIndex, SimpleDirectoryReader\n\ndocs = SimpleDirectoryReader(\"./docs\").load_data()\nindex = VectorStoreIndex.from_documents(docs)\nengine = index.as_query_engine(similarity_top_k=5)\nprint(engine.query(\"¿Cómo se gestiona el backoff exponencial?\"))",
+    "entrevista": "LlamaIndex es el framework especializado en la capa de datos para LLMs: transforma documentos heterogéneos en índices vectoriales o de grafos consultables y orquesta recuperación avanzada y agentes mediante Workflows asíncronos."
+  },
+  "Make.com": {
+    "que": "Make.com (anteriormente Integromat) es una plataforma visual iPaaS (Integration Platform as a Service) que permite conectar miles de aplicaciones SaaS, webhooks y APIs HTTP arbitrarias mediante escenarios de flujos de datos con transformación avanzada.",
+    "para": "Sirve para automatizar procesos empresariales complejos con bifurcaciones, bucles sobre arrays, manejo de errores y llamadas a APIs de IA (OpenAI, Anthropic, Gemini o endpoints propios) sin aprovisionar servidores ni infraestructura backend.",
+    "como": "Cada escenario parte de un módulo trigger (instantáneo vía webhook o programado por polling) y encadena módulos de acción conectados por líneas con filtros condicionales. Internamente incluye primitivas de flujo como *Routers* (ramificación paralela), *Iterators* (desempaquetado de arrays JSON en operaciones individuales), *Aggregators* (reagrupación de resultados) y *Error Handlers* (`Resume`, `Rollback`, `Break`). Un lenguaje de expresiones funcionales integrado permite transformar fechas, textos y estructuras JSON al vuelo entre la salida de un nodo LLM y la entrada del siguiente sistema.",
+    "practicas": [
+      "Añade rutas explícitas de manejo de errores (`Break` o `Ignore` + notificación a Slack) en módulos HTTP y de IA para no perder datos ante timeouts o rate limits 429.",
+      "Agrupa datos con Text/JSON Aggregator antes de llamar al LLM para procesar lotes en una sola inferencia en lugar de gastar una operación por fila.",
+      "Usa `Data Stores` internos o bases externas para deduplicar eventos y evitar ejecuciones repetidas cuando trabajes con triggers por polling.",
+      "Make.com vs. Zapier vs. n8n: Make ofrece mayor control visual de arrays, iteradores y transformación JSON que Zapier a menor coste por operación, mientras que n8n aporta autoalojamiento y código JS/Python nativo sin límites SaaS."
+    ],
+    "ejemplo": "[Webhook: nuevo_lead] -> [HTTP / OpenAI: JSON Schema enriquecimiento]\n  -> [Router]\n     |-- (score >= 80) -> [Slack: #ventas-vip] -> [HubSpot: crear deal]\n     |-- (score < 80)  -> [Google Sheets: añadir fila]",
+    "entrevista": "Make.com destaca frente a automatizadores lineales gracias a sus primitivas de flujo —Routers, Iterators, Aggregators y Error Handlers— que permiten manipular payloads JSON complejos alrededor de llamadas a LLMs."
+  },
+  "NotebookLM": {
+    "que": "NotebookLM es un entorno de investigación y toma de notas asistido por IA de Google, impulsado por modelos Gemini de contexto largo, cuyo rasgo definitorio es el grounding estricto sobre el conjunto cerrado de fuentes que aporta el usuario.",
+    "para": "Resuelve el análisis profundo y fiable de colecciones acotadas de información —documentación técnica de un producto, manuales legales, apuntes de asignatura, transcripciones o repositorios de PDFs— minimizando alucinaciones al impedir que mezcle conocimiento externo no solicitado.",
+    "como": "Cada cuaderno actúa como un espacio aislado donde se cargan fuentes heterogéneas (PDFs, Google Docs/Slides, URLs, vídeos de YouTube con transcripción o texto plano). Gracias a la ventana de contexto extensa de Gemini y a un sistema de indexación por fuente, el modelo responde únicamente apoyándose en los documentos activos, insertando citas numeradas clicables que hacen scroll directo al pasaje original. Además genera artefactos derivados como guías de estudio, cronologías, mapas mentales y *Audio Overviews* (resúmenes conversacionales generados en audio).",
+    "practicas": [
+      "Agrupa en un mismo cuaderno únicamente fuentes coherentes con un tema o proyecto; mezclar documentos contradictorios sin contexto confunde la síntesis.",
+      "Haz clic sistemáticamente en las citas numeradas para verificar el contexto circundante del fragmento cuando tomes decisiones críticas.",
+      "Convierte las mejores síntesis del chat en notas guardadas y promuévelas a fuente si deseas consolidar conclusiones iterativas.",
+      "NotebookLM vs. ChatGPT/Claude genéricos: NotebookLM sacrifica amplitud de conocimiento general a cambio de alta fidelidad documental y trazabilidad exacta al párrafo fuente."
+    ],
+    "ejemplo": "Flujo de estudio técnico:\n1. Cargar 4 RFCs + guía de implementación oficial + notas propias en un Notebook.\n2. Preguntar: \"Construye una tabla de diferencias entre el RFC A y el B citando secciones exactas.\"\n3. Generar Audio Overview enfocado en los puntos de migración complejos.",
+    "entrevista": "NotebookLM implementa RAG y contexto largo sobre un corpus cerrado definido por el usuario, garantizando respuestas fundamentadas con citas verificables al pasaje exacto de cada fuente."
+  },
+  "Open WebUI": {
+    "que": "Open WebUI es una plataforma web open-source y autoalojable (originalmente Ollama WebUI) que ofrece una interfaz conversacional completa para interactuar con modelos locales vía Ollama y con cualquier API compatible con OpenAI.",
+    "para": "Resuelve la necesidad de empresas, universidades y desarrolladores de tener su propio portal privado tipo ChatGPT corriendo on-premise o en VPC, con gestión de usuarios, compartición de prompts, RAG integrado y control de acceso sin enviar datos a terceros.",
+    "como": "Corre habitualmente en Docker combinando un backend Python (FastAPI + SQLAlchemy sobre SQLite o PostgreSQL) y un frontend reactivo en SvelteKit con soporte PWA. Integra un motor RAG interno con almacenamiento vectorial (Chroma, Qdrant o PGVector), carga directa de documentos con `#`, búsqueda web configurable (SearXNG, Tavily, Brave), generación de imágenes y un sistema extensible de **Pipelines** y **Functions** en Python (Filters, Pipes, Actions) además de soporte para herramientas y servidores MCP. Incluye autenticación local, OAuth/OIDC/LDAP y RBAC para gobernar qué modelos y herramientas ve cada grupo.",
+    "practicas": [
+      "En despliegues multiusuario, sustituye SQLite por PostgreSQL y configura `WEBUI_SECRET_KEY` persistente y backups del volumen `/app/backend/data`.",
+      "Usa Pipelines externos en Python para desacoplar lógica pesada (guardrails, llamadas a bases internas, routers de modelos) del servidor principal de la UI.",
+      "Integra un motor de búsqueda autoalojado como SearXNG para habilitar búsqueda web privada sin depender de APIs comerciales de terceros.",
+      "Activa RBAC para separar modelos costosos de APIs externas de los modelos locales gratuitos según el rol del usuario."
+    ],
+    "ejemplo": "docker run -d -p 3000:8080 \\\n  -v open-webui:/app/backend/data \\\n  -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \\\n  --name open-webui --restart always \\\n  ghcr.io/open-webui/open-webui:main",
+    "entrevista": "Open WebUI es el estándar open-source autoalojable sobre FastAPI y Svelte para operar modelos locales y remotos en equipo, aportando RBAC, RAG integrado, búsqueda web privada y Pipelines extensibles en Python."
+  },
+  "OpenAI Codex CLI": {
+    "que": "OpenAI Codex CLI es un agente de codificación open-source para terminal desarrollado por OpenAI (`@openai/codex`) que lee repositorios locales, razona sobre el código, aplica parches directamente en archivos y ejecuta comandos y pruebas bajo aislamiento de sandbox.",
+    "para": "Sirve para delegar tareas completas de ingeniería desde la línea de comandos —implementar features acotadas, corregir errores guiados por tests fallidos, refactorizar módulos o auditar cambios— manteniendo al desarrollador en control mediante niveles de aprobación configurables.",
+    "como": "Se instala como CLI local (Node.js / binario nativo) conectado a la API de OpenAI con modelos optimizados para razonamiento y código. Lee automáticamente archivos de contexto del repositorio (`AGENTS.md`) y opera en un bucle agente-herramienta aplicando parches (`apply_patch`) y ejecutando comandos en shell. Por seguridad, la ejecución de comandos se aísla a nivel de sistema operativo sin red por defecto —usando Seatbelt (`sandbox-exec`) en macOS y Landlock/seccomp en Linux o contenedores— y ofrece modos de autonomía graduados (`suggest`, `auto-edit`, `full-auto`), además de integrarse con servidores MCP.",
+    "practicas": [
+      "Documenta en `AGENTS.md` los comandos exactos de lint, compilación y tests unitarios para que el agente se autoverifique tras cada parche.",
+      "Usa el modo de aprobación interactiva cuando trabajes fuera de una rama aislada o antes de permitir comandos con escritura en red o sistema.",
+      "Aprovecha el modo no interactivo (`codex exec`) en pipelines de CI o scripts para análisis automatizado de fallos y generación de parches en sandbox.",
+      "OpenAI Codex CLI vs. extensiones de IDE: la CLI brilla en flujos centrados en terminal, tmux y ejecución autónoma de suites de tests en bucle cerrado sin depender de un editor gráfico."
+    ],
+    "ejemplo": "npm install -g @openai/codex\ncodex \"Ejecuta pytest tests/auth, diagnostica el fallo de expiración JWT y aplica el fix mínimo\"",
+    "entrevista": "OpenAI Codex CLI ejecuta un bucle agéntico de edición y verificación en terminal protegido por sandboxing a nivel de kernel (Seatbelt/Landlock), guiado por archivos `AGENTS.md` y niveles de aprobación progresivos."
+  }
+}

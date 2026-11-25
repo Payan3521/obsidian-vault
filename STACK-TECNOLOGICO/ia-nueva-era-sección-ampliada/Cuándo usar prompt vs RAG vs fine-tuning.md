@@ -2,20 +2,25 @@
 titulo: "Cuándo usar prompt vs RAG vs fine-tuning"
 categoria:
   - "17. IA — nueva era (sección ampliada)"
+  - "59. Fine-tuning y adaptación avanzada"
 tags:
   - "mapa-tecnologico"
   - "nivel-conocer"
   - "ia-nueva-era-sección-ampliada"
+  - "fine-tuning-y-adaptación-avanzada"
 nivel: conocer
 estrella: false
 relacionado_con:
+  - "[[Batch size]]"
+  - "[[Catastrophic forgetting]]"
+  - "[[Comparación base vs fine-tuned]]"
+  - "[[Coste de fine-tuning]]"
+  - "[[Cuándo fine-tuning no conviene]]"
   - "[[DPO]]"
   - "[[Datasets de entrenamiento]]"
-  - "[[LoRA - QLoRA]]"
-  - "[[PEFT]]"
-  - "[[RLHF]]"
-  - "[[Regresiones de modelo]]"
-  - "[[SFT]]"
+  - "[[Epochs]]"
+  - "[[Evaluación post-fine-tuning]]"
+  - "[[Hiperparámetros de fine-tuning]]"
 ---
 
 # Cuándo usar prompt vs RAG vs fine-tuning
@@ -24,17 +29,20 @@ relacionado_con:
 
 ## Contexto en el mapa
 
-➕ [[SFT]], ➕ [[LoRA - QLoRA]], ➕ [[PEFT]], ➕ [[RLHF]], ➕ [[DPO]], ➕ [[Datasets de entrenamiento]], ➕ [[Cuándo usar prompt vs RAG vs fine-tuning]], ➕ [[Regresiones de modelo]].
+**Control:** [[Hiperparámetros de fine-tuning]], [[Learning rate]], [[Epochs]], [[Batch size]], [[Overfitting en fine-tuning]], [[Catastrophic forgetting]], [[Olvido catastrófico]], [[Evaluación post-fine-tuning]], [[Comparación base vs fine-tuned]], [[Coste de fine-tuning]], [[Cuándo fine-tuning no conviene]], [[Cuándo usar prompt vs RAG vs fine-tuning]].
 
 ## Relaciones
 
+- [[Batch size]]
+- [[Catastrophic forgetting]]
+- [[Comparación base vs fine-tuned]]
+- [[Coste de fine-tuning]]
+- [[Cuándo fine-tuning no conviene]]
 - [[DPO]]
 - [[Datasets de entrenamiento]]
-- [[LoRA - QLoRA]]
-- [[PEFT]]
-- [[RLHF]]
-- [[Regresiones de modelo]]
-- [[SFT]]
+- [[Epochs]]
+- [[Evaluación post-fine-tuning]]
+- [[Hiperparámetros de fine-tuning]]
 
 ## Mis notas
 

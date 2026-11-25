@@ -1,0 +1,392 @@
+{
+  "API Gateway": {
+    "que": "Amazon API Gateway es un servicio totalmente administrado que actúa como puerta de entrada única (front door) para crear, publicar, asegurar y monitorizar APIs REST, HTTP y WebSocket a escala. Centraliza funciones transversales de borde como terminación TLS, autenticación, limitación de tasa (throttling) y transformación de peticiones antes de alcanzar los backends.",
+    "para": "Resuelve la exposición segura de microservicios, funciones Lambda o endpoints privados en VPC sin tener que programar ni operar proxies inversos propios. Se utiliza cuando una API requiere planes de uso con API Keys, autorización por token JWT/Cognito, enrutamiento multi-backend o soporte bidireccional mediante WebSockets.",
+    "como": "Cuando un cliente envía una petición HTTPS, CloudFront (en endpoints edge-optimized) o el punto regional termina TLS y enruta la llamada al plano de datos de API Gateway. El motor evalúa reglas de throttling (algoritmo token bucket por cuenta/ruta), valida API Keys y ejecuta el autorizador configurado (IAM SigV4, Cognito User Pools o Lambda Authorizer). Tras superar la autorización, aplica plantillas de mapeo VTL (en APIs REST) o reenvía la petición HTTP directamente hacia integraciones como Lambda, ALB vía VPC Link o servicios AWS. Finalmente puede servir respuestas desde una caché en memoria por stage y registrar trazas en CloudWatch Logs y AWS X-Ray.",
+    "practicas": [
+      "Elige HTTP API frente a REST API por defecto: HTTP API ofrece menor latencia y hasta ~70% menos coste con soporte nativo de JWT y CORS; usa REST API solo si necesitas API Keys/Usage Plans, caché integrada, WAF directo o transformaciones VTL.",
+      "Configura throttles por ruta y método además de los límites globales de cuenta para evitar que un endpoint costoso agote la concurrencia de Lambda o sature bases de datos.",
+      "No confundas API Gateway con Application Load Balancer (ALB): ALB resulta mucho más económico para tráfico sostenido muy alto hacia ECS/EC2/Lambda, aunque carece de planes de uso, portales de desarrolladores o WebSockets administrados.",
+      "Versiona mediante stages (dev, prod) combinados con despliegue Canary o alias de Lambda, evitando romper contratos de clientes en producción."
+    ],
+    "ejemplo": "aws apigatewayv2 create-api \\\n  --name \"orders-http-api\" \\\n  --protocol-type HTTP \\\n  --target \"arn:aws:lambda:us-east-1:123456789012:function:orders\"",
+    "entrevista": "API Gateway desacopla la seguridad, el throttling y el enrutamiento de la lógica de negocio, eligiendo HTTP API para máximo rendimiento y menor coste frente a REST API cuando no se requieren Usage Plans ni transformaciones VTL."
+  },
+  "AWS Backup": {
+    "que": "AWS Backup es un servicio centralizado y basado en políticas que automatiza y gobierna las copias de seguridad de múltiples servicios de AWS desde un único plano de control. Unifica la programación, retención, cifrado y auditoría de respaldos para EBS, RDS, Aurora, DynamoDB, EFS, S3 y máquinas virtuales.",
+    "para": "Resuelve la fragmentación de scripts ad-hoc y políticas dispersas por servicio cuando una organización necesita cumplir objetivos RPO/RTO y normativas de auditoría. Se emplea para garantizar copias inmutables contra ransomware y replicación automática entre regiones o cuentas.",
+    "como": "Un Backup Plan define reglas con expresiones cron (ventana de inicio y finalización), etiquetas de selección de recursos y transiciones del ciclo de vida hacia almacenamiento frío o expiración. Cuando llega la ventana programada, AWS Backup asume un rol IAM de servicio y dispara los mecanismos nativos de cada motor (snapshots incrementales en EBS, backups automatizados en RDS o respaldos bajo demanda en DynamoDB). Los puntos de recuperación resultantes se almacenan en un Backup Vault cifrado con KMS, opcionalmente protegido mediante Vault Lock en modo WORM (Write-Once-Read-Many), y pueden copiarse asíncronamente a otra región o cuenta.",
+    "practicas": [
+      "Activa AWS Backup Vault Lock en modo Compliance (tras periodo de gracia) en cuentas críticas para impedir que incluso un administrador root elimine respaldos ante un ataque de ransomware.",
+      "Aplica asignación de recursos basada en etiquetas (ej. Backup=Daily) en lugar de ARNs estáticos para que la nueva infraestructura quede protegida desde el primer día.",
+      "Separa la bóveda destino en una cuenta de seguridad dedicada (cross-account copy) dentro de AWS Organizations para aislar el plano de recuperación frente a compromisos de la cuenta productiva.",
+      "Realiza simulacros periódicos de restauración (Restore Testing) automatizados: un respaldo sin prueba de recuperación verificada no garantiza el RTO."
+    ],
+    "ejemplo": "{\n  \"RuleName\": \"DailyProdBackup\",\n  \"TargetBackupVaultName\": \"prod-immutable-vault\",\n  \"ScheduleExpression\": \"cron(0 3 * * ? *)\",\n  \"Lifecycle\": { \"MoveToColdStorageAfterDays\": 30, \"DeleteAfterDays\": 365 }\n}",
+    "entrevista": "AWS Backup centraliza la gobernanza de RPO y retención mediante políticas por etiquetas, combinando Vault Lock WORM y copias cross-account para lograr resiliencia real frente a errores humanos o ransomware."
+  },
+  "AWS Batch": {
+    "que": "AWS Batch es un servicio administrado de computación por lotes que planifica, cola y ejecuta cargas de trabajo en contenedores a cualquier escala sin gestionar clústeres manualmente. Orquesta el aprovisionamiento dinámico de capacidad en EC2 (On-Demand o Spot) o Fargate según la demanda pendiente.",
+    "para": "Sirve para ejecutar procesos pesados asíncronos o finitos —como transcodificación multimedia, simulaciones financieras, entrenamiento/inferencia batch o pipelines ETL— donde importa el rendimiento agregado y el coste mínimo más que la latencia instantánea. Evita mantener instancias ociosas entre ejecuciones.",
+    "como": "El usuario registra un Job Definition con la imagen de contenedor, requisitos de vCPU/memoria, reintentos y rol IAM, y envía trabajos a una Job Queue asociada a uno o varios Compute Environments. El planificador evalúa dependencias, prioridades (incluyendo Fair-share scheduling) y Array Jobs, calculando cuántos recursos faltan. Si el entorno es administrado, AWS Batch llama a EC2 Fleet o Fargate para lanzar las instancias óptimas (por defecto estrategia BEST_FIT_PROGRESSIVE o SPOT_CAPACITY_OPTIMIZED) y registra agentes ECS subyacentes que ejecutan los contenedores hasta su finalización y terminan las instancias al vaciarse la cola.",
+    "practicas": [
+      "Combina Compute Environments de instancias Spot (con estrategia SPOT_CAPACITY_OPTIMIZED) y un entorno de respaldo On-Demand o Fargate en la misma cola para lograr hasta 70-90% de ahorro sin bloquear colas críticas.",
+      "Usa Array Jobs cuando necesites procesar miles de archivos o particiones independientes con un mismo contenedor, evitando miles de llamadas individuales SubmitJob.",
+      "Configura checkpoints en S3 y `retryStrategy` con `evaluateOnExit` para distinguir fallos transitorios de red o interrupciones Spot (código de salida) frente a errores lógicos de la aplicación.",
+      "Compara AWS Batch vs Lambda/Step Functions: si cada tarea dura más de 15 minutos, requiere GPUs, >10 GB de RAM o binarios pesados, AWS Batch es la opción natural."
+    ],
+    "ejemplo": "aws batch submit-job \\\n  --job-name \"etl-night-partition\" \\\n  --job-queue \"spot-compute-queue\" \\\n  --job-definition \"spark-runner:4\" \\\n  --array-properties size=100",
+    "entrevista": "AWS Batch abstrae la gestión de flotas EC2 Spot y Fargate detrás de colas con prioridad y Array Jobs, optimizando el coste por vCPU en cargas finitas de computación intensiva."
+  },
+  "AWS Budgets": {
+    "que": "AWS Budgets es el servicio de control financiero (FinOps) que permite definir umbrales personalizados de gasto, uso de recursos y cobertura o utilización de Savings Plans y Reserved Instances. Evalúa tanto el consumo real acumulado como las proyecciones basadas en el historial reciente.",
+    "para": "Resuelve el riesgo de sobresaltos en la factura mensual al detectar desviaciones tempranas por errores de configuración, bucles infinitos serverless o recursos huérfanos. Se usa para alertar a equipos de ingeniería o ejecutar acciones automáticas de contención antes de agotar el presupuesto.",
+    "como": "Al crear un presupuesto en AWS Billing, se especifica el periodo (diario, mensual, trimestral o anual), el tipo (Cost, Usage, RI/SP Utilization o Coverage) y filtros opcionales por cuenta, servicio, región o etiquetas de asignación de costes. El motor de facturación evalúa las métricas acumuladas periódicamente varias veces al día y calcula una proyección estadística de fin de mes. Cuando el valor real o previsto supera un porcentaje umbral (por ejemplo 80% o 100%), publica notificaciones hacia SNS, correo electrónico o AWS Chatbot, y opcionalmente ejecuta Budget Actions que aplican políticas IAM/SCP restrictivas o detienen instancias EC2/RDS.",
+    "practicas": [
+      "Configura siempre dos tipos de alerta por presupuesto: una basada en gasto real (ej. 80%) y otra en gasto proyectado (Forecasted 100%) para reaccionar días antes de que ocurra el exceso.",
+      "Activa el presupuesto gratuito AWS Zero-Spend Budget en cuentas sandbox o personales para detectar de inmediato cualquier recurso fuera del Free Tier.",
+      "Distingue AWS Budgets de Cost Explorer y CloudWatch Billing Alarms: Budgets ofrece filtros multidimensionales y acciones automatizadas de mitigación (IAM/SCP/stop), mientras CloudWatch evalúa métricas básicas de facturación en us-east-1.",
+      "No confíes en las Budget Actions destructivas en producción (detener RDS/EC2); en entornos productivos limita la acción a alertas de alta prioridad y revisión humana."
+    ],
+    "ejemplo": "aws budgets create-budget --account-id 123456789012 --budget '{\n  \"BudgetName\": \"DevMonthlyCap\",\n  \"BudgetLimit\": {\"Amount\": \"200\", \"Unit\": \"USD\"},\n  \"TimeUnit\": \"MONTHLY\",\n  \"BudgetType\": \"COST\"\n}'",
+    "entrevista": "AWS Budgets convierte la telemetría de facturación en guardarraíles proactivos con alertas reales, proyectadas y Budget Actions automatizadas antes de cerrar el ciclo mensual."
+  },
+  "AWS Pricing Calculator": {
+    "que": "AWS Pricing Calculator es una herramienta web oficial de modelado financiero que estima el coste mensual y anual de una arquitectura antes de aprovisionar recursos en AWS. Permite combinar servicios, regiones, patrones de tráfico, almacenamiento y modelos de compra en un presupuesto compartido.",
+    "para": "Sirve para elaborar casos de negocio, comparar el impacto económico de distintas opciones de diseño (por ejemplo EC2 On-Demand vs Fargate o RDS vs Aurora) y justificar presupuestos ante dirección o clientes. Es la herramienta estándar en fases de preventa y diseño de arquitectura.",
+    "como": "El arquitecto selecciona una región de AWS y añade servicios configurando parámetros de dimensionamiento específicos: familia de instancias, horas mensuales, IOPS aprovisionados, GB de transferencia saliente (Data Transfer Out) y peticiones esperadas. El motor aplica las tarifas públicas vigentes de esa región y calcula variantes según el compromiso elegido (On-Demand, Compute/EC2 Savings Plans o Reserved Instances a 1 o 3 años). La estimación completa se exporta como enlace compartible, CSV o JSON, aunque no se conecta con la facturación real de la cuenta.",
+    "practicas": [
+      "Incluye siempre los costes ocultos más frecuentes en los presupuestos: transferencia saliente a Internet (Data Transfer Out), tráfico cross-AZ, procesamiento por GB en NAT Gateway y logs en CloudWatch.",
+      "Modela escenarios conservador, esperado y pico antes de comprometer Savings Plans o Reserved Instances para no sobredimensionar compromisos anuales.",
+      "Recuerda la diferencia clave frente a Cost Explorer y CUR: Pricing Calculator estima arquitectura futura teórica (pre-despliegue), mientras Cost Explorer y CUR analizan consumo real facturado.",
+      "Verifica la región seleccionada en cada servicio del cálculo, ya que las tarifas de cómputo, almacenamiento y salida de red varían significativamente entre regiones (ej. us-east-1 vs sa-east-1)."
+    ],
+    "ejemplo": "Escenario comparativo típico: 2 EC2 m6i.large (730 h/mes) + 200 GB EBS gp3 + 1 NAT Gateway (730 h + 500 GB procesados) + 1 TB Data Transfer Out en us-east-1 -> cálculo previo a Terraform apply para validar presupuesto.",
+    "entrevista": "AWS Pricing Calculator permite validar la viabilidad económica de una arquitectura antes de desplegarla, siendo clave incluir costes de red como NAT Gateway y transferencia cross-AZ o saliente."
+  },
+  "AWS X-Ray": {
+    "que": "AWS X-Ray es un servicio de trazabilidad distribuida que recopila, indexa y visualiza el recorrido completo de peticiones individuales a través de microservicios y funciones serverless. Permite identificar cuellos de botella de latencia, dependencias ocultas y errores entre componentes distribuidos.",
+    "para": "Resuelve la pérdida de visibilidad cuando una única petición de usuario atraviesa API Gateway, Lambda, colas SQS, contenedores ECS y bases de datos DynamoDB o RDS. Se utiliza para diagnosticar picos de latencia P99, fallos en cascada y consultas lentas sin revisar logs aislados servicio por servicio.",
+    "como": "Cada punto de entrada compatible (API Gateway, ALB, Lambda o aplicación instrumentada con X-Ray SDK / AWS Distro for OpenTelemetry) genera o lee la cabecera HTTP `X-Amzn-Trace-Id` con un Trace ID único y la propaga en llamadas HTTP, mensajes SQS o eventos SNS. Cada servicio registra su propio Segment (tiempo total, código HTTP, metadatos) y Subsegments (llamadas a SDK de AWS, SQL o APIs externas). El X-Ray Daemon (o el entorno administrado en Lambda) agrupa los fragmentos recibidos por UDP puerto 2000 y los envía por lotes a la API de X-Ray, donde se ensamblan en un Service Map y trazas filtrables según reglas de sampling configuradas.",
+    "practicas": [
+      "Instrumenta nuevas aplicaciones con OpenTelemetry (ADOT) exportando hacia X-Ray para evitar vendor lock-in en el código manteniendo el backend nativo de AWS.",
+      "Ajusta las reglas de sampling (ej. 1 petición/segundo + 5% adicional) en tráfico alto para controlar costes de ingestión sin perder cobertura estadística.",
+      "Diferencia Annotations (indexadas para filtrar trazas en consultas, ej. tenant_id) de Metadata (no indexada, útil para payloads de depuración pesados).",
+      "Propaga explícitamente el Trace ID a través de colas SQS/EventBridge y correlaciona el mismo ID dentro de los logs estructurados JSON en CloudWatch."
+    ],
+    "ejemplo": "X-Amzn-Trace-Id: Root=1-65f1a2b3-0123456789abcdef01234567;Parent=53995c3f42cd8ad8;Sampled=1",
+    "entrevista": "AWS X-Ray reconstruye el grafo completo de una petición distribuida propagando el `X-Amzn-Trace-Id` y permite aislar si la latencia P99 nace en nuestro código, en cold starts o en una dependencia externa."
+  },
+  "Amazon MQ (RabbitMQ)": {
+    "que": "Amazon MQ es un servicio administrado de brokers de mensajería para Apache ActiveMQ y RabbitMQ en la nube de AWS. Proporciona brokers dedicados compatibles con protocolos abiertos estándar de la industria como AMQP 0-9-1, MQTT, STOMP y OpenWire.",
+    "para": "Resuelve la migración lift-and-shift de aplicaciones empresariales que dependen de enrutamientos complejos de RabbitMQ (exchanges direct, topic, fanout, headers) o clientes AMQP/JMS existentes sin reescribir la capa de mensajería hacia SDKs propietarios como SQS/SNS.",
+    "como": "Al aprovisionar un clúster Amazon MQ para RabbitMQ dentro de una VPC, AWS despliega instancias gestionadas (despliegue single-instance o clúster de 3 nodos distribuidos en múltiples Availability Zones con colas Quorum) y expone endpoints TLS sobre AMQP/AMQPS y la consola web de RabbitMQ. Los productores publican mensajes en un Exchange, que los enruta hacia colas según su tipo y binding keys antes de entregarlos mediante conexiones TCP persistentes (push) a los consumidores. AWS gestiona parches de sistema operativo, reemplazo automático de nodos fallidos y publicación de métricas en CloudWatch.",
+    "practicas": [
+      "Usa SQS + SNS para arquitecturas cloud-native nuevas por su escalabilidad infinita, modelo serverless y coste por uso; reserva Amazon MQ cuando necesites compatibilidad AMQP/MQTT o topologías avanzadas de RabbitMQ.",
+      "En clústeres Multi-AZ de RabbitMQ sobre Amazon MQ, utiliza Quorum Queues en lugar de classic mirrored queues (obsoletas) para garantizar replicación segura vía Raft.",
+      "Dimensiona el tamaño de instancia y activa conexiones persistentes (connection pooling): abrir y cerrar canales AMQP por petición degrada gravemente al broker.",
+      "Controla la memoria del broker configurando límites de prefetch (`basic.qos`) y Dead Letter Exchanges (DLX) para que mensajes no consumidos no disparen el flow-control global."
+    ],
+    "ejemplo": "amqp.connect('amqps://user:pass@b-1234.mq.us-east-1.amazonaws.com:5671')\n  .then(conn => conn.createChannel())\n  .then(ch => ch.assertQueue('orders.q', { arguments: { 'x-queue-type': 'quorum' } }));",
+    "entrevista": "Amazon MQ para RabbitMQ es la opción adecuada para migrar sistemas ligados a protocolos AMQP o enrutamientos complejos de exchanges, mientras que para cargas cloud-native nuevas prefiero SQS y SNS por ser serverless."
+  },
+  "Aurora": {
+    "que": "Amazon Aurora es un motor de base de datos relacional cloud-native administrado por AWS, compatible a nivel de protocolo y SQL con MySQL y PostgreSQL. Rediseña la arquitectura tradicional separando la capa de cómputo de un volumen de almacenamiento distribuido y autoescalable.",
+    "para": "Sirve para cargas relacionales críticas de alto rendimiento que superan las limitaciones de replicación, failover o almacenamiento de RDS estándar. Se elige cuando se requiere alta disponibilidad multi-AZ con conmutación inferior a 30 segundos, hasta 15 réplicas de lectura de baja latencia o escalado automático con Aurora Serverless v2.",
+    "como": "A diferencia de MySQL/PostgreSQL convencionales, las instancias de cómputo de Aurora no escriben páginas enteras de datos (8 o 16 KB) ni replican binlogs pesados entre réplicas; envían únicamente registros de redo log por red hacia un volumen de almacenamiento compartido distribuido entre 3 Availability Zones. Ese clúster de almacenamiento mantiene 6 copias de cada bloque de 10 GB: confirma escrituras con un quórum de 4/6 copias y lee con 3/6, autorreparando bloques corruptos en segundo plano y creciendo automáticamente hasta 128 TiB. Como las réplicas de lectura comparten exactamente el mismo almacenamiento subyacente, solo actualizan sus buffer pools en memoria mediante redo logs, manteniendo retardos típicos de milisegundos.",
+    "practicas": [
+      "Utiliza los endpoints especializados del clúster (Cluster Writer Endpoint y Reader Endpoint) para que la aplicación siga automáticamente al primario tras un failover sin reconfigurar IPs.",
+      "Emplea RDS Proxy delante de Aurora cuando conectes funciones Lambda o microservicios con picos bruscos de conexiones para evitar agotar `max_connections`.",
+      "Evalúa Aurora Serverless v2 para entornos variables o desarrollo/QA y Aurora I/O-Optimized cuando el gasto de I/O supere el ~25% del coste total del clúster.",
+      "Aprovecha Fast Database Cloning (copy-on-write) para crear entornos de staging o pruebas con terabytes de datos en minutos sin duplicar el coste de almacenamiento base."
+    ],
+    "ejemplo": "# Conexión recomendada usando los endpoints dinámicos de Aurora\nDB_WRITER_HOST=\"prod-cluster.cluster-abc123.us-east-1.rds.amazonaws.com\"\nDB_READER_HOST=\"prod-cluster.cluster-ro-abc123.us-east-1.rds.amazonaws.com\"",
+    "entrevista": "Aurora supera a RDS tradicional al desacoplar el cómputo de un almacenamiento compartido de 6 copias en 3 AZs con quórum 4/6, logrando failovers en segundos y réplicas de lectura sin duplicar disco."
+  },
+  "CUR": {
+    "que": "AWS Cost and Usage Report (CUR, evolucionado hacia Data Exports CUR 2.0) es el conjunto de datos de facturación más detallado y granular disponible en AWS. Entrega informes estructurados por hora o día con cada línea de uso, recurso, etiqueta, tarifa y descuento aplicado.",
+    "para": "Resuelve las necesidades avanzadas de FinOps, chargeback/showback entre departamentos y auditoría financiera cuando los gráficos agregados de la consola no bastan. Se utiliza como fuente de verdad para analizar costes por ARN individual, amortización de Savings Plans y tráfico exacto mediante consultas SQL o herramientas de BI.",
+    "como": "Al habilitar una exportación CUR, AWS Billing recopila los medidores horarios de todos los servicios de la organización (normalmente desde la cuenta de gestión en AWS Organizations), aplica reglas de precios, créditos, impuestos y amortizaciones, y escribe archivos particionados en formato Parquet o CSV comprimido en un bucket S3 designado. Durante el día los archivos se actualizan hasta el cierre definitivo de la factura mensual. A partir de S3, un crawler o tabla de AWS Glue expone el esquema para consultarlo directamente con Amazon Athena o visualizarlo en QuickSight.",
+    "practicas": [
+      "Configura siempre la exportación en formato Apache Parquet con compresión Snappy y particionado mensual/por recurso compatible con Athena: reduce drásticamente el volumen escaneado y el coste de consultas frente a CSV.",
+      "Activa el flag `Include resource IDs` y las Cost Allocation Tags en Billing antes de crear el CUR, ya que los datos históricos previos no se retro-etiquetan automáticamente.",
+      "Habilita CUR 2.0 en Data Exports para contar con esquema consistente, columnas de tags estructuradas en formato map y menor necesidad de reprocesamiento ETL.",
+      "Diferencia CUR de Cost Explorer: Cost Explorer retiene ~14 meses agregados para exploración rápida en UI/API, mientras CUR ofrece granularidad horaria por recurso ilimitada en tu propio S3."
+    ],
+    "ejemplo": "SELECT line_item_product_code, line_item_resource_id,\n       SUM(line_item_unblended_cost) AS total_usd\nFROM cur_database.cur_table\nWHERE month = '11' AND year = '2026'\nGROUP BY 1, 2 ORDER BY 3 DESC LIMIT 10;",
+    "entrevista": "CUR en formato Parquet sobre S3 y Athena es la fuente de verdad en FinOps para auditar costes a nivel de Resource ID, prorratear Savings Plans y hacer chargeback por equipo."
+  },
+  "CloudFront": {
+    "que": "Amazon CloudFront es la red de distribución de contenido (CDN) global de AWS que entrega contenido estático, dinámico, APIs y streaming de vídeo con baja latencia desde cientos de Edge Locations y Regional Edge Caches. Actúa además como capa de borde programable y segura integrada con AWS WAF y Shield.",
+    "para": "Sirve para acelerar la experiencia de usuario acercando los datos geográficamente, reducir la carga y los costes de transferencia saliente de los orígenes (S3, ALB, EC2) y proteger aplicaciones públicas frente a picos de tráfico o ataques DDoS L3/L4/L7.",
+    "como": "Cuando un cliente resuelve el dominio vía DNS (frecuentemente un registro Alias en Route 53), se conecta al Edge Location óptimo. La caché de borde termina la sesión TLS (HTTP/2 o HTTP/3 sobre QUIC), verifica reglas de AWS WAF y evalúa comportamientos por ruta (`CacheBehavior`). Si hay Cache Hit, devuelve el objeto inmediatamente; en Cache Miss, una CloudFront Function o Lambda@Edge puede modificar cabeceras/rutas antes de buscar en la Regional Edge Cache o viajar por el backbone privado de AWS hacia el origen (accediendo a S3 de forma privada mediante Origin Access Control - OAC). La respuesta se almacena según cabeceras `Cache-Control` o Cache Policies.",
+    "practicas": [
+      "Protege los buckets S3 privados usando Origin Access Control (OAC) en lugar del antiguo OAI para impedir el acceso directo a las URLs de S3 y soportar SSE-KMS.",
+      "Usa CloudFront Functions (ejecución en submilisegundos en JavaScript ligero) para reescrituras de URL, redirecciones o cabeceras de seguridad; reserva Lambda@Edge solo si necesitas red, mayor memoria o lógica compleja.",
+      "Personaliza las Cache Keys minimizando los headers, cookies y query strings reenviados al origen: reenviar todo destruye el Cache Hit Ratio.",
+      "Combina respuestas de caché largas con versionado por hash en nombres de archivo (ej. `app.a1b2c3.js`) para evitar invalidaciones masivas costosas (`CreateInvalidation`)."
+    ],
+    "ejemplo": "Cache-Control: public, max-age=31536000, immutable\nX-Cache: Hit from cloudfront\nX-Amz-Cf-Id: K9xP...==",
+    "entrevista": "CloudFront acelera tanto estáticos en caché como APIs dinámicas vía el backbone privado de AWS, y debe proteger los buckets S3 mediante Origin Access Control (OAC) maximizando el Cache Hit Ratio con Cache Keys mínimas."
+  },
+  "CloudTrail": {
+    "que": "AWS CloudTrail es el servicio de auditoría, gobernanza y cumplimiento que registra todas las llamadas a la API y acciones administrativas realizadas en una cuenta u organización de AWS. Genera un historial inmutable que responde quién hizo qué, cuándo, desde qué IP y con qué parámetros.",
+    "para": "Sirve para investigaciones forenses de seguridad, cumplimiento normativo (SOC 2, PCI-DSS, ISO 27001), detección de cambios no autorizados en producción y depuración de fallos de permisos IAM. Es la fuente primaria de evidencia ante incidentes.",
+    "como": "Cada invocación a la API de AWS (desde consola, CLI, SDK o servicio interno) pasa por el plano de control o datos y emite un evento JSON estructurado con campos como `eventTime`, `userIdentity`, `eventSource`, `eventName`, `sourceIPAddress` y `errorCode`. CloudTrail distingue Management Events (operaciones de control plane como `RunInstances` o `PutBucketPolicy`, gratuitos en el historial de 90 días y en un primer Trail), Data Events de alto volumen (como `GetObject` en S3 o `Invoke` en Lambda) y CloudTrail Insights (detección de anomalías en tasa de llamadas o errores). Un Trail entrega los registros cifrados con KMS cada pocos minutos a un bucket S3, con opción de enviar copias a CloudWatch Logs y EventBridge.",
+    "practicas": [
+      "Configura un Organization Trail multi-región en la cuenta de administración que escriba en un bucket S3 centralizado dentro de una cuenta de Log Archive aislada.",
+      "Activa Log File Validation para generar archivos digest firmados con SHA-256 que permitan demostrar criptográficamente que ningún log fue alterado o borrado.",
+      "No confundas CloudTrail con CloudWatch: CloudTrail audita llamadas a la API de AWS (plano de auditoría/seguridad), mientras CloudWatch recopila métricas operativas y logs de aplicación.",
+      "Activa Data Events solo en buckets S3 o tablas críticas si el volumen es muy alto, ya que tienen coste por cada 100.000 eventos registrados."
+    ],
+    "ejemplo": "{\n  \"eventSource\": \"iam.amazonaws.com\",\n  \"eventName\": \"CreateAccessKey\",\n  \"userIdentity\": { \"type\": \"IAMUser\", \"userName\": \"deploy-admin\" },\n  \"sourceIPAddress\": \"203.0.113.45\",\n  \"awsRegion\": \"us-east-1\"\n}",
+    "entrevista": "CloudTrail es el registro forense de todo el plano de control de AWS; en producción debe ejecutarse como Organization Trail multi-región enviando logs cifrados y con validación SHA-256 a una cuenta central de auditoría."
+  },
+  "CloudWatch": {
+    "que": "Amazon CloudWatch es la plataforma nativa de observabilidad y monitorización de AWS para recopilar métricas de series temporales, centralizar logs y disparar alarmas automatizadas. Supervisa tanto infraestructura administrada por AWS como telemetría personalizada de aplicaciones.",
+    "para": "Sirve para detectar degradaciones de rendimiento, escalar recursos automáticamente mediante Auto Scaling y centralizar registros de diagnóstico de EC2, Lambda, ECS o VPC Flow Logs. Es la base operativa de alertas y SLIs dentro del ecosistema AWS.",
+    "como": "Los servicios de AWS publican métricas automáticamente en namespaces (`AWS/EC2`, `AWS/Lambda`, `AWS/RDS`) cada 1 o 5 minutos, mientras agentes como CloudWatch Agent o SDKs envían métricas personalizadas (incluyendo alta resolución de 1 segundo vía `PutMetricData`) y flujos de texto hacia Log Groups y Log Streams. Sobre los logs pueden definirse Metric Filters o ejecutarse consultas ad-hoc en CloudWatch Logs Insights, o bien extraer métricas directamente con Embedded Metric Format (EMF) sin llamadas extra a la API. Las CloudWatch Alarms evalúan ventanas deslizantes (M de N periodos) y transicionan entre `OK`, `ALARM` e `INSUFFICIENT_DATA` para notificar a SNS o ejecutar escalado y remediación.",
+    "practicas": [
+      "Usa Embedded Metric Format (EMF) al escribir logs JSON estructurados desde Lambda o ECS para generar métricas personalizadas en CloudWatch de forma asíncrona y mucho más económica que `PutMetricData`.",
+      "Configura políticas de retención explícitas en todos los Log Groups (ej. 14 o 30 días en lugar de `Never expire`) porque el almacenamiento acumulado de logs sin límite dispara el gasto.",
+      "Prefiere Composite Alarms combinando varias señales (ej. alta latencia AND tasa de errores 5xx) para reducir el ruido de falsas alertas en guardia (alert fatigue).",
+      "Evalúa las diferencias frente a Prometheus/Grafana: CloudWatch no requiere operar servidores ni ingesta externa para métricas AWS, pero Prometheus/Grafana destacan en consultas PromQL complejas y portabilidad multi-cloud."
+    ],
+    "ejemplo": "fields @timestamp, @message\n| filter level = \"ERROR\" and statusCode >= 500\n| stats count() as errors by bin(5m)\n| sort @timestamp desc",
+    "entrevista": "CloudWatch unifica métricas, Logs Insights y alarmas sin infraestructura que mantener, siendo clave fijar políticas de retención en Log Groups y usar EMF para métricas personalizadas eficientes."
+  },
+  "Cloudflare": {
+    "que": "Cloudflare es una plataforma global de red perimetral (edge network) que actúa simultáneamente como proxy inverso, DNS autoritativo Anycast, CDN, WAF y escudo frente a ataques DDoS delante de cualquier origen web, incluido AWS. Todo el tráfico hacia un dominio proxied pasa por sus centros de datos antes de llegar al servidor de origen.",
+    "para": "Resuelve la protección contra ataques volumétricos y de capa 7, el cacheo agresivo en el borde y la abstracción multi-cloud o híbrida sin cargos por ancho de banda impredecibles en la capa CDN. Se utiliza frente a ALB, EC2 o buckets S3 para ocultar la IP real del origen y ejecutar lógica ligera en el edge.",
+    "como": "La red de Cloudflare anuncia los mismos rangos IP desde todos sus puntos de presencia (PoPs) mediante BGP Anycast, de modo que cada usuario conecta con el PoP topológicamente más cercano. Al recibir una petición HTTPS, Cloudflare termina TLS, aplica mitigación DDoS automática, evalúa reglas de WAF/Bot Management/Rate Limiting y consulta la caché local del PoP. Si se requieren transformaciones o APIs perimetrales, ejecuta Cloudflare Workers en aislamientos V8 (V8 isolates) sin arranque de contenedores; si hay Cache Miss, reenvía hacia el origen mediante rutas optimizadas (Argo) o túneles salientes cifrados (Cloudflare Tunnel / `cloudflared`) sin abrir puertos entrantes en el firewall.",
+    "practicas": [
+      "Configura siempre el modo SSL/TLS en `Full (strict)` validando un certificado válido o Cloudflare Origin CA en el origen (ALB/Nginx); el modo `Flexible` deja el tramo Cloudflare-origen sin cifrar.",
+      "Restringe el Security Group o firewall del origen (ALB/EC2) exclusivamente a los rangos IP oficiales de Cloudflare o usa Cloudflare Tunnel / Authenticated Origin Pulls (mTLS) para impedir que atacantes salten el WAF atacando la IP directa.",
+      "Compara Cloudflare vs CloudFront: Cloudflare destaca por mitigación DDoS plana sin costes por picos, DNS ultra rápido y Workers; CloudFront ofrece integración IAM nativa con AWS (OAC hacia S3, Lambda@Edge con acceso VPC/AWS SDK).",
+      "Cuida el cacheo accidental de respuestas con cabeceras `Set-Cookie` o contenido personalizado definiendo Cache Rules explícitas."
+    ],
+    "ejemplo": "# Regla típica verificando origen seguro tras proxy Cloudflare:\n# 1. TLS: Full (strict) con Origin Certificate\n# 2. Security Group ALB: permitir 443 solo desde IPv4/IPv6 de Cloudflare\n# 3. Cabecera real de cliente recibida en backend: CF-Connecting-IP",
+    "entrevista": "Cloudflare protege y acelera cualquier origen mediante BGP Anycast, WAF y TLS en el borde, pero en producción es obligatorio usar modo `Full (strict)` y bloquear el acceso directo al origen fuera de sus IPs o mediante Cloudflare Tunnel."
+  },
+  "Cognito": {
+    "que": "Amazon Cognito es el servicio administrado de identidad y gestión de acceso para clientes (CIAM) orientado a aplicaciones web y móviles. Se divide en dos componentes complementarios: User Pools (directorio y proveedor de identidad OIDC/OAuth 2.0) e Identity Pools (federación hacia credenciales temporales de AWS).",
+    "para": "Resuelve el registro, inicio de sesión, recuperación de contraseña, MFA y federación social o empresarial (Google, Apple, SAML 2.0) sin implementar ni asegurar bases de datos de contraseñas propias. También permite otorgar acceso directo y acotado a recursos AWS (como subir archivos a S3) desde clientes móviles.",
+    "como": "En un User Pool, el usuario se autentica mediante SRP (Secure Remote Password), Hosted UI o flujos OAuth 2.0 (Authorization Code con PKCE) y recibe tres tokens JWT firmados con RS256: ID Token (atributos del usuario), Access Token (scopes/grupos para autorizar APIs) y Refresh Token. API Gateway o ALB validan la firma del JWT contra las claves públicas JWKS del User Pool sin llamar en cada petición al servidor de identidad, y Cognito permite enganchar funciones Lambda en triggers del ciclo de vida (Pre Sign-up, Post Confirmation, Pre Token Generation). Si la aplicación cliente necesita llamar directamente a servicios AWS, intercambia ese token en un Identity Pool para obtener credenciales STS temporales asociadas a un rol IAM.",
+    "practicas": [
+      "Distingue claramente ambos módulos: usa User Pools para autenticar usuarios finales y proteger APIs con JWT; añade Identity Pools solo si el cliente debe asumir un rol IAM para acceder directo a S3/DynamoDB.",
+      "Utiliza el flujo Authorization Code Grant con PKCE en aplicaciones SPA y móviles en lugar del obsoleto Implicit Grant para evitar exponer tokens en fragmentos de URL.",
+      "Configura la expiración de Access/ID tokens corta (ej. 15–60 min) y recuerda que Cognito no ofrece un plano de consulta SQL arbitrario complejo sobre millones de perfiles; sincroniza datos de negocio en DynamoDB/RDS mediante triggers Post Confirmation.",
+      "Activa Advanced Security / Threat Protection (MFA adaptativo y detección de credenciales comprometidas) en aplicaciones expuestas a Internet."
+    ],
+    "ejemplo": "Authorization: Bearer eyJraWQiOiJ...\n// Payload JWT validado contra:\n// https://cognito-idp.us-east-1.amazonaws.com/<pool_id>/.well-known/jwks.json",
+    "entrevista": "Cognito separa autenticación de usuarios y emisión de JWT (User Pools) del intercambio por credenciales STS de AWS (Identity Pools), integrándose de forma nativa con API Gateway y ALB mediante validación JWKS."
+  },
+  "Cost Explorer": {
+    "que": "AWS Cost Explorer es la herramienta interactiva de visualización, análisis y proyección de costes y uso dentro de la consola y API de AWS Billing. Permite filtrar, agrupar y graficar el gasto histórico hasta 14 meses atrás y consultar previsiones para los próximos 12 meses.",
+    "para": "Resuelve la visibilidad operativa diaria para ingeniería y finanzas: identificar qué servicio, cuenta o etiqueta disparó la factura ayer, evaluar el ahorro de Savings Plans o Reserved Instances y recibir recomendaciones de rightsizing. Es la puerta de entrada inmediata antes de construir tuberías con CUR.",
+    "como": "Cost Explorer ingiere los datos procesados de facturación de la cuenta o de toda la organización de AWS Organizations con granularidad diaria o mensual (y horaria opcional para los últimos 14 días). Al ejecutar una consulta desde la UI o mediante la API `GetCostAndUsage`, agrupa los importes (Unblended, Amortized o Net Amortized) según dimensiones como Servicio, Cuenta vinculada, Región, Tipo de uso o Cost Allocation Tags. Su motor de aprendizaje automático analiza tendencias históricas y estacionalidad para proyectar intervalos de confianza futuros y detectar picos anómalos mediante Cost Anomaly Detection.",
+    "practicas": [
+      "Analiza siempre los informes usando Amortized Cost cuando tengas Savings Plans o Reserved Instances con pago inicial (All/Partial Upfront) para no ver falsos ceros diarios seguidos de picos mensuales.",
+      "Activa AWS Cost Anomaly Detection junto a Cost Explorer para recibir alertas automáticas por Slack/SNS cuando un servicio salga de su patrón estadístico.",
+      "Ten en cuenta que usar la API de Cost Explorer (`GetCostAndUsage`) tiene coste por cada petición paginada; no la consultes en bucles frecuentes desde dashboards.",
+      "Activa User-Defined Cost Allocation Tags (ej. `env`, `team`, `service`) en Billing para poder desglosar el gasto por producto o equipo."
+    ],
+    "ejemplo": "aws ce get-cost-and-usage \\\n  --time-period Start=2026-11-01,End=2026-11-25 \\\n  --granularity DAILY --metrics \"AmortizedCost\" \\\n  --group-by Type=DIMENSION,Key=SERVICE",
+    "entrevista": "Cost Explorer ofrece análisis ágil de tendencias, amortización de compromisos y detección de anomalías sobre 14 meses de historial, reservando el CUR en S3/Athena para auditorías por Resource ID."
+  },
+  "DocumentDB": {
+    "que": "Amazon DocumentDB (with MongoDB compatibility) es un servicio administrado de base de datos documental JSON compatible con la API y drivers de MongoDB. Emula el protocolo y las operaciones de MongoDB sobre una arquitectura de almacenamiento cloud-native desacoplada y distribuida.",
+    "para": "Resuelve la migración de aplicaciones escritas para MongoDB que buscan evitar operar réplica sets propios en EC2 y aprovechar copias de seguridad continuas, aislamiento VPC y escalado rápido de réplicas de lectura en AWS.",
+    "como": "Similar a Amazon Aurora, DocumentDB separa las instancias de cómputo (que ejecutan el motor de procesamiento de consultas e índices) de un volumen de almacenamiento compartido distribuido en 6 copias a través de 3 Availability Zones. Las escrituras llegan únicamente a la instancia primaria, que escribe registros de log hacia la capa de almacenamiento con quórum 4/6 y propaga actualizaciones en memoria a hasta 15 réplicas de lectura, logrando failovers en decenas de segundos sin copiar discos completos. Los clientes se conectan con drivers estándar de MongoDB sobre TLS dentro de la VPC.",
+    "practicas": [
+      "Valida la matriz de compatibilidad antes de migrar: DocumentDB implementa el protocolo de MongoDB pero no usa el código fuente de MongoDB, por lo que ciertos operadores de agregación, índices especializados o transacciones distribuidas pueden variar.",
+      "En aplicaciones nuevas sin requisito de código MongoDB previo, evalúa DynamoDB (serverless y latencia predecible) o PostgreSQL con `jsonb` en Aurora antes de optar por DocumentDB.",
+      "Activa `tls=true` descargando el bundle de certificados RDS/DocumentDB y configura `retryWrites=false` si usas drivers antiguos que esperan semántica específica.",
+      "Dimensiona la memoria RAM de las instancias para que el conjunto de trabajo e índices quepan en el buffer cache, evitando lecturas costosas hacia el almacenamiento."
+    ],
+    "ejemplo": "mongosh --ssl --host prod-docdb.cluster-xyz.us-east-1.docdb.amazonaws.com:27017 \\\n  --sslCAFile global-bundle.pem \\\n  --username appuser --password",
+    "entrevista": "DocumentDB aporta la arquitectura de almacenamiento compartido en 6 copias de Aurora a cargas compatibles con drivers MongoDB, aunque exige validar compatibilidad exacta de operadores frente a MongoDB nativo o Atlas."
+  },
+  "DynamoDB": {
+    "que": "Amazon DynamoDB es una base de datos NoSQL clave-valor y documental totalmente administrada y serverless, diseñada para ofrecer latencia predecible de un solo dígito de milisegundo a cualquier escala. Escala horizontalmente de forma transparente desde cero hasta millones de peticiones por segundo.",
+    "para": "Resuelve cargas OLTP de alto volumen con patrones de acceso conocidos —como carritos de compra, sesiones, catálogos, tablas de estado o backends serverless con Lambda— donde las bases relacionales sufren contención de conexiones y cuellos de botella de escalado vertical.",
+    "como": "Cada tabla define una clave primaria compuesta por una Partition Key (`PK`) y opcionalmente una Sort Key (`SK`). DynamoDB aplica una función hash sobre `PK` para asignar el ítem a una partición física (SSD de hasta 10 GB) replicada síncronamente en 3 Availability Zones dentro de un grupo de consenso Paxos (un líder y dos seguidores). Las lecturas son eventualmente consistentes por defecto (cualquiera de las 3 réplicas, mitad de RCU) o fuertemente consistentes (`ConsistentRead=true` al líder), mientras que escrituras, DynamoDB Streams, TTL e índices secundarios (GSI asíncronos y LSI síncronos) se gestionan sin servidores ni parches.",
+    "practicas": [
+      "Diseña el modelo de datos pensando primero en los patrones de acceso (Single-Table Design o esquemas orientados a consultas) y elige Partition Keys de alta cardinalidad para evitar hot partitions.",
+      "Evita la operación `Scan` en producción porque recorre toda la tabla consumiendo capacidad y latencia lineal con el tamaño; usa siempre `GetItem`, `Query` sobre `PK`/`SK` o un GSI adecuado.",
+      "Elige modo On-Demand para tráfico impredecible o picos repentinos y Provisioned con Auto Scaling (y Reserved Capacity) para tráfico estable de alto volumen (hasta ~5-7x más barato).",
+      "Combina DynamoDB Streams + Lambda para arquitecturas event-driven (ej. replicar vistas de búsqueda a OpenSearch) y usa transacciones (`TransactWriteItems`) solo cuando la atomicidad multi-ítem sea estricta (cuesta 2x WCU)."
+    ],
+    "ejemplo": "aws dynamodb query \\\n  --table-name Orders \\\n  --key-condition-expression \"PK = :pk AND begins_with(SK, :prefix)\" \\\n  --expression-attribute-values '{\":pk\":{\"S\":\"USER#42\"},\":prefix\":{\"S\":\"ORDER#2026\"}}'",
+    "entrevista": "DynamoDB garantiza latencia de milisegundos a cualquier escala mediante particionado hash y replicación Paxos en 3 AZs, siempre que diseñemos claves de alta cardinalidad y evitemos Scans usando Query e índices secundarios."
+  },
+  "EBS": {
+    "que": "Amazon Elastic Block Store (EBS) es un servicio de almacenamiento en bloque persistente de alto rendimiento y baja latencia diseñado para conectarse a instancias EC2. Funciona como un disco duro virtual en red que conserva los datos independientemente del ciclo de vida de la instancia.",
+    "para": "Sirve para almacenar sistemas operativos raíz, bases de datos autogestionadas en EC2, archivos de estado y cargas que requieren acceso aleatorio rápido a nivel de bloque o sistema de archivos local. Se elige cuando una sola instancia necesita un disco persistente y no almacenamiento compartido entre múltiples nodos.",
+    "como": "Al crear un volumen EBS en una Availability Zone concreta, AWS replica automáticamente sus bloques dentro de servidores de almacenamiento de esa misma AZ y lo expone a la instancia EC2 a través de la red dedicada de hardware AWS Nitro como un dispositivo de bloque NVMe. Existen familias SSD de propósito general (`gp3`, donde IOPS y throughput se configuran independientemente del tamaño), SSD de alto rendimiento (`io2` con hasta 99.999% de durabilidad y soporte Multi-Attach) y HDD para secuencial (`st1`/`sc1`). Mediante `CreateSnapshot`, EBS copia los bloques modificados de forma incremental hacia Amazon S3 (en cobertura regional) permitiendo clonar o mover volúmenes a otra AZ.",
+    "practicas": [
+      "Usa `gp3` por defecto frente al legado `gp2`: `gp3` ofrece 3.000 IOPS y 125 MB/s base incluidos desde 1 GB, es ~20% más económico y permite escalar IOPS sin inflar gigabytes innecesariamente.",
+      "Recuerda que un volumen EBS está ligado a una única Availability Zone; para moverlo a otra AZ debes tomar un Snapshot y restaurar un nuevo volumen allí.",
+      "Habilita el cifrado EBS por defecto a nivel de cuenta/región con KMS para que todo nuevo volumen y snapshot nazca cifrado sin penalización de rendimiento en Nitro.",
+      "No confundas EBS con Instance Store (almacenamiento NVMe físico efímero que se pierde si la instancia se detiene o falla) ni con EFS (compartido por NFS entre muchas instancias)."
+    ],
+    "ejemplo": "aws ec2 create-volume \\\n  --volume-type gp3 --size 100 --iops 4000 --throughput 250 \\\n  --availability-zone us-east-1a --encrypted",
+    "entrevista": "EBS entrega almacenamiento en bloque NVMe ligado a una única AZ con snapshots incrementales en S3, siendo `gp3` la opción estándar por desacoplar tamaño, IOPS y throughput con menor coste."
+  },
+  "EC2": {
+    "que": "Amazon Elastic Compute Cloud (EC2) es el servicio IaaS fundamental de AWS que proporciona máquinas virtuales escalables con control completo del sistema operativo, red y almacenamiento. Ofrece cientos de tipos de instancias optimizados para propósito general, cómputo, memoria, almacenamiento o GPUs.",
+    "para": "Se utiliza cuando se requiere control total del kernel o del SO, ejecución de software legado o bases de datos autogestionadas, cargas con GPUs dedicadas o capacidad continua predecible donde los modelos serverless o contenedores administrados no encajan.",
+    "como": "Al invocar `RunInstances` sobre una AMI (Amazon Machine Image), el plano de control asigna un host físico basado en el AWS Nitro System —una arquitectura de hipervisor ligero con tarjetas dedicadas que descargan virtualización de red VPC, almacenamiento EBS y seguridad—. La instancia arranca en una subred de VPC recibiendo una interfaz de red ENI (IP privada/pública), reglas stateful de Security Groups, script de inicialización User Data y credenciales temporales mediante el Instance Metadata Service (IMDSv2) asociadas a su IAM Instance Profile. Los Auto Scaling Groups monitorean health checks y escalan instancias automáticamente entre múltiples Availability Zones.",
+    "practicas": [
+      "Exige IMDSv2 (`HttpTokens=required`) en todas las instancias para mitigar vulnerabilidades SSRF que intentarían robar credenciales IAM desde `169.254.169.254`.",
+      "Usa IAM Instance Profiles y AWS Systems Manager Session Manager en lugar de guardar Access Keys estáticas o abrir el puerto 22 SSH al mundo (`0.0.0.0/0`).",
+      "Combina modelos de compra: Compute Savings Plans o Reserved Instances para la línea base constante, On-Demand para picos ininterrumpibles y Spot Instances (hasta 90% ahorro, aviso de 2 min) para workers stateless tolerantes a fallos.",
+      "Empaqueta dependencias en AMIs inmutables (ej. con Packer o EC2 Image Builder) en lugar de depender únicamente de scripts User Data frágiles al arrancar en un Auto Scaling Group."
+    ],
+    "ejemplo": "aws ec2 run-instances \\\n  --image-id ami-0abcdef1234567890 --instance-type t3.medium \\\n  --iam-instance-profile Name=app-role \\\n  --metadata-options \"HttpTokens=required,HttpEndpoint=enabled\"",
+    "entrevista": "EC2 ofrece control total sobre el sistema operativo sobre el hipervisor AWS Nitro, asegurando producción con AMIs inmutables, IMDSv2 obligatorio, acceso vía SSM Session Manager y mezcla de Savings Plans con Spot."
+  },
+  "EFS": {
+    "que": "Amazon Elastic File System (EFS) es un sistema de archivos en red serverless, elástico y compatible con POSIX (NFSv4.0/4.1) diseñado para compartirse concurrentemente entre miles de clientes Linux. Crece y se reduce automáticamente según los archivos almacenados sin aprovisionar capacidad previa.",
+    "para": "Resuelve la necesidad de almacenamiento de archivos compartido con semántica de sistema de archivos estándar (bloqueos, permisos POSIX, directorios) entre múltiples instancias EC2 en Auto Scaling, tareas ECS/Fargate, pods EKS o funciones Lambda que necesitan leer y escribir el mismo árbol de archivos.",
+    "como": "Se crea un sistema de archivos EFS (Regional en múltiples AZs o One Zone en una sola AZ) y se despliegan Mount Targets (interfaces ENI con IP privada) en las subredes de la VPC. Los clientes montan el volumen vía NFSv4 usando el helper `amazon-efs-utils` (que envuelve el tráfico en un túnel TLS con stunnel) y opcionalmente autentican con IAM mediante EFS Access Points que fijan directorio raíz y UID/GID. Internamente, los datos se replican entre Availability Zones (en modo Standard) y el throughput escala automáticamente con Elastic Throughput o en modo Provisioned, pudiendo mover archivos fríos a clases IA o Archive mediante Lifecycle Management.",
+    "practicas": [
+      "Usa `Elastic Throughput` como modo de rendimiento por defecto para cargas variables o en ráfagas: evita quedarte sin créditos de Bursting cuando el volumen tiene pocos gigabytes almacenados.",
+      "Utiliza EFS Access Points al montar desde Lambda, ECS o EKS para aislar subdirectorios por aplicación y forzar permisos POSIX/IAM sin gestionar `chmod` manuales.",
+      "No uses EFS para bases de datos transaccionales ni cargas sensibles a latencia submilisegundo: NFS sobre red tiene mayor latencia que EBS y la consistencia close-to-open no sustituye a un almacenamiento en bloque local.",
+      "Activa políticas de Lifecycle Management (ej. transición a EFS Infrequent Access tras 30 días sin acceso) para recortar drásticamente el coste de archivos antiguos."
+    ],
+    "ejemplo": "sudo mount -t efs -o tls,iam,accesspoint=fsap-0123456789abcdef0 \\\n  fs-0987654321fedcba0:/ /mnt/shared",
+    "entrevista": "EFS proporciona un sistema de archivos NFSv4 elástico y multi-AZ compartido entre EC2, Fargate, EKS y Lambda, ideal para datos compartidos POSIX cuando EBS resulta insuficiente por estar atado a una sola instancia y AZ."
+  },
+  "ElastiCache": {
+    "que": "Amazon ElastiCache es el servicio administrado de almacenamiento y caché en memoria de latencia submilisegundo compatible con Valkey, Redis OSS y Memcached. Incluye despliegue por nodos en VPC o modo totalmente serverless con autoescalado transparente.",
+    "para": "Sirve para acelerar lecturas repetitivas mediante caché frente a RDS/DynamoDB (patrón cache-aside), almacenar sesiones de usuario distribuidas, implementar rate limiters atómicos con contadores en memoria y mantener leaderboards o colas ligeras en tiempo real.",
+    "como": "ElastiCache aprovisiona nodos en memoria dentro de una VPC y gestiona parches, snapshots a S3 y monitorización. En Memcached funciona como caché multi-hilo simple particionada en el cliente sin replicación; en Valkey/Redis soporta Cluster Mode Disabled (un único shard primario con hasta 5 réplicas de lectura y failover Multi-AZ automático cambiando DNS) o Cluster Mode Enabled (hasta 500 shards distribuyendo 16.384 hash slots mediante CRC16). En la variante ElastiCache Serverless, AWS gestiona dinámicamente memoria y ECPU sin elegir tamaños de nodo y cobra por GB-hora y operaciones procesadas.",
+    "practicas": [
+      "Elige Valkey (fork abierto respaldado por AWS, hasta 20-33% más económico) o Redis frente a Memcached casi siempre, salvo que necesites estrictamente arquitectura multi-hilo simple sin persistencia ni estructuras avanzadas.",
+      "Fija siempre un TTL en las claves de caché y evita claves gigantes o comandos bloqueantes como `KEYS *` en producción (usa `SCAN`), ya que el bucle principal de Redis/Valkey es single-threaded.",
+      "Implementa estrategias frente a Thundering Herd (cache stampede) como jitter en TTL, mutex/locks distribuidos o refresh-ahead cuando expire una clave muy consultada.",
+      "Ten presente que ElastiCache vive dentro de tu VPC y no expone endpoint público; habilita cifrado en tránsito TLS y AUTH/IAM para proteger datos de sesión."
+    ],
+    "ejemplo": "# Patrón Cache-Aside en pseudocódigo:\nval = redis.get(f\"user:{id}\")\nif not val:\n    val = db.query(\"SELECT ...\")\n    redis.setex(f\"user:{id}\", 300 + jitter(), val)",
+    "entrevista": "ElastiCache reduce la presión sobre las bases de datos entregando latencia submilisegundo con Valkey o Redis, requiriendo TTL con jitter contra cache stampede y cuidado con comandos bloqueantes single-thread."
+  },
+  "EventBridge": {
+    "que": "Amazon EventBridge es un bus de eventos serverless que conecta aplicaciones desacopladas mediante el enrutamiento declarativo de eventos JSON entre servicios de AWS, aplicaciones propias y proveedores SaaS. Integra además un planificador masivo de tareas (Scheduler) y tuberías punto a punto (Pipes).",
+    "para": "Resuelve el acoplamiento fuerte en arquitecturas orientadas a eventos cuando múltiples consumidores independientes deben reaccionar selectivamente a hechos del dominio (como `OrderPlaced` o cambios de estado EC2). Se prefiere sobre SNS cuando se requiere filtrado profundo de atributos JSON, integración SaaS nativa o reenvío hacia más de 20 tipos de destino.",
+    "como": "Los productores publican eventos JSON con campos estándar (`source`, `detail-type`, `detail`) hacia el Event Bus por defecto, un bus personalizado o un Partner Bus mediante `PutEvents`. El motor de EventBridge evalúa cada evento en tiempo casi real contra todas las Rules activas usando filtrado por contenido (exacto, prefijos, rangos numéricos, comodines) y transforma opcionalmente el payload con Input Transformers antes de entregarlo hasta a 5 destinos por regla (Lambda, SQS, Step Functions, API Destinations HTTP). Soporta almacenamiento y reproducción histórica (Archive & Replay), Schema Registry para autogenerar tipos y políticas de reintento con DLQ en SQS durante 24 horas.",
+    "practicas": [
+      "Distingue EventBridge vs SNS + SQS: usa SNS cuando necesites fan-out de altísimo rendimiento y mínima latencia con mensajes simples o notificaciones móviles/email; usa EventBridge para enrutamiento inteligente por contenido, esquemas, Scheduler y API Destinations.",
+      "Usa EventBridge Scheduler en lugar de reglas cron antiguas sobre buses cuando necesites millones de disparadores únicos o recurrentes con zonas horarias y horario de verano.",
+      "Configura siempre una Dead Letter Queue (SQS) en cada target de regla y diseña los consumidores idempotentes, ya que EventBridge garantiza entrega at-least-once.",
+      "Emplea EventBridge Pipes cuando solo necesites conectar una fuente ordenada (SQS, Kinesis, DynamoDB Streams) con un destino filtrando y enriqueciendo sin escribir código Lambda pegamento."
+    ],
+    "ejemplo": "{\n  \"source\": [\"com.ecommerce.orders\"],\n  \"detail-type\": [\"OrderCreated\"],\n  \"detail\": { \"amount\": [{ \"numeric\": [\">=\", 100] }], \"currency\": [\"USD\"] }\n}",
+    "entrevista": "EventBridge actúa como columna vertebral de arquitecturas event-driven gracias a su filtrado avanzado sobre JSON, reenvío a destinos HTTP o AWS, Scheduler y Archive & Replay con entrega at-least-once."
+  },
+  "Glacier": {
+    "que": "Amazon S3 Glacier engloba las clases de almacenamiento frío y archivo de Amazon S3 (`Glacier Instant Retrieval`, `Glacier Flexible Retrieval` y `Glacier Deep Archive`) optimizadas para datos rara vez consultados y retención a largo plazo. Mantiene la misma durabilidad de 11 nueves (99.999999999%) que S3 Standard a una fracción mínima del coste.",
+    "para": "Sirve para archivar backups históricos, registros médicos/financieros obligatorios por ley, material audiovisual en bruto y trazas antiguas de auditoría durante años. Reduce drásticamente el gasto de almacenamiento cuando el acceso inmediato no es necesario (o solo ocurre esporádicamente).",
+    "como": "Los objetos llegan a Glacier mediante subida directa con la cabecera `x-amz-storage-class` o automáticamente mediante S3 Lifecycle Rules tras N días en S3 Standard/IA. `Glacier Instant Retrieval` almacena datos listos para lectura síncrona en milisegundos vía `GetObject`, mientras que `Glacier Flexible Retrieval` y `Glacier Deep Archive` trasladan los objetos a capas de archivo profundo offline. Para leer un objeto de estas dos últimas clases, el cliente debe ejecutar primero una llamada asíncrona `RestoreObject` eligiendo velocidad (`Expedited` 1-5 min, `Standard` 3-5h o `Bulk` 5-12h; hasta 12-48h en Deep Archive), lo que genera una copia temporal legible en S3 durante los días indicados.",
+    "practicas": [
+      "Respeta los días mínimos de retención (90 días en Instant/Flexible, 180 días en Deep Archive) y los tamaños mínimos facturables (128 KB en Instant, 40 KB metadata en Flexible/Deep): archivar millones de archivos pequeños de 1 KB sale mucho más caro que empaquetarlos primero en tar/zip.",
+      "Elige `Glacier Instant Retrieval` cuando los archivos antiguos puedan necesitar descarga inmediata ocasional (ej. imágenes médicas o documentos de clientes) para evitar flujos asíncronos de `RestoreObject`.",
+      "Combina S3 Object Lock (Governance o Compliance) con Glacier Deep Archive para archivos regulatorios WORM inmutables al menor coste por terabyte de la nube.",
+      "Calcula el coste de transición por cada 1.000 objetos antes de crear reglas Lifecycle agresivas sobre buckets con cientos de millones de ficheros diminutos."
+    ],
+    "ejemplo": "aws s3api restore-object \\\n  --bucket archive-logs-2026 --key audit/2025.tar.gz \\\n  --restore-request '{\"Days\":7,\"GlacierJobParameters\":{\"Tier\":\"Bulk\"}}'",
+    "entrevista": "Las clases S3 Glacier ofrecen durabilidad de 11 nueves al menor coste, distinguiendo Instant Retrieval (acceso síncrono en milisegundos) de Flexible y Deep Archive (restauración asíncrona mediante `RestoreObject` y mínimo de 90–180 días)."
+  },
+  "Global Accelerator": {
+    "que": "AWS Global Accelerator es un servicio de red que mejora la disponibilidad y el rendimiento del tráfico TCP y UDP global encaminando las peticiones de los usuarios a través de la red troncal privada de AWS. Proporciona dos direcciones IP estáticas Anycast globales que apuntan dinámicamente a endpoints en una o varias regiones.",
+    "para": "Resuelve la variabilidad y pérdida de paquetes de Internet pública para tráfico no cacheable en tiempo real (juegos, VoIP, IoT, finanzas o APIs TCP/UDP) y elimina la dependencia de TTLs lentos de DNS durante conmutaciones por fallo multi-región. También simplifica el whitelisting de IPs fijas para clientes corporativos.",
+    "como": "Global Accelerator asigna dos direcciones IPv4 (o dual-stack) Anycast anunciadas vía BGP desde las Edge Locations de AWS en todo el mundo. El paquete de un cliente entra en la red de AWS en el punto de presencia más cercano, donde el acelerador establece la conexión y transporta los datos por el backbone privado gestionado de fibra hasta el Endpoint Group regional óptimo (ALB, NLB, instancias EC2 o Elastic IPs). Monitoriza continuamente la salud de cada endpoint con sondeos TCP/HTTP/HTTPS y, ante una caída regional o cambio de pesos de tráfico (Traffic Dials), redirige nuevas conexiones a otra región sana en menos de 30 segundos sin esperar expiración de cachés DNS locales.",
+    "practicas": [
+      "No confundas Global Accelerator con CloudFront: CloudFront opera en capa 7 cacheando contenido HTTP/HTTPS en el borde; Global Accelerator opera en capa 4 (TCP/UDP) acelerando conexiones hacia aplicaciones dinámicas no cacheables o protocolos distintos a HTTP.",
+      "Úsalo frente a Route 53 Failover cuando tus clientes (redes móviles, IoT o resolvers corporativos) ignoren TTLs bajos de DNS o necesiten IPs estáticas fijas en firewalls.",
+      "Activa Client IP Preservation cuando el backend (ALB o EC2) requiera conocer la IP real del cliente en lugar de la IP del borde de Global Accelerator.",
+      "Ten presente el coste fijo por hora y el recargo por GB de tráfico premium (DT-Premium) respecto a Internet pública al justificarlo en arquitectura."
+    ],
+    "ejemplo": "# Flujo de red:\n# Cliente -> IP Anycast fija (198.51.100.x) en Edge PoP cercano\n# -> Backbone privado AWS (sin saltos BGP públicos)\n# -> Endpoint Group sano (us-east-1 o eu-west-1 según latencia y health check)",
+    "entrevista": "Global Accelerator acelera tráfico TCP y UDP sobre el backbone privado de AWS usando IPs Anycast estáticas y failovers subminuto independientes de las cachés DNS de los clientes."
+  },
+  "GuardDuty": {
+    "que": "Amazon GuardDuty es un servicio administrado de detección inteligente de amenazas que monitoriza continuamente cuentas, cargas de trabajo y datos de AWS en busca de comportamientos maliciosos o no autorizados. Opera sin impacto de rendimiento en los recursos de producción al analizar telemetría fuera de banda.",
+    "para": "Sirve para detectar compromisos de credenciales IAM, instancias EC2 minando criptomonedas o comunicándose con servidores Command & Control, accesos anómalos a S3 o EKS y malware en volúmenes EBS sin desplegar ni mantener complejos sistemas SIEM tradicionales.",
+    "como": "Al activarlo con un clic (o de forma centralizada en AWS Organizations), GuardDuty ingiere directamente en el backend tres flujos fundamentales: CloudTrail (eventos de gestión y datos S3), VPC Flow Logs y registros DNS internos de Route 53 Resolver, además de planes opcionales para EKS Audit Logs, RDS Login Activity, Lambda y Runtime/Malware Protection. Su motor aplica listas de inteligencia de amenazas (AWS, CrowdStrike, Proofpoint) junto con modelos de aprendizaje automático para detectar anomalías estadísticas (como llamadas API desde geografías inusuales o exfiltración por DNS tunneling). Cada hallazgo se genera como evento JSON con severidad de 0.1 a 8.9 y se envía automáticamente a EventBridge y AWS Security Hub.",
+    "practicas": [
+      "Habilita GuardDuty de forma delegada desde AWS Organizations en todas las cuentas y todas las regiones (incluidas regiones no usadas) para detectar atacantes que levantan instancias ocultas en regiones secundarias.",
+      "Conecta los hallazgos de severidad alta con EventBridge + Step Functions/Lambda para ejecutar playbooks automáticos de contención (ej. aislar el Security Group de una EC2 comprometida o revocar sesiones IAM).",
+      "Distingue GuardDuty de Inspector y Macie: GuardDuty detecta amenazas activas en comportamiento y logs; Inspector escanea vulnerabilidades CVE en software/contenedores; Macie descubre datos sensibles PII en S3.",
+      "No es necesario activar VPC Flow Logs manuales en S3 para que GuardDuty los analice: los lee directamente del hipervisor sin coste extra de almacenamiento."
+    ],
+    "ejemplo": "{\n  \"source\": [\"aws.guardduty\"],\n  \"detail-type\": [\"GuardDuty Finding\"],\n  \"detail\": { \"severity\": [{ \"numeric\": [\">=\", 7] }] }\n}",
+    "entrevista": "GuardDuty ofrece detección continua de amenazas sin agentes leyendo CloudTrail, VPC Flow Logs y DNS fuera de banda, integrándose con EventBridge y Security Hub para respuesta automatizada."
+  },
+  "IAM": {
+    "que": "AWS Identity and Access Management (IAM) es el servicio global de autenticación y autorización que controla quién puede acceder a qué recursos de AWS y bajo qué condiciones. Define identidades, roles con credenciales efímeras y políticas declarativas evaluadas en cada llamada a la API.",
+    "para": "Resuelve el control de acceso granular siguiendo el principio de menor privilegio tanto para usuarios humanos (mediante federación SSO) como para aplicaciones, instancias EC2, funciones Lambda o cuentas externas.",
+    "como": "Toda petición a una API de AWS va firmada criptográficamente (normalmente Signature Version 4 con Access Key, Secret Key y Session Token temporal de STS) y pasa por el motor de evaluación de políticas de IAM. El algoritmo evalúa en orden: 1) denegación explícita en cualquier política aplicable (Identity, Resource, SCP de Organizations o Permission Boundary) gana siempre; 2) restricciones de Service Control Policies (SCP) y Permissions Boundaries deben permitir la acción; 3) debe existir al menos un `Allow` explícito (en identidad o recurso dentro de la misma cuenta; en ambos para cross-account salvo excepciones como S3/KMS); en caso contrario aplica `Implicit Deny` por defecto.",
+    "practicas": [
+      "Nunca crees usuarios IAM con Access Keys permanentes para workloads o CI/CD: utiliza IAM Roles asumidos vía STS (`AssumeRole`), Instance Profiles o federación OIDC (ej. GitHub Actions -> IAM Role).",
+      "Bloquea y protege la cuenta Root con MFA por hardware y no la uses para operaciones cotidianas; administra acceso humano mediante IAM Identity Center (SSO).",
+      "Aplica el principio de menor privilegio usando IAM Access Analyzer para generar políticas basadas en actividad real observada en CloudTrail y detectar recursos compartidos públicamente.",
+      "Utiliza Condition keys (ej. `aws:PrincipalOrgID`, `aws:SourceIp`, `aws:RequestedRegion`) y Permission Boundaries para acotar qué pueden delegar equipos desarrolladores."
+    ],
+    "ejemplo": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [{\n    \"Effect\": \"Allow\",\n    \"Action\": [\"s3:GetObject\"],\n    \"Resource\": \"arn:aws:s3:::app-assets/*\",\n    \"Condition\": { \"StringEquals\": { \"aws:RequestedRegion\": \"us-east-1\" } }\n  }]\n}",
+    "entrevista": "En IAM cualquier `Deny` explícito prevalece siempre sobre un `Allow`, y la regla de oro en producción es sustituir credenciales estáticas por IAM Roles temporales vía STS y federación OIDC."
+  },
+  "KMS": {
+    "que": "AWS Key Management Service (KMS) es el servicio administrado de gestión de claves criptográficas respaldado por módulos de seguridad de hardware (HSM) validados bajo FIPS 140-3. Permite crear, rotar y auditar claves maestras simétricas y asimétricas integradas nativamente en casi todo AWS.",
+    "para": "Resuelve el almacenamiento seguro y el control de acceso sobre el cifrado en reposo (S3, EBS, RDS, Secrets Manager, DynamoDB) y firma digital sin tener que operar HSMs físicos ni distribuir claves maestras dentro del código fuente.",
+    "como": "KMS implementa cifrado por envolvente (envelope encryption): la clave raíz KMS (AES-256-GCM en claves simétricas) jamás abandona sin cifrar los HSMs de AWS y solo procesa payloads de hasta 4 KB directamente. Para cifrar archivos o discos grandes, el cliente o servicio llama a `kms:GenerateDataKey`, recibiendo una clave de datos (DEK) en texto plano y una copia cifrada con la KMS key; cifra los datos localmente con la DEK en memoria, descarta la versión en claro y guarda la DEK cifrada junto al objeto. Para descifrar, invoca `kms:Decrypt` validando primero la Key Policy (obligatoria en toda clave), las políticas IAM y posibles KMS Grants, dejando constancia de cada uso en CloudTrail.",
+    "practicas": [
+      "Elige Customer Managed Keys (CMK) frente a AWS Managed Keys (`aws/s3`) cuando necesites compartir datos entre cuentas AWS, controlar rotación personalizada, definir Key Policies granulares o programar eliminación de clave.",
+      "Activa la rotación automática anual de claves simétricas: KMS conserva las versiones previas de la clave de respaldo de forma transparente para descifrar datos antiguos sin reescribirlos.",
+      "Ten presente que cada petición a KMS cuenta contra cuotas regionales por segundo y tiene coste por llamada; usa S3 Bucket Keys (reutiliza una clave intermedia temporal) para reducir llamadas KMS hasta en un 99% en buckets de alto tráfico.",
+      "Nunca elimines una KMS Key a la ligera (aunque hay espera mínima obligatoria de 7 a 30 días): destruir la clave hace irrecuperables permanentemente todos los backups y volúmenes cifrados con ella."
+    ],
+    "ejemplo": "aws kms generate-data-key \\\n  --key-id alias/prod-data-key \\\n  --key-spec AES_256\n# Devuelve Plaintext (usar y borrar en RAM) + CiphertextBlob (guardar junto al dato)",
+    "entrevista": "KMS nunca expone las claves maestras fuera de sus HSMs sino que aplica envelope encryption vía `GenerateDataKey`, combinando Key Policies, auditoría en CloudTrail y S3 Bucket Keys para escalar a bajo coste."
+  },
+  "Kinesis": {
+    "que": "Amazon Kinesis es una familia de servicios serverless para ingerir, almacenar y procesar flujos continuos de datos en tiempo real a gran escala, destacando Kinesis Data Streams (KDS) y Amazon Data Firehose. Permite capturar millones de eventos por segundo procedentes de telemetría IoT, clickstreams, transacciones o logs.",
+    "para": "Sirve para analítica en streaming de subsegundo, detección de fraude en tiempo real o ingestión continua hacia lagos de datos en S3, Redshift y OpenSearch. Se diferencia de SQS en que conserva el orden dentro de particiones y permite múltiples consumidores independientes leyendo el mismo flujo histórico.",
+    "como": "En Kinesis Data Streams, un flujo se divide en Shards (capacidad base de 1 MB/s o 1.000 registros/s de entrada y 2 MB/s de salida por shard) o escala automáticamente en modo On-Demand. Los productores envían registros mediante `PutRecord`/`PutRecords` acompañados de una `PartitionKey` cuyo hash MD5 determina el shard destino y garantiza el orden estricto dentro de él, reteniendo los datos entre 24 horas y 365 días. Los consumidores (Lambda, Kinesis Client Library o Apache Flink) leen secuencialmente mediante `GetRecords` o HTTP/2 push con Enhanced Fan-Out (2 MB/s dedicados por consumidor). Por su parte, Data Firehose elimina la gestión de consumidores almacenando en búfer, transformando con Lambda, comprimiendo y escribiendo directamente en S3 o almacenes analíticos.",
+    "practicas": [
+      "Usa Amazon Data Firehose siempre que solo necesites entregar datos en streaming a S3, Redshift u OpenSearch (con transformación simple y entrega near-real-time en 60s): ahorra toda la lógica de consumidores y sharding.",
+      "Elige Partition Keys con alta dispersión uniforme para evitar el error `ProvisionedThroughputExceededException` sobre un shard caliente (hot shard).",
+      "Si tienes 3 o más aplicaciones independientes consumiendo el mismo stream, activa Enhanced Fan-Out para evitar que se repartan los 2 MB/s compartidos por shard y reducir la latencia a ~70 ms.",
+      "Compara Kinesis vs MSK (Kafka): Kinesis es totalmente serverless con cero gestión de brokers/Zookeeper/KRaft y pago por uso, mientras MSK conviene si ya dependes del ecosistema Kafka Connect/Streams o retención ilimitada/compactación de logs."
+    ],
+    "ejemplo": "aws kinesis put-record \\\n  --stream-name clickstream-events \\\n  --partition-key \"user-9912\" \\\n  --data \"eyJldmVudCI6ICJwYWdlX3ZpZXciLCAicGF0aCI6ICIvY2hlY2tvdXQifQ==\"",
+    "entrevista": "Kinesis Data Streams garantiza orden por Partition Key sobre shards escalables para múltiples consumidores en tiempo real, mientras que Data Firehose resuelve la entrega administrada hacia S3 y data lakes sin escribir consumidores."
+  },
+  "Lambda": {
+    "que": "AWS Lambda es el servicio de computación serverless Function-as-a-Service (FaaS) que ejecuta código en respuesta a eventos aprovisionando y escalando la infraestructura automáticamente. Factura por número de invocaciones y duración en milisegundos proporcional a la memoria asignada.",
+    "para": "Sirve para APIs ligeras detrás de API Gateway, procesamiento asíncrono de archivos en S3, consumidores de colas SQS/Kinesis, webhooks y automatizaciones operativas donde la ejecución dura menos de 15 minutos y el tráfico es variable o intermitente.",
+    "como": "Al invocar una función, el plano de control asigna un entorno de ejecución aislado mediante microVMs Firecracker. Si no hay instancias disponibles ocurre un Cold Start: AWS descarga el paquete ZIP o imagen OCI (hasta 10 GB), arranca el runtime (Python, Node.js, Go, Java, Rust o custom), ejecuta el código de inicialización global fuera del handler y finalmente llama a la función con el evento JSON y un objeto `context` (límite máx. 15 min). En invocaciones posteriores (Warm Start) el mismo microVM se reutiliza conservando conexiones TCP abiertas y `/tmp` (hasta 10 GB). Funciona en tres modelos: síncrono (API Gateway, ALB), asíncrono con cola interna y 2 reintentos + DLQ (S3, SNS, EventBridge) y Event Source Mapping mediante sondeo (SQS, Kinesis, DynamoDB Streams).",
+    "practicas": [
+      "Inicializa clientes SDK de AWS y pools/conexiones a bases de datos fuera de la función handler para reutilizarlos en invocaciones warm y reducir latencia.",
+      "Recuerda que en Lambda la CPU escala proporcionalmente con la memoria configurada (hasta 6 vCPUs con 10.240 MB): a veces subir memoria reduce tanto el tiempo de ejecución que resulta más barato (usa AWS Lambda Power Tuning).",
+      "Si conectas Lambda dentro de una VPC hacia RDS o Aurora, usa RDS Proxy para evitar agotar las conexiones de la base de datos ante picos bruscos de concurrencia.",
+      "Activa Provisioned Concurrency (o SnapStart en Java/Python/.NET) únicamente en rutas síncronas críticas sensibles a cold starts, y configura Reserved Concurrency para proteger servicios downstream."
+    ],
+    "ejemplo": "import json\nimport boto3\ns3 = boto3.client(\"s3\")  # Reutilizado entre invocaciones warm\n\ndef handler(event, context):\n    return {\"statusCode\": 200, \"body\": json.dumps({\"ok\": True})}",
+    "entrevista": "Lambda ejecuta código sobre microVMs Firecracker con tres modelos de invocación (síncrono, asíncrono y polling), donde optimizar la inicialización fuera del handler y ajustar memoria/CPU determinan tanto la latencia como la factura."
+  },
+  "Lightsail": {
+    "que": "Amazon Lightsail es el servicio de servidor privado virtual (VPS) simplificado de AWS diseñado para lanzar aplicaciones web, sitios y entornos sencillos con precio mensual fijo y predecible. Empaqueta cómputo, disco SSD, IP estática, DNS y una cuota fija de transferencia de datos en un único plan.",
+    "para": "Sirve para proyectos pequeños, blogs, sitios corporativos en WordPress, MVPs, entornos de aprendizaje o cargas con presupuesto cerrado que no requieren configurar VPCs, subredes, tablas de enrutamiento ni políticas IAM complejas.",
+    "como": "Por debajo, Lightsail aprovisiona infraestructura de AWS (instancias tipo EC2, volúmenes SSD, balanceadores y bases de datos gestionadas) dentro de una VPC sombra administrada por el servicio y oculta al usuario. A través de una interfaz unificada o su CLI, permite desplegar instancias desde blueprints preconfigurados (LAMP, Node.js, Nginx, Docker, Plesk) con firewall simplificado por puertos, certificados TLS automáticos, snapshots programados y contenedores simples (Lightsail Container Services). Si el proyecto crece más allá de las capacidades del paquete, permite activar VPC Peering hacia la VPC estándar de la cuenta o exportar snapshots de disco para migrar la máquina directamente a EC2.",
+    "practicas": [
+      "Elige Lightsail para sitios sencillos con tráfico estable donde el paquete incluido de transferencia saliente (ej. varios TB al mes) resulta mucho más económico que pagar Data Transfer Out por GB en EC2 estándar.",
+      "No construyas arquitecturas empresariales multi-región, microservicios con IAM granular ni Auto Scaling complejo sobre Lightsail: su sencillez deliberada limita la automatización avanzada y el control fino de red.",
+      "Activa snapshots automáticos desde el primer día y recuerda que un disco adicional o base de datos gestionada en Lightsail se factura aparte del plan base de la instancia.",
+      "Planifica la transición a EC2 + RDS usando la función nativa `Export snapshot to EC2` cuando el proyecto empiece a necesitar Auto Scaling Groups, Security Groups dinámicos o integración profunda con servicios AWS."
+    ],
+    "ejemplo": "aws lightsail create-instances \\\n  --instance-names \"blog-prod\" \\\n  --availability-zone \"us-east-1a\" \\\n  --blueprint-id \"wordpress\" --bundle-id \"nano_3_0\"",
+    "entrevista": "Lightsail ofrece la simplicidad de un VPS con precio fijo y generosa transferencia incluida sobre infraestructura AWS, sirviendo como punto de partida rápido con ruta directa de migración a EC2 mediante exportación de snapshots."
+  }
+}

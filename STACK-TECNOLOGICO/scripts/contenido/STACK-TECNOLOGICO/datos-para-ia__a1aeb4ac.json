@@ -1,0 +1,363 @@
+{
+  "Active learning": {
+    "que": "Active learning es un paradigma de aprendizaje automático iterativo donde el modelo selecciona activamente los ejemplos no etiquetados más informativos para que un oráculo (humano o modelo juez) los anote. En lugar de muestrear datos al azar, prioriza instancias cercanas a la frontera de decisión o con alta incertidumbre epistémica.",
+    "para": "Resuelve el cuello de botella económico y temporal de etiquetar datasets masivos cuando los datos sin procesar abundan pero la anotación experta es costosa. Se emplea en clasificación médica, detección de fraude, visión por computador y curación de pares de preferencia (RLHF/DPO).",
+    "como": "El ciclo comienza entrenando un modelo semilla sobre un subconjunto inicial pequeño (seed set) ya etiquetado. Luego, el modelo ejecuta inferencia sobre el pool no etiquetado y calcula puntuaciones de adquisición mediante estrategias como Entropy Sampling, Margin Sampling, Least Confidence o QBC (Query-by-Committee). En esquemas por lotes (Batch-mode), algoritmos como BADGE o Core-Set aplican clustering en el espacio de gradientes o embeddings para evitar seleccionar muestras redundantes. Las muestras elegidas pasan al equipo anotador, se incorporan al split de entrenamiento y el modelo se reentrena hasta alcanzar el presupuesto o la métrica objetivo.",
+    "practicas": [
+      "Combina incertidumbre con diversidad (p. ej. k-means sobre embeddings de las muestras inciertas) para no desperdiciar presupuesto etiquetando duplicados cercanos.",
+      "Active learning vs Random sampling: el muestreo aleatorio es mejor para estimar métricas globales reales (test set), mientras que active learning optimiza la frontera de decisión del train set.",
+      "Evita el sesgo de muestreo (sampling bias) reservando siempre un conjunto de validación estratificado y fijo elegido de forma aleatoria antes de iniciar el ciclo.",
+      "Vigila los outliers extremos: muestras corruptas o fuera de dominio suelen disparar la entropía sin aportar señal útil al modelo."
+    ],
+    "ejemplo": "import numpy as np\n\nprobs = model.predict_proba(X_unlabeled)\n# Margin sampling: menor diferencia entre las dos clases más probables\nsorted_p = np.sort(probs, axis=1)\nmargins = sorted_p[:, -1] - sorted_p[:, -2]\nquery_idx = np.argsort(margins)[:50]\nX_to_annotate = X_unlabeled[query_idx]",
+    "entrevista": "Active learning maximiza la ganancia de información por dólar etiquetado combinando estrategias de incertidumbre como Margin Sampling con diversidad espacial en el espacio latente para no colapsar en outliers."
+  },
+  "Anotación de datos": {
+    "que": "La anotación de datos es el proceso sistemático de adjuntar metadatos estructurados, etiquetas semánticas, coordenadas espaciales o juicios de calidad a datos sin procesar (texto, imagen, audio o vídeo). Constituye la creación de la verdad fundamental (ground truth) necesaria para el aprendizaje supervisado y la evaluación.",
+    "para": "Sirve para traducir información bruta ambigua en señales supervisadas consumibles por modelos de ML, LLMs o sistemas de visión. Es indispensable cuando las reglas heurísticas no bastan para tareas como NER, segmentación de instancias, transcripción ASR o alineación de asistentes conversacionales.",
+    "como": "El flujo parte de redactar guías de anotación (annotation guidelines) con taxonomías cerradas y ejemplos de casos límite. Los datos se ingieren en herramientas como Label Studio, Prodigy o CVAT, distribuyéndose en lotes con redundancia (2 o 3 anotadores por ítem). Posteriormente se mide el acuerdo entre anotadores (IAA) mediante Cohen's Kappa o Krippendorff's Alpha para detectar ambigüedades en la guía. Los desacuerdos se resuelven en una etapa de adjudicación por expertos antes de exportar los registros en formatos estándar como COCO JSON, CoNLL o JSONL.",
+    "practicas": [
+      "Versiona las guías de anotación junto al dataset; cambiar la definición de una etiqueta sin reanotar rompe la consistencia histórica.",
+      "Inserta muestras de control ocultas (honeypots) con respuestas conocidas para auditar en tiempo real la deriva o fatiga de los anotadores.",
+      "Anotación manual vs Programmatic labeling (Snorkel): usa funciones de etiquetado débil para pre-etiquetar grandes volúmenes y reserva la anotación humana para casos ambiguos y evaluación."
+    ],
+    "ejemplo": "{\n  \"id\": \"doc_402\",\n  \"text\": \"El pago a Stripe falló por error 402.\",\n  \"entities\": [\n    {\"start\": 11, \"end\": 17, \"label\": \"PROVEEDOR\"},\n    {\"start\": 34, \"end\": 37, \"label\": \"CODIGO_ERROR\"}\n  ],\n  \"annotator_id\": \"ann_07\",\n  \"iaa_score\": 0.91\n}",
+    "entrevista": "La calidad de una anotación depende menos de la herramienta de UI y más de unas guías iterativas medidas con Krippendorff's Alpha y adjudicación de discrepancias."
+  },
+  "Aprendizaje activo": {
+    "que": "El aprendizaje activo es la técnica de entrenamiento en la que el algoritmo participa en la curación de su propio conjunto de entrenamiento consultando selectivamente la etiqueta de los ejemplos más ambiguos o representativos. Optimiza la curva de aprendizaje reduciendo drásticamente el volumen de datos etiquetados requerido.",
+    "para": "Se utiliza para reducir costes de etiquetado en dominios especializados (diagnóstico clínico, derecho, análisis satelital) y para corregir rápidamente puntos ciegos de un modelo ya desplegado en producción. Resulta clave en flujos Human-in-the-Loop (HITL) donde el flujo continuo de datos supera la capacidad humana.",
+    "como": "Opera en un bucle cerrado (pool-based, stream-based o membership query synthesis). En el modo pool-based, un scorer evalúa el conjunto no etiquetado con funciones de adquisición basadas en entropía predictiva, varianza entre miembros de un ensemble (BALD con MC Dropout) o cambio esperado del gradiente (EGL). En el modo stream-based, el sistema decide en tiempo real si un evento entrante supera un umbral de incertidumbre para enviarlo a revisión humana. Tras recibir la etiqueta, los pesos se actualizan mediante fine-tuning incremental o reentrenamiento completo.",
+    "practicas": [
+      "En producción, combina aprendizaje activo con detección de data drift para priorizar muestras de nuevas distribuciones.",
+      "Calibra las probabilidades del modelo (p. ej. Temperature Scaling) antes de usarlas como medida de incertidumbre, pues las redes neuronales suelen estar sobreconfiadas.",
+      "Pool-based vs Stream-based: elige pool-based cuando dispones de un lago de datos estático y stream-based en sistemas de baja latencia o dispositivos edge con memoria limitada."
+    ],
+    "ejemplo": "# Cálculo de incertidumbre BALD aproximada con T pasadas estocásticas (MC Dropout)\nimport torch\n\nprobs = torch.stack([model(x_batch, training=True).softmax(-1) for _ in range(10)])\nmean_p = probs.mean(dim=0)\nentropy_mean = -(mean_p * mean_p.log()).sum(-1)\nmean_entropy = -(probs * probs.log()).sum(-1).mean(dim=0)\nbald_score = entropy_mean - mean_entropy",
+    "entrevista": "El aprendizaje activo convierte el entrenamiento en un bucle de retroalimentación donde métricas epistémicas como BALD dirigen el esfuerzo humano hacia regiones de alta ignorancia del modelo, no solo ruido aleatorio."
+  },
+  "Augmentación de datos": {
+    "que": "La augmentación de datos es el conjunto de transformaciones deterministas o estocásticas aplicadas a muestras existentes para generar nuevas variantes válidas que preservan la etiqueta original (label-preserving) o la interpolan de forma controlada. Expande artificialmente el soporte de la distribución de entrenamiento.",
+    "para": "Sirve para combatir el sobreajuste cuando el dataset es reducido, enseñar invarianzas geométricas o semánticas al modelo (rotación, traslación, parafraseo) y equilibrar clases minoritarias. Es fundamental en visión por computador, audio y cada vez más en NLP mediante reescritura controlada.",
+    "como": "Durante la carga de lotes (on-the-fly) o en un paso offline previo, un pipeline aplica transformaciones parametrizadas por probabilidades de ejecución. En imágenes se encadenan operaciones afines, jitter de color, Cutout, Mixup o CutMix mediante librerías como Albumentations o torchvision.transforms.v2. En audio se añaden ruido de fondo, time-stretching y SpecAugment sobre espectrogramas Mel. En texto se emplea back-translation, reemplazo contextual de tokens o parafraseo con LLMs verificando consistencia semántica.",
+    "practicas": [
+      "Aplica augmentación exclusivamente al split de entrenamiento; nunca aumentes el conjunto de validación o test antes de dividir, o provocarás fuga de datos.",
+      "Verifica invarianzas del dominio: voltear horizontalmente un dígito '6' o un cartel de tráfico con flechas invalida su etiqueta.",
+      "Augmentación on-the-fly vs offline: prefiere on-the-fly para variar las transformaciones en cada época sin multiplicar el almacenamiento en disco."
+    ],
+    "ejemplo": "import albumentations as A\n\ntrain_tf = A.Compose([\n    A.RandomResizedCrop(size=(224, 224), scale=(0.8, 1.0)),\n    A.HorizontalFlip(p=0.5),\n    A.ColorJitter(brightness=0.2, contrast=0.2, p=0.4),\n    A.CoarseDropout(num_holes_range=(1, 4), p=0.3)\n])",
+    "entrevista": "Una buena augmentación inyecta sesgos inductivos del dominio directamente en los datos, forzando invarianzas reales sin corromper la semántica de la etiqueta ni contaminar el conjunto de validación."
+  },
+  "Calidad de datos para IA": {
+    "que": "La calidad de datos para IA mide en qué grado un dataset es preciso, completo, consistente, representativo, libre de sesgos dañinos y actualizado respecto a la tarea objetivo. A diferencia de la calidad en BI tradicional, aquí incluye propiedades estadísticas como balance de clases, ruido de etiquetas y ausencia de duplicados semánticos.",
+    "para": "Sirve para garantizar que los modelos aprendan señales generalizables en lugar de artefactos espurios, reduciendo alucinaciones, sesgos discriminatorios y degradación silenciosa en producción. En proyectos centrados en datos (Data-Centric AI), mejorar la calidad del dataset suele aportar más ganancia que cambiar de arquitectura.",
+    "como": "Se implementa mediante puertas de calidad automatizadas (quality gates) integradas en el pipeline de ingesta y curación. Primero se validan esquemas, tipos y rangos con herramientas como Pandera, Great Expectations o Deequ. Luego se ejecuta perfilado estadístico y detección de anomalías: deduplicación exacta por hash (SHA-256) y difusa mediante MinHash LSH o similitud coseno de embeddings, detección de ruido en etiquetas con Confident Learning (Cleanlab) y análisis de toxicidad/PII con clasificadores y regex.",
+    "practicas": [
+      "Implementa pruebas automatizadas de datos en CI/CD igual que pruebas unitarias de código; un cambio de esquema aguas arriba debe detener el entrenamiento.",
+      "Prioriza limpiar errores sistemáticos de etiquetado en muestras de alta confianza antes de añadir más datos ruidosos.",
+      "Calidad sintáctica vs Calidad semántica: validar que un JSON no tenga nulos es necesario, pero insuficiente si el texto contiene texto repetitivo, HTML residual o etiquetas contradictorias."
+    ],
+    "ejemplo": "import pandera as pa\n\nschema = pa.DataFrameSchema({\n    \"prompt\": pa.Column(str, pa.Check.str_length(min_value=10, max_value=8000), nullable=False),\n    \"label\": pa.Column(str, pa.Check.isin([\"positivo\", \"neutro\", \"negativo\"])),\n    \"score\": pa.Column(float, pa.Check.in_range(0.0, 1.0))\n}, unique=[\"prompt\"])",
+    "entrevista": "En Data-Centric AI tratamos los datos como código: validamos esquemas con contratos estrictos, deduplicamos semánticamente y auditamos el ruido de etiquetas con Confident Learning antes de escalar el cómputo."
+  },
+  "Chunking": {
+    "que": "El chunking es el proceso de segmentar documentos extensos en fragmentos discretos y manejables (chunks) manteniendo coherencia semántica y respetando la ventana de contexto de los modelos de embeddings y generación. Es el eslabón crítico entre la ingesta documental y la recuperación en sistemas RAG.",
+    "para": "Resuelve dos límites opuestos: si los fragmentos son demasiado grandes, el embedding promedia múltiples temas y pierde precisión de búsqueda; si son demasiado pequeños, el modelo pierde contexto necesario para responder. Se utiliza al indexar manuales técnicos, bases de conocimiento, código fuente o contratos en bases vectoriales.",
+    "como": "El pipeline toma texto normalizado y lo divide según una estrategia adaptada al formato. El chunking de tamaño fijo cuenta tokens mediante un tokenizador (como tiktoken) con solapamiento (overlap) de 10-20% para no cortar frases clave. El Recursive Character/Markdown Splitting respeta jerarquías de separadores (`\\n## `, `\\n\\n`, `. `). Estrategias avanzadas incluyen Semantic Chunking (agrupar oraciones consecutivas cuya similitud de embeddings supera un umbral), Parent-Child Chunking (indexar fragmentos pequeños pero devolver el bloque padre completo al LLM) y Late Chunking sobre modelos de contexto largo.",
+    "practicas": [
+      "Mide siempre el tamaño del chunk en tokens del modelo de embedding elegido, no en caracteres, para evitar truncamientos silenciosos (p. ej. límite de 512 tokens).",
+      "Propaga encabezados jerárquicos (Título > Sección > Subsección) dentro de cada chunk o sus metadatos para que los fragmentos aislados conserven contexto.",
+      "Fixed-size vs Structure-aware chunking: evita cortes fijos en código fuente o tablas Markdown; usa parsers AST o límites de bloque para mantener unidades lógicas enteras."
+    ],
+    "ejemplo": "from langchain_text_splitters import RecursiveCharacterTextSplitter\n\nsplitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(\n    model_name=\"gpt-4o\",\n    chunk_size=450,\n    chunk_overlap=60,\n    separators=[\"\\n## \", \"\\n### \", \"\\n\\n\", \"\\n\", \". \", \" \"]\n)\nchunks = splitter.split_text(markdown_doc)",
+    "entrevista": "El chunking óptimo equilibra densidad semántica para el retriever y suficiencia contextual para el generador, usando estrategias conscientes de la estructura o patrones Parent-Child en lugar de cortes ciegos."
+  },
+  "Cobertura de datos": {
+    "que": "La cobertura de datos mide hasta qué punto un dataset representa adecuadamente todo el espacio de entrada, subpoblaciones, casos límite (edge cases) e intenciones que el modelo encontrará en operación real. Evalúa los huecos o regiones subrepresentadas dentro del dominio objetivo.",
+    "para": "Sirve para prevenir fallos catastróficos en segmentos minoritarios, idiomas poco frecuentes, condiciones climáticas atípicas o colas largas de consultas de usuario. Se analiza antes de liberar modelos críticos y al planificar nuevas campañas de recolección o síntesis de datos.",
+    "como": "Se cuantifica proyectando el dataset en un espacio de características estructuradas (slice-based analysis) o embeddings semánticos. Primero se define una matriz de dimensiones clave (geografía, idioma, dispositivo, longitud de secuencia, clase) y se calculan histogramas de frecuencia conjunta para detectar celdas vacías. En datos no estructurados se aplican algoritmos de clustering (HDBSCAN/UMAP) sobre embeddings para comparar el soporte del dataset de entrenamiento frente al tráfico real de producción mediante métricas como Precision/Recall de distribuciones o distancia de Wasserstein.",
+    "practicas": [
+      "Desagrega las métricas por subgrupos (data slicing) en lugar de mirar solo el accuracy global; un 95% global puede ocultar un 20% en dispositivos antiguos o dialectos regionales.",
+      "Cobertura vs Volumen: duplicar el tamaño del dataset recolectando más de la clase mayoritaria no aumenta la cobertura; enfoca la captura en la cola larga.",
+      "Define requisitos mínimos de soporte por cada slice crítico antes de aprobar el entrenamiento."
+    ],
+    "ejemplo": "# Auditoría rápida de cobertura cruzada por idioma y categoría\ncoverage = (\n    df.groupby([\"idioma\", \"categoria\"])\n      .size()\n      .unstack(fill_value=0)\n)\nlow_coverage = coverage[coverage < 100].stack()",
+    "entrevista": "Más volumen no garantiza mejor generalización si no hay cobertura; audito el soporte por slices críticos y comparo los clústeres de embeddings de entrenamiento contra la distribución real de tráfico."
+  },
+  "Conjunto dorado": {
+    "que": "Un conjunto dorado (Golden Dataset) es una colección pequeña, altamente curada y revisada por expertos humanos de pares entrada-salida verdaderos, utilizada como referencia inmutable de verdad para evaluar modelos, pipelines RAG o prompts. Representa el estándar de oro contra el cual se miden regresiones.",
+    "para": "Sirve para obtener evaluaciones reproducibles, objetivas y alineadas con el negocio cada vez que cambia un prompt, un modelo base, el chunking o el retriever. Sin un conjunto dorado estable, es imposible saber si una iteración realmente mejora la calidad o introduce regresiones ocultas.",
+    "como": "Se construye extrayendo una muestra estratificada de consultas reales de producción, casos críticos de negocio y escenarios adversarios (edge cases). Múltiples expertos del dominio anotan y consensúan las respuestas esperadas, los documentos de referencia (ground truth context en RAG) y los criterios de rúbrica. El archivo se almacena bajo control de versiones estricto (Git LFS, DVC o registro de evaluación) con hashes de integridad. En cada pull request o release, un harness automatizado (Ragas, DeepEval, Promptfoo) ejecuta el sistema sobre el golden dataset y compara métricas respecto a la línea base.",
+    "practicas": [
+      "Nunca entrenes ni hagas tuning de hiperparámetros directamente sobre el conjunto dorado; mantenlo completamente aislado para evitar sobreajuste de evaluación.",
+      "Incluye casos negativos explícitos (preguntas sin respuesta en la base documental) para medir la tasa de rechazo honesto frente a alucinaciones.",
+      "Golden dataset estático vs vivo: mantén un núcleo fijo para comparar históricamente y añade en una partición aparte nuevos fallos detectados en producción."
+    ],
+    "ejemplo": "{\n  \"case_id\": \"rag_gold_014\",\n  \"query\": \"¿Cuál es el SLA de respuesta para incidentes P1?\",\n  \"expected_doc_ids\": [\"policy_sla_v3#sec2\"],\n  \"reference_answer\": \"El SLA para incidentes P1 es de 15 minutos 24/7.\",\n  \"slice\": \"compliance_p1\"\n}",
+    "entrevista": "Un conjunto dorado versionado e inmutable transforma el desarrollo de sistemas de IA de pruebas subjetivas por intuición a ingeniería dirigida por evaluación con detección automática de regresiones."
+  },
+  "Curación de datos": {
+    "que": "La curación de datos es el proceso integral de seleccionar, filtrar, organizar, enriquecer y mantener datasets de alta señal a partir de fuentes heterogéneas para maximizar el rendimiento y la seguridad de un modelo. Va más allá de la limpieza sintáctica al decidir qué ejemplos merecen estar en el entrenamiento.",
+    "para": "Resuelve el problema de la basura entra, basura sale (GIGO) y el coste exponencial de entrenar sobre corpora ruidosos o redundantes. Es esencial en el preentrenamiento y post-entrenamiento de LLMs, donde filtrar el 30-50% de peor calidad suele producir modelos más capaces con menos tokens.",
+    "como": "Un pipeline moderno de curación (como NeMo Curator, FineWeb o Data-Juicer) opera en etapas secuenciales en clústeres distribuidos (Spark, Ray, Dask). Comienza con extracción de texto y filtrado heurístico (proporción de puntuación, longitud media de palabra, eliminación de boilerplate). Continúa con deduplicación exacta (URLs/hashes) y difusa a escala web mediante MinHash + LSH y deduplicación semántica por clustering de embeddings. Finalmente aplica clasificadores de calidad entrenados (fastText o modelos pequeños sobre referencias tipo Wikipedia/libros), detección de idioma y anonimización PII.",
+    "practicas": [
+      "Documenta cada filtro aplicado y guarda muestras descartadas para verificar que no estás eliminando conocimiento técnico válido (p. ej. fragmentos de código por tener mucha puntuación).",
+      "Deduplicación exacta vs Semántica: la exacta elimina copias literales; la semántica reduce paráfrasis repetidas que provocan memorización y ralentizan la convergencia.",
+      "Equilibra la mezcla de dominios (data mixing) validando con leyes de escalado en modelos pequeños antes de lanzar entrenamientos largos."
+    ],
+    "ejemplo": "# Filtro heurístico básico estilo FineWeb / Data-Juicer\ndef pass_quality_filter(text: str) -> bool:\n    words = text.split()\n    if not (50 <= len(words) <= 100000):\n        return False\n    alpha_ratio = sum(c.isalpha() for c in text) / max(len(text), 1)\n    return alpha_ratio > 0.65 and text.count(\"\\n\") / len(words) < 0.3",
+    "entrevista": "La curación de datos no es solo borrar nulos: es un embudo reproducible de filtros heurísticos, deduplicación MinHash/semántica y clasificadores de calidad que eleva la densidad de señal por token."
+  },
+  "Data annotation": {
+    "que": "Data annotation es la disciplina operativa y metodológica de asignar etiquetas, relaciones, bounding boxes, máscaras de segmentación o preferencias humanas a activos de datos sin estructurar. Proporciona el marco de referencia supervisado que alinea las predicciones del modelo con la intención humana.",
+    "para": "Sirve para habilitar tareas supervisadas y de alineación donde no existen etiquetas naturales derivadas del negocio (como clics o compras). Se aplica en conducción autónoma, clasificación documental, moderación de contenido y entrenamiento de modelos de recompensa.",
+    "como": "El ciclo operativo combina arquitectura de flujo y control estadístico de calidad. Se define una ontología de etiquetas en una herramienta de anotación (Labelbox, Scale, Label Studio, Argilla), se pre-anotan muestras con un modelo base o heurísticas (pre-labeling) para acelerar al operador y se asignan tareas con muestreo doble ciego. El sistema calcula métricas de concordancia inter-anotador (IoU promedio en visión, F1 por entidad en NER, Fleiss' Kappa en clasificación) y enruta los ítems conflictivos a revisores senior.",
+    "practicas": [
+      "Usa pre-etiquetado asistido por modelo con cautela: acelera el rendimiento hasta 3x, pero induce sesgo de confirmación (automation bias) si los anotadores aceptan errores sin corregirlos.",
+      "Captura metadatos del proceso (tiempo por tarea, historial de ediciones, versión de la guía) para auditar la fiabilidad de cada lote.",
+      "Crowdsourcing generalista vs Expertos de dominio: usa crowdsourcing solo en tareas perceptivas simples y expertos internos para medicina, código o finanzas."
+    ],
+    "ejemplo": "# Cálculo rápido de acuerdo entre dos anotadores (Cohen's Kappa)\nfrom sklearn.metrics import cohen_kappa_score\n\nann_a = [\"bug\", \"feature\", \"bug\", \"docs\", \"feature\"]\nann_b = [\"bug\", \"feature\", \"docs\", \"docs\", \"feature\"]\nkappa = cohen_kappa_score(ann_a, ann_b)\nprint(f\"IAA Kappa: {kappa:.3f}\")",
+    "entrevista": "Escalar data annotation con éxito requiere tratar el flujo como un proceso de ingeniería de calidad: pre-labeling sin sesgo de anclaje, auditorías con honeypots y métricas estrictas de acuerdo inter-anotador."
+  },
+  "Data augmentation": {
+    "que": "Data augmentation agrupa las técnicas algorítmicas que sintetizan variaciones realistas de muestras existentes aplicando perturbaciones en el espacio de entrada o en representaciones latentes. Su propósito es incrementar el tamaño efectivo y la variabilidad del conjunto de entrenamiento sin nueva recolección.",
+    "para": "Se emplea para mejorar la robustez ante cambios de iluminación, ruido acústico, rotación o variaciones sintácticas, y para mitigar el sobreajuste en regímenes de pocos datos (low-data regimes). También actúa como regularizador implícito en arquitecturas profundas.",
+    "como": "Según la modalidad, las transformaciones operan en tiempo de carga o dentro del grafo de cómputo. Políticas automáticas como RandAugment o AutoAugment muestrean magnitudes y secuencias óptimas de operaciones visuales. Técnicas de mezcla lineal como Mixup interpolan pares de vectores y sus etiquetas one-hot (`x' = λx1 + (1-λ)x2`), mientras CutMix sustituye parches rectangulares entre imágenes. En NLP se utilizan perturbaciones de embeddings (FreeLB), back-translation o generación de paráfrasis con restricciones de preservación de entidad.",
+    "practicas": [
+      "Ajusta la intensidad de las transformaciones gradualmente; perturbaciones excesivas desplazan el dominio de entrenamiento lejos de los datos reales de inferencia.",
+      "Mixup/CutMix vs Transformaciones afines: Mixup mejora la calibración y suaviza fronteras de decisión, pero requiere ajustar la función de pérdida para soportar etiquetas suaves.",
+      "En inferencia crítica se puede usar Test-Time Augmentation (TTA) promediando predicciones de varias vistas aumentadas, asumiendo el coste extra de latencia."
+    ],
+    "ejemplo": "# Implementación mínima de Mixup en PyTorch\nimport numpy as np, torch\n\nlam = np.random.beta(0.4, 0.4)\nidx = torch.randperm(x.size(0))\nx_mix = lam * x + (1 - lam) * x[idx]\ny_mix = lam * y_onehot + (1 - lam) * y_onehot[idx]",
+    "entrevista": "Data augmentation actúa como un regularizador basado en invarianzas del dominio, donde técnicas como RandAugment o Mixup suavizan la superficie de decisión sin coste adicional de etiquetado."
+  },
+  "Data leakage": {
+    "que": "El data leakage (fuga de datos) ocurre cuando información del conjunto de evaluación o del futuro que no estaría disponible en el momento de inferencia se filtra inadvertidamente al conjunto o características de entrenamiento. Produce métricas offline artificialmente altas que colapsan en producción.",
+    "para": "Identificar y prevenir el data leakage sirve para garantizar que las métricas de validación reflejen fielmente la capacidad de generalización real en producción. Es una auditoría obligatoria en cualquier pipeline de ML tabular, series temporales, visión o entrenamiento de LLMs.",
+    "como": "Se manifiesta principalmente por dos vías: target leakage (variables derivadas directa o indirectamente de la etiqueta futura) y train-test contamination (muestras duplicadas, correlacionadas o estadísticas globales compartidas entre splits). El ejemplo clásico es ajustar un `StandardScaler`, un imputador de medias o un selector de features sobre todo el dataset antes de llamar a `train_test_split`. En series temporales surge al usar validación cruzada aleatoria en lugar de ventanas temporales (walk-forward), y en LLMs cuando los benchmarks públicos aparecen en el corpus de preentrenamiento.",
+    "practicas": [
+      "Ejecuta el split train/val/test como el primer paso estricto tras la ingesta bruta, antes de cualquier transformación, imputación o deduplicación.",
+      "Agrupa por entidad (GroupKFold) cuando existan múltiples registros del mismo paciente, usuario o documento para evitar que un mismo sujeto aparezca en train y test.",
+      "Sospecha de data leakage inmediatamente si un modelo alcanza un AUC > 0.99 en un problema complejo o si una sola feature domina desproporcionadamente el feature importance."
+    ],
+    "ejemplo": "# CORRECTO: Pipeline encapsula el scaler dentro del CV para evitar leakage\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import cross_val_score\n\npipe = make_pipeline(StandardScaler(), LogisticRegression())\nscores = cross_val_score(pipe, X, y, cv=5)",
+    "entrevista": "Prevengo el data leakage aislando el split desde el primer paso, encapsulando transformadores dentro de Pipelines en validación cruzada y respetando agrupaciones por entidad o cortes temporales estrictos."
+  },
+  "Data pipeline para IA": {
+    "que": "Un data pipeline para IA es la arquitectura automatizada y reproducible que ingiere, valida, transforma, versiona y sirve datos heterogéneos desde fuentes operacionales hasta pipelines de entrenamiento, fine-tuning o indexación RAG. Integra procesamiento estructurado y no estructurado a escala.",
+    "para": "Resuelve la fragilidad de scripts manuales ad-hoc (glue code), asegurando que los modelos se reentrenen e indexen con datos frescos, trazables y consistentes entre entrenamiento e inferencia (training-serving skew). Es la columna vertebral de MLOps y LLMOps.",
+    "como": "Orquestadores como Dagster, Airflow, Prefect o Kubeflow Pipelines coordinan un grafo acíclico dirigido (DAG) de etapas idempotentes. La ingesta captura datos desde data lakes (S3/Iceberg), bases operacionales (CDC con Debezium) o repositorios documentales. Motores distribuidos (Spark, Ray Data, Polars) ejecutan limpieza, extracción de texto, chunking y generación de embeddings en paralelo aprovechando GPUs en streaming. Los artefactos resultantes se escriben en formatos columnares (Parquet/WebDataset) o bases vectoriales, registrando linaje y métricas de calidad en cada ejecución.",
+    "practicas": [
+      "Diseña cada paso como idempotente y particionado por fecha o hash de contenido para reintentar fallos parciales sin duplicar registros.",
+      "Unifica la lógica de transformación entre entrenamiento e inferencia (Feature Store o librería compartida) para eliminar el training-serving skew.",
+      "Batch pipeline vs Streaming pipeline: usa batch para reentrenamiento y reindexación masiva, y streaming (Kafka/Flink) solo cuando el caso de uso exija frescura de segundos en RAG o features en tiempo real."
+    ],
+    "ejemplo": "# Definición conceptual de flujo GPU en streaming con Ray Data\nimport ray\n\nds = ray.data.read_parquet(\"s3://lake/docs/\")\nds = ds.map(clean_and_chunk)\nds = ds.map_batches(EmbedderClass, compute=ray.data.ActorPoolStrategy(size=4), num_gpus=1)\nds.write_parquet(\"s3://lake/embeddings/\")",
+    "entrevista": "Un buen data pipeline para IA es un DAG idempotente que separa ingesta, validación de contratos y cómputo heterogéneo CPU/GPU con linaje completo para evitar training-serving skew."
+  },
+  "Dataset versioning": {
+    "que": "El dataset versioning es la práctica de asignar identificadores inmutables, metadatos de linaje y trazabilidad criptográfica a cada estado de un conjunto de datos a lo largo de su ciclo de vida. Permite vincular exactamente qué versión de datos produjo qué pesos de modelo.",
+    "para": "Resuelve la imposibilidad de reproducir experimentos, auditar cumplimiento regulatorio (como el EU AI Act) y hacer rollback rápido cuando una nueva remesa de datos degrada el rendimiento en producción. Es imprescindible en equipos donde múltiples ingenieros curan y modifican datasets en paralelo.",
+    "como": "En lugar de guardar copias completas en almacenamiento de objetos (`dataset_v2_final_ok`), herramientas como DVC, LakeFS, Oxen o Hugging Face Hub almacenan blobs de contenido direccionado por hash (content-addressable storage) y mantienen punteros ligeros en Git o ramas estilo copy-on-write sobre S3/GCS. En formatos de tabla abierta como Apache Iceberg o Delta Lake, cada escritura crea un snapshot atómico con time-travel mediante manifiestos Parquet. Al entrenar, el tracker de experimentos (MLflow, W&B) registra automáticamente el commit hash del dataset.",
+    "practicas": [
+      "Aplica inmutabilidad estricta en producción: nunca sobrescribas un snapshot etiquetado; crea una nueva versión o rama.",
+      "Guarda junto al hash del dataset el script o configuración de transformación que lo generó para garantizar reproducibilidad bit a bit.",
+      "DVC/Git-LFS vs LakeFS/Iceberg: usa DVC para repositorios centrados en ML con archivos medianos y LakeFS o Iceberg cuando manejas terabytes en data lakes compartidos."
+    ],
+    "ejemplo": "# Flujo reproducible con DVC vinculado a Git\ndvc add data/train_curated.parquet\ngit add data/train_curated.parquet.dvc .gitignore\ngit commit -m \"feat(data): v1.4 tras deduplicacion MinHash\"\ndvc push",
+    "entrevista": "Versiono los datasets mediante punteros inmutables direccionados por hash o snapshots copy-on-write tipo LakeFS/Iceberg, enlazando cada run de entrenamiento con el commit exacto de código y datos."
+  },
+  "Datasets para fine-tuning": {
+    "que": "Los datasets para fine-tuning son colecciones estructuradas y de alta calidad diseñadas para adaptar un modelo fundacional preentrenado a una tarea, estilo, dominio o política de comportamiento específica. Se clasifican principalmente en corpora de preentrenamiento continuo, instrucción supervisada (SFT) y preferencia (DPO/RLHF).",
+    "para": "Sirven para especializar modelos en tareas donde el prompting resulta insuficiente, costoso en tokens o incapaz de seguir esquemas estrictos y jerga propietaria. Un dataset SFT pequeño y limpio (miles de ejemplos) suele superar a millones de ejemplos ruidosos (principio de LIMA).",
+    "como": "Su construcción comienza definiendo la distribución de tareas y el formato objetivo (p. ej. conversación multi-turno, tool calling o salida JSON). Se recopilan pares reales de logs validados por humanos, se filtran respuestas incorrectas o con fugas de formato y se equilibran proporciones por categoría para evitar olvido catastrófico (catastrophic forgetting). En alineación por preferencias se construyen tripletas `(prompt, chosen, rejected)` generadas por muestreo del propio modelo o modelos de distinto tamaño y puntuadas por jueces humanos o rúbricas verificables.",
+    "practicas": [
+      "Prioriza diversidad y calidad extrema de formato sobre volumen bruto: unos pocos ejemplos con errores de sintaxis en tool calling enseñan al modelo a romper el JSON.",
+      "Mezcla entre un 5% y un 15% de datos generales de instrucción (replay buffer) si necesitas conservar capacidades generales y evitar olvido catastrófico.",
+      "SFT vs Preferencia (DPO): usa SFT para enseñar nuevas capacidades o formatos, y DPO para refinar estilo, concisión y reducir alucinaciones comparando respuestas buenas contra malas."
+    ],
+    "ejemplo": "{\"messages\": [{\"role\": \"system\", \"content\": \"Eres un clasificador SQL.\"}, {\"role\": \"user\", \"content\": \"Total ventas ayer\"}, {\"role\": \"assistant\", \"content\": \"SELECT SUM(total) FROM ventas WHERE fecha = CURRENT_DATE - 1;\"}]}\n{\"prompt\": \"Resume el error 502\", \"chosen\": \"El gateway recibió respuesta inválida del upstream.\", \"rejected\": \"Error genérico del sistema, reinicia tu PC.\"}",
+    "entrevista": "En fine-tuning la calidad y diversidad superan al volumen: diseño datasets con cobertura balanceada de tareas, cero errores de formato y mezcla de replay para prevenir olvido catastrófico."
+  },
+  "Datos de dominio": {
+    "que": "Los datos de dominio son conjuntos de información específicos de una industria, disciplina técnica o contexto organizacional (salud, derecho, ingeniería aeroespacial, fintech) con terminología, ontologías y reglas propias. Suelen estar subrepresentados en los corpora web públicos usados para preentrenar modelos genéricos.",
+    "para": "Sirven para dotar a los sistemas de IA de precisión terminológica, comprensión de acrónimos internos y adherencia a normativas sectoriales. Se utilizan tanto para adaptar modelos mediante Continued Pre-training (CPT) y fine-tuning como para construir bases de conocimiento en arquitecturas RAG.",
+    "como": "Su aprovechamiento requiere adaptar el pipeline desde la extracción hasta la evaluación. Los documentos técnicos (manuales PDF, historiales clínicos HL7/FHIR, esquemas CAD o repositorios internos) se parsean preservando tablas, fórmulas y referencias cruzadas. Para CPT se tokenizan textos completos mezclados con un porcentaje de datos generales; para RAG se enriquecen los chunks con glosarios de dominio o sinónimos corporativos (query expansion) y a menudo se ajusta un modelo de embeddings específico del sector. La evaluación exige un conjunto dorado validado por especialistas del dominio (SMEs).",
+    "practicas": [
+      "Antes de hacer fine-tuning sobre conocimiento factual de dominio, evalúa RAG: RAG actualiza hechos en segundos y aporta citas, mientras el fine-tuning enseña el estilo y lenguaje del sector.",
+      "Construye un glosario de siglas y entidades del dominio para evitar que el buscador léxico (BM25) y el tokenizador fragmenten términos críticos.",
+      "Asegura trazabilidad y cumplimiento normativo (HIPAA, GDPR, PCI-DSS) anonimizando entidades sensibles antes de sacar datos de dominio hacia APIs externas."
+    ],
+    "ejemplo": "# Expansión de siglas de dominio antes de indexar o consultar en RAG\nDOMAIN_GLOSSARY = {\"RTO\": \"Recovery Time Objective\", \"K8S\": \"Kubernetes\"}\ndef expand_acronyms(query: str) -> str:\n    for abbr, full in DOMAIN_GLOSSARY.items():\n        query = query.replace(abbr, f\"{abbr} ({full})\")\n    return query",
+    "entrevista": "Los datos de dominio aportan la ventaja competitiva real, pero exigen parsing especializado, glosarios para desambiguar jerga interna y decidir bien entre inyectar conocimiento vía RAG o estilo vía fine-tuning."
+  },
+  "Datos para IA": {
+    "que": "Datos para IA engloba el ciclo completo de adquisición, curación, estructuración, gobierno y evaluación de conjuntos de información diseñados específicamente para entrenar, adaptar, evaluar y alimentar sistemas de inteligencia artificial. Constituye el activo central de la ingeniería centrada en datos.",
+    "para": "Resuelve la brecha entre datos operacionales crudos (pensados para transacciones o reportes BI) y representaciones de alta calidad aptas para modelos estadísticos y generativos. Determina directamente el techo de precisión, seguridad, latencia y coste operativo de cualquier solución de IA.",
+    "como": "El ciclo integra dos grandes frentes: calidad/curación y pipelines/preparación. Inicia con la identificación de fuentes (datos propietarios, públicos o sintéticos) y la auditoría de sesgos, cobertura y cumplimiento legal. Continúa con pipelines ETL/ELT que extraen texto de formatos complejos, limpian ruido, deduplican y versionan snapshots inmutables. Posteriormente se bifurca según el caso de uso: anotación y formateo para datasets de entrenamiento/fine-tuning y conjuntos dorados de evaluación, o chunking con metadatos e indexación híbrida para sistemas RAG.",
+    "practicas": [
+      "Trata el dataset como un producto versionado con propietarios claros, contratos de esquema y métricas de salud continuas.",
+      "Dedica más iteraciones a inspeccionar errores en los datos (error analysis) que a probar arquitecturas nuevas; la mayoría de fallos en producción provienen de datos mal curados o desalineados.",
+      "Datos de entrenamiento vs Datos de contexto (RAG): separa claramente los ciclos de actualización de conocimiento dinámico (RAG) frente a las capacidades estáticas aprendidas en los pesos."
+    ],
+    "ejemplo": "# Estructura estándar de ciclo de vida Data-Centric AI\nfuentes (propietarias/públicas) -> ingesta & PII scrubbing\n  -> curación (filtros + deduplicación + QA) -> dataset versionado\n  -> [rama A: SFT/DPO + Golden Set] | [rama B: Chunking + Índice Híbrido RAG]",
+    "entrevista": "En ingeniería de IA moderna los modelos se comoditizan rápido, mientras que un sistema disciplinado de datos para IA —curados, versionados y con evaluación continua— es el verdadero foso competitivo."
+  },
+  "Datos propietarios": {
+    "que": "Los datos propietarios son registros, documentos, telemetría, interacciones de clientes y conocimiento institucional generados y poseídos exclusivamente por una organización. No son accesibles públicamente ni forman parte del conocimiento paramétrico de los modelos comerciales base.",
+    "para": "Sirven para diferenciar un producto de IA frente a competidores que usan los mismos modelos fundacionales, permitiendo personalización profunda, automatización de flujos internos y respuestas basadas en hechos privados verificables. Su uso seguro es crítico para mantener la propiedad intelectual.",
+    "como": "Su explotación sigue controles estrictos de seguridad, gobierno y aislamiento. Los datos residen en almacenes privados cifrados (VPC, data lakes con IAM granular) y pasan por pipelines de enmascaramiento de PII y detección de secretos antes de su procesamiento. Para inferencia RAG, cada chunk hereda listas de control de acceso (ACL/RBAC) del documento origen para aplicar filtrado previo en la búsqueda vectorial (document-level security). En fine-tuning, se entrena en infraestructura privada o contratos enterprise con garantía explícita de retención cero (zero-data retention).",
+    "practicas": [
+      "Implementa control de acceso en el paso de recuperación (pre-filtering por permisos del usuario en la base vectorial) para evitar exfiltración de datos propietarios vía prompt injection.",
+      "Nunca envíes datos propietarios sensibles a endpoints públicos sin acuerdos DPA y cláusulas de no entrenamiento.",
+      "Combina datos propietarios frescos mediante RAG en lugar de hornearlos en los pesos del modelo, ya que revocar información privada memorizada en un LLM es casi imposible."
+    ],
+    "ejemplo": "# Filtrado de permisos RBAC en búsqueda vectorial (pre-filtering)\nresults = vector_db.search(\n    query_vector=emb,\n    filter={\"tenant_id\": user.tenant_id, \"roles\": {\"$in\": user.roles}},\n    top_k=5\n)",
+    "entrevista": "Explotar datos propietarios de forma segura exige aislamiento por tenant, pre-filtering estricto de ACLs en la búsqueda RAG y garantías de no retención antes de tocar modelos externos."
+  },
+  "Datos públicos": {
+    "que": "Los datos públicos son conjuntos de información de acceso abierto (corpora web como Common Crawl, Wikipedia, repositorios de código open source, datasets gubernamentales o académicos) disponibles sin restricciones privadas de acceso, sujetos a licencias específicas. Forman la base del preentrenamiento de la mayoría de modelos abiertos.",
+    "para": "Sirven para adquirir conocimiento general del mundo, capacidades lingüísticas amplias, benchmarking estandarizado y construir conjuntos base o de replay cuando los datos propios son escasos. También permiten preentrenar o inicializar sistemas antes de adaptarlos al dominio privado.",
+    "como": "Su uso responsable en producción requiere filtrado legal, técnico y de seguridad antes de la ingesta. Primero se auditan las licencias (CC-BY, MIT, Apache-2.0, ODC-By vs cláusulas No-Comerciales CC-BY-NC o copyleft estricto) y señales de exclusión (`robots.txt`, encabezados TDM). Luego pasan por pipelines masivos de curación para eliminar spam SEO, código malicioso, contenido tóxico y duplicados omnipresentes en scrapes web. Finalmente, se verifica que no contengan muestras de benchmarks de evaluación para evitar contaminación.",
+    "practicas": [
+      "Audita siempre la compatibilidad comercial de las licencias y conserva el linaje de atribución; mezclar un dataset CC-BY-NC en un producto comercial crea riesgo legal grave.",
+      "Desconfía de la calidad bruta de scrapes públicos: los datos web sin curar contienen altas tasas de texto generado automáticamente (AI slop) y boilerplate.",
+      "Datos públicos vs Propietarios: usa datos públicos para capacidades generales y replay de fine-tuning, nunca como sustituto del conocimiento específico del negocio."
+    ],
+    "ejemplo": "# Inspección de licencia antes de descargar un dataset en Hugging Face\nfrom datasets import load_dataset_builder\n\nbuilder = load_dataset_builder(\"HuggingFaceFW/fineweb-edu\")\nprint(builder.info.license)  # Verificar compatibilidad comercial (p. ej. odc-by)",
+    "entrevista": "Aunque los datos públicos son abundantes, su valor en producción depende de filtrar agresivamente ruido y AI slop, verificar compatibilidad comercial de licencias y evitar contaminación con benchmarks."
+  },
+  "Datos sintéticos": {
+    "que": "Los datos sintéticos son registros generados algorítmicamente mediante simuladores, reglas estadísticas o modelos generativos (LLMs, modelos de difusión, GANs) en lugar de ser capturados directamente de eventos reales. Imitan las propiedades estadísticas o estructurales de datos reales de forma controlada.",
+    "para": "Resuelven la escasez de datos reales en casos límite raros, restricciones estrictas de privacidad (datos médicos o financieros regulados) y el alto coste de anotar cadenas de razonamiento complejas. Se usan ampliamente en post-entrenamiento (destilación de modelos frontera), pruebas de carga y visión en entornos simulados.",
+    "como": "Se producen mediante tres familias principales: modelos generativos tabulares (CTGAN, TVAE, difusión tabular), motores gráficos 3D/simuladores físicos (Isaac Sim, Unreal) con verdad fundamental automática por render, y pipelines de LLMs que generan pares instrucción-respuesta o trazas de razonamiento (CoT). Los sistemas modernos aplican filtrado por verificación (rejection sampling): un compilador, motor SQL o suite de tests valida cada salida sintética antes de aceptarla. Así se garantiza coherencia lógica sin depender solo de la verosimilitud del generador.",
+    "practicas": [
+      "Evita el colapso de modelo (model collapse) entrenando iterativamente solo sobre salidas sintéticas sin anclaje en datos reales o verificadores deterministas.",
+      "Inyecta diversidad explícita mediante taxonomías, personas o semillas de documentos reales en el prompt generador para que el LLM no repita los mismos patrones.",
+      "Datos sintéticos vs Datos reales: usa sintéticos para expandir cobertura de cola larga y bootstrapping, pero mantén siempre un conjunto de evaluación 100% real."
+    ],
+    "ejemplo": "# Rejection sampling: solo conservar código sintético que pasa tests reales\nfor prompt in seed_prompts:\n    candidate = teacher_llm.generate(prompt)\n    if run_unit_tests(candidate.code, prompt.tests) == \"PASS\":\n        accepted_dataset.append({\"prompt\": prompt.text, \"completion\": candidate.code})",
+    "entrevista": "Los datos sintéticos escalan la cobertura de casos raros y razonamiento cuando se condicionan con semillas diversas y se filtran mediante verificadores deterministas para evitar el model collapse."
+  },
+  "Diversidad de datos": {
+    "que": "La diversidad de datos mide la variedad estructural, semántica, estilística y demográfica presente entre las muestras de un dataset. Indica cuánta información no redundante aporta cada nuevo ejemplo respecto al resto del conjunto.",
+    "para": "Sirve para evitar que un modelo memorice plantillas estrechas y falle ante paráfrasis, distintos acentos, condiciones visuales cambiantes o formatos inesperados en producción. Una alta diversidad permite alcanzar mejor generalización con menos muestras totales durante el fine-tuning.",
+    "como": "Se mide y optimiza operando en el espacio de representaciones o mediante análisis léxico. En texto se evalúan métricas como Distinct-N (proporción de n-gramas únicos), Self-BLEU inverso o la entropía de distribución de temas; en embeddings se calcula el volumen/dispersión promedio o la similitud coseno máxima al vecino más cercano (k-NN similarity). Para aumentarla durante la curación se aplica muestreo por diversidad como Determinantal Point Processes (DPP), clustering k-means seleccionando representantes por centroide o algoritmos greedy de máxima distancia mínima (k-Center Greedy).",
+    "practicas": [
+      "Cuando generes datos con LLMs, varía temperatura, personas, niveles de dificultad y restricciones de formato; de lo contrario el dataset colapsará en frases cliché.",
+      "Balancea cantidad y diversidad: 1.000 ejemplos diversos de fine-tuning superan habitualmente a 50.000 variaciones casi idénticas.",
+      "Evalúa la diversidad después de deduplicar para descubrir modos sobre-representados que los hashes exactos no detectan."
+    ],
+    "ejemplo": "# Selección greedy por diversidad en embeddings (Max-Min / Core-Set simplificado)\nimport numpy as np\n\nselected = [0]\nfor _ in range(k - 1):\n    dists = np.linalg.norm(embs[:, None] - embs[selected], axis=-1).min(axis=1)\n    selected.append(int(np.argmax(dists)))",
+    "entrevista": "La diversidad de datos evita la sobre-especialización en plantillas repetitivas; la mido mediante dispersión en el espacio de embeddings y aplico selección tipo Core-Set para maximizar la cobertura por ejemplo."
+  },
+  "ETL para IA": {
+    "que": "ETL para IA (Extract, Transform, Load adaptado a IA) es la especialización de los procesos de integración de datos orientada a convertir fuentes multimodales crudas en tensores, documentos fragmentados, embeddings o datasets columnares listos para entrenamiento e inferencia. A diferencia del ETL analítico clásico, procesa texto libre, binarios y señales de alta dimensionalidad.",
+    "para": "Sirve para alimentar de forma continua modelos y sistemas RAG a partir de PDFs, correos, transcripciones, logs e imágenes dispersos en silos corporativos. Resuelve la sincronización incremental para que los índices vectoriales y datasets no queden obsoletos tras cambios en origen.",
+    "como": "En la fase Extract, conectores incrementales (Airbyte, Unstructured, LlamaIndex readers o conectores S3/SharePoint) detectan archivos nuevos o modificados mediante ETag o marca temporal. En Transform, se aplican OCR, limpieza de layouts, extracción de metadatos, anonimización PII, chunking y cálculo de embeddings mediante pipelines distribuidos en CPU/GPU. Finalmente en Load, se ejecutan operaciones idempotentes de `upsert` y borrado de huérfanos sobre bases vectoriales (Qdrant, pgvector, Milvus), motores de búsqueda léxica (Elasticsearch) o tablas Parquet/WebDataset.",
+    "practicas": [
+      "Implementa borrado propagado (tombstones): cuando un documento origen se elimina o revoca en SharePoint/Drive, el pipeline debe purgar sus chunks del índice vectorial.",
+      "Usa hashes de contenido por documento y chunk para evitar recalcular embeddings costosos si el archivo no ha cambiado.",
+      "ETL tradicional vs ETL para IA: el primero normaliza en esquemas relacionales rígidos (3FN), mientras el segundo desnormaliza y enriquece semánticamente conservando contexto y metadatos de filtro."
+    ],
+    "ejemplo": "# Upsert idempotente por hash de contenido en ingesta incremental\ncontent_hash = hashlib.sha256(raw_text.encode()).hexdigest()\nif index_store.get_hash(doc_id) != content_hash:\n    chunks = chunk_and_embed(raw_text)\n    index_store.delete_by_doc_id(doc_id)\n    index_store.upsert(doc_id, chunks, hash=content_hash)",
+    "entrevista": "Un ETL para IA robusto es incremental e idempotente por hash de contenido, gestiona tanto el upsert multimodal como el borrado propagado de documentos revocados para no servir información fantasma."
+  },
+  "Estructuración de datos no estructurados": {
+    "que": "La estructuración de datos no estructurados es la transformación de contenido libre sin esquema fijo (PDFs, correos, actas, transcripciones, imágenes de facturas) en registros tipados con esquema explícito (JSON, tablas relacionales, grafos de conocimiento). Convierte prosa ambigua en entidades, relaciones y atributos consultables.",
+    "para": "Sirve para automatizar flujos de negocio deterministas (contabilidad, triaje clínico, cumplimiento legal), habilitar filtros estructurados precisos en RAG y alimentar análisis SQL sobre documentos históricos. Permite combinar la flexibilidad semántica de los LLMs con la fiabilidad de sistemas tipados.",
+    "como": "El flujo parte de extraer texto limpio conservando indicios visuales de estructura (cabeceras, pares clave-valor, tablas). Posteriormente, un extractor basado en modelos de lenguaje con salida restringida (Structured Outputs vía JSON Schema / gramáticas CFG en vLLM o Pydantic con Instructor) o modelos especializados de Document AI (LayoutLM, Donut) mapea el contenido a un esquema definido. Un validador verifica tipos, formatos de fecha, sumas aritméticas y claves foráneas; si la validación falla, se activa un reintento automático enviando el error al modelo o derivando el caso a revisión humana.",
+    "practicas": [
+      "Usa decodificación guiada por gramática o esquemas Pydantic estrictos con descripciones claras en cada campo para minimizar errores de parseo.",
+      "Incluye un campo opcional de evidencia (`source_quote`) o puntuación de confianza junto a cada atributo extraído para auditar alucinaciones.",
+      "Extracción directa con LLM vs NER clásico: usa NER ligero (spaCy/GLiNER) para alto rendimiento y entidades simples, y LLMs con Structured Outputs para relaciones anidadas y lógica condicional."
+    ],
+    "ejemplo": "from pydantic import BaseModel, Field\nfrom typing import List\n\nclass Factura(BaseModel):\n    numero: str = Field(description=\"Identificador único de factura\")\n    total_eur: float = Field(gt=0)\n    lineas: List[str]\n# Se pasa el JSON schema de Factura al parámetro response_format del LLM",
+    "entrevista": "Estructurar datos no estructurados en producción consiste en acoplar LLMs con decodificación restringida por gramática/JSON Schema, validación Pydantic y ciclos de autocorrección o derivación humana."
+  },
+  "Etiquetado de datos": {
+    "que": "El etiquetado de datos es la asignación de categorías discretas, valores continuos o secuencias objetivo a cada instancia de un dataset para que sirva como señal supervisada o criterio de evaluación. Incluye desde clasificación simple hasta etiquetado programático y por preferencias.",
+    "para": "Resuelve la falta de señal supervisada explícita en problemas predictivos nuevos, permitiendo entrenar clasificadores, detectores y modelos de recompensa. Es también imprescindible para auditar modelos en producción mediante muestreo continuo de tráfico real.",
+    "como": "Puede ejecutarse de tres modos combinables: manual, débil/programático y asistido por modelos. En el etiquetado débil (frameworks como Snorkel), los ingenieros escriben funciones heurísticas (regex, consultas a bases de conocimiento, clasificadores previos) cuyas salidas ruidosas y solapadas se combinan mediante un modelo generativo de etiquetas (Label Model) que estima etiquetas probabilísticas limpias. En el enfoque LLM-as-a-labeler, un modelo grande etiqueta lotes bajo una rúbrica estricta y un subconjunto estratificado es auditado por humanos para calibrar precisión y recall por clase.",
+    "practicas": [
+      "Mide la distribución de clases resultante y vigila la ambigüedad entre categorías solapadas; fusionar o redefinir dos etiquetas confusas suele mejorar el F1 más que ajustar hiperparámetros.",
+      "Separa las etiquetas ruidosas (weak labels) de las etiquetas verificadas por humanos (gold labels) y nunca evalúes con etiquetas débiles.",
+      "Si utilizas un LLM para etiquetar datos de entrenamiento, evita evaluar con el mismo modelo para no introducir sesgo de auto-preferencia."
+    ],
+    "ejemplo": "# Etiquetado débil con funciones heurísticas combinadas\ndef lf_reembolso(texto: str) -> int:\n    return 1 if any(k in texto.lower() for k in [\"devolución\", \"reembolso\"]) else -1  # -1 = abstención\n\ndef lf_soporte_tecnico(texto: str) -> int:\n    return 0 if \"error 500\" in texto.lower() else -1",
+    "entrevista": "Escalo el etiquetado combinando funciones de etiquetado débil o LLMs con rúbricas estrictas para volumen masivo, reservando la revisión humana experta para calibrar la calidad y construir el split de test."
+  },
+  "Evaluación de datos sintéticos": {
+    "que": "La evaluación de datos sintéticos es el proceso cuantitativo y cualitativo para verificar que un dataset generado artificialmente posee fidelidad estadística, diversidad, utilidad práctica en tareas downstream y ausencia de fuga de privacidad. Asegura que los datos sintetizados realmente aportan señal en lugar de ruido o copias memorizadas.",
+    "para": "Sirve para validar si vale la pena entrenar con datos sintéticos antes de gastar cómputo o exponer registros sensibles inadvertidamente memorizados por el generador. Detecta a tiempo degeneración modal (repetición de ejemplos), sesgos amplificados o incoherencia lógica.",
+    "como": "Se estructura en cuatro ejes métricos complementarios. La fidelidad estadística en datos tabulares compara distribuciones marginales y correlaciones conjuntas con pruebas como Kolmogorov-Smirnov, Distancia de Wasserstein o Jensen-Shannon; en texto e imágenes se usan Mauve o FID. La utilidad se evalúa bajo el protocolo TSTR (Train on Synthetic, Test on Real), comparándolo frente a TRTR (Train on Real, Test on Real). La diversidad analiza cobertura en el espacio de embeddings y repetición de n-gramas. Finalmente, la privacidad mide la Distancia al Registro Más Cercano (DCR) y ataques de inferencia de membresía (MIA) para asegurar que no hay copia literal.",
+    "practicas": [
+      "Nunca apruebes un dataset sintético mirando solo la fidelidad estadística; un generador puede calcar la distribución copiando filas reales (alto riesgo de privacidad).",
+      "Exige siempre el benchmark TSTR (entrenar en sintético y probar en datos reales reservados) para medir utilidad real.",
+      "En datos sintéticos de texto para fine-tuning, audita la tasa de alucinaciones y la longitud/estructura promedio frente a ejemplos humanos para evitar artefactos estilísticos."
+    ],
+    "ejemplo": "# Evaluación de privacidad DCR (Distance to Closest Record) simplificada\nfrom sklearn.metrics import pairwise_distances\nimport numpy as np\n\ndists = pairwise_distances(X_synth, X_real, metric=\"euclidean\")\nmin_dcr = dists.min(axis=1)\nprint(f\"Percentil 5 de distancia mínima a datos reales: {np.percentile(min_dcr, 5):.4f}\")",
+    "entrevista": "Evalúo los datos sintéticos sobre cuatro pilares: fidelidad estadística, diversidad en el espacio latente, utilidad downstream mediante el protocolo TSTR y privacidad con métricas DCR contra memorización."
+  },
+  "Extracción de texto": {
+    "que": "La extracción de texto es la recuperación fiel de cadenas legibles y su orden de lectura lógico a partir de formatos binarios, contenedores compuestos o documentos visuales (PDF, DOCX, HTML, PPTX, imágenes). Es el primer paso de normalización previo al chunking o curación.",
+    "para": "Resuelve el problema de acceder al contenido atrapado en layouts complejos de múltiples columnas, encabezados repetitivos, tablas incrustadas o texto renderizado como curvas/imágenes. Una extracción deficiente introduce caracteres corruptos y rompe oraciones, degradando irremediablemente cualquier RAG o modelo posterior.",
+    "como": "El extractor inspecciona primero el tipo MIME y la capa interna del documento. En HTML utiliza algoritmos de extracción de contenido principal (Trafilatura, Readability) eliminando menús, scripts y pies de página. En documentos ofimáticos lee árboles XML internos (python-docx), mientras que en PDF distingue entre flujo de texto nativo (PyMuPDF/pdfplumber) y páginas rasterizadas que requieren encaminamiento hacia OCR o modelos Vision-Language de parsing documental (Docling, Marker, MinerU). Los extractores modernos reconstruyen bloques en orden de lectura humano (arriba-abajo, columna izquierda-derecha) serializándolos a Markdown estructurado.",
+    "practicas": [
+      "Serializa el texto extraído a Markdown limpio en lugar de texto plano sin formato para conservar títulos, listas y estructura de tablas.",
+      "Elimina encabezados y pies de página repetitivos (números de página, avisos legales) detectando bloques con coordenadas idénticas en múltiples páginas.",
+      "Extractores heurísticos rápidos vs Modelos VLM de documentos: enruta dinámicamente por página según presencia de tablas complejas o imágenes escaneadas para optimizar coste y latencia."
+    ],
+    "ejemplo": "import fitz  # PyMuPDF\n\ndoc = fitz.open(\"informe.pdf\")\npages_text = []\nfor page in doc:\n    txt = page.get_text(\"text\", sort=True)  # Ordenar bloques por posición visual\n    if len(txt.strip()) < 30:\n        txt = run_ocr_fallback(page.get_pixmap(dpi=200))\n    pages_text.append(txt)",
+    "entrevista": "Una buena extracción de texto preserva el orden de lectura lógico, convierte tablas y jerarquías a Markdown y combina parsers nativos rápidos con fallback automático a OCR o VLMs en páginas escaneadas."
+  },
+  "Formato de datos de fine-tuning": {
+    "que": "El formato de datos de fine-tuning define el esquema estructural exacto (JSONL de mensajes, pares prompt-completion, tripletas de preferencia o plantillas de chat) en el que se serializan los ejemplos antes de tokenizarlos y alimentarlos al bucle de entrenamiento. Asegura compatibilidad entre los datos y la plantilla especial del modelo base.",
+    "para": "Sirve para que el modelo aprenda correctamente dónde termina la instrucción del usuario, dónde empieza su turno de respuesta, cómo invocar herramientas (tool calling) y cuándo emitir el token de fin de secuencia (`EOS`). Un error sutil en el formato arruina la convergencia o provoca bucles infinitos en inferencia.",
+    "como": "Los datasets suelen almacenarse en JSONL con esquemas estándar como ChatML (`messages` con `role` y `content`), ShareGPT o Alpaca, junto a columnas opcionales de `tools`. Durante la preparación, se aplica la función `tokenizer.apply_chat_template()` del modelo objetivo, que inyecta tokens especiales de control (`<|im_start|>`, `<|eot_id|>`, etc.). En SFT estándar se calcula una máscara de pérdida (loss masking / `labels = -100` en PyTorch) sobre los tokens del sistema y del usuario para optimizar la entropía cruzada únicamente sobre los tokens generados por el asistente.",
+    "practicas": [
+      "Usa siempre `tokenizer.apply_chat_template()` oficial del modelo en lugar de concatenar cadenas manualmente; un espacio o salto de línea distinto degrada el rendimiento.",
+      "Aplica loss masking sobre los turnos del usuario (assistant-only loss) para evitar que el modelo desperdicie capacidad memorizando prompts.",
+      "Verifica explícitamente que cada secuencia termina con el token `EOS` correcto y que la longitud tokenizada no trunca silenciosamente la respuesta del asistente."
+    ],
+    "ejemplo": "{\"messages\": [\n  {\"role\": \"system\", \"content\": \"Responde solo en JSON válido.\"},\n  {\"role\": \"user\", \"content\": \"Extrae ciudad: Viaje a Madrid mañana\"},\n  {\"role\": \"assistant\", \"content\": \"{\\\"ciudad\\\": \\\"Madrid\\\"}\"}\n]}",
+    "entrevista": "Respetar el formato de fine-tuning significa aplicar el chat template nativo del modelo, validar la presencia del token EOS sin truncamientos y enmascarar la pérdida en los turnos de usuario."
+  },
+  "Fuga de datos en datasets": {
+    "que": "La fuga de datos en datasets ocurre cuando ejemplos idénticos, casi duplicados, correlacionados por entidad o derivados temporalmente del conjunto de prueba se cuelan en los datos de entrenamiento o validación. Invalida la independencia estadística asumida entre los splits de entrenamiento y evaluación.",
+    "para": "Detectar y eliminar la fuga de datos en datasets sirve para obtener estimaciones honestas de precisión antes de pasar a producción y evitar sobrevalorar modelos que simplemente memorizaron variantes del test set. Es crítica en benchmarks de LLMs, series temporales y datasets médicos o de visión con múltiples tomas del mismo sujeto.",
+    "como": "La prevención requiere auditorías de deduplicación y particionamiento consciente de la estructura antes de entrenar. Primero se ejecutan comprobaciones de intersección exacta (hash) y difusa (MinHash LSH o similitud n-grama 8-gram/13-gram usada en auditorías de LLMs) entre train y test/eval. En datos con estructura jerárquica (varios frames de un mismo vídeo, varios tickets del mismo incidente o múltiples radiografías de un paciente) se particiona estrictamente por `group_id`. En problemas temporales, los cortes siguen una línea temporal estricta (`train < val < test`) respetando ventanas de embargo para evitar solapamiento de etiquetas.",
+    "practicas": [
+      "Ejecuta siempre una comprobación automatizada de overlap (exacto y por embeddings/n-gramas) entre train y test antes de lanzar cualquier entrenamiento.",
+      "En series temporales con horizontes de predicción largos (p. ej. 7 días adelante), deja un periodo de embargo (purge/embargo gap) entre train y test para no filtrar etiquetas solapadas.",
+      "Split aleatorio vs Group/Time split: el split aleatorio casi siempre introduce fuga de datos en datos longitudinales o multi-muestra por entidad."
+    ],
+    "ejemplo": "from sklearn.model_selection import GroupShuffleSplit\n\ngss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)\ntrain_idx, test_idx = next(gss.split(df, df[\"label\"], groups=df[\"patient_id\"]))\nassert set(df.iloc[train_idx][\"patient_id\"]).isdisjoint(set(df.iloc[test_idx][\"patient_id\"]))",
+    "entrevista": "Combato la fuga de datos en datasets combinando particionamiento estricto por entidad o tiempo con embargo, junto a auditorías automáticas de solapamiento exacto y difuso entre entrenamiento y evaluación."
+  },
+  "Fusión de rango recíproco": {
+    "que": "La fusión de rango recíproco (Reciprocal Rank Fusion, RRF) es un algoritmo no paramétrico que combina múltiples listas ordenadas de resultados procedentes de distintos motores de búsqueda (p. ej. búsqueda léxica BM25 y búsqueda vectorial densa) en un único ranking unificado. Se basa exclusivamente en la posición (rango) de cada documento y no en sus puntuaciones brutas.",
+    "para": "Resuelve el problema de combinar scores incompatibles entre sí (como similitud coseno en `[0, 1]` y BM25 no acotado) sin necesidad de calibrarlos ni entrenar un modelo de fusión supervisado. Es el estándar práctico por defecto para implementar búsqueda híbrida en sistemas RAG.",
+    "como": "Dado un conjunto de sistemas recuperadores $R$, cada uno devuelve los top-K documentos ordenados para una consulta. Para cada documento $d$ presente en al menos una lista, RRF calcula su puntuación sumando $\\frac{1}{k + \\text{rank}_r(d)}$ sobre cada recuperador $r$ donde aparece, siendo $k$ una constante de suavizado (típicamente $k=60$). La constante $k$ amortigua el impacto dominante de las primeras posiciones y favorece documentos que aparecen consistentemente bien posicionados en múltiples recuperadores. Finalmente, los documentos se reordenan de mayor a menor puntuación RRF antes de pasar al reranker o al LLM.",
+    "practicas": [
+      "Usa `k=60` como valor base robusto; reducir `k` da más peso extremo al top-1 de cada motor y aumentarlo suaviza las diferencias.",
+      "Combina RRF con un Cross-Encoder Reranker sobre los top-20/50 fusionados cuando necesites máxima precisión semántica en el contexto final.",
+      "RRF vs Combinación lineal ponderada (alpha * dense + (1-alpha) * sparse): RRF no sufre por cambios de escala en BM25 ni requiere normalización min-max frágil entre consultas."
+    ],
+    "ejemplo": "from collections import defaultdict\n\ndef rrf_fuse(rankings: list[list[str]], k: int = 60) -> list[tuple[str, float]]:\n    scores = defaultdict(float)\n    for ranking in rankings:\n        for rank, doc_id in enumerate(ranking, start=1):\n            scores[doc_id] += 1.0 / (k + rank)\n    return sorted(scores.items(), key=lambda x: x[1], reverse=True)",
+    "entrevista": "RRF es mi primera opción en búsqueda híbrida porque fusiona rankings léxicos y vectoriales por posición con 1/(k+rank), evitando el problema de calibrar escalas de puntuación incompatibles."
+  },
+  "Generación de datos sintéticos": {
+    "que": "La generación de datos sintéticos es el conjunto de métodos y arquitecturas que producen artificialmente nuevas muestras de entrenamiento o prueba respetando restricciones estructurales, semánticas o estadísticas del dominio objetivo. Incluye técnicas evolutivas de prompts, destilación de modelos frontera y simulación programática.",
+    "para": "Sirve para desbloquear proyectos donde la recolección real es inviable por privacidad, alto coste o baja frecuencia de eventos (fraude nuevo, fallos industriales, tool calling multi-paso). Permite escalar rápidamente datasets de fine-tuning y suites de prueba adversarias.",
+    "como": "En LLMs, flujos como Self-Instruct, Evol-Instruct (WizardLM) o Magpie parten de documentos semilla reales o taxonomías de habilidades y utilizan un modelo profesor (teacher) para sintetizar instrucciones de complejidad creciente (añadiendo restricciones o razonamiento multi-salto). Para evitar homogeneidad, se condicionan los prompts con personas sintéticas (PersonaHub) y ejemplos de contexto recuperados del dominio. Cada muestra generada atraviesa una etapa de curación automática: deduplicación semántica, verificación ejecutable (compilador, sandbox Python, validador JSON) o filtrado con un modelo juez (LLM-as-a-Judge) para descartar alucinaciones.",
+    "practicas": [
+      "Ancla siempre la generación en documentos reales o semillas diversas del dominio (document-grounded generation) en lugar de pedir al modelo que invente ejemplos desde cero.",
+      "Implementa verificación automática siempre que la tarea sea verificable (código, matemáticas, SQL, JSON) y descarta sin piedad los ejemplos fallidos.",
+      "Cuida el cumplimiento de términos de uso de APIs comerciales si estás destilando un modelo propietario para entrenar un competidor."
+    ],
+    "ejemplo": "# Generación anclada en documento real (Document-grounded synthesis)\nprompt = f\"\"\"Basándote SOLO en este fragmento técnico:\n{doc_chunk}\nGenera 2 preguntas complejas de usuario y sus respuestas precisas en JSON.\"\"\"\nsynthetic_pairs = teacher_llm.generate_json(prompt, temperature=0.7)",
+    "entrevista": "Para que la generación de datos sintéticos mejore un modelo sin degradarlo, anclo la síntesis en fragmentos reales con variedad de personas y aplico rejection sampling mediante validadores deterministas o jueces."
+  }
+}

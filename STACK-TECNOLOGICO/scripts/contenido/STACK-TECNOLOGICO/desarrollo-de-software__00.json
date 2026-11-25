@@ -1,0 +1,210 @@
+{
+  "Casos de uso y actores": {
+    "que": "Modelo de requisitos conductual (originado por Ivar Jacobson y estandarizado en UML) que describe las interacciones entre actores externos y un sistema para alcanzar un objetivo observable. Un actor representa un rol externo (persona, sistema vecino o evento temporal) fuera de la frontera del sistema, mientras que el caso de uso encapsula el flujo principal junto con sus variaciones y excepciones.",
+    "para": "Sirve para delimitar el alcance funcional desde la perspectiva de quienes operan con el sistema y fijar contratos completos de comportamiento sin acoplarse todavía a la arquitectura interna ni a la interfaz gráfica. Se emplea especialmente en dominios con múltiples roles, reglas de negocio densas y flujos de error críticos (banca, salud, ERP) donde una descripción breve resulta insuficiente.",
+    "como": "Primero se traza la frontera del sistema y se identifican actores primarios (inician la meta) y secundarios (asisten al sistema, como una pasarela de pago). Cada caso de uso se redacta en formato tabular o textual (estilo Alistair Cockburn) detallando precondiciones, disparador, flujo básico numerado, extensiones o flujos alternativos por punto de bifurcación y postcondiciones de éxito o fallo. En el diagrama UML se modelan relaciones <<include>> para pasos obligatorios reutilizados y <<extend>> para comportamientos opcionales condicionados en un punto de extensión. Finalmente, cada camino del caso de uso se traduce de forma directa en escenarios de prueba funcionales.",
+    "practicas": [
+      "Mantén los pasos en nivel esencial de intención ('el actor autentica su identidad') y evita acoplar el caso de uso a botones o pantallas concretas.",
+      "No abuses de <<include>> y <<extend>> para hacer descomposición funcional en cascada; un caso de uso debe entregar un objetivo completo de negocio al actor primario.",
+      "Casos de uso vs. Historias de usuario: el caso de uso documenta de forma exhaustiva flujo principal y excepciones en un solo artefacto; la historia de usuario prioriza conversación ligera e incremental.",
+      "Distingue entre usuario físico y actor: una misma persona puede actuar bajo roles distintos (p. ej. Cliente y Administrador), y un proceso programado o webhook también es un actor."
+    ],
+    "ejemplo": "Caso de Uso: CU-04 Procesar Pago con Tarjeta\nActor primario: Cliente | Secundario: Pasarela de Pago\nPrecondición: Carrito con ítems validados y sesión activa.\nFlujo básico:\n1. Cliente envía token de método de pago.\n2. Sistema solicita autorización a Pasarela de Pago.\n3. Pasarela aprueba; Sistema registra orden y emite recibo.\nExtensión 2a (Fondos insuficientes): Sistema informa rechazo y conserva el carrito.",
+    "entrevista": "Un caso de uso sólido no es un simple diagrama de óvalos en UML, sino un contrato estructurado de flujo principal, extensiones y postcondiciones que fija la frontera del sistema y deriva directamente las pruebas de aceptación."
+  },
+  "Codificación": {
+    "que": "Fase de construcción en la ingeniería de software donde el diseño detallado, los modelos y las especificaciones se traducen en código fuente ejecutable, legible y mantenible mediante lenguajes de programación, compiladores o intérpretes y bibliotecas. Abarca la implementación de lógica de negocio, estructuras de datos, manejo de errores, instrumentación y pruebas unitarias.",
+    "para": "Materializa las decisiones de arquitectura y diseño en software verificable por máquinas y comprensible por el equipo que lo mantendrá en el tiempo. Se ejecuta de forma iterativa durante todo el ciclo de vida equilibrando corrección, rendimiento, seguridad y facilidad de cambio.",
+    "como": "El desarrollador parte de una tarea acotada y crea una rama aislada en el control de versiones (Git) sobre un entorno reproducible. Implementa módulos cohesivos respetando convenciones del lenguaje, contratos de tipos, validación de entradas en fronteras y manejo explícito de errores o recursos. Durante la escritura ejecuta linters, formateadores, verificadores de tipos o analizadores estáticos (SAST) junto con ciclos rápidos de pruebas unitarias (por ejemplo TDD: rojo-verde-refactor). Antes de integrarse en la rama principal, el cambio pasa por revisión por pares (Pull Request) y compilación automática en integración continua.",
+    "practicas": [
+      "Prioriza claridad y simplicidad (KISS, YAGNI); optimizar prematuramente sin perfilado previo suele introducir complejidad accidental y errores sutiles.",
+      "Separa los efectos secundarios (red, disco, base de datos, reloj) de la lógica pura de dominio para facilitar las pruebas y reducir el acoplamiento.",
+      "Valida invariantes y parámetros externos en los bordes del sistema ('fail fast') y nunca silencies fallos con bloques catch vacíos.",
+      "Código expresivo vs. comentarios: usa identificadores claros para explicar el 'qué' y reserva los comentarios para documentar el 'por qué' de decisiones o restricciones no obvias."
+    ],
+    "ejemplo": "def calcular_descuento(total_centavos: int, porcentaje: int) -> int:\n    if total_centavos < 0 or not 0 <= porcentaje <= 100:\n        raise ValueError(\"Parámetros de descuento fuera de rango\")\n    # Aritmética entera en centavos para evitar imprecisión de punto flotante\n    return total_centavos - (total_centavos * porcentaje) // 100",
+    "entrevista": "Que el compilador acepte el código es solo el punto de partida; la codificación profesional consiste en expresar la intención del dominio con bajo acoplamiento, invariantes explícitos y cero sorpresas para quien lo mantenga meses después."
+  },
+  "Criterios de aceptación y Given-When-Then": {
+    "que": "Los criterios de aceptación son condiciones binarias y verificables (pasa o falla) que una historia de usuario o requisito debe cumplir para considerarse completado. Given-When-Then es una sintaxis estructurada proveniente de BDD (Behavior-Driven Development) y formalizada en Gherkin para redactar esos criterios como escenarios ejecutables basados en contexto previo, acción y resultado observable.",
+    "para": "Eliminan la ambigüedad entre negocio, desarrollo y QA antes de empezar a codificar, fijando un alcance exacto y medible. Se utilizan en el refinamiento del backlog para validar que la historia está lista y en CI para automatizar pruebas de aceptación como documentación viva.",
+    "como": "Durante la sesión de refinamiento ('Three Amigos': producto, desarrollo y QA) se exploran reglas de negocio y casos borde mediante ejemplos concretos. Cada ejemplo se traduce a Gherkin: Given prepara el estado inicial y precondiciones, When ejecuta la única acción o evento disparador, y Then verifica los efectos observables en salida, estado persistido o eventos (apoyados por And/But). En frameworks BDD (Cucumber, Behave, SpecFlow), cada cláusula se enlaza mediante expresiones regulares o Cucumber Expressions a funciones step-definition en código. Al ejecutarse en el pipeline, cualquier divergencia entre el comportamiento real y la especificación falla la compilación.",
+    "practicas": [
+      "Incluye un único evento When por escenario; encadenar varios bloques When-Then mezcla comportamientos independientes que dificultan diagnosticar fallos.",
+      "Redacta de forma declarativa en lenguaje de dominio y evita pasos imperativos de interfaz ('hago clic en #btn-login') para no acoplar la especificación al HTML o UI.",
+      "Cubre explícitamente escenarios negativos, límites numéricos, permisos e idempotencia sin generar combinaciones redundantes.",
+      "Criterios de aceptación vs. Definition of Done: los criterios aplican a una historia concreta; la DoD es el estándar transversal de calidad exigible a cualquier entrega."
+    ],
+    "ejemplo": "Feature: Retiro en cajero automático\n  Scenario: Rechazo por saldo insuficiente\n    Given una cuenta corriente con saldo de 50 USD\n    When el cliente solicita retirar 80 USD\n    Then el cajero rechaza la operación con el código \"SALDO_INSUFICIENTE\"\n    And el saldo de la cuenta permanece en 50 USD",
+    "entrevista": "Los criterios de aceptación escritos con Given-When-Then transforman conversaciones ambiguas de negocio en contratos binarios de precondición, evento y resultado que pueden ejecutarse automáticamente como documentación viva."
+  },
+  "Despliegue": {
+    "que": "Conjunto de procesos técnicos y operativos mediante los cuales una versión compilada, empaquetada y verificada de software se instala, configura y expone en un entorno destino (staging o producción). Incluye gestión de artefactos, migración de esquemas o datos, configuración por entorno, enrutamiento de tráfico y comprobaciones de salud.",
+    "para": "Resuelve la puesta en operación repetible y segura de los cambios minimizando el tiempo de inactividad y el radio de impacto ante defectos. Es el cierre del pipeline de Entrega Continua (CD) y habilita lanzamientos frecuentes con reversión rápida.",
+    "como": "El pipeline de CD toma un artefacto inmutable previamente construido (imagen OCI o binario firmado) y lo promociona entre entornos inyectando variables y secretos externos (Vault, Secrets Manager). Antes de dirigir tráfico a las nuevas instancias, ejecuta migraciones retrocompatibles en base de datos (patrón Expand and Contract) y valida sondas de readiness y liveness. Según el riesgo, el orquestador (Kubernetes o balanceador) aplica despliegue rolling gradual, Blue-Green (cambio instantáneo entre dos entornos paralelos) o Canary (enrutar primero 1-5% del tráfico comparando latencia y errores). Si las métricas de telemetría (HTTP 5xx, p99) se degradan, se dispara rollback automático.",
+    "practicas": [
+      "Desacopla el despliegue técnico (subir el código al servidor) de la liberación funcional (habilitar la función a usuarios mediante Feature Flags).",
+      "Construye el artefacto una sola vez y promuévelo entre entornos; recompilar por entorno invalida lo probado en staging.",
+      "Diseña migraciones de esquema retrocompatibles (Expand-Contract) para poder revertir la versión de aplicación sin romper lecturas ni escrituras.",
+      "Blue-Green vs. Canary: Blue-Green duplica infraestructura para cambiar todo el tráfico de golpe; Canary limita el radio de impacto probando primero con una fracción mínima de usuarios reales."
+    ],
+    "ejemplo": "strategy:\n  canary:\n    steps:\n      - setWeight: 10\n      - pause: { duration: 5m }\n      - analysis: { templates: [{ templateName: http-error-rate }] }\n      - setWeight: 100",
+    "entrevista": "Un despliegue profesional separa poner artefactos en producción de activar funcionalidades al usuario, usando binarios inmutables, migraciones retrocompatibles y estrategias progresivas como Canary con rollback guiado por SLOs."
+  },
+  "Diseño detallado": {
+    "que": "Nivel de diseño posterior a la arquitectura general que define la anatomía interna de cada módulo, servicio o componente: clases, interfaces, firmas de funciones, estructuras de datos, algoritmos, máquinas de estado y esquema físico de persistencia. Constituye el plano técnico inmediato para la codificación.",
+    "para": "Aterriza las decisiones macroarquitectónicas y atributos de calidad en contratos internos concretos antes de escribir código complejo. Resulta clave cuando un componente tiene reglas no triviales, concurrencia o requiere que varios desarrolladores implementen partes acopladas en paralelo.",
+    "como": "Partiendo de los diagramas de componentes y los requisitos, el equipo descompone el módulo aplicando principios de cohesión y bajo acoplamiento (SOLID, GRASP, ley de Demeter). Se especifican interfaces públicas, DTOs, contratos OpenAPI o Protobuf, índices de base de datos, manejo de bloqueos y políticas de reintentos con idempotencia. Para lógica temporal o estados complejos se elaboran diagramas de secuencia, diagramas de clases o tablas de transición de estados. El diseño se revisa entre pares (mediante RFC o revisión de diseño) comprobando que respete las fronteras arquitectónicas y no introduzca dependencias circulares.",
+    "practicas": [
+      "Programa hacia abstracciones y contratos estables (Inversión de Dependencias) ocultando los detalles volátiles de almacenamiento o transporte.",
+      "Evita la sobreingeniería aplicando patrones de diseño sin necesidad real; cada indirección debe justificarse por un eje real de variación o prueba.",
+      "Arquitectura vs. Diseño detallado: la arquitectura define decisiones costosas de cambiar (fronteras de servicios, comunicación, topología de datos); el diseño detallado organiza módulos internos y algoritmos.",
+      "Usa el sistema de tipos o máquinas de estado explícitas para hacer irrepresentables los estados inválidos en tiempo de ejecución."
+    ],
+    "ejemplo": "Máquina de estados Pedido:\nBORRADOR --(confirmar)--> PENDIENTE_PAGO\nPENDIENTE_PAGO --(pago_ok)--> PAGADO --(despachar)--> ENVIADO\nPENDIENTE_PAGO --(expira/cancelar)--> CANCELADO\nInvariante: solo en estado BORRADOR se pueden modificar ítems.",
+    "entrevista": "Mientras la arquitectura fija las fronteras y los atributos de calidad globales, el diseño detallado concreta interfaces, invariantes, estructuras de datos y máquinas de estado para que la implementación sea predecible y mantenible."
+  },
+  "Elicitación de requerimientos": {
+    "que": "Proceso iterativo de investigación y descubrimiento dentro de la ingeniería de requisitos orientado a extraer las necesidades reales, restricciones, reglas del dominio y expectativas de los interesados (stakeholders). No es una recolección pasiva de peticiones, sino una indagación activa para revelar requisitos tácitos, omitidos o conflictivos.",
+    "para": "Cierra la brecha entre lo que los usuarios expresan en la superficie, lo que necesitan realmente en su operación diaria y lo que el sistema puede ofrecer bajo restricciones técnicas y normativas. Se ejecuta al arrancar cada iniciativa y de manera continua conforme evoluciona el producto.",
+    "como": "Se comienza identificando y clasificando a todos los stakeholders (usuarios finales, negocio, legal, seguridad, operaciones) y las fuentes existentes (sistemas legados, normativa, logs). A continuación se combinan técnicas complementarias: entrevistas semiestructuradas, observación directa en el puesto de trabajo (shadowing), talleres JAD, prototipado exploratorio, encuestas y análisis documental. Durante las sesiones se aplican técnicas de indagación como los '5 Porqués' para distinguir deseos de solución ('quiero un botón de Excel') de problemas de negocio subyacentes ('necesito conciliar descuadres diarios'). Los hallazgos brutos se registran y pasan luego a análisis, resolución de conflictos y especificación.",
+    "practicas": [
+      "Combina entrevistas con observación directa del trabajo real; los usuarios omiten excepciones habituales porque forman parte de su conocimiento tácito.",
+      "Indaga siempre el objetivo detrás de toda solución propuesta por el cliente antes de comprometer una implementación específica.",
+      "Incorpora desde el inicio a áreas transversales (cumplimiento legal, ciberseguridad, soporte y operaciones) para evitar bloqueos tardíos.",
+      "Elicitación vs. Análisis: la elicitación busca descubrir información amplia desde múltiples fuentes; el análisis depura, modela, detecta contradicciones y prioriza lo encontrado."
+    ],
+    "ejemplo": "Petición inicial: \"Necesitamos exportar todos los clientes a CSV cada mañana.\"\nIndagación (5 Porqués): El área de riesgo cruza el CSV en Excel buscando NIF duplicados.\nRequisito elicitado: Validar unicidad de NIF en el alta y emitir alerta diaria de duplicados potenciales.",
+    "entrevista": "Elicitar requisitos no es tomar nota de pedidos literales, sino combinar observación, entrevistas y análisis de contexto para descubrir conocimiento tácito y convertir propuestas de solución en problemas verificables."
+  },
+  "Entrevistas y talleres": {
+    "que": "Técnicas humanas directas de elicitación de requisitos. Las entrevistas son conversaciones enfocadas (estructuradas, semiestructuradas o abiertas) con uno o pocos participantes para profundizar en procesos o visiones específicas; los talleres (workshops JAD, Event Storming) reúnen simultáneamente a múltiples stakeholders multidisciplinarios bajo un facilitador para co-crear y consensuar.",
+    "para": "Permiten extraer conocimiento experto implícito y alinear rápidamente a grupos con prioridades divergentes que de otro modo tardarían semanas en coordinarse de forma asíncrona. Las entrevistas destacan en temas técnicos profundos o sensibles; los talleres destacan en flujos transversales y resolución de conflictos.",
+    "como": "En una entrevista se define el alcance previo, se diseña un guion que parte de preguntas abiertas de contexto hacia preguntas cerradas de precisión, se documenta en notas estructuradas (o grabación consentida) y se envía una minuta de validación en menos de 24 horas. En un taller se asigna un facilitador neutral y un relator, se fija una agenda con timeboxing y se utilizan artefactos visuales colaborativos (pizarra, mapas de flujo o Event Storming). El facilitador guía al grupo desde una fase divergente (generar pasos, excepciones y dudas) hacia una fase convergente (ordenar, negociar conflictos y priorizar). El cierre obliga a registrar acuerdos, temas aparcados ('parking lot') y responsables con fecha para cada incógnita.",
+    "practicas": [
+      "Prefiere entrevistas semiestructuradas: un guion rígido bloquea hallazgos inesperados y una charla sin estructura deja huecos críticos.",
+      "En talleres, neutraliza el sesgo de jerarquía (HiPPO) empezando con generación silenciosa individual en tarjetas antes del debate abierto.",
+      "Entrevistas vs. Talleres: entrevista primero de forma individual a los expertos clave para entender jerga y fricciones privadas, y luego convoca el taller para negociar el flujo común entre áreas.",
+      "No termines un taller sin actas accionables: decisiones cerradas, preguntas abiertas con responsable asignado y puntos explícitamente fuera de alcance."
+    ],
+    "ejemplo": "Agenda Taller JAD (90 min) - Flujo de Devoluciones\n00-15 min: Objetivo de negocio y métricas actuales.\n15-45 min: Mapeo silencioso de eventos (Event Storming) por rol.\n45-75 min: Resolución de conflictos entre Finanzas y Logística.\n75-90 min: Priorización inicial y asignación de dudas abiertas.",
+    "entrevista": "Empleo entrevistas semiestructuradas para explorar conocimiento experto sin presión de grupo, y talleres facilitados cuando necesito alinear áreas con intereses contrapuestos y cerrar definiciones transversales en una sola sesión."
+  },
+  "Historias de usuario": {
+    "que": "Artefacto ligero de especificación ágil originado en Extreme Programming (XP) que expresa una capacidad con valor para un usuario final en lenguaje natural, pensado como punto de partida para la conversación continua. Suele usar el formato Connextra ('Como [rol], quiero [capacidad], para [beneficio]') y sigue el modelo de las 3 C de Ron Jeffries: Card (tarjeta), Conversation (diálogo) y Confirmation (criterios de aceptación).",
+    "para": "Mantiene al equipo enfocado en el valor entregado al usuario y evita redactar especificaciones rígidas antes de entender el problema. Se usa en el backlog de producto para priorizar, estimar y entregar incrementos verticales pequeños y verificables.",
+    "como": "El Product Owner o analista redacta la tarjeta inicial identificando actor, acción deseada y valor de negocio esperado. En las sesiones de refinamiento, el equipo contrasta la historia contra los criterios INVEST (Independiente, Negociable, Valiosa, Estimable, Pequeña, Testable); si resulta demasiado grande o ambigua (épica), se divide verticalmente por reglas, flujos o canales, evitando cortes horizontales por capa técnica. A través de la conversación se concretan los criterios de aceptación verificables y se comprueba la Definition of Ready antes de comprometerla en un sprint o tablero Kanban.",
+    "practicas": [
+      "Divide historias en rebanadas verticales (UI + lógica + persistencia que entregan valor completo), nunca horizontalmente ('historia de backend' e 'historia de frontend').",
+      "No omitas el 'para [beneficio]': sin entender el propósito real, el equipo de ingeniería no puede proponer soluciones alternativas más simples.",
+      "Valida INVEST antes de desarrollar; si una historia no es testable o supera unos pocos días de trabajo, requiere refinamiento o división.",
+      "Historias de usuario vs. Tareas técnicas: el trabajo habilitador sin valor visible directo (actualizar librerías, refactorizar) se gestiona como tarea técnica o deuda, no forzando historias artificiales."
+    ],
+    "ejemplo": "Título: Reembolso parcial de orden entregada\nComo comprador con una orden entregada,\nquiero solicitar el reembolso de un único ítem defectuoso,\npara recuperar su importe sin devolver el pedido completo.\nConfirmación: Importe <= valor pagado del ítem; estado pasa a REEMBOLSO_PARCIAL.",
+    "entrevista": "Una historia de usuario no es una especificación cerrada en tres líneas, sino un recordatorio de conversación continua estructurado bajo las 3 C e INVEST para entregar valor en tajadas verticales."
+  },
+  "Implicaciones de IA en requerimientos": {
+    "que": "Conjunto de adaptaciones metodológicas y técnicas en la ingeniería de requisitos derivadas de incorporar modelos de IA/LLM dentro del software construido o de usar IA generativa como asistente durante la especificación. Rompe el modelo determinista clásico de entrada-salida exacta e introduce requisitos probabilísticos, de evaluación empírica, de datos y de control de riesgos.",
+    "para": "Resuelve el vacío de especificación en productos basados en ML, RAG o agentes donde las aserciones binarias tradicionales fallan, previniendo alucinaciones sin control, sesgos, vulnerabilidades y sobrecostos de inferencia. Resulta imprescindible al diseñar capacidades inteligentes en software moderno.",
+    "como": "En los requisitos funcionales se reemplazan garantías absolutas por métricas estadísticas sobre conjuntos de evaluación dorados (evals): por ejemplo, precisión, recall, groundedness en RAG, formato estructurado válido, latencia por token y umbrales mínimos de confianza. Se especifican explícitamente los mecanismos de respaldo (fallback determinista o escalado humano) cuando el modelo no alcanza la confianza requerida. En los RNF se incorporan requisitos de origen, privacidad y frescura de datos, defensa contra prompt injection, límites de costo/tokens y observabilidad de trazas del modelo. Cuando se usan LLMs para redactar historias o criterios Gherkin, se aplica revisión humana obligatoria (human-in-the-loop) para verificar coherencia y evitar reglas inventadas.",
+    "practicas": [
+      "Sustituye afirmaciones absolutas ('el asistente nunca se equivoca') por umbrales medibles sobre un dataset de evaluación versionado ('>= 92% de respuestas fundamentadas en eval-set v2').",
+      "Especifica siempre el camino de degradación o fallback: qué hace el sistema si el modelo alucina, excede el timeout o rompe el esquema JSON esperado.",
+      "Trata los datasets, prompts y configuraciones de modelos como artefactos bajo requisitos estrictos de privacidad (PII), sesgo, trazabilidad y cumplimiento regulatorio.",
+      "IA para requisitos vs. Requisitos para IA: los LLMs aceleran detectar huecos y generar borradores de pruebas, pero el juicio de negocio y negociación entre stakeholders sigue siendo humano."
+    ],
+    "ejemplo": "RF-IA-02: Asistente de soporte RAG\n- Eval: >= 90% de fidelidad (groundedness) y 0 fugas de PII sobre 200 consultas de prueba.\n- Latencia: primer token <= 800 ms, respuesta total <= 4 s.\n- Fallback: si similitud semántica < 0.72, derivar a agente humano sin generar respuesta.",
+    "entrevista": "Cuando un sistema integra IA o LLMs, la ingeniería de requisitos pasa de contratos deterministas a especificar datasets de evaluación, umbrales estadísticos aceptables, gobernanza de datos y flujos claros de fallback."
+  },
+  "Personas (perfiles de usuario)": {
+    "que": "Arquetipos ficticios respaldados por investigación empírica que sintetizan objetivos, flujos de trabajo, nivel técnico, contexto operativo y frustraciones de segmentos clave de usuarios. Fueron formalizadas en el diseño orientado a metas por Alan Cooper.",
+    "para": "Evitan diseñar para un 'usuario elástico' imaginario que cambia según convenga al desarrollador y fundamentan las decisiones de alcance, usabilidad y accesibilidad en necesidades reales. Se crean en etapas de descubrimiento y sirven de brújula continua durante el refinamiento y las pruebas.",
+    "como": "El equipo recolecta evidencia cuantitativa (telemetría de uso, analítica, soporte) y cualitativa (entrevistas contextuales, observación) buscando patrones de comportamiento y metas compartidas. Cada clúster relevante se sintetiza en una ficha con nombre, contexto físico/técnico (ej. uso móvil bajo sol o lector de pantalla), objetivos primarios, puntos de dolor y restricciones. Se diferencian personas primarias (foco principal de diseño), secundarias y anti-personas (quienes no son público objetivo). Durante el backlog, cada historia y prototipo se evalúa preguntando si resuelve los obstáculos concretos de las personas priorizadas.",
+    "practicas": [
+      "Construye personas con datos reales de entrevistas y uso, no con suposiciones de oficina ('proto-personas' sin validar en campo).",
+      "Enfócate en metas, contexto de uso y barreras cognitivas o físicas en lugar de rellenar datos demográficos irrelevantes para el software.",
+      "Mantén un grupo acotado (normalmente 3 a 5 personas); demasiados perfiles diluyen el foco del producto.",
+      "Personas vs. Actores/Roles: un actor define permisos y acciones técnicas ('Operador'); una persona explica el contexto humano real ('Operador nocturno bajo alta presión y baja conectividad')."
+    ],
+    "ejemplo": "Persona Primaria: \"Elena, Supervisora de Turno en Planta\"\nContexto: Tablet industrial con guantes en ambiente ruidoso y Wi-Fi intermitente.\nMeta: Registrar y aprobar incidencias críticas en menos de 30 segundos sin perder datos.\nDolor: Formularios extensos que pierden lo escrito si expira la sesión.",
+    "entrevista": "Las personas empíricas evitan que el equipo diseñe para sí mismo o para un usuario abstracto: fijan metas, restricciones operativas y puntos de dolor reales que guían tanto qué construir como cómo diseñarlo."
+  },
+  "Priorización MoSCoW": {
+    "que": "Técnica categórica de priorización creada por Dai Clegg en el marco DSDM que clasifica los requisitos respecto a una entrega de tiempo fijo en cuatro cubos: Must have (indispensable), Should have (importante pero no crítico), Could have (deseable si hay margen) y Won't have this time (excluido explícitamente de esta fase).",
+    "para": "Permite gestionar alcance frente a plazos o presupuestos inamovibles, haciendo explícito qué garantiza la viabilidad mínima de la entrega y qué puede recortarse de forma ordenada si surgen imprevistos. Se aplica antes de comprometer un MVP, un lanzamiento regulatorio o una iteración.",
+    "como": "Al iniciar la planificación se fija el marco temporal y una regla de presupuesto donde los elementos Must no superen idealmente el 60% del esfuerzo total disponible. En sesión con negocio y tecnología se evalúa cada requisito: si el lanzamiento es inviable, inútil o ilegal sin él, va a Must; si aporta mucho valor pero existe un rodeo manual temporal aceptable, va a Should; si es una mejora menor de conveniencia, va a Could; y si queda aplazado para proteger foco, se registra en Won't. Ante retrasos durante la ejecución, el equipo descarta primero Could y luego Should para asegurar la entrega puntual de todos los Must.",
+    "practicas": [
+      "Controla la inflación de 'Must have': si supera el 60-70% de la capacidad, no existe amortiguador de riesgo y cualquier desvío comprometerá la fecha.",
+      "Documenta los 'Won't have' explícitamente para evitar que reaparezcan informalmente a mitad del proyecto (scope creep).",
+      "Usa la prueba del rodeo: si puedes operar el lanzamiento temporalmente con un proceso manual alternativo, ese requisito es 'Should', no 'Must'.",
+      "MoSCoW vs. Kano / WSJF: MoSCoW gestiona compromiso contractual en fechas fijas; Kano mide percepción de satisfacción del usuario y WSJF optimiza flujo económico por costo de retraso."
+    ],
+    "ejemplo": "MVP Checkout (capacidad: 100 puntos)\n- Must (55 pts): Pago con tarjeta, cálculo fiscal, recibo por correo.\n- Should (25 pts): Guardar tarjeta tokenizada (rodeo: reingresar datos).\n- Could (20 pts): Canje de puntos de fidelidad.\n- Won't (esta fase): Pago dividido entre dos tarjetas.",
+    "entrevista": "El valor de MoSCoW no está en poner etiquetas, sino en mantener los 'Must have' en torno al 60% de la capacidad para que los 'Should' y 'Could' actúen como colchón real que proteja la fecha de entrega."
+  },
+  "Requerimientos funcionales (RF)": {
+    "que": "Especificaciones que definen qué debe hacer un sistema de software: sus capacidades visibles, reglas de negocio, transformaciones de entrada en salida, flujos operativos y respuestas ante eventos concretos. Representan el comportamiento central que aporta valor al usuario o a sistemas integrados.",
+    "para": "Establecen el contrato lógico de comportamiento que guía el diseño de dominio, las APIs y la batería de pruebas funcionales. Se formulan y refinan de manera continua desde el levantamiento inicial hasta cada incremento de producto.",
+    "como": "Tras la elicitación, cada necesidad se descompone en enunciados atómicos, completos y verificables (siguiendo criterios como ISO/IEC/IEEE 29148), identificando actor o evento disparador, precondición, procesamiento y salida esperada. Pueden documentarse como enunciados formales en un SRS ('El sistema debe...'), casos de uso o historias de usuario con criterios de aceptación. Cada RF se asigna a componentes de diseño y se enlaza mediante trazabilidad con pruebas automatizadas (unitarias, integración o E2E) que validen tanto las entradas nominales como los casos de error.",
+    "practicas": [
+      "Redacta requisitos atómicos y medibles; evita verbos ambiguos o compuestos como 'el sistema gestionará integralmente y optimizará'.",
+      "Especifica explícitamente el comportamiento ante errores, datos faltantes, duplicados y falta de permisos, no solo el camino exitoso.",
+      "Describe el comportamiento lógico sin dictar innecesariamente herramientas o librerías internas, salvo que exista una restricción externa real.",
+      "RF vs. RNF: el RF describe 'qué' operación realiza el sistema (emitir factura); el RNF define 'qué tan bien' o bajo qué restricciones opera (en < 300 ms, disponibilidad 99.9%)."
+    ],
+    "ejemplo": "RF-12: Validación de cupón promocional\nEl sistema debe verificar vigencia, límite global de usos y monto mínimo del carrito al aplicar un cupón; si cumple las reglas, descontará el porcentaje configurado antes de impuestos y actualizará el desglose.",
+    "entrevista": "Un requerimiento funcional bien redactado especifica de forma atómica, verificable y libre de detalles de implementación qué transformación o regla de negocio ejecuta el sistema y cómo reacciona ante casos límite."
+  },
+  "Requerimientos no funcionales (RNF)": {
+    "que": "Atributos de calidad y restricciones operativas que determinan qué tan bien se comporta un sistema en ejecución: rendimiento, escalabilidad, disponibilidad, seguridad, mantenibilidad, accesibilidad y cumplimiento normativo (estandarizados en ISO/IEC 25010). Constituyen las propiedades transversales de calidad del software.",
+    "para": "Aseguran que el sistema sea usable, seguro, costeable y legalmente operable en producción, ya que un sistema con todas sus funciones pero lento o vulnerable fracasa en la práctica. Son los principales architectural drivers que moldean las decisiones estructurales más costosas.",
+    "como": "Para evitar vaguedades ('que sea rápido'), cada RNF se formula cuantitativamente usando escenarios de atributos de calidad (modelo SEI): fuente del estímulo, estímulo, entorno de carga, artefacto afectado, respuesta esperada y métrica exacta (ej. latencia p95 <= 180 ms a 500 RPS). De estos objetivos se derivan SLIs (métricas reales), SLOs (metas internas) y SLAs (acuerdos contractuales). El equipo de arquitectura selecciona tácticas específicas (caché, particionamiento, replicación multizona, cifrado, cumplimiento WCAG 2.2 AA) y valida los RNF continuamente con pruebas de carga, escaneos SAST/DAST, pruebas de caos y observabilidad en producción.",
+    "practicas": [
+      "Rechaza RNF sin métrica ni condiciones de entorno: 'alta disponibilidad' debe traducirse a un porcentaje concreto (p. ej. 99.95% mensual) y una ventana de medición.",
+      "Evalúa explícitamente los trade-offs entre RNF: mayor consistencia fuerte suele penalizar latencia o disponibilidad ante particiones de red (CAP/PACELC).",
+      "Integra seguridad, privacidad (GDPR) y accesibilidad desde el diseño inicial; corregirlos al final suele exigir cambios arquitectónicos profundos.",
+      "RNF vs. Restricciones: un RNF es una cualidad operativa medible (latencia p99 < 250 ms); una restricción impone una condición fija previa (desplegar en la UE, usar PostgreSQL)."
+    ],
+    "ejemplo": "RNF-PERF-01 (Escenario de Rendimiento)\nEstímulo: 500 usuarios concurrentes consultan GET /api/v1/catalogo.\nEntorno: Operación normal con 100 000 productos activos.\nMedida: Latencia p95 <= 180 ms y tasa de error < 0.1% durante 15 minutos.",
+    "entrevista": "Los requerimientos no funcionales son los verdaderos impulsores de la arquitectura; si carecen de métrica cuantitativa, contexto de carga y verificación automatizada, no son requisitos sino deseos."
+  },
+  "Testing": {
+    "que": "Disciplina de ingeniería basada en la ejecución controlada del software y técnicas de análisis asociadas para detectar defectos, verificar requisitos funcionales y no funcionales y aportar evidencia objetiva del riesgo antes de liberar cambios. Abarca niveles (unitario, integración, contrato, sistema/E2E) y dimensiones (regresión, carga, seguridad, accesibilidad).",
+    "para": "Previene regresiones conforme el sistema crece, acorta el bucle de retroalimentación al desarrollar y da confianza para desplegar continuamente en producción. Se practica de manera continua desde el entorno local del programador hasta las puertas de calidad en CI/CD y monitoreo sintético.",
+    "como": "El equipo diseña una estrategia balanceada (pirámide o trofeo de pruebas): en la base, pruebas unitarias rápidas que aíslan lógica pura con dobles de prueba; en el nivel medio, pruebas de integración real contra bases de datos efímeras (Testcontainers) y pruebas de contrato (Pact) entre servicios; en la cima, pocas pruebas E2E sobre rutas críticas de negocio. Los casos de prueba se derivan con técnicas sistemáticas como partición de equivalencia, valores límite, tablas de decisión y transición de estados. Cada cambio ejecuta la suite en CI ordenada de lo más veloz a lo más costoso, bloqueando la integración ante cualquier fallo.",
+    "practicas": [
+      "Equilibra la estrategia según tu sistema: abusar de pruebas E2E produce suites lentas y frágiles (flaky), mientras que abusar de mocks oculta errores reales de integración o SQL.",
+      "Estructura cada caso con Arrange-Act-Assert (AAA) y datos independientes para poder ejecutar las pruebas en paralelo sin orden fijo.",
+      "No persigas el 100% de cobertura de líneas como meta absoluta; evalúa la fuerza de tus aserciones en lógica crítica (por ejemplo con mutation testing).",
+      "Caja negra vs. Caja blanca: la caja negra valida comportamiento externo y valores límite desde la especificación; la caja blanca inspecciona ramas, condiciones y rutas internas."
+    ],
+    "ejemplo": "def test_rechaza_retiro_sobre_saldo():\n    cuenta = Cuenta(saldo=50)                    # Arrange\n    with pytest.raises(SaldoInsuficienteError):  # Assert\n        cuenta.retirar(80)                       # Act",
+    "entrevista": "Una estrategia eficaz de testing maximiza la confianza por segundo invertido en CI: muchas pruebas rápidas de lógica e integración real en la base, contratos explícitos entre servicios y E2E acotados solo a los flujos vitales."
+  },
+  "Trazabilidad y especificación de requerimientos": {
+    "que": "La especificación de requerimientos es la formalización clara, completa y no ambigua de lo que el sistema debe cumplir (en documentos SRS bajo IEEE 29148 o especificaciones ejecutables en repositorio), mientras que la trazabilidad es la capacidad de rastrear cada requisito hacia atrás (su origen de negocio o normativo) y hacia adelante (diseño, código fuente, pruebas y entrega).",
+    "para": "Evita tanto requisitos olvidados sin implementar ni probar como trabajo técnico sin justificación de negocio ('gold plating'). Resulta indispensable para medir el impacto exacto de cualquier solicitud de cambio y es obligatoria en sectores regulados (banca, salud, aeronáutica, automoción).",
+    "como": "Cada requisito recibe un identificador único e inmutable (p. ej. REQ-042) junto con metadatos de versión, estado, prioridad y fuente en una herramienta ALM o en archivos versionados en Git (Docs-as-Code). Se construye una Matriz de Trazabilidad de Requerimientos (RTM) que vincula bidireccionalmente cada REQ con sus decisiones de diseño, Pull Requests o commits etiquetados y casos de prueba automatizados. Cuando cambia una norma o regla de negocio sobre REQ-042, el grafo de trazabilidad revela al instante qué módulos, APIs y suites de prueba deben actualizarse y re-verificarse antes de liberar.",
+    "practicas": [
+      "Asigna identificadores únicos e inmutables; renumerar requisitos al insertar uno nuevo rompe todos los enlaces históricos en código y pruebas.",
+      "Automatiza los enlaces en el flujo diario (ID del requisito en ramas, commits y etiquetas de tests) en lugar de mantener hojas de cálculo manuales que quedan obsoletas.",
+      "Exige trazabilidad bidireccional: hacia adelante garantiza cobertura de implementación y pruebas; hacia atrás detecta código añadido sin necesidad aprobada.",
+      "SRS tradicional vs. Especificación viva: los entornos regulados o de contrato cerrado requieren líneas base formales en SRS; los equipos iterativos prefieren especificaciones versionadas y ejecutadas junto al código."
+    ],
+    "ejemplo": "ID Req   | Origen          | Módulo / PR       | Prueba Verificadora      | Estado\nREQ-104  | PCI-DSS 3.5     | auth/tokens (#88) | test_token_expira_15min  | Verificado\nREQ-105  | Acta Negocio #4 | billing/tax (#91) | test_iva_frontera_cero   | En revisión",
+    "entrevista": "La trazabilidad bidireccional conecta origen de negocio, implementación y pruebas bajo identificadores inmutables, sirviendo tanto para auditorías de cumplimiento como para calcular el impacto real de cualquier cambio."
+  },
+  "Verificación y validación": {
+    "que": "Dos procesos complementarios de aseguramiento de calidad definidos en estándares como IEEE 1012 y resumidos por Barry Boehm. La verificación comprueba que un artefacto cumple fielmente su especificación y normas técnicas ('¿estamos construyendo el producto correctamente?'), mientras que la validación evalúa si el producto final resuelve la necesidad real del usuario en su contexto ('¿estamos construyendo el producto correcto?').",
+    "para": "Previenen dos modos opuestos de fracaso: entregar código técnicamente impecable pero inútil frente al problema real (fallo de validación), o intentar resolver una gran necesidad con un sistema lleno de defectos lógicos e incumplimientos de contrato (fallo de verificación). Se aplican de forma continua en todo el ciclo de vida.",
+    "como": "La verificación combina técnicas estáticas tempranas (revisiones por pares de requisitos, arquitectura y código, linters, análisis estático) con pruebas dinámicas frente a la especificación (unitarias, integración, contrato y pruebas de RNF). La validación contrasta prototipos, incrementos y software desplegado contra usuarios y stakeholders reales mediante demos de sprint, pruebas de usabilidad, pruebas de aceptación de usuario (UAT), lanzamientos Canary y análisis de métricas de uso en producción. En modelos como el modelo en V, cada nivel de definición se verifica o valida sistemáticamente con su contraparte de prueba.",
+    "practicas": [
+      "Invierte en verificación estática temprana (inspección de requisitos y diseño); detectar un error antes de codificar cuesta órdenes de magnitud menos que en producción.",
+      "No confundas verificación con validación: una suite de pruebas 100% en verde contra criterios mal planteados sigue produciendo un sistema rechazado por el usuario.",
+      "Valida hipótesis de negocio de forma temprana con prototipos interactivos, entrevistas o feature flags antes de construir la arquitectura completa.",
+      "Verificación vs. Validación: la verificación mira hacia adentro comparando artefacto contra especificación; la validación mira hacia afuera comparando producto contra necesidad real."
+    ],
+    "ejemplo": "Módulo de facturación electrónica:\n- Verificación: el XML generado cumple el esquema XSD oficial y pasan las pruebas unitarias de redondeo fiscal.\n- Validación: el equipo contable del cliente cierra el mes en UAT en menos de 10 minutos sin recurrir a hojas externas.",
+    "entrevista": "Verificar es demostrar que el sistema cumple su especificación técnica ('construir el producto correctamente'), y validar es comprobar con usuarios reales que resuelve su necesidad operativa ('construir el producto correcto')."
+  }
+}

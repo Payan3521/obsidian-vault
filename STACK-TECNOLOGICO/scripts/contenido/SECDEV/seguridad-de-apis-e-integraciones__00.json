@@ -1,0 +1,392 @@
+{
+  "API security": {
+    "que": "Disciplina de AppSec dedicada a proteger las interfaces de programación de aplicaciones (REST, GraphQL, gRPC, SOAP y webhooks) frente a accesos no autorizados, abuso de lógica de negocio y fallos de disponibilidad. Abarca todo el ciclo de vida del servicio, desde el diseño de contratos y el cifrado en tránsito hasta la observabilidad en producción.",
+    "para": "Resuelve la exposición directa de datos y lógica de negocio que supone ofrecer endpoints programáticos consumibles por aplicaciones web, móviles y terceros. Se aplica en cualquier arquitectura moderna orientada a servicios o microservicios donde las APIs constituyen la superficie de ataque principal.",
+    "como": "Opera mediante defensa en profundidad en múltiples capas. En el perímetro, un API Gateway termina TLS, valida tokens JWT o certificados mTLS, aplica rate limiting y filtra payloads contra esquemas OpenAPI/Protobuf. En la capa de aplicación, los controladores ejecutan autenticación, autorización a nivel de objeto (BOLA) y de propiedad (BOPLA), validación estricta de entrada y serialización controlada de respuestas. Finalmente, el registro estructurado y el inventario continuo detectan desviaciones y APIs no documentadas.",
+    "practicas": [
+      "Tratar las APIs como superficie pública aunque solo las consuman frontends propios o apps móviles; el código cliente nunca es un límite de confianza.",
+      "Combinar controles de borde (API Gateway, WAF) con autorización de grano fino en el backend; el gateway no conoce las relaciones de propiedad en base de datos.",
+      "Comparación: WAF tradicional vs. API Security; el WAF busca firmas genéricas (SQLi/XSS), mientras que la seguridad de APIs valida contratos, esquemas y lógica de autorización.",
+      "Mantener un inventario actualizado de endpoints y retirar versiones obsoletas para evitar Shadow y Zombie APIs."
+    ],
+    "ejemplo": "GET /api/v2/orders/9841 HTTP/1.1\nHost: api.ejemplo.com\nAuthorization: Bearer eyJhbGciOiJSUzI1NiIs...\nAccept: application/json\n# Gateway valida JWT + cuota -> Backend verifica order.owner_id == token.sub",
+    "entrevista": "La seguridad en APIs requiere validar contratos en el borde y hacer cumplir la autorización por objeto y propiedad dentro de la lógica de negocio, porque los fallos más críticos explotan flujos legítimos y no solo inyecciones clásicas."
+  },
+  "Autorización por recurso": {
+    "que": "Mecanismo de control de acceso que evalúa en tiempo de ejecución si la identidad autenticada tiene permiso específico para ejecutar una acción sobre una instancia concreta de datos (por ejemplo, un pedido, factura o perfil). Va más allá del control por rol (RBAC) al incorporar atributos del recurso y su relación con el sujeto.",
+    "para": "Evita que un usuario legítimo con un token válido acceda o modifique registros de otros usuarios simplemente manipulando identificadores en la petición. Es indispensable en sistemas multi-tenant, plataformas SaaS y APIs orientadas a recursos donde los endpoints son compartidos por distintos clientes.",
+    "como": "Tras verificar el token de identidad y extraer el identificador del sujeto (`sub` o `tenant_id`), el servicio recupera el recurso objetivo desde la base de datos o incluye el filtro de pertenencia en la propia consulta. A continuación, un motor de políticas (como OPA, Cedar o un guard de dominio) evalúa si el sujeto es propietario, comparte tenant o posee una relación explícita con el recurso para la operación solicitada (lectura, escritura, borrado). Si la evaluación falla, se rechaza con HTTP 403 o 404 según la política de divulgación.",
+    "practicas": [
+      "Derivar la identidad y el tenant exclusivamente del token firmado en servidor o de la sesión, nunca de parámetros enviados por el cliente en URL, headers o cuerpo.",
+      "Centralizar las comprobaciones en una capa de políticas o middleware de dominio para evitar olvidos en controladores individuales.",
+      "Error típico: comprobar solo `role == 'USER'` sin verificar `resource.ownerId == currentUser.id`, lo que abre la puerta a BOLA/IDOR.",
+      "Comparación: RBAC vs. ABAC/ReBAC; RBAC decide si puedes llamar a `DELETE /invoices/{id}`, mientras que la autorización por recurso decide si puedes borrar esa factura en particular."
+    ],
+    "ejemplo": "def get_invoice(invoice_id: str, current_user: User):\n    invoice = db.query(Invoice).filter_by(id=invoice_id, tenant_id=current_user.tenant_id).first()\n    if not invoice:\n        raise HTTPException(status_code=404)\n    return invoice",
+    "entrevista": "La autorización por recurso garantiza que la autenticación de un usuario no baste para operar sobre cualquier ID: cada acceso debe ligar el sujeto del token con la propiedad o relación real del registro solicitado."
+  },
+  "BOLA": {
+    "que": "Broken Object Level Authorization (BOLA), catalogada como API1 en el OWASP API Security Top 10, es una vulnerabilidad crítica en la que un endpoint expone acceso directo a un objeto por su identificador sin verificar que el usuario autenticado esté autorizado sobre esa instancia específica.",
+    "para": "Comprender y mitigar BOLA permite prevenir la exfiltración masiva de datos, secuestros de cuentas y modificaciones no autorizadas en APIs REST, GraphQL o gRPC. Es el fallo de autorización más frecuente y de mayor impacto en aplicaciones modernas.",
+    "como": "El atacante se autentica con una cuenta legítima para obtener un token válido y realiza una petición normal (por ejemplo `GET /api/v1/users/1002/orders` o un `mutation` con `orderId`). Luego sustituye el identificador del objeto en la ruta, query string, cabecera o cuerpo JSON por otro secuencial o descubierto. Si el backend solo valida la sesión y el rol genérico pero consulta la base de datos únicamente por el ID recibido sin filtrar por el propietario del token, devuelve o altera el recurso ajeno.",
+    "practicas": [
+      "Implementar verificación de propiedad o relación en cada endpoint que acepte un identificador de objeto, preferiblemente en la capa de servicio o acceso a datos.",
+      "Usar UUIDv4 como medida de higiene para dificultar la enumeración, sabiendo que la aleatoriedad del ID nunca sustituye a la comprobación de autorización.",
+      "Error típico: confiar en que la UI oculta los IDs de otros usuarios o devolver errores 403/404 inconsistentes que revelan la existencia de registros.",
+      "Comparación: BOLA vs. BFLA; BOLA ocurre al acceder al objeto de otro usuario usando una función permitida, mientras que BFLA permite ejecutar funciones administrativas no autorizadas."
+    ],
+    "ejemplo": "# Vulnerable: consulta directa sin comprobar pertenencia\nGET /api/accounts/1042/transactions  (Token de user_id=99)\n\n# Seguro: filtro obligatorio de propietario en el repositorio\nSELECT * FROM transactions WHERE account_id = :id AND owner_id = :token_sub;",
+    "entrevista": "BOLA es el equivalente en APIs al IDOR clásico y se corrige exclusivamente imponiendo autorización a nivel de objeto en el backend en cada operación que reciba un identificador."
+  },
+  "Batch requests": {
+    "que": "Patrón de diseño que permite al cliente empaquetar múltiples operaciones o subpeticiones dentro de una única llamada HTTP o payload (frecuente en REST `/batch` y en arrays de queries o aliases en GraphQL). Reduce la latencia de red en clientes móviles, pero amplifica el riesgo de abuso si no se descompone correctamente.",
+    "para": "Sirve para optimizar comunicaciones cliente-servidor agrupando lecturas o escrituras en un solo viaje de red; en seguridad, su análisis sirve para evitar que los atacantes eludan controles por petición como el rate limiting, la auditoría o el bloqueo de fuerza bruta.",
+    "como": "El cliente envía un arreglo JSON con decenas o miles de operaciones (por ejemplo, 500 intentos de verificación de OTP o múltiples consultas pesadas) en un único `POST /graphql` o `POST /api/batch`. Si el API Gateway solo cuenta una petición HTTP contra la cuota del cliente y reenvía el lote completo al backend, el servidor ejecuta N operaciones consumiendo CPU, conexiones de base de datos y cuota de negocio equivalente a N llamadas, eludiendo la limitación perimetral.",
+    "practicas": [
+      "Deshabilitar el batching HTTP o por arrays en GraphQL si no existe una necesidad funcional demostrada.",
+      "Contabilizar la cuota y el rate limiting por número de suboperaciones o coste calculado dentro del lote, no por petición HTTP bruta.",
+      "Imponer un límite estricto de elementos por lote y un timeout global de ejecución.",
+      "Error típico: validar autorización solo al inicio del endpoint batch y omitirla en cada suboperación interna."
+    ],
+    "ejemplo": "# Ataque de fuerza bruta mediante aliases en una sola petición GraphQL:\nquery {\n  t1: verifyOtp(code: \"0001\") { valid }\n  t2: verifyOtp(code: \"0002\") { valid }\n  t3: verifyOtp(code: \"0003\") { valid }\n}",
+    "entrevista": "Las batch requests permiten multiplicar el impacto de un solo request HTTP para evadir rate limits y provocar DoS o fuerza bruta, por lo que deben limitarse en cantidad y costearse por suboperación."
+  },
+  "Content-Type validation": {
+    "que": "Control de entrada en servidores y API Gateways que verifica estrictamente que la cabecera HTTP `Content-Type` de la petición coincida con los formatos esperados por el endpoint antes de invocar cualquier parser del cuerpo.",
+    "para": "Previene ataques de confusión de parsers, inyección XML/XXE inesperada, bypass de filtros WAF basados en JSON y ataques CSRF simples mediante formularios HTML (`application/x-www-form-urlencoded` o `text/plain`) contra endpoints diseñados solo para JSON.",
+    "como": "Al recibir una petición con cuerpo (`POST`, `PUT`, `PATCH`), el middleware inspecciona el valor normalizado de `Content-Type` (ignorando parámetros accesorios o validando el charset, como `application/json; charset=utf-8`). Si la cabecera falta, contiene un tipo MIME no listado en la lista blanca del endpoint (por ejemplo `application/xml` o `text/plain`) o no coincide con el esquema OpenAPI, el servidor rechaza inmediatamente con HTTP `415 Unsupported Media Type` sin deserializar el payload.",
+    "practicas": [
+      "Aplicar lista blanca estricta de MIME types por ruta y responder `415 Unsupported Media Type` ante cualquier discrepancia.",
+      "Desactivar la detección automática de formato (content sniffing) y parsers implícitos como XML en frameworks que habilitan múltiples deserializadores por defecto.",
+      "Validar también la cabecera `Accept` del cliente y fijar `X-Content-Type-Options: nosniff` en las respuestas para evitar MIME sniffing.",
+      "Error típico: aceptar `text/plain` y parsearlo igualmente como JSON en el backend, lo que neutraliza la protección CORS preflight contra CSRF."
+    ],
+    "ejemplo": "if not request.content_type or request.mimetype != \"application/json\":\n    return Response(\"Unsupported Media Type\", status=415)",
+    "entrevista": "Validar el Content-Type con lista blanca antes de deserializar bloquea parsers peligrosos como XML/XXE y evita que peticiones simples de formulario crucen defensas CORS basadas en preflight."
+  },
+  "Diseño de API seguro": {
+    "que": "Conjunto de principios arquitectónicos y decisiones tempranas (Secure by Design) aplicados antes de escribir código para que las interfaces, modelos de datos, flujos de autenticación y contratos de una API minimicen la superficie de ataque desde su concepción.",
+    "para": "Evita vulnerabilidades estructurales difíciles de parchear en producción, como exposición excesiva de datos en modelos compartidos, IDs predecibles, flujos sin idempotencia o ausencia de límites de paginación. Se aplica en fases de arquitectura, modelado de amenazas y definición de contratos OpenAPI/Protobuf.",
+    "como": "Comienza con modelado de amenazas específico para APIs (identificando activos, actores, flujos críticos y abuso de lógica de negocio). Luego define contratos contract-first con esquemas cerrados (`additionalProperties: false`), separa DTOs de entrada/salida de las entidades de base de datos, establece autenticación estándar (OAuth 2.1/OIDC o mTLS), diseña la autorización ligada al dominio y fija límites por defecto en paginación, tamaños de payload y cuotas desde el diseño inicial.",
+    "practicas": [
+      "Adoptar diseño contract-first: definir el esquema OpenAPI/GraphQL/Protobuf y revisarlo con seguridad antes de implementar los handlers.",
+      "Separar estrictamente modelos internos de persistencia y DTOs públicos para prevenir Mass Assignment y Excessive Data Exposure por construcción.",
+      "Diseñar paginación acotada por defecto (`limit <= 100`) y respuestas de error estandarizadas (RFC 9457) sin stack traces ni detalles internos.",
+      "Comparación: Diseño seguro vs. Parcheo en WAF; un WAF no puede arreglar una API que devuelve un objeto de usuario completo o carece de relación de propiedad en su modelo."
+    ],
+    "ejemplo": "# Contrato OpenAPI restrictivo en fase de diseño\ncomponents:\n  schemas:\n    UpdateProfileRequest:\n      type: object\n      additionalProperties: false\n      required: [displayName]\n      properties:\n        displayName: { type: string, minLength: 2, maxLength: 60 }",
+    "entrevista": "El diseño de API seguro elimina clases enteras de fallos antes de programar mediante contratos estrictos, separación de DTOs y modelos de amenazas centrados en el abuso de la lógica de negocio."
+  },
+  "Documentación de seguridad de API": {
+    "que": "Conjunto de especificaciones técnicas y operativas que describen los requisitos de autenticación, esquemas de autorización (scopes, roles), límites de tasa, formatos permitidos, manejo de errores y políticas de acceso de una API, habitualmente integradas en OpenAPI/Swagger o portales de desarrolladores.",
+    "para": "Alinea a desarrolladores, integradores externos, equipos de QA y auditores de AppSec sobre cómo debe consumirse y protegerse cada endpoint. Reduce errores de integración insegura y sirve como base contractual para pruebas automatizadas (DAST/fuzzing) y configuración de API Gateways.",
+    "como": "Se mantiene junto al código fuente declarando bloques `securitySchemes` y `security` en OpenAPI, matrices de scopes por endpoint, reglas de firma de webhooks, encabezados obligatorios (como `Idempotency-Key`) y códigos de error esperados (`401`, `403`, `429`). En pipelines CI/CD, herramientas de linting validan que ningún endpoint nuevo carezca de definición de seguridad antes de publicarse, y se controla qué documentación es pública y cuál es interna.",
+    "practicas": [
+      "Documentar explícitamente en OpenAPI qué endpoints son públicos y qué scopes o permisos requiere cada operación protegida.",
+      "Evitar exponer documentación de administración, endpoints internos o ejemplos con credenciales reales en portales públicos (mitigando reconocimiento gratuito).",
+      "Tratar la documentación como fuente de verdad versionada en Git (Docs-as-Code) para sincronizar Gateway, SDKs y escáneres DAST.",
+      "Error típico: dejar endpoints sin etiqueta `security` en el spec y asumir que el gateway los bloqueará por defecto."
+    ],
+    "ejemplo": "paths:\n  /v1/payments:\n    post:\n      security:\n        - oauth2: [\"payments:write\"]\n      responses:\n        \"401\": { description: \"Token inválido o ausente\" }\n        \"429\": { description: \"Límite de peticiones excedido\" }",
+    "entrevista": "La documentación de seguridad de API convierte los requisitos de autenticación, scopes y límites en un contrato verificable por CI/CD y gateways, pero debe segmentarse para no exponer endpoints internos."
+  },
+  "Esquema de API": {
+    "que": "Definición formal, estructurada y legible por máquina de la interfaz de una API: rutas o operaciones, métodos, tipos de datos, restricciones de formato, enumeraciones y estructuras de respuesta (por ejemplo OpenAPI/JSON Schema, GraphQL SDL, archivos `.proto` o WSDL/XSD).",
+    "para": "Sirve como contrato único entre productores y consumidores y constituye la base de la validación positiva (positive security model) frente a entradas malformadas, campos inesperados, inyecciones y desviaciones respecto a la especificación.",
+    "como": "El esquema describe formalmente cada parámetro y payload mediante tipos (`integer`, `string`), patrones regex, rangos (`minimum`/`maximum`), longitudes máximas y propiedades permitidas. En tiempo de ejecución, un validador (en el API Gateway o middleware de la app) compila el esquema y evalúa cada petición entrante antes de que alcance la lógica de negocio; si existen campos desconocidos (`additionalProperties: false`) o tipos incompatibles, descarta la petición con `400 Bad Request`.",
+    "practicas": [
+      "Cerrar los objetos de entrada con `additionalProperties: false` para impedir la inyección de campos ocultos (Mass Assignment).",
+      "Definir límites explícitos de longitud, rango numérico, tamaño de arrays y formatos (`uuid`, `email`, regex ancladas) en todos los campos.",
+      "Validar tanto peticiones entrantes como respuestas salientes en entornos de prueba para detectar fugas de campos no declarados.",
+      "Error típico: usar esquemas laxos donde todo es `type: string` sin `maxLength`, permitiendo payloads gigantes o inyecciones."
+    ],
+    "ejemplo": "type: object\nadditionalProperties: false\nproperties:\n  amount: { type: integer, minimum: 1, maximum: 1000000 }\n  currency: { type: string, enum: [\"EUR\", \"USD\"] }",
+    "entrevista": "Un esquema de API estricto habilita un modelo de seguridad positiva: en lugar de buscar firmas de ataque, rechaza todo dato, tipo o propiedad extra que no cumpla exactamente el contrato."
+  },
+  "Excessive data exposure": {
+    "que": "Fallo de diseño e implementación por el cual una API devuelve en sus respuestas más atributos de los que el cliente necesita o está autorizado a ver, delegando en el frontend el filtrado de los campos sensibles antes de mostrarlos.",
+    "para": "Identificar y corregir este fallo evita fugas silenciosas de información personal (PII), hashes de contraseñas, tokens internos, banderas de privilegio o metadatos internos que un atacante observa interceptando el tráfico JSON o GraphQL.",
+    "como": "Ocurre típicamente cuando un endpoint serializa directamente el objeto de base de datos o ORM (como `res.json(user)` o `return entity`) para reutilizar un único endpoint en distintas vistas. Aunque la interfaz móvil o web solo renderice `name` y `avatar`, el payload HTTP incluye atributos como `ssn`, `passwordHash`, `internalNotes` o `isAdmin`, los cuales quedan expuestos en DevTools o proxies como Burp Suite.",
+    "practicas": [
+      "Serializar respuestas únicamente a través de DTOs o proyecciones explícitas (lista blanca de campos por caso de uso y rol).",
+      "En OWASP API Security Top 10 (2023), este fallo se integró junto a Mass Assignment dentro de API3: Broken Object Property Level Authorization (BOPLA).",
+      "Nunca confiar en que la aplicación cliente omitirá campos de la respuesta JSON; lo que sale del servidor ya está comprometido.",
+      "Ejecutar pruebas automatizadas sobre respuestas reales en CI para detectar propiedades sensibles inesperadas."
+    ],
+    "ejemplo": "// Vulnerable: serializa el modelo ORM completo\nreturn res.json(await User.findByPk(req.params.id));\n\n// Seguro: proyección explícita de campos públicos\nreturn res.json({ id: user.id, displayName: user.displayName });",
+    "entrevista": "Excessive Data Exposure ocurre cuando el backend serializa entidades completas y confía en que el frontend filtre la vista; se evita usando DTOs de salida estrictos y proyecciones por nivel de autorización."
+  },
+  "Firma de webhook": {
+    "que": "Mecanismo criptográfico (habitualmente HMAC-SHA256 o firma asimétrica Ed25519/RSA) mediante el cual el emisor de un webhook autentica el payload y los metadatos enviados al endpoint receptor utilizando un secreto compartido o clave privada.",
+    "para": "Garantiza autenticidad e integridad de los eventos asíncronos entrantes: permite al receptor comprobar que el webhook proviene realmente del proveedor legítimo y no fue falsificado ni alterado en tránsito por un atacante.",
+    "como": "El proveedor toma un timestamp y el cuerpo crudo exacto (raw bytes) de la petición HTTP, construye una cadena firmada (por ejemplo `t=<timestamp>.<raw_body>`) y calcula un código HMAC-SHA256 usando el secreto del webhook, enviándolo en una cabecera como `X-Signature-256`. Al recibir la petición, el receptor reconstruye la firma sobre los bytes crudos sin re-serializar el JSON, compara ambas firmas usando comparación en tiempo constante (`hmac.compare_digest`) y verifica que el timestamp esté dentro de una ventana de tolerancia.",
+    "practicas": [
+      "Calcular el HMAC sobre los bytes crudos del cuerpo HTTP recibido antes de parsear JSON, ya que espacios o reordenamientos alteran el digest.",
+      "Usar siempre comparación en tiempo constante (`timingSafeEqual` / `hmac.compare_digest`) para evitar ataques de canal lateral por temporización.",
+      "Combinar la firma con un timestamp firmado dentro de la misma cadena para mitigar replay attacks.",
+      "Rotar los secretos de firma periódicamente soportando doble secreto activo durante la ventana de transición."
+    ],
+    "ejemplo": "sig_header = request.headers[\"X-Signature\"]\npayload = f\"{timestamp}.{raw_body.decode()}\".encode()\nexpected = hmac.new(WEBHOOK_SECRET, payload, hashlib.sha256).hexdigest()\nif not hmac.compare_digest(expected, sig_header):\n    abort(401)",
+    "entrevista": "Una firma de webhook segura verifica el HMAC sobre los bytes crudos y el timestamp con comparación en tiempo constante, protegiendo tanto la autenticidad del evento como frente a ataques de repetición."
+  },
+  "GraphQL authorization": {
+    "que": "Aplicación de políticas de control de acceso sobre las consultas (`Query`), mutaciones (`Mutation`), suscripciones y resolutores de campos individuales en un grafo GraphQL, dado que toda la API suele exponerse a través de un único endpoint (`/graphql`).",
+    "para": "Resuelve la insuficiencia de los controles perimetrales por ruta HTTP en GraphQL: como cualquier petición legítima va a `POST /graphql`, es imprescindible autorizar cada nodo, arista y campo del grafo según la identidad del usuario.",
+    "como": "Dado que una única consulta puede atravesar múltiples tipos relacionados (por ejemplo `user -> organization -> invoices -> paymentMethod`), el gateway no puede decidir el acceso por URL. La autorización debe delegarse a la capa de lógica de negocio invocada por los resolvers o implementarse mediante directivas de esquema (`@auth`, `@hasRole`) y cargadores conscientes del contexto (`context.currentUser`). Cada resolver o servicio de dominio verifica permisos funcionales (acceso a la query/mutation) y autorización por objeto/propiedad en cada arista recorrida.",
+    "practicas": [
+      "Colocar las comprobaciones de autorización en la capa de lógica de negocio compartida, no dispersas únicamente en los resolvers.",
+      "Autorizar relaciones anidadas en cada salto del grafo para evitar que una ruta alternativa (`publicPost -> author -> privateEmail`) filtre datos.",
+      "Evitar reglas de WAF o API Gateway basadas únicamente en la ruta `/graphql`; inspeccionar el AST o delegar al servicio de dominio.",
+      "Combinar DataLoader con el contexto de autorización del usuario para evitar fugas entre cachés de peticiones o N+1 inseguros."
+    ],
+    "ejemplo": "# Directiva y verificación en capa de negocio\ntype Query {\n  order(id: ID!): Order @requireAuth\n}\n# En OrderService.findById(id, ctx): verifica order.userId == ctx.user.id",
+    "entrevista": "En GraphQL todo pasa por un solo endpoint, así que la autorización por URL no sirve: debe aplicarse en la capa de negocio y en cada arista del grafo para bloquear accesos transversales por relaciones anidadas."
+  },
+  "GraphQL depth limiting": {
+    "que": "Control de seguridad en motores GraphQL que mide el nivel máximo de anidamiento de una consulta antes de ejecutarla y rechaza aquellas que superan un umbral predefinido.",
+    "para": "Mitiga ataques de denegación de servicio (DoS) a nivel de aplicación que explotan relaciones cíclicas en el esquema (como `User -> friends -> friends -> ...`) para provocar explosión exponencial de consultas a base de datos y consumo de CPU.",
+    "como": "Durante la fase de validación previa a la ejecución, un analizador recorre el Árbol de Sintaxis Abstracta (AST) de la consulta entrante contando la profundidad de selecciones anidadas (resolviendo también fragmentos inline y nombrados para evitar evasiones). Si la profundidad supera el límite configurado (por ejemplo, 5 o 7 niveles), el servidor aborta la petición antes de invocar cualquier resolver y responde con un error de validación.",
+    "practicas": [
+      "Configurar un límite de profundidad acorde a las consultas reales de los clientes (habitualmente entre 5 y 10 niveles).",
+      "Combinar depth limiting con query complexity/cost analysis, ya que una consulta poco profunda pero muy ancha (alias o listas de 10.000 items) también causa DoS.",
+      "Asegurar que el analizador expanda y valide fragmentos (`...FragmentName`) para que no se oculte profundidad real.",
+      "Comparación: Depth limiting vs. Complexity analysis; la profundidad frena recursión cíclica, mientras que la complejidad pondera el coste total de nodos y multiplicadores de listas."
+    ],
+    "ejemplo": "const server = new ApolloServer({\n  typeDefs, resolvers,\n  validationRules: [depthLimit(6)]\n});",
+    "entrevista": "El depth limiting inspecciona el AST antes de ejecutar resolvers para cortar ciclos recursivos, aunque siempre debe complementarse con análisis de complejidad y paginación obligatoria para evitar DoS."
+  },
+  "GraphQL introspection": {
+    "que": "Capacidad nativa de GraphQL que permite consultar el propio esquema de la API mediante meta-campos reservados (`__schema`, `__type`) para descubrir todos los tipos, queries, mutations, argumentos y relaciones disponibles.",
+    "para": "Resulta muy útil en desarrollo para generar documentación interactiva, autocompletado en IDEs y clientes tipados, pero en producción representa una fuga de plano técnico que facilita a los atacantes mapear toda la superficie de ataque.",
+    "como": "Un cliente o atacante envía una consulta estándar sobre el campo `__schema` a `/graphql`. El motor GraphQL responde con un JSON completo que detalla incluso operaciones administrativas no enlazadas en el frontend, campos obsoletos o tipos internos. Para mitigarlo en producción, se deshabilita la regla de introspección en el servidor y también se desactivan sugerencias de nombres en errores (`Did you mean ...?`) que permiten reconstruir el esquema por fuerza bruta (como con Clairvoyance).",
+    "practicas": [
+      "Deshabilitar la introspección en entornos de producción para APIs privadas o de negocio, dejándola activa solo en desarrollo o tras autenticación de desarrollador.",
+      "Desactivar también las sugerencias de errores de campo en producción para impedir la enumeración del esquema sin introspección.",
+      "Recordar que desactivar la introspección es defensa en profundidad (reduce reconocimiento), nunca un sustituto de la autorización.",
+      "Error típico: bloquear solo la palabra `__schema` en el WAF pero permitir `__type` o variaciones con espacios/comentarios."
+    ],
+    "ejemplo": "# Deshabilitar introspección en producción (Apollo Server)\nconst server = new ApolloServer({\n  typeDefs, resolvers,\n  introspection: process.env.NODE_ENV !== 'production'\n});",
+    "entrevista": "Desactivar la introspección y las sugerencias de error en producción frena el mapeo automático del grafo por atacantes, aunque la seguridad real siempre depende de autorizar cada query y resolver."
+  },
+  "GraphQL security": {
+    "que": "Conjunto de controles específicos para proteger servidores GraphQL frente a riesgos propios de su modelo de consulta flexible por grafo en un único endpoint, como abusos de complejidad, exposición del esquema, autorización transversal y batching.",
+    "para": "Protege el rendimiento, la disponibilidad y la confidencialidad de APIs GraphQL, donde la libertad que tiene el cliente para definir la forma de la respuesta invalida las defensas clásicas basadas en rutas REST fijas.",
+    "como": "Actúa sobre el ciclo de vida de la petición GraphQL: en la fase de parseo y validación del AST se aplican listas de consultas persistidas (Persisted Queries), límites de profundidad, límites de alias, cálculo de coste máximo de la consulta y desactivación de introspección en producción. Durante la ejecución, los resolvers delegan la autorización por objeto y propiedad a la capa de dominio, imponen paginación máxima en listas y desactivan batching irrestricto y stack traces.",
+    "practicas": [
+      "Usar Persisted Queries (allowlist de hashes de consultas aprobadas) en APIs consumidas únicamente por clientes propios.",
+      "Imponer límites combinados de profundidad, número de aliases, batching y coste computacional antes de ejecutar resolvers.",
+      "Forzar paginación acotada (`first`/`limit`) en cualquier campo que devuelva colecciones para evitar extracciones masivas o OOM.",
+      "Error típico: confiar en que GraphQL previene inyecciones SQL por sí solo; los argumentos de resolvers siguen requiriendo validación y consultas parametrizadas."
+    ],
+    "ejemplo": "# Persisted Query: el cliente solo envía el hash autorizado\nPOST /graphql\n{\"extensions\":{\"persistedQuery\":{\"version\":1,\"sha256Hash\":\"ecf4edb4...\"}}}",
+    "entrevista": "Asegurar GraphQL exige controlar el AST antes de ejecutar (profundidad, complejidad, aliases o persisted queries) y aplicar autorización en la capa de dominio porque un único endpoint puede cruzar todo el grafo."
+  },
+  "HTTP method validation": {
+    "que": "Control de seguridad que restringe explícitamente los verbos HTTP aceptados por cada endpoint (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`), rechazando cualquier método no previsto en la especificación de la ruta.",
+    "para": "Previene el HTTP Verb Tampering (bypass de reglas de autorización o WAF que solo protegen ciertos métodos), evita operaciones modificadoras mediante `GET` (vulnerables a CSRF) y bloquea métodos innecesarios como `TRACE` o `TRACK`.",
+    "como": "El router del framework o el API Gateway compara el método de la petición entrante contra la lista blanca declarada por la ruta en el contrato OpenAPI. Si una ruta solo admite `POST`, cualquier petición `GET`, `PUT` o método arbitrario se rechaza con `405 Method Not Allowed` (incluyendo la cabecera `Allow`) antes de ejecutar filtros posteriores o lógica de negocio, asegurando además que los middlewares de autenticación cubran todos los métodos o se apliquen por defecto a cualquier verbo.",
+    "practicas": [
+      "Aplicar políticas de denegación por defecto: solo los métodos explícitamente definidos en el esquema llegan al backend.",
+      "Nunca usar `GET` para operaciones con efectos secundarios (cambios de estado, borrados, transferencias), respetando la semántica segura e idempotente de HTTP.",
+      "Deshabilitar cabeceras de sobreescritura de método (`X-HTTP-Method-Override`, `X-Method-Override`) si no son imprescindibles, o validarlas bajo las mismas reglas de autorización.",
+      "Error típico: configurar un filtro de autorización solo para `POST /admin/delete` mientras el controlador acepta también `GET` o `HEAD`."
+    ],
+    "ejemplo": "# NGINX / Gateway: restringir verbos permitidos en ruta\nlocation /api/v1/orders {\n    limit_except GET POST { deny all; }\n}",
+    "entrevista": "La validación estricta de métodos HTTP impide el verb tampering para saltar middlewares de seguridad y garantiza que las operaciones con cambio de estado no queden expuestas vía GET."
+  },
+  "Idempotency key": {
+    "que": "Identificador único generado por el cliente y enviado en una cabecera (habitualmente `Idempotency-Key` con un UUIDv4) para que el servidor garantice que reintentar la misma operación mutadora (`POST`, `PATCH`) produce un único efecto en el estado del sistema.",
+    "para": "Resuelve duplicaciones accidentales por reintentos de red y mitiga ataques de condición de carrera (race conditions) en operaciones críticas como pagos, creación de cupones o transferencias.",
+    "como": "Al recibir una petición con `Idempotency-Key`, el servidor adquiere un bloqueo atómico o registra la clave en un almacén rápido (como Redis o una tabla con restricción única) asociada al usuario/tenant y a un hash del payload recibido. Si la clave no existe, ejecuta la operación, guarda el resultado y devuelve la respuesta. Si la clave ya existe con el mismo hash de payload, devuelve exactamente la respuesta almacenada sin re-ejecutar la acción; si el payload difiere, rechaza con `422` o `409 Conflict`.",
+    "practicas": [
+      "Vincular la `Idempotency-Key` al identificador del usuario o tenant autenticado para evitar colisiones o filtración de resultados entre clientes.",
+      "Verificar el hash del payload asociado a la clave para impedir que un cliente reutilice una clave antigua con datos distintos.",
+      "Usar locks atómicos (`SET NX` o transacciones `SERIALIZABLE`) para evitar que dos peticiones concurrentes con la misma clave pasen antes de persistirse la primera.",
+      "Error típico: generar la clave en el servidor en lugar del cliente, lo que anula la protección frente a reintentos de red."
+    ],
+    "ejemplo": "POST /v1/charges HTTP/1.1\nAuthorization: Bearer ...\nIdempotency-Key: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d\nContent-Type: application/json\n{\"amount\": 5000, \"currency\": \"EUR\"}",
+    "entrevista": "Una Idempotency-Key ligada al usuario, al hash del payload y a un bloqueo atómico evita cargos duplicados por reintentos y neutraliza condiciones de carrera en endpoints críticos."
+  },
+  "Inventario de APIs": {
+    "que": "Registro vivo, centralizado y auditable de todas las APIs, versiones, endpoints, entornos (producción, staging, interno/externo), propietarios, clasificaciones de datos y controles de seguridad de una organización. Corresponde directamente a mitigar API9 (Improper Inventory Management) del OWASP API Security Top 10.",
+    "para": "Elimina los puntos ciegos operativos y de seguridad: no se puede proteger, probar ni retirar lo que no se sabe que existe. Sirve para detectar Shadow APIs, Zombie APIs, endpoints sin autenticación o versiones olvidadas con datos sensibles.",
+    "como": "Combina descubrimiento pasivo y activo: por un lado ingiere especificaciones OpenAPI/GraphQL/Protobuf desde los repositorios CI/CD (inventario declarado); por otro, analiza logs de API Gateways, balanceadores, proxies, mallas de servicio (eBPF/Istio) y escaneos externos de superficie de ataque (inventario observado). La correlación automática entre lo declarado y el tráfico real alerta cuando aparece un endpoint no registrado o cuando una versión antigua sigue recibiendo peticiones.",
+    "practicas": [
+      "Automatizar el inventario combinando contratos en Git con telemetría real del tráfico (API discovery) para no depender de hojas de cálculo manuales.",
+      "Asignar un equipo propietario (owner), nivel de sensibilidad de datos y fecha de fin de vida (EOL) a cada API y versión.",
+      "Integrar el inventario con el pipeline DAST para que todo endpoint descubierto entre automáticamente en pruebas de seguridad.",
+      "Error típico: asumir que solo existen las APIs publicadas en el portal de desarrolladores o detrás del gateway principal."
+    ],
+    "ejemplo": "# Regla de gobierno en CI/CD: fallar si el endpoint no tiene owner ni spec registrado\nopenapi-lint --require-x-owner --require-x-data-classification api-spec.yaml",
+    "entrevista": "El inventario de APIs resuelve API9 cruzando especificaciones declaradas en CI/CD con tráfico observado en producción para descubrir Shadow y Zombie APIs antes que los atacantes."
+  },
+  "Lack of resources & rate limiting": {
+    "que": "Vulnerabilidad (API4 en OWASP API Security Top 10, denominada *Unrestricted Resource Consumption* en la edición 2023) en la que una API no impone límites adecuados sobre frecuencia de llamadas, tamaño de payload, paginación o uso de cómputo/almacenamiento, permitiendo denegación de servicio o abuso económico.",
+    "para": "Protege la disponibilidad del sistema, controla los costes de infraestructura y servicios de terceros (SMS, emails, LLMs, pasarelas) y frena ataques automatizados como fuerza bruta, scraping y credential stuffing.",
+    "como": "Sin restricciones por cliente, usuario o IP, un atacante envía peticiones de alto coste: solicita `page_size=1000000`, sube archivos gigantes, dispara flujos que invocan APIs externas de pago (SMS pumping) o abusa de regex costosas (ReDoS). La mitigación consiste en imponer límites en múltiples capas: cuotas y rate limiting en el API Gateway, tamaños máximos de cuerpo y archivos en el servidor HTTP, timeouts estrictos, paginación acotada en el código y alertas de consumo anómalo.",
+    "practicas": [
+      "Limitar no solo peticiones por segundo, sino también tamaño máximo de payload, paginación máxima, complejidad de consultas y costes de operaciones caras.",
+      "Aplicar límites diferenciados por identidad autenticada (`user_id`/`api_key`), no únicamente por IP (fácilmente evadible con proxies o problemática tras NAT).",
+      "Proteger flujos que consumen recursos externos de pago (envío de OTP/SMS, generación de PDF, inferencia IA) con CAPTCHA, cuotas estrictas y verificación previa.",
+      "Error típico: proteger `/login` con rate limiting por IP pero olvidar aplicar límites en `/batch`, `/graphql` o `/forgot-password`."
+    ],
+    "ejemplo": "# Límite estricto de paginación y tamaño de body en aplicación\nMAX_PAGE_SIZE = 100\npage_size = min(int(request.args.get(\"limit\", 20)), MAX_PAGE_SIZE)",
+    "entrevista": "Lack of Resources & Rate Limiting abarca tanto DoS como abuso financiero (denial of wallet), y exige acotar frecuencia, tamaños de payload, paginación y coste de operaciones sensibles."
+  },
+  "Logging de API": {
+    "que": "Registro estructurado e inmutable de eventos relevantes de seguridad y operación en el ciclo de vida de las peticiones y respuestas de una API (autenticaciones, denegaciones de autorización, errores de esquema, activación de rate limits y acciones sensibles).",
+    "para": "Permite investigar incidentes (forense), reconstruir cadenas de ataque (quién accedió a qué recurso y cuándo), cumplir requisitos normativos y alimentar sistemas SIEM/SOAR para detectar abuso automatizado.",
+    "como": "Tanto el API Gateway como el backend generan logs en formato JSON estructurado incluyendo un `correlation_id` / `trace_id` compartido, timestamp UTC, IP origen, identidad autenticada (`sub`, `client_id`), método, ruta normalizada, código HTTP de estado y latencia. Antes de persistir, un filtro de sanitización enmascara o excluye secretos (`Authorization`, `api_key`, contraseñas, PII y cuerpos completos sensibles) y envía los eventos de forma asíncrona a un repositorio centralizado de solo anexión.",
+    "practicas": [
+      "Nunca registrar cabeceras `Authorization`, cookies de sesión, secretos ni datos personales completos en los logs.",
+      "Propagar un `X-Request-ID` / `traceparent` único desde el gateway hasta los microservicios para correlacionar fallos de extremo a extremo.",
+      "Registrar explícitamente eventos de seguridad clave: `401`, `403`, `429`, fallos de validación de firma y cambios de permisos.",
+      "Error típico: loguear el cuerpo crudo completo de cada `POST` para depurar y terminar almacenando tarjetas o contraseñas en texto claro."
+    ],
+    "ejemplo": "{\"ts\":\"2026-11-25T05:10:12Z\",\"trace_id\":\"4bf92f35\",\"actor\":\"usr_812\",\"method\":\"GET\",\"route\":\"/v1/invoices/{id}\",\"status\":403,\"reason\":\"BOLA_DENIED\"}",
+    "entrevista": "Un buen logging de API registra eventos estructurados con correlation ID e identidad del actor para reconstruir incidentes, aplicando scrubbing estricto para no filtrar tokens ni PII en los logs."
+  },
+  "Monitorización de API": {
+    "que": "Observación continua en tiempo real del tráfico, métricas de rendimiento, tasas de error y patrones de comportamiento de las APIs para detectar anomalías, abusos de lógica de negocio, degradación de disponibilidad y brechas activas.",
+    "para": "Reduce drásticamente el tiempo medio de detección (MTTD) y respuesta (MTTR) ante ataques que no disparan errores 500, como scraping masivo, enumeración de BOLA con códigos 200/403 o picos anómalos de consumo.",
+    "como": "Recolecta métricas (Golden Signals: latencia, tráfico, errores, saturación), trazas distribuidas y telemetría de seguridad desde gateways, sidecars y aplicaciones hacia plataformas como Prometheus, OpenTelemetry y SIEMs. Motores de detección calculan líneas base por endpoint e identidad y disparan alertas cuando detectan anomalías: ráfagas de `403`/`404` secuenciales (enumeración BOLA), picos de `401` (credential stuffing), aumento súbito de datos egresados por usuario o tráfico hacia rutas marcadas como deprecated.",
+    "practicas": [
+      "Definir alertas específicas sobre patrones de abuso (ej. un mismo usuario recibiendo decenas de 403/404 en distintos IDs en pocos minutos).",
+      "Monitorizar el volumen de datos salientes (bytes por usuario/minuto) para detectar exfiltración lenta mediante scraping legítimo.",
+      "Vigilar endpoints en desuso para confirmar que el tráfico cae a cero antes de retirarlos (detección de Zombie APIs).",
+      "Comparación: Logging vs. Monitorización; el logging guarda el detalle forense histórico, mientras que la monitorización agrega señales en tiempo real para alertar y actuar."
+    ],
+    "ejemplo": "# Alerta conceptual PromQL: posible enumeración BOLA / acceso no autorizado\nsum by (actor_id) (rate(api_http_requests_total{status=~\"403|404\"}[5m])) > 20",
+    "entrevista": "La monitorización de APIs convierte la telemetría en detección temprana de abuso: vigilar ráfagas de 403/404, volumen de datos egresados y tráfico en rutas obsoletas permite frenar ataques en curso."
+  },
+  "OAuth scopes": {
+    "que": "Cadenas de permisos granulares en OAuth 2.0 / 2.1 que definen los límites de acceso delegados por un propietario de recursos a una aplicación cliente dentro de un Access Token.",
+    "para": "Implementan el principio de mínimo privilegio en integraciones y aplicaciones cliente, evitando que un token comprometido o una app de terceros obtenga acceso total a toda la API cuando solo necesita leer un recurso concreto.",
+    "como": "Durante el flujo de autorización, el cliente solicita una lista de scopes (por ejemplo `orders:read profile:read`). El servidor de autorización valida que el cliente esté autorizado a pedirlos y que el usuario consienta (o aplica políticas para `client_credentials`), emitiendo un Access Token con el claim `scope`. Cada servidor de recursos (API) valida la firma/introspección del token y comprueba que el endpoint invocado cuente con el scope requerido antes de ejecutar la autorización por recurso.",
+    "practicas": [
+      "Diseñar scopes granulares por recurso y acción (`invoices:read`, `invoices:write`) en lugar de un scope comodín `api:all`.",
+      "Recordar que un scope limita lo que la aplicación cliente puede hacer en nombre del usuario, pero NO sustituye a la autorización por recurso ni al control de roles del usuario.",
+      "En el servidor de autorización, restringir qué scopes puede solicitar cada `client_id` para impedir escalada de privilegios vía parámetros de autorización.",
+      "Error típico: comprobar solo la presencia del scope `orders:read` sin verificar si el usuario del token es dueño del `order_id` consultado."
+    ],
+    "ejemplo": "# Validación de scope en backend tras verificar firma del JWT\nREQUIRED_SCOPE = \"invoices:read\"\nif REQUIRED_SCOPE not in token_claims.get(\"scope\", \"\").split():\n    raise HTTPException(status_code=403, detail=\"insufficient_scope\")",
+    "entrevista": "Los OAuth scopes acotan el permiso delegado a la aplicación cliente bajo mínimo privilegio, pero no reemplazan la verificación de permisos del usuario ni la autorización por objeto en el backend."
+  },
+  "OWASP API Security Top 10": {
+    "que": "Estándar de concienciación y referencia mantenido por OWASP que clasifica los diez riesgos de seguridad más críticos y específicos en APIs modernas (edición vigente 2023), complementando al OWASP Top 10 general de aplicaciones web.",
+    "para": "Proporciona un vocabulario común y una hoja de ruta priorizada para arquitectos, desarrolladores, pentesters y equipos DevSecOps al diseñar controles, revisar código, ejecutar pruebas de seguridad y evaluar riesgos en APIs.",
+    "como": "Agrupa las vulnerabilidades reales observadas en APIs por su causa raíz e impacto: API1 Broken Object Level Authorization (BOLA), API2 Broken Authentication, API3 Broken Object Property Level Authorization (BOPLA, que unifica Excessive Data Exposure y Mass Assignment), API4 Unrestricted Resource Consumption, API5 Broken Function Level Authorization (BFLA), API6 Unrestricted Access to Sensitive Business Flows, API7 Server Side Request Forgery (SSRF), API8 Security Misconfiguration, API9 Improper Inventory Management y API10 Unsafe Consumption of APIs.",
+    "practicas": [
+      "Usar el Top 10 2023 como checklist de modelado de amenazas y criterios de aceptación en revisiones de arquitectura API.",
+      "Prestar especial atención a API1 (BOLA), API3 (BOPLA) y API5 (BFLA), ya que los fallos de autorización dominan la lista.",
+      "No olvidar API10 (Unsafe Consumption of APIs): validar y sanitizar también las respuestas recibidas de APIs de terceros en las que confía tu backend.",
+      "Comparación: OWASP Top 10 Web vs. API Top 10; el de APIs prioriza autorización por objeto/propiedad, inventario, abuso de flujos y consumo de recursos sobre XSS/inyecciones clásicas."
+    ],
+    "ejemplo": "# Mapeo rápido OWASP API Top 10 (2023) -> Control principal\nAPI1 BOLA   -> Verificación owner/tenant por ID\nAPI3 BOPLA  -> DTOs cerrados + proyección de salida\nAPI4 Rate   -> Cuotas, paginación y límites de payload\nAPI9 Inv.   -> Descubrimiento continuo y retiro de Zombie APIs",
+    "entrevista": "El OWASP API Security Top 10 2023 prioriza los riesgos propios de APIs —sobre todo autorización por objeto, propiedad y función, consumo de recursos, inventario y consumo inseguro de terceros— más allá de un WAF."
+  },
+  "OpenAPI - Swagger": {
+    "que": "OpenAPI Specification (OAS) es el estándar abierto (YAML/JSON) para describir contratos de APIs REST de forma agnóstica al lenguaje, mientras que Swagger es el ecosistema de herramientas (Swagger UI, Editor, Codegen) originalmente ligado a la especificación.",
+    "para": "En AppSec sirve como fuente única de verdad para validar entradas en API Gateways, automatizar auditorías estáticas de contratos (linting de seguridad), alimentar herramientas DAST/fuzzing y generar clientes/servidores tipados sin ambigüedades.",
+    "como": "Un documento OpenAPI 3.x declara servidores, rutas, métodos, parámetros, esquemas JSON Schema, respuestas y `securitySchemes` (Bearer JWT, OAuth2, mTLS, API Key). En tiempo de build, linters como Spectral o Redocly verifican que todas las rutas tengan seguridad definida, esquemas cerrados y límites de longitud. En tiempo de ejecución, un gateway o middleware carga el archivo `openapi.yaml` para validar automáticamente cabeceras, tipos y cuerpos contra el contrato.",
+    "practicas": [
+      "Usar OpenAPI 3.0/3.1 con `additionalProperties: false` y límites (`maxLength`, `minimum`, `pattern`) en todos los esquemas de entrada.",
+      "Integrar linters de seguridad sobre el archivo OpenAPI en CI/CD para bloquear endpoints sin `security` o esquemas ambiguos antes del despliegue.",
+      "Desactivar o proteger con autenticación Swagger UI en producción cuando documente APIs privadas o internas.",
+      "Error típico: mantener el Swagger desactualizado manualmente respecto al código, creando una falsa sensación de seguridad y dejando Shadow Endpoints fuera del gateway."
+    ],
+    "ejemplo": "openapi: 3.1.0\ncomponents:\n  securitySchemes:\n    BearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }\nsecurity:\n  - BearerAuth: []",
+    "entrevista": "OpenAPI transforma la documentación en un contrato ejecutable de seguridad: permite validar esquemas en el gateway, pasar linters de seguridad en CI/CD y guiar pruebas DAST sobre todos los endpoints."
+  },
+  "Pruebas de seguridad de API": {
+    "que": "Conjunto de técnicas de verificación automatizadas y manuales (SAST, DAST dirigido por contrato, fuzzing, IAST y pentesting) orientadas a descubrir fallos de autorización, validación, configuración y lógica de negocio en APIs.",
+    "para": "Detecta vulnerabilidades antes de que lleguen a producción o persistan en entornos activos, cubriendo específicamente clases de fallos que las herramientas genéricas web pasan por alto, como BOLA, BFLA, Mass Assignment o ausencia de rate limiting.",
+    "como": "En CI/CD, SAST analiza el código de resolvers y controladores, mientras que linters revisan el esquema OpenAPI/GraphQL. En entornos de integración o staging, escáneres DAST y fuzzers orientados a APIs ingieren el esquema OpenAPI o colecciones Postman/HAR para generar peticiones válidas y mutadas (fuzzing de tipos, límites, payloads maliciosos). Para probar autorización (BOLA/BFLA), los tests ejecutan flujos autenticados intercambiando tokens entre dos usuarios de distinto rol o tenant y verificando respuestas `403`/`404`.",
+    "practicas": [
+      "Escribir pruebas automatizadas de autorización multi-usuario (User A intentando acceder o modificar objetos de User B) dentro de la suite de integración.",
+      "Alimentar los escáneres DAST con el contrato OpenAPI o tráfico real (HAR) y credenciales válidas; un DAST sin autenticación ni esquema apenas prueba APIs.",
+      "Incluir pruebas negativas: campos extra (Mass Assignment), `Content-Type` incorrecto, métodos HTTP no permitidos y lotes sobredimensionados.",
+      "Error típico: confiar únicamente en un escáner web clásico (pensado para HTML) que no sabe construir payloads JSON válidos ni mantener tokens OAuth."
+    ],
+    "ejemplo": "# Test automatizado anti-BOLA en pytest\nres = client.get(f\"/api/orders/{user_b_order_id}\", headers=auth_headers(user_a))\nassert res.status_code in (403, 404)",
+    "entrevista": "Probar seguridad en APIs requiere DAST guiado por contrato OpenAPI con autenticación real y, sobre todo, tests funcionales multi-tenant que intenten cruzar identidades para detectar BOLA y BFLA en CI."
+  },
+  "Quota": {
+    "que": "Límite acumulado de consumo de API asignado a un cliente, clave de API, usuario o tenant durante una ventana temporal amplia (por hora, día o mes), habitualmente vinculado a planes de servicio, licencias o presupuestos.",
+    "para": "Previene la explotación prolongada, el scraping masivo a baja velocidad (low-and-slow) que esquiva el rate limiting por segundo, y el agotamiento financiero o de capacidad compartida por un único consumidor.",
+    "como": "Un API Gateway o servicio de control de acceso asocia un contador persistente (por ejemplo en Redis o base de datos distribuida) al identificador de consumidor (`api_key`, `client_id` o `tenant_id`). Cada petición válida —o unidades de coste calculadas según la operación— incrementa el contador de la ventana actual (fija o deslizante). Al alcanzar el máximo asignado, el sistema rechaza nuevas llamadas con HTTP `429 Too Many Requests` y cabeceras informativas de reinicio hasta que comience el siguiente periodo.",
+    "practicas": [
+      "Combinar Quota (límite a largo plazo, ej. 10.000/día) con Rate Limiting / Throttling (límite a corto plazo, ej. 20/seg) para frenar tanto picos como extracción sostenida.",
+      "Contabilizar la cuota por identidad verificada o tenant, nunca solo por dirección IP.",
+      "Ponderar operaciones costosas (búsquedas complejas, exportaciones, llamadas a IA) consumiendo múltiples unidades de cuota por llamada.",
+      "Comparación: Quota vs. Rate Limit; el rate limit protege la estabilidad instantánea del servidor, mientras que la cuota gobierna el volumen total permitido en un periodo."
+    ],
+    "ejemplo": "# Respuesta estándar de gateway al agotar cuota diaria\nHTTP/1.1 429 Too Many Requests\nX-RateLimit-Limit: 10000\nX-RateLimit-Remaining: 0\nRetry-After: 3600",
+    "entrevista": "Mientras el rate limiting protege frente a ráfagas por segundo, la quota acota el consumo acumulado diario o mensual por tenant para frenar scraping lento y proteger costes de negocio."
+  },
+  "REST security": {
+    "que": "Aplicación de controles de seguridad específicos para APIs basadas en arquitectura REST sobre HTTP/HTTPS, enfocada en la protección de recursos identificados por URI, métodos HTTP semánticos, representación JSON/XML y estado sin sesión en el servidor.",
+    "para": "Protege APIs RESTful frente a accesos no autorizados (BOLA/BFLA), manipulación de parámetros y cuerpos JSON, fugas de datos, CSRF/CORS mal configurados y ataques de transporte.",
+    "como": "Exige TLS estricto (HTTPS) en todo el tráfico y autenticación stateless verificada en cada petición (tokens JWT firmados o tokens opacos vía introspección, o mTLS en B2B). Cada ruta valida el método HTTP permitido, el `Content-Type`, los parámetros de ruta/query y el cuerpo JSON contra un esquema OpenAPI cerrado. El backend ejecuta autorización por función y por recurso usando DTOs de entrada/salida, configura CORS con orígenes explícitos (sin `*` con credenciales) y devuelve errores normalizados.",
+    "practicas": [
+      "Validar cada ID en la URI (`/users/{id}/orders/{orderId}`) contra la identidad del token en cada salto de la ruta.",
+      "Mantener una política CORS restrictiva con lista blanca de orígenes exactos cuando la API sea consumida desde navegadores.",
+      "Usar `Cache-Control: no-store` en respuestas con datos sensibles o personales para evitar caché compartida en proxies o navegadores.",
+      "Error típico: pasar tokens JWT o API keys en la query string (`/api/data?token=...`), exponiéndolos en logs de acceso, proxies e historial."
+    ],
+    "ejemplo": "HTTP/1.1 200 OK\nContent-Type: application/json; charset=utf-8\nCache-Control: no-store\nX-Content-Type-Options: nosniff\nAccess-Control-Allow-Origin: https://app.ejemplo.com",
+    "entrevista": "La seguridad REST combina transporte TLS y autenticación stateless por petición con validación de verbos, Content-Type, esquemas JSON cerrados, CORS estricto y autorización por recurso en cada URI."
+  },
+  "Replay protection": {
+    "que": "Mecanismo criptográfico y de estado que impide que un atacante capture una petición o mensaje legítimo válido (por ejemplo un webhook firmado, un token o una orden firmada) y lo reenvíe posteriormente para repetir su efecto.",
+    "para": "Protege canales asíncronos (webhooks), protocolos de autenticación (OAuth/OIDC, SAML, Kerberos) y APIs financieras firmadas donde la validez de la firma por sí sola no impide que un mensaje antiguo se ejecute de nuevo.",
+    "como": "Combina dos elementos ligados criptográficamente al mensaje: una marca temporal (`timestamp`) y un identificador único de un solo uso (`nonce` o `jti`). Al recibir la petición, el servidor verifica primero que la firma o MAC cubra tanto el payload como el timestamp/nonce, comprueba que el timestamp caiga dentro de una ventana corta (p. ej. ±5 minutos respecto al reloj UTC sincronizado por NTP) y consulta un almacén temporal (Redis con TTL igual a la ventana) para confirmar que ese nonce no ha sido procesado antes.",
+    "practicas": [
+      "Incluir el timestamp y el nonce dentro del cálculo de la firma HMAC/digital; si viajan fuera de la firma, un atacante puede modificarlos.",
+      "Fijar una ventana temporal estrecha (ej. 300 segundos) y guardar los nonces vistos durante al menos ese mismo TTL.",
+      "En JWT, exigir `exp` corto y validar el claim `jti` en caché distribuida para operaciones de un solo uso o tokens críticos.",
+      "Error típico: validar solo el timestamp sin almacenar nonces, lo que permite replays ilimitados dentro de la ventana de 5 minutos."
+    ],
+    "ejemplo": "# Verificación de ventana temporal + nonce único (TTL 300s)\nif abs(now_utc() - msg_ts) > 300:\n    abort(401, \"Timestamp fuera de ventana\")\nif not redis.set(f\"nonce:{msg_nonce}\", \"1\", nx=True, ex=300):\n    abort(409, \"Replay detectado\")",
+    "entrevista": "La protección contra replay exige firmar un timestamp dentro de una ventana corta y registrar el nonce o jti en caché durante esa ventana para garantizar que cada mensaje autorizado se acepte una sola vez."
+  },
+  "SOAP security": {
+    "que": "Conjunto de estándares y controles (principalmente WS-Security, XML Signature, XML Encryption y validación estricta de XML/XSD) destinados a proteger servicios web basados en sobres XML sobre HTTP u otros transportes.",
+    "para": "Asegura integraciones empresariales, bancarias y gubernamentales heredadas o reguladas que requieren seguridad a nivel de mensaje (extremo a extremo a través de intermediarios) y defensa contra ataques específicos de parsers XML.",
+    "como": "Además de TLS en el transporte, WS-Security inserta una cabecera `<wsse:Security>` dentro del `<soap:Header>` que puede transportar tokens (UsernameToken, SAML, X.509), sellos temporales (`<wsu:Timestamp>`) y firmas digitales (`XML Signature`) o cifrado parcial (`XML Encryption`) sobre elementos concretos del `<soap:Body>`. Simultáneamente, el parser XML debe desactivar DTDs y entidades externas para bloquear XXE y validar la estructura del sobre contra esquemas XSD estrictos.",
+    "practicas": [
+      "Deshabilitar completamente el procesamiento de DOCTYPE, DTD y entidades externas en el parser XML para prevenir XXE y XML Bombs (Billion Laughs).",
+      "Validar el payload contra esquemas XSD estrictos (tipos, longitudes, `maxOccurs`) antes de invocar lógica de negocio.",
+      "Proteger frente a XML Signature Wrapping (XSW) asegurando que la aplicación procese únicamente el nodo exacto referenciado y verificado por la firma.",
+      "Error típico: confiar en que HTTPS sustituye a WS-Security cuando hay proxies o ESBs intermedios que terminan TLS."
+    ],
+    "ejemplo": "<!-- Configuración segura obligatoria del parser XML en Java -->\ndbf.setFeature(\"http://apache.org/xml/features/disallow-doctype-decl\", true);\ndbf.setFeature(\"http://xml.org/sax/features/external-general-entities\", false);",
+    "entrevista": "La seguridad en SOAP combina WS-Security a nivel de mensaje con parsers XML endurecidos sin DTD ni entidades externas, validación XSD estricta y prevención de XML Signature Wrapping."
+  },
+  "Shadow API": {
+    "que": "API o endpoint activo en producción que no está documentado, registrado en el inventario oficial ni supervisado por los equipos de seguridad o gobierno de APIs (a menudo publicado por un equipo ágil directamente, dejado desde pruebas o expuesto por un microservicio nuevo).",
+    "para": "Identificar y eliminar Shadow APIs es crítico porque operan fuera del API Gateway, carecen de rate limiting, logging centralizado o pruebas DAST, y representan un vector directo de brechas de datos según OWASP API9.",
+    "como": "Surgen cuando un desarrollador despliega un endpoint de depuración, un microservicio se conecta directo a un Ingress/Load Balancer saltándose el API Gateway o se añade una ruta en código sin actualizar OpenAPI. Al quedar fuera del catálogo oficial, ningún pipeline de seguridad la escanea ni ningún WAF tiene reglas para ella. Se detectan correlacionando tráfico de red real (eBPF, logs de balanceadores, mallas de servicio) y escaneos externos de subdominios/rutas contra el inventario aprobado.",
+    "practicas": [
+      "Enrutar obligatoriamente todo el tráfico norte-sur a través del API Gateway y bloquear en firewall/Ingress cualquier ruta no registrada en el spec.",
+      "Ejecutar descubrimiento continuo de tráfico (API Discovery) sobre logs de proxy/CDN y compararlo automáticamente con OpenAPI.",
+      "Integrar checks en CI/CD que detecten nuevos endpoints o cambios en rutas sin actualización del contrato y aprobación de AppSec.",
+      "Comparación: Shadow API vs. Zombie API; la Shadow API nunca estuvo inventariada ni aprobada, mientras que la Zombie API sí existió oficialmente pero quedó obsoleta sin retirarse."
+    ],
+    "ejemplo": "# Detección por comparación: rutas observadas en Ingress vs. OpenAPI oficial\ncomm -23 <(sort observed_routes.txt) <(sort openapi_routes.txt)",
+    "entrevista": "Una Shadow API es un endpoint en producción fuera del inventario y controles del gateway; se combate obligando al registro por contrato en CI/CD y comparando tráfico real contra el catálogo."
+  },
+  "Throttling": {
+    "que": "Técnica de control de tráfico que regula el ritmo al que un cliente puede consumir una API, suavizando ráfagas mediante encolado, retardo controlado o rechazo temporal cuando supera la tasa permitida.",
+    "para": "Estabiliza el rendimiento del backend bajo picos de carga, evita fallos en cascada en bases de datos y protege la disponibilidad frente a abusos automatizados o clientes mal configurados en bucles de reintento.",
+    "como": "Implementado normalmente en el API Gateway o proxy mediante algoritmos como Token Bucket o Leaky Bucket. En Token Bucket, cada consumidor tiene un cubo con capacidad de ráfaga que se rellena a tasa constante; cada petición consume tokens y puede absorber pequeñas ráfagas mientras haya tokens. En Leaky Bucket, las peticiones entran en una cola de salida a ritmo constante (suavizando el tráfico hacia el backend). Al desbordarse el límite, el servidor devuelve `429 Too Many Requests` con cabecera `Retry-After`.",
+    "practicas": [
+      "Usar cabeceras estándar `Retry-After` y backoff exponencial con jitter en los clientes oficiales para evitar tormentas de reintentos.",
+      "Aplicar reglas de throttling más estrictas en endpoints computacionalmente caros (búsquedas, login, generación de reportes).",
+      "Implementar almacenamiento compartido (como Redis con scripts Lua atómicos) cuando existan múltiples réplicas del API Gateway.",
+      "Comparación: Rate Limiting vs. Throttling; a menudo se usan juntos, pero el rate limiting suele fijar el corte duro (reject) y el throttling regula o suaviza la velocidad de entrega hacia el backend."
+    ],
+    "ejemplo": "# NGINX limit_req con burst y nodelay (Leaky Bucket)\nlimit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;\nlocation /api/ {\n    limit_req zone=api_limit burst=20 nodelay;\n    limit_req_status 429;\n}",
+    "entrevista": "El throttling regula la velocidad de flujo hacia el backend mediante algoritmos como Token o Leaky Bucket, absorbiendo ráfagas legítimas y respondiendo 429 con Retry-After antes de saturar el servicio."
+  }
+}

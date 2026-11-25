@@ -1,0 +1,275 @@
+{
+  "1Password - Bitwarden": {
+    "que": "Gestores de contraseñas, claves SSH, passkeys y secretos de equipo basados en arquitectura de conocimiento cero (zero-knowledge). 1Password es una solución propietaria orientada a empresas con automatización de secretos, mientras Bitwarden es de código abierto (AGPLv3) y permite autoalojamiento completo.",
+    "para": "Resuelven la reutilización de credenciales, el intercambio inseguro de contraseñas por chat y la exposición de secretos en archivos `.env` planos. Se usan para proteger accesos personales o corporativos y para inyectar credenciales en tiempo de ejecución en entornos locales y pipelines CI/CD.",
+    "como": "La contraseña maestra nunca viaja al servidor; el cliente deriva la clave de cifrado localmente mediante funciones KDF resistentes a fuerza bruta (Argon2id o PBKDF2-SHA256). 1Password combina la contraseña maestra con una Secret Key local de 128 bits y autentica mediante el protocolo SRP (Secure Remote Password), cifrando los datos con AES-256-GCM. Bitwarden deriva la clave maestra con Argon2id o PBKDF2 y cifra cada registro con AES-256-CBC más autenticación HMAC-SHA256. Para automatización, sus CLI (`op`, `bw`) y servicios de secretos obtienen tokens efímeros e inyectan variables directamente en la memoria del proceso hijo.",
+    "practicas": [
+      "Configura Argon2id como función de derivación de clave (KDF) en lugar de PBKDF2 cuando esté disponible para encarecer ataques por GPU.",
+      "Usa `op run` o Bitwarden Secrets Manager (`bws`) para inyectar secretos en memoria en vez de escribir archivos `.env` en disco.",
+      "1Password vs Bitwarden: 1Password añade una Secret Key local que protege bóvedas filtradas incluso ante contraseñas débiles; Bitwarden ofrece auditoría abierta y self-hosting.",
+      "Usa bóvedas compartidas con control de acceso por roles (RBAC) y rotación periódica en lugar de compartir cuentas raíz personales."
+    ],
+    "ejemplo": "# Inyectar secretos en memoria sin guardar valores reales en disco\n# archivo .env.tpl: DB_PASS=op://Infra/ProdDB/password\nop run --env-file=.env.tpl -- npm start\n\n# Alternativa con Bitwarden CLI\nexport BW_SESSION=$(bw unlock --raw)\nbw get password \"ProdDB\"",
+    "entrevista": "En ingeniería combinamos una bóveda zero-knowledge como 1Password o Bitwarden con inyección en memoria vía CLI/SDK para eliminar secretos en texto plano del repositorio y de los logs de CI."
+  },
+  "ADR": {
+    "que": "Un Architecture Decision Record (ADR) es un documento breve y versionado que captura una decisión arquitectónica relevante junto con su contexto, las alternativas evaluadas y sus consecuencias. Se redacta normalmente en Markdown y vive en el mismo repositorio que el código fuente.",
+    "para": "Resuelve la pérdida de memoria institucional cuando el equipo crece o cambia, evitando repetir debates ya cerrados sin entender las restricciones originales. Se usa ante decisiones estructurales con alto costo de reversión, como elegir base de datos, patrón de mensajería, estrategia de autenticación o partición de servicios.",
+    "como": "Cada ADR sigue una plantilla estructurada (estilo Michael Nygard o MADR) con identificador secuencial, fecha, estado (`Proposed`, `Accepted`, `Deprecated`, `Superseded`), contexto del problema, decisión y consecuencias. Se propone mediante Pull Request en rutas como `docs/adr/0004-usar-postgresql.md` para someterlo a revisión técnica por pares igual que el código. Una vez aceptado, el ADR es inmutable: si el equipo cambia de rumbo en el futuro, no se borra ni reescribe el documento anterior, sino que se crea un nuevo ADR que lo marca como `Superseded by ADR-XXXX`. Herramientas como `adr-tools` o Log4brains automatizan la numeración, el grafo de reemplazos y la publicación estática.",
+    "practicas": [
+      "Mantén los ADR inmutables tras aceptarse; crea un nuevo ADR para reemplazar una decisión obsoleta y preservar la trazabilidad histórica.",
+      "Documenta explícitamente las alternativas descartadas y los trade-offs asumidos (costo, latencia, complejidad operativa), no solo la opción elegida.",
+      "ADR vs RFC: un RFC abre una discusión exploratoria amplia antes de decidir; un ADR registra de forma concisa el veredicto final ya acordado.",
+      "Reserva los ADR para decisiones de arquitectura difíciles de revertir; no los uses para reglas menores de estilo o librerías triviales."
+    ],
+    "ejemplo": "# 0007. Usar Redis Streams para cola de eventos internos\nFecha: 2026-03-10 | Estado: Accepted\n## Contexto\nDesacoplar envío de correos sin operar un clúster Kafka dedicado.\n## Decisión\nUsar Redis Streams con consumer groups sobre la instancia Redis existente.\n## Consecuencias\n(+) Cero infraestructura nueva. (-) Retención acotada por RAM disponible.",
+    "entrevista": "Documentamos las decisiones arquitectónicas críticas en ADRs inmutables dentro del repositorio para que cualquier miembro futuro entienda el contexto y los trade-offs detrás del diseño actual."
+  },
+  "Agile - Scrum - Kanban": {
+    "que": "Agile es una filosofía de desarrollo iterativo centrada en entrega continua de valor y adaptación al cambio; Scrum y Kanban son sus dos marcos operativos principales. Scrum organiza el trabajo en ciclos de duración fija (Sprints) con roles y ceremonias definidas, mientras Kanban gestiona un flujo continuo restringido por límites de trabajo en progreso (WIP).",
+    "para": "Resuelven la rigidez del modelo en cascada (Waterfall) frente a requisitos cambiantes e incertidumbre técnica. Scrum se usa cuando conviene establecer cadencia predecible y objetivos acotados por iteración; Kanban se prefiere en equipos de soporte, plataforma, SRE o flujos donde las prioridades cambian continuamente.",
+    "como": "En Scrum, el Product Owner prioriza el Product Backlog, el equipo compromete un subconjunto en el Sprint Planning para un Sprint de 1 a 4 semanas, sincroniza bloqueos en el Daily Standup y valida el incremento en la Sprint Review antes de ajustar el proceso en la Retrospectiva. En Kanban, las tarjetas avanzan por columnas que reflejan etapas reales (To Do, In Progress, Review, Done), imponiendo un límite máximo de WIP por columna para evitar multitarea y detectar cuellos de botella. Matemáticamente, la Ley de Little ($L = \\lambda \\cdot W$) demuestra que reducir el trabajo en curso ($L$) disminuye el Cycle Time ($W$) manteniendo la tasa de entrega ($\\lambda$). Scrum monitorea velocidad y burndown charts; Kanban optimiza Lead Time, Cycle Time y Throughput mediante Cumulative Flow Diagrams (CFD).",
+    "practicas": [
+      "Respeta los límites de WIP en Kanban: cuando una columna se satura, el equipo colabora para desbloquearla antes de iniciar nuevas tareas.",
+      "Scrum vs Kanban: Scrum protege el alcance del sprint y reinicia compromisos cada iteración; Kanban permite repriorización continua pero exige disciplina estricta de flujo.",
+      "No compares story points entre equipos distintos ni los uses como métrica de rendimiento individual, ya que son estimaciones relativas internas.",
+      "Define criterios explícitos de Definition of Ready (DoR) y Definition of Done (DoD) para evitar tickets ambiguos o código sin pruebas en producción."
+    ],
+    "ejemplo": "Tablero Kanban con límites WIP:\n[Backlog] -> [En Curso (WIP:3)] -> [Code Review (WIP:2)] -> [Done]\n\nLey de Little aplicada al flujo:\nWIP promedio (L) = 6 tareas | Throughput (λ) = 2 tareas/día\nCycle Time promedio (W) = 6 / 2 = 3 días",
+    "entrevista": "Aplico Scrum cuando el producto necesita cadencia predecible por sprints y Kanban con límites estrictos de WIP cuando el objetivo es reducir el Cycle Time en flujos operativos continuos."
+  },
+  "AppFlowy": {
+    "que": "Espacio de trabajo colaborativo de código abierto (alternativa a Notion) que integra documentos, wikis, tableros Kanban y bases de datos con arquitectura local-first y soporte extensible de modelos de IA. Está construido con Flutter en el cliente y Rust en su motor central de almacenamiento y sincronización.",
+    "para": "Resuelve la dependencia de plataformas SaaS propietarias y el vendor lock-in cuando se exige soberanía de datos, operación offline real y autoalojamiento. Se usa para documentación de equipos, bases de conocimiento personales o corporativas y seguimiento ligero de proyectos en entornos sensibles a la privacidad.",
+    "como": "La interfaz en Flutter invoca mediante FFI al núcleo escrito en Rust (`flowy-core`), que persiste bloques estructurados localmente en SQLite y resuelve ediciones concurrentes mediante estructuras CRDT (Conflict-free Replicated Data Types, implementadas sobre Yrs). Cada página o vista de base de datos se compone de bloques tipados que pueden mantenerse íntegramente en disco local o sincronizarse contra AppFlowy Cloud (stack en Rust/GoTrue sobre PostgreSQL, Redis y almacenamiento compatible con S3). Las funciones de IA se conectan de forma modular hacia proveedores en la nube o inferencia local (como Ollama), indexando notas localmente para búsqueda y síntesis.",
+    "practicas": [
+      "Aprovecha la persistencia local-first y programa exportaciones periódicas a Markdown o snapshots de base de datos para garantizar portabilidad.",
+      "AppFlowy vs Notion: AppFlowy aporta ejecución nativa rápida, modo offline real y self-hosting; Notion conserva ventaja en integraciones SaaS listas para usar y ecosistema.",
+      "En despliegues de AppFlowy Cloud en producción, protege el acceso con TLS, backups automáticos de PostgreSQL y almacenamiento S3 para adjuntos.",
+      "No utilices sus bases de datos documentales como reemplazo de una base SQL transaccional o un gestor de sprints con trazabilidad Git avanzada."
+    ],
+    "ejemplo": "# Despliegue básico autoalojado de AppFlowy Cloud\ngit clone https://github.com/AppFlowy-IO/AppFlowy-Cloud.git\ncp deploy.env.example .env\n# Configurar POSTGRES_PASSWORD, GOTRUE_JWT_SECRET y dominio\ndocker compose up -d",
+    "entrevista": "AppFlowy combina Flutter y un núcleo en Rust con SQLite y CRDTs, permitiendo colaboración en tiempo real con modo offline nativo y autoalojamiento sin ceder la propiedad de los datos."
+  },
+  "Confluence": {
+    "que": "Plataforma wiki empresarial de Atlassian diseñada para redactar, estructurar y versionar documentación colaborativa, especificaciones de producto y bases de conocimiento corporativas. Se integra nativamente con Jira, Bitbucket y la gestión de identidad de Atlassian.",
+    "para": "Resuelve la dispersión del conocimiento operativo en hilos de chat, correos y archivos aislados dentro de organizaciones medianas y grandes. Se usa para publicar RFCs, postmortems sin culpables, runbooks de guardia, arquitectura de sistemas y planes de onboarding conectados directamente con tickets de Jira.",
+    "como": "El contenido se organiza jerárquicamente en Spaces por equipo o dominio y árboles de páginas almacenadas en Atlassian Document Format (ADF) o Storage Format basado en XHTML. Cada guardado crea una versión inmutable con historial de diferencias y la edición concurrente se sincroniza en tiempo real mediante el motor Synchrony. Sus macros dinámicas incrustan consultas JQL en vivo de Jira, fragmentos de código, tablas de decisión y diagramas sin duplicar información estática. El acceso se controla mediante permisos por Space y restricciones por página integradas con SSO (SAML 2.0) y aprovisionamiento SCIM vía Atlassian Guard.",
+    "practicas": [
+      "Mantén jerarquías poco profundas (máximo 3-4 niveles) y asigna un responsable y fecha de última verificación a cada runbook de producción.",
+      "Confluence vs Docs-as-Code (Markdown en Git): Confluence facilita la colaboración con perfiles no técnicos y macros de Jira; Docs-as-Code evita que la documentación quede desfasada del código.",
+      "Estandariza plantillas para Postmortems, RFCs y Runbooks para garantizar que ningún documento crítico omita métricas, responsables o mitigaciones.",
+      "Incrusta filtros JQL en vivo en lugar de copiar manualmente estados o fechas de entrega desde Jira."
+    ],
+    "ejemplo": "// Consultar páginas activas de un Space mediante Confluence REST API v2\nGET /wiki/api/v2/spaces/12345/pages?status=current&limit=25\nAuthorization: Bearer <ATLASSIAN_API_TOKEN>\nAccept: application/json",
+    "entrevista": "En organizaciones sobre Jira, Confluence centraliza RFCs, postmortems y runbooks con trazabilidad directa a tickets, siempre que se gobierne con dueños claros y revisión periódica para evitar wikis obsoletas."
+  },
+  "Documentación técnica": {
+    "que": "Conjunto estructurado de documentos, especificaciones y diagramas que describen la arquitectura, contratos de interfaz, operación y mantenimiento de un sistema de software. Abarca tanto artefactos cercanos al código (README, OpenAPI, ADRs, docstrings) como guías operativas y de usuario.",
+    "para": "Resuelve la pérdida de contexto técnico, reduce el tiempo de onboarding de nuevos ingenieros, disminuye el 'bus factor' y acelera la mitigación de incidentes en guardia. Se usa durante todo el ciclo de vida del software, especialmente en APIs compartidas, plataformas internas y mantenimiento evolutivo.",
+    "como": "Bajo la práctica Docs-as-Code, la documentación se redacta en texto plano versionable (Markdown, AsciiDoc, reStructuredText) dentro del repositorio Git y pasa por pipelines de CI que ejecutan linters de estilo (Vale, markdownlint), comprobación de enlaces y validación de ejemplos. Los contratos y referencias se generan automáticamente desde la fuente de verdad (OpenAPI/Swagger, AsyncAPI, Protobuf, Javadoc, Sphinx) y se publican en portales estáticos (MkDocs, Docusaurus). Metodologías como Diátaxis estructuran el contenido en cuatro categorías separadas según la necesidad del lector: Tutoriales (aprender haciendo), Guías How-To (resolver una tarea), Referencia (especificación exacta) y Explicación (entender conceptos y diseño).",
+    "practicas": [
+      "Aplica el marco Diátaxis para separar tutoriales paso a paso, guías prácticas, referencia exacta de API y explicaciones conceptuales.",
+      "Adopta Docs-as-Code: exige actualizar el README, el esquema OpenAPI o el runbook en el mismo Pull Request donde cambia la funcionalidad.",
+      "Comenta en el código el 'por qué' de invariantes, algoritmos o workarounds no obvios, nunca el 'qué' evidente de la sintaxis.",
+      "Automatiza la generación de referencia de APIs desde contratos OpenAPI o anotaciones tipadas en CI para impedir divergencias con producción."
+    ],
+    "ejemplo": "# Organización de documentación siguiendo el modelo Diátaxis\ndocs/\n├── tutorials/primer-servicio-local.md\n├── how-to/rotar-claves-tls.md\n├── reference/openapi.yaml\n└── explanation/arquitectura-event-driven.md",
+    "entrevista": "Aplico Docs-as-Code junto con el modelo Diátaxis y generación automática desde contratos como OpenAPI en CI para garantizar documentación precisa, versionada y alineada con cada Pull Request."
+  },
+  "Email - Gmail": {
+    "que": "Sistema de mensajería electrónica asíncrona y federada regido por estándares abiertos (SMTP, IMAP, POP3) junto con Gmail como plataforma gestionada en la nube de Google con cliente web, aplicaciones móviles y API REST programática. Sirve como canal oficial de comunicación externa e identidad corporativa.",
+    "para": "Resuelve la comunicación formal, auditable y federada entre distintas organizaciones, además del envío de notificaciones transaccionales, facturas y flujos de recuperación de cuenta. Se usa para decisiones formales, avisos a usuarios y alertas auditables, nunca como reemplazo de chat operativo en tiempo real.",
+    "como": "Al enviar un mensaje, el cliente (MUA) lo entrega al servidor de salida (MSA/MTA) vía SMTP sobre TLS (puerto 587 STARTTLS o 465), que resuelve los registros DNS `MX` del dominio receptor para enrutarlo hasta el servidor destino (MDA). Para impedir suplantación de identidad y filtrar spam, los dominios publican políticas DNS: SPF (lista de IPs autorizadas), DKIM (firma criptográfica RSA o Ed25519 en cabeceras del mensaje) y DMARC (regla de alineación y reporte). Gmail añade autenticación OAuth 2.0 (XOAUTH2) para acceso vía IMAP/SMTP o Gmail API sobre HTTP/JSON, reconstruyendo hilos de conversación con las cabeceras `Message-ID`, `In-Reply-To` y `References`.",
+    "practicas": [
+      "Configura obligatoriamente SPF, DKIM y DMARC en cualquier dominio desde el que tu backend envíe correos transaccionales.",
+      "Email vs Chat (Slack/Teams): usa correo para acuerdos formales, comunicación externa y trazabilidad legal; usa chat para coordinación ágil interna.",
+      "Integra Gmail mediante OAuth 2.0 o cuentas de servicio con delegación de dominio en lugar de contraseñas estáticas.",
+      "Desacopla el envío de correos transaccionales en colas de trabajo asíncronas con claves de idempotencia para no bloquear peticiones HTTP ni duplicar mensajes."
+    ],
+    "ejemplo": "# Inspección DNS de autenticidad y enrutamiento de correo\ndig MX ejemplo.com +short          # Servidores receptores (prioridad + host)\ndig TXT ejemplo.com +short         # SPF: \"v=spf1 include:_spf.google.com ~all\"\ndig TXT _dmarc.ejemplo.com +short  # DMARC: \"v=DMARC1; p=reject; rua=mailto:sec@ejemplo.com\"",
+    "entrevista": "En backend el correo no es solo UI: requiere encolar envíos de forma idempotente y configurar correctamente registros MX, SPF, DKIM y DMARC para proteger la reputación del dominio y evitar suplantaciones."
+  },
+  "Excalidraw - draw.io": {
+    "que": "Herramientas de diagramación técnica enfocadas en ingeniería de software: Excalidraw es una pizarra virtual minimalista de trazo manual basada en JSON abierto, y draw.io (diagrams.net) es un editor vectorial de precisión basado en XML/SVG con catálogos formales de UML, C4, BPMN e infraestructura cloud.",
+    "para": "Resuelven la necesidad de representar visualmente topologías de red, flujos de datos, diagramas de secuencia y límites de servicios para alinear al equipo. Excalidraw se usa en entrevistas de diseño de sistemas, sesiones de pizarra y explicaciones rápidas; draw.io se utiliza en documentación arquitectónica formal y planos de infraestructura complejos.",
+    "como": "Excalidraw opera íntegramente en el navegador sobre HTML5 Canvas, serializando cada figura y flecha como un objeto dentro de un JSON plano (`.excalidraw`) que incluso puede incrustarse dentro de archivos PNG o SVG para mantenerlos editables; su colaboración en vivo sincroniza deltas vía WebSockets con cifrado de extremo a extremo. draw.io se apoya en el motor de grafos mxGraph y almacena modelos en XML (`.drawio`), permitiendo incrustarlos en `.drawio.svg` o `.drawio.png`, editarse offline mediante su extensión nativa en VS Code o integrarse en Confluence. Ambos admiten generación rápida desde texto como Mermaid para acelerar diagramas repetitivos.",
+    "practicas": [
+      "Versiona archivos `.excalidraw.svg` o `.drawio.svg` en Git para que puedan visualizarse directamente en Markdown/GitHub sin perder la capacidad de editarlos.",
+      "Excalidraw vs draw.io vs Mermaid: usa Excalidraw para diseño colaborativo ágil, draw.io para diagramas complejos de nube o UML, y Mermaid cuando necesites diffs legibles en texto plano.",
+      "Aplica el modelo C4 (Context, Containers, Components, Code) para mantener cada diagrama en un único nivel de abstracción.",
+      "Etiqueta siempre las conexiones con el protocolo, formato o dirección real del flujo (por ejemplo, 'gRPC TLS' o 'Kafka event') en lugar de flechas mudas."
+    ],
+    "ejemplo": "// Estructura básica de un archivo .excalidraw (JSON)\n{\n  \"type\": \"excalidraw\",\n  \"version\": 2,\n  \"elements\": [\n    { \"id\": \"gateway\", \"type\": \"rectangle\", \"x\": 120, \"y\": 80, \"width\": 180, \"height\": 64 }\n  ]\n}",
+    "entrevista": "Combino Excalidraw para diseñar arquitecturas en vivo y draw.io para planos formales de nube o C4, versionando siempre archivos `.svg` editables dentro del repositorio junto a cada ADR."
+  },
+  "Figma": {
+    "que": "Plataforma colaborativa de diseño de interfaces (UI/UX), prototipado interactivo y sistemas de diseño basada en navegador, impulsada por un motor gráfico WebAssembly/WebGL y herramientas dedicadas de inspección para desarrollo (Dev Mode).",
+    "para": "Resuelve la fricción entre diseño y desarrollo frontend (handoff), reemplazando capturas estáticas y especificaciones ambiguas por componentes inspeccionables y tokens compartidos. Se usa para validar flujos con prototipos antes de programar, construir design systems multiplataforma y extraer medidas, estilos y recursos listos para producción.",
+    "como": "Figma ejecuta su motor de renderizado vectorial escrito en C++ compilado a WebAssembly sobre WebGL a 60 fps, sincronizando la edición simultánea de múltiples usuarios con una arquitectura inspirada en CRDT sobre WebSockets. Los diseñadores modelan sistemas mediante Components, Variants, Auto Layout (análogo estructural a CSS Flexbox) y Variables/Design Tokens (colores, tipografía, espaciados, modos claro/oscuro). Mediante la Figma REST API, webhooks o integraciones como Style Dictionary y Code Connect, las Variables se exportan en JSON (formato W3C Design Tokens) para generar automáticamente variables CSS, configuraciones de Tailwind o temas nativos en CI/CD.",
+    "practicas": [
+      "Automatiza la exportación de Figma Variables como Design Tokens en JSON hacia el repositorio en lugar de copiar colores o espaciados a mano.",
+      "Acuerda con diseño el uso estricto de Auto Layout y Variants para que la estructura visual mapee limpiamente a Flexbox y props de componentes.",
+      "Utiliza Dev Mode y Code Connect para vincular cada componente en Figma con su implementación real en código o Storybook.",
+      "Verifica en el prototipo los estados vacíos, de carga, de error y los breakpoints responsivos antes de iniciar la implementación."
+    ],
+    "ejemplo": "// Design Token exportado desde Figma Variables hacia Style Dictionary / CSS\n{\n  \"color\": {\n    \"action\": {\n      \"primary\": { \"$type\": \"color\", \"$value\": \"#2563EB\" }\n    }\n  }\n}",
+    "entrevista": "Integro Figma en el flujo de ingeniería usando Variables como fuente única de verdad para Design Tokens y Auto Layout alineado con Flexbox para acelerar y estandarizar el handoff."
+  },
+  "Google Drive": {
+    "que": "Plataforma de almacenamiento en la nube y colaboración documental de Google Workspace que funciona como sistema de archivos compartido con búsqueda indexada, versionado de binarios y control de acceso basado en permisos granulares.",
+    "para": "Resuelve el almacenamiento seguro, el control de versiones de documentos no textuales y la colaboración con áreas no técnicas sobre archivos inadecuados para Git. Se usa para guardar contratos, presentaciones, videos de capacitación, activos multimedia pesados, actas y entregables compartidos con clientes externos.",
+    "como": "Los objetos se cifran en tránsito (TLS) y en reposo (AES-256) sobre almacenamiento distribuido, referenciándose por un `fileId` inmutable independiente de la carpeta o nombre visible. La gobernanza empresarial se apoya en Shared Drives (Unidades compartidas), donde la propiedad legal pertenece a la organización y los permisos se heredan de arriba hacia abajo evitando archivos huérfanos cuando rota el personal. Su API REST v3 permite transferencias simples, multiparte o reanudables (`uploadType=resumable` con encabezados `Content-Range`), seguimiento incremental vía `changes.list` y exportación on-the-fly de Google Docs/Sheets a PDF, DOCX o CSV.",
+    "practicas": [
+      "Almacena los documentos del equipo en Shared Drives en lugar de carpetas personales de My Drive para evitar perder accesos cuando alguien deja la organización.",
+      "Google Drive vs Git: nunca guardes código fuente ni archivos de configuración en Drive, y tampoco subas binarios pesados (videos, ZIPs, datasets) al historial de Git.",
+      "Aplica el principio de menor privilegio evitando enlaces abiertos ('cualquiera con el enlace') para documentación técnica o datos internos.",
+      "En integraciones con Drive API v3 para archivos grandes, usa carga reanudable (`resumable`) y reintentos con exponential backoff ante errores `429`."
+    ],
+    "ejemplo": "# Exportar un Google Doc a PDF mediante Google Drive API v3\ncurl -H \"Authorization: Bearer $ACCESS_TOKEN\" \\\n  \"https://www.googleapis.com/drive/v3/files/FILE_ID/export?mimeType=application/pdf\" \\\n  -o arquitectura.pdf",
+    "entrevista": "Google Drive complementa a Git para binarios y colaboración corporativa, gobernado mediante Shared Drives, mínimo privilegio y cargas reanudables cuando se automatiza vía API."
+  },
+  "Google Sheets": {
+    "que": "Hoja de cálculo colaborativa en la nube integrada en Google Workspace, dotada de motor de cálculo tabular, tablas dinámicas, automatización serverless mediante Google Apps Script (JavaScript V8) y API REST programática.",
+    "para": "Resuelve el análisis exploratorio rápido de datos tabulares, la captura manual colaborativa y la construcción de prototipos o tableros operativos ligeros sin desplegar infraestructura web. Se usa para auditar costos cloud, cruzar exportaciones CSV, gestionar matrices de permisos y validar modelos antes de construir herramientas dedicadas.",
+    "como": "Cada celda integra un grafo acíclico dirigido (DAG) de dependencias que recalcula fórmulas afectadas en cascada y resuelve ediciones concurrentes en tiempo real mediante Operational Transformation (OT). Soporta funciones matriciales y de consulta como `QUERY()` (sintaxis similar a SQL sobre rangos), `ARRAYFORMULA` y `XLOOKUP`, además de scripts en Apps Script ejecutados por disparadores (`onEdit`, cron) que consumen APIs externas con `UrlFetchApp`. A través de Google Sheets API v4 (`spreadsheets.values.get` y `batchUpdate`), servicios backend o pipelines ETL leen y escriben rangos estructurados autenticados con OAuth 2.0 o cuentas de servicio.",
+    "practicas": [
+      "Nunca uses Google Sheets como base de datos transaccional en producción: carece de esquema fuerte, integridad referencial, bloqueo transaccional y degrada su rendimiento con cientos de miles de celdas.",
+      "Google Sheets vs SQL/BI: úsalo para exploración rápida y entrada colaborativa pequeña; migra a PostgreSQL/BigQuery y Metabase o Looker cuando crezca el volumen o la criticidad.",
+      "Separa pestañas de datos crudos (raw), lógica de cálculo y tablero visual para que los filtros o ediciones no rompan referencias.",
+      "Aplica validación de datos y protege rangos con fórmulas críticas antes de conectar scripts externos a una hoja."
+    ],
+    "ejemplo": "// Leer rango vía Google Sheets API v4\nGET https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values/Metricas!A1:D20\nAuthorization: Bearer <TOKEN>\n\n// Consulta tipo SQL integrada en celda:\n=QUERY(Datos!A:D; \"SELECT B, SUM(D) WHERE C = 'prod' GROUP BY B\"; 1)",
+    "entrevista": "Google Sheets acelera análisis ad-hoc y prototipos vía Apps Script o Sheets API v4, pero tengo claro su límite: en cuanto hay concurrencia crítica o integridad relacional, migramos a una base de datos real."
+  },
+  "ILovePDF": {
+    "que": "Plataforma web y API REST para manipulación rápida de archivos PDF (unión, división, compresión, rotación, firma, OCR y conversión desde o hacia formatos ofimáticos). Ofrece flujos visuales sin instalación local y endpoints programáticos para automatización documental.",
+    "para": "Resuelve operaciones cotidianas de preparación y optimización de archivos PDF sin instalar suites pesadas de escritorio. En entornos de trabajo se utiliza manualmente para documentos administrativos o públicos, mientras en sistemas con requisitos de privacidad o escala se evalúa frente a utilidades CLI locales o librerías integradas en backend.",
+    "como": "En su interfaz web, el cliente carga el PDF por HTTPS hacia servidores de procesamiento donde motores de manipulación documental recomponen el árbol de objetos PDF, recomprimen flujos de imágenes (JPEG/JBIG2/FlateDecode) o ejecutan OCR para añadir una capa de texto seleccionable; los resultados quedan en descarga temporal antes de borrarse tras un TTL. Su API REST funciona autenticándose con JWT de corta duración y encadenando tres fases explícitas: `start` (asignación de servidor y `task_id`), `upload` más `process` (parámetros de compresión, rango de páginas u OCR) y `download` del binario resultante.",
+    "practicas": [
+      "Nunca subas contratos confidenciales, datos personales (PII), facturas reales ni secretos técnicos a servicios web externos; usa herramientas locales (`qpdf`, `ghostscript`, `pdfcpu`) en entornos regulados.",
+      "ILovePDF vs CLI local: la web es práctica para documentos no sensibles puntuales; en pipelines CI/CD o producción prefiere librerías locales deterministas sin dependencia ni fuga a terceros.",
+      "Verifica tras comprimir un PDF técnico que el texto y los diagramas no hayan sido rasterizados a baja resolución perdiendo nitidez y búsqueda.",
+      "Si integras procesamiento PDF en backend, ejecútalo en colas de trabajo asíncronas, limita tamaño máximo y valida los magic bytes reales del archivo."
+    ],
+    "ejemplo": "# Alternativa local segura en Linux para documentos sensibles\n# Unir PDFs con qpdf y comprimir con Ghostscript sin salir de la máquina\nqpdf --empty --pages doc1.pdf doc2.pdf -- unido.pdf\ngs -sDEVICE=pdfwrite -dPDFSETTINGS=/ebook -dNOPAUSE -dBATCH \\\n   -sOutputFile=comprimido.pdf unido.pdf",
+    "entrevista": "ILovePDF agiliza tareas puntuales con PDFs no sensibles, pero en producción o con documentación confidencial procesamos localmente mediante utilidades auditables como qpdf o Ghostscript."
+  },
+  "Jira - Linear": {
+    "que": "Plataformas de seguimiento de incidencias (issue tracking) y gestión de ciclos de desarrollo de software: Jira es la herramienta empresarial altamente personalizable de Atlassian, mientras Linear es un sistema moderno optimizado para velocidad de uso, atajos de teclado y flujos ágiles de producto.",
+    "para": "Resuelven la visibilidad y trazabilidad del trabajo técnico: planificar roadmaps, priorizar backlogs, gestionar sprints o ciclos, rastrear bugs y enlazar requisitos de negocio con cambios en el código. Jira predomina en corporaciones con flujos complejos y auditoría multiárea; Linear destaca en equipos de ingeniería modernos que buscan mínima fricción.",
+    "como": "Ambas herramientas estructuran el trabajo en jerarquías (Iniciativas/Épicas -> Issues -> Subtareas) gobernadas por máquinas de estado configurables. Su integración con GitHub o GitLab detecta claves de ticket en nombres de rama y mensajes de commit (como `ENG-142`) y procesa webhooks para mover el ticket automáticamente al abrir, aprobar o fusionar un Pull Request. A nivel técnico, Linear emplea una arquitectura local-first en el navegador que sincroniza un grafo de estado en IndexedDB mediante GraphQL y deltas en tiempo real, logrando interacciones por debajo de 50 ms frente a las peticiones tradicionales servidor-céntricas de Jira (consultables por JQL).",
+    "practicas": [
+      "Automatiza las transiciones de estado conectando webhooks de GitHub/GitLab para que los PRs actualicen los tickets sin trabajo manual del desarrollador.",
+      "Jira vs Linear: elige Jira cuando necesites flujos aprobatorios complejos, cumplimiento normativo y consultas JQL profundas; elige Linear cuando priorices velocidad y simplicidad operativa.",
+      "Mantén el tablero con pocos estados reales (4-5 columnas); los flujos hiper-fragmentados generan burocracia y ocultan cuellos de botella.",
+      "Exige que cada ticket incluya contexto del problema y criterios de aceptación verificables antes de pasar a desarrollo."
+    ],
+    "ejemplo": "# Trazabilidad automática Git -> Jira / Linear\ngit checkout -b feat/ENG-142-oauth-pkce\ngit commit -m \"feat(auth): implementar PKCE en login [ENG-142]\"\n# Al abrir o fusionar el PR, el webhook mueve ENG-142 a In Review / Done",
+    "entrevista": "Integramos Jira o Linear directamente con Git mediante identificadores en ramas y webhooks de Pull Request para obtener trazabilidad de extremo a extremo sin fricción administrativa."
+  },
+  "Loom": {
+    "que": "Herramienta de comunicación asíncrona mediante video que captura simultáneamente pantalla, cámara y micrófono para generar al instante un enlace compartible con transcripción automática, capítulos y comentarios anclados a marcas de tiempo.",
+    "para": "Resuelve la fatiga de reuniones síncronas innecesarias y la dificultad de explicar por texto errores visuales, interacciones complejas de UI o recorridos de arquitectura. Se usa en revisiones de Pull Requests extensos, demos de sprint, reportes reproducibles de bugs y onboarding en equipos remotos de distintas zonas horarias.",
+    "como": "La aplicación de escritorio o extensión de navegador captura los flujos de audio y pantalla (vía WebRTC/MediaRecorder o APIs nativas del SO) y sube fragmentos progresivamente mientras se graba para que el enlace esté listo segundos después de terminar. En servidor, el video se transcodifica a perfiles adaptativos (HLS/DASH), se extrae el audio para transcripción automática con modelos ASR (speech-to-text) y generación de resúmenes por LLM. El reproductor admite velocidad 1.5x–2x, inserción directa vía oEmbed dentro de GitHub, Linear, Notion o Jira y comentarios vinculados al segundo exacto del flujo.",
+    "practicas": [
+      "Reemplaza reuniones informativas o demos de 30 minutos por un Loom focalizado de 3-5 minutos con resumen en viñetas debajo del enlace.",
+      "Loom vs Documentación escrita: un video comunica contexto visual rapidísimo, pero envejece pronto y no admite diffs ni búsqueda en código; complementa con texto o ADRs.",
+      "Mantén cada grabación por debajo de los 5 minutos; si necesitas explicar varios módulos, graba clips cortos independientes.",
+      "Revisa qué ventanas tienes abiertas antes de grabar pantalla completa para no filtrar tokens, archivos `.env` o datos sensibles de clientes."
+    ],
+    "ejemplo": "## Descripción en Pull Request\n- Cambio: migración de paginación offset a cursor-based en `/orders`.\n- Walkthrough (2m 40s): https://www.loom.com/share/abc123def456\n  - 00:00 Reproducción del cuello de botella en BD\n  - 01:15 Índice compuesto y resultado del benchmark",
+    "entrevista": "Uso video asíncrono como Loom en Pull Requests complejos y reportes de bugs para evitar reuniones innecesarias entre zonas horarias, acompañándolo siempre con un resumen escrito indexable."
+  },
+  "Miro": {
+    "que": "Pizarra infinita digital colaborativa enfocada en talleres visuales multidisciplinarios, con soporte nativo para notas adhesivas, diagramación, temporizadores, votaciones y plantillas de Event Storming, User Story Mapping y retrospectivas.",
+    "para": "Resuelve la pérdida de dinámicas colaborativas de pizarra física en equipos remotos o híbridos, especialmente al alinear ingeniería con producto, diseño y negocio. Se usa para sesiones de Event Storming en Domain-Driven Design (DDD), planificación trimestral (PI Planning), mapeo de flujos de usuario y retrospectivas.",
+    "como": "Miro renderiza un lienzo infinito sobre HTML5 Canvas con optimización de nivel de detalle (LOD) para manipular miles de elementos sin caídas de rendimiento. La colaboración simultánea opera sobre WebSockets con cursores en vivo, bloqueo suave de edición, seguimiento de presentador y sistemas de votación sincronizados. A través de su REST API v2 y Web SDK es posible generar o extraer tarjetas programáticamente, además de mantener sincronización bidireccional entre tarjetas del tablero e issues de Jira, Linear o Azure DevOps.",
+    "practicas": [
+      "Usa Miro para talleres de Event Storming (eventos de dominio, comandos y agregados por código de colores) antes de diseñar límites de microservicios.",
+      "Miro vs Excalidraw/draw.io: Miro sobresale en talleres masivos, votaciones y facilitación de producto; Excalidraw y draw.io son superiores para diagramas técnicos versionados en Git.",
+      "No dejes acuerdos arquitectónicos enterrados en un tablero infinito: sintetiza las decisiones en ADRs y convierte las acciones en tickets reales.",
+      "Organiza el tablero en Frames numerados con un flujo de lectura definido para facilitar la consulta asíncrona."
+    ],
+    "ejemplo": "// Crear una nota adhesiva de Event Storming vía Miro REST API v2\nPOST https://api.miro.com/v2/boards/{board_id}/sticky_notes\nAuthorization: Bearer <MIRO_ACCESS_TOKEN>\nContent-Type: application/json\n\n{ \"data\": { \"content\": \"Evento: PagoConfirmado\", \"shape\": \"square\" } }",
+    "entrevista": "Empleo Miro en talleres colaborativos como Event Storming y User Story Mapping con producto y negocio, destilando siempre las conclusiones a ADRs y tickets ejecutables."
+  },
+  "Notion": {
+    "que": "Espacio de trabajo colaborativo que unifica wikis, documentos enriquecidos, gestión ligera de proyectos y bases de datos relacionales sobre un modelo uniforme de bloques componibles.",
+    "para": "Resuelve la fragmentación de herramientas en startups y equipos ágiles que buscan centralizar documentación de producto, RFCs, notas de reunión, onboarding y seguimiento operativo en un mismo lugar. Se usa como base de conocimiento viva y portal interno cuando se prioriza flexibilidad y adopción rápida frente a flujos corporativos rígidos.",
+    "como": "Internamente, cada elemento en Notion —párrafo, encabezado, bloque de código, diagrama Mermaid o fila de base de datos— es un objeto `Block` con UUID propio, propiedades JSON e hijos jerárquicos, sincronizado en tiempo real entre clientes con caché local (IndexedDB/SQLite). Las bases de datos permiten proyectar los mismos registros como Tabla, tablero Kanban, Calendario o Timeline usando filtros, propiedades calculadas, `Relation` y `Rollup`. Su REST API oficial permite consultar bases de datos con filtros JSON, crear páginas y añadir bloques desde scripts o webhooks autenticados con tokens Bearer.",
+    "practicas": [
+      "Estructura Teamspaces claros y usa plantillas predefinidas para RFCs, postmortems y minutas desde el inicio para evitar un caos documental.",
+      "Notion vs Confluence/Obsidian: Notion destaca por bases de datos flexibles y experiencia de producto; Confluence se integra nativamente con Jira corporativo, y Obsidian prioriza Markdown local sin vendor lock-in.",
+      "No almacenes credenciales ni conviertas Notion en un issue tracker de ingeniería cuando Linear o Jira resuelven mejor la integración con Git.",
+      "Establece revisiones periódicas para archivar páginas obsoletas y mantener útil el buscador interno."
+    ],
+    "ejemplo": "// Consultar registros filtrados de una base de datos vía Notion API\nPOST https://api.notion.com/v1/databases/{database_id}/query\nAuthorization: Bearer <NOTION_TOKEN>\nNotion-Version: 2022-06-28\n\n{ \"filter\": { \"property\": \"Estado\", \"select\": { \"equals\": \"En Revisión\" } } }",
+    "entrevista": "Notion unifica wikis y bases de datos sobre un modelo de bloques muy ágil para documentar producto y RFCs, integrándolo con trackers como Linear o Jira para el ciclo diario de ingeniería."
+  },
+  "OKRs": {
+    "que": "Marco de gestión estratégica por objetivos (Objectives and Key Results) que vincula metas cualitativas inspiradoras (Objectives) con de 2 a 5 métricas cuantitativas verificables de éxito (Key Results). Fue popularizado en tecnología por Intel y Google para alinear organizaciones sin microgestión.",
+    "para": "Resuelve la desconexión entre la estrategia del negocio y el trabajo técnico diario, desplazando el foco desde entregar tareas (output) hacia lograr impacto medible en usuarios o sistemas (outcome). Se usa en ciclos trimestrales o anuales para coordinar múltiples equipos de producto y plataforma bajo prioridades comunes.",
+    "como": "Al inicio del trimestre, la organización fija Objectives globales y cada squad propone OKRs alineados mediante negociación bidireccional (top-down y bottom-up). Cada Key Result parte de una línea base conocida hacia un objetivo numérico medible al cierre del periodo, puntuándose normalmente de 0.0 a 1.0 (donde 0.7 representa un buen resultado en metas ambiciosas o 'stretch goals', mientras 1.0 aplica a compromisos obligatorios). El avance se revisa en check-ins semanales o quincenales midiendo el nivel de confianza para corregir el rumbo a tiempo en lugar de evaluar solo al final del trimestre.",
+    "practicas": [
+      "Formula los Key Results como métricas de resultado (ej. reducir latencia p95 o MTTR) y no como listas de tareas disfrazadas ('migrar servicio X').",
+      "OKRs vs KPIs: los KPIs vigilan la salud continua del sistema (uptime, tasa de error); los OKRs empujan cambios estratégicos acotados en el tiempo.",
+      "Limita cada equipo a 2-3 Objectives con máximo 3-4 Key Results para preservar foco real y evitar diluir esfuerzos.",
+      "Desvincula los OKRs de bonos o evaluaciones salariales directas para evitar que los equipos fijen metas triviales por miedo a fallar (sandbagging)."
+    ],
+    "ejemplo": "Objective: Elevar la resiliencia y velocidad del flujo de checkout en hora pico\n- KR1: Reducir latencia p95 de /api/checkout de 820 ms a <= 350 ms.\n- KR2: Aumentar disponibilidad mensual del servicio de pagos del 99.4% al 99.95%.\n- KR3: Reducir el MTTR de incidentes Sev-1 de 45 min a <= 15 min.",
+    "entrevista": "Los OKRs alinean a ingeniería por impacto medible (outcomes) y no por volumen de tickets cerrados (outputs), diferenciando metas de cambio trimestral frente a los KPIs operativos diarios."
+  },
+  "Online Notepad": {
+    "que": "Editor de texto plano instantáneo y ligero accesible desde el navegador (como scratchpads client-side, ProtectedText o pastebins temporales) pensado para capturar o limpiar texto sin cuentas ni instalación. Algunas variantes operan exclusivamente en el navegador y otras asignan URLs efímeras para compartir snippets.",
+    "para": "Resuelve la necesidad inmediata de tomar notas descartables, eliminar formato enriquecido al copiar texto, inspeccionar JSON o logs rápidos y transferir fragmentos inocuos entre equipos. Se usa únicamente como borrador temporal cuando abrir un IDE o crear un archivo permanente añade fricción innecesaria.",
+    "como": "Las herramientas más seguras funcionan 100% client-side conservando el texto en memoria de la pestaña, en `localStorage` o codificado dentro del fragmento hash (`#`) de la URL (por ejemplo comprimido con LZ-string) para no transmitir datos por red. Las versiones colaborativas o multi-dispositivo crean una sala por ruta URL y sincronizan cambios mediante WebSockets o peticiones REST hacia una base temporal en servidor; ciertas variantes añaden cifrado simétrico AES en el navegador usando una contraseña antes de enviar el texto cifrado.",
+    "practicas": [
+      "Jamás pegues tokens, contraseñas, archivos `.env`, datos personales (PII) ni código propietario en un bloc web de terceros, pues las URLs pueden quedar cacheadas o indexadas.",
+      "Online Notepad vs Obsidian/GitHub Gist: úsalo solo como buffer efímero; guarda conocimiento duradero en Obsidian (Markdown local) o Gists privados autenticados.",
+      "Prioriza editores puramente client-side o la propia consola/scratchpad del IDE cuando solo necesites limpiar formato o revisar logs.",
+      "Ten presente que extensiones de navegador con acceso al DOM pueden leer texto introducido en cualquier editor web."
+    ],
+    "ejemplo": "// Scratchpad instantáneo 100% local y sin red en el navegador\n// Pegar en la barra de direcciones para abrir un editor en memoria:\ndata:text/html,<html contenteditable style=\"font-family:monospace;padding:2rem\">",
+    "entrevista": "Un Online Notepad funciona solo como buffer descartable sin fricción; por higiene de seguridad nunca debe recibir credenciales, datos sensibles ni código propietario."
+  },
+  "Retrospectivas": {
+    "que": "Ceremonia periódica de inspección y adaptación en equipos ágiles —al finalizar un Sprint o un hito— destinada a evaluar cómo trabajó el equipo, identificar fricciones técnicas u organizativas y acordar mejoras accionables para el siguiente ciclo.",
+    "para": "Resuelve la acumulación silenciosa de deuda de proceso (builds lentos, code reviews bloqueados, requisitos ambiguos, fatiga de guardia) que degrada la velocidad y moral del equipo. Se usa al cierre de cada iteración en Scrum o de forma cadenciada cada dos a cuatro semanas en Kanban y equipos de plataforma.",
+    "como": "Siguiendo el esquema de cinco etapas de Derby y Larsen, la sesión abre preparando un entorno de seguridad psicológica, recopila observaciones de forma silenciosa y paralela para evitar sesgo de anclaje (dinámicas Start/Stop/Continue, 4Ls, Sailboat o Mad/Sad/Glad), agrupa patrones buscando causas raíz (por ejemplo con los 5 Porqués), prioriza mediante votación (dot voting) y cierra definiendo compromisos concretos. El entregable clave son de 1 a 3 Action Items con responsable asignado y criterio verificable, cuyo estado se revisa obligatoriamente al inicio de la siguiente retrospectiva. Todo el análisis adopta enfoque sistémico sin culpables ('blameless'): se corrige el proceso o las herramientas, no se señala a personas.",
+    "practicas": [
+      "Sal de cada retrospectiva con máximo 1 a 3 acciones concretas, dueño claro y revisión en la sesión siguiente; acumular listas infinitas destruye la confianza en la ceremonia.",
+      "Retrospectiva vs Postmortem: la retrospectiva analiza la forma de trabajo de toda una iteración; el postmortem investiga un incidente productivo específico y sus defensas técnicas.",
+      "Usa lluvia de ideas silenciosa por escrito antes de debatir en voz alta para evitar que perfiles dominantes condicionen al grupo.",
+      "Rota dinámicas periódicamente (Sailboat, Start/Stop/Continue, Línea de tiempo) para impedir que la sesión caiga en rutina automática."
+    ],
+    "ejemplo": "Dinámica Sailboat:\n- Viento (impulsó): paralelizar tests en CI redujo builds de 18m a 4m.\n- Ancla (frenó): PRs >800 líneas tardando 3 días en aprobarse.\n- Roca (riesgo): sin pruebas de contrato hacia pasarela de pago.\n-> Action Item: Limitar PRs a ~300 líneas y añadir check de tamaño en CI (Dueño: Ana).",
+    "entrevista": "Una retrospectiva efectiva requiere seguridad psicológica, análisis blameless de causas raíz y salir con uno o dos Action Items concretos con dueño y seguimiento en el siguiente sprint."
+  },
+  "Slack - Discord - Teams": {
+    "que": "Plataformas de mensajería y colaboración síncrona/asíncrona organizadas en espacios de trabajo, canales temáticos, hilos (threads), llamadas de voz/video y ecosistemas extensibles de bots y webhooks. Slack lidera en startups y empresas tech, Microsoft Teams en corporaciones con M365 y Discord en comunidades open-source y equipos ágiles.",
+    "para": "Resuelven la comunicación distribuida rápida, la coordinación de incidentes en vivo (War Rooms / ChatOps) y la centralización de notificaciones de CI/CD, repositorios y monitoreo. Se usan para triage operativo y dudas rápidas entre pares, evitando interrupciones por videollamadas innecesarias.",
+    "como": "Los clientes mantienen sesiones bidireccionales persistentes mediante WebSockets (Slack Socket Mode, Discord Gateway) para recibir mensajes, presencias y reacciones en tiempo real, combinadas con APIs REST para publicación e historial. Las integraciones operan mediante Incoming Webhooks (POST JSON desde Alertmanager o GitHub Actions), Slash Commands y tarjetas interactivas (Block Kit en Slack, Adaptive Cards en Teams, Interactions en Discord) validadas con firmas criptográficas (`X-Slack-Signature` HMAC-SHA256 o Ed25519). El uso de hilos (threads) encapsula debates específicos dentro de canales con alto volumen de mensajes.",
+    "practicas": [
+      "Responde siempre dentro de hilos (threads) en canales compartidos para no fragmentar conversaciones paralelas ni saturar notificaciones.",
+      "Chat vs Documentación (Confluence/Notion/ADR): el chat es volátil y difícil de auditar meses después; consolida toda decisión técnica en un ADR o ticket.",
+      "Evita el antipatrón de enviar solo 'Hola' y esperar respuesta; escribe la pregunta completa con contexto, error y lo que ya comprobaste.",
+      "Separa canales de alertas críticas accionables (`#inc-prod`) de canales informativos (`#deploys`, `#ci-builds`) para prevenir fatiga de alertas."
+    ],
+    "ejemplo": "# Notificación automatizada desde CI/CD hacia Slack vía Incoming Webhook\ncurl -X POST \"$SLACK_WEBHOOK_URL\" \\\n  -H \"Content-type: application/json\" \\\n  -d '{\"text\":\"[prod] Deploy v2.14.0 completado por @ci-bot (commit a3f91c2)\"}'",
+    "entrevista": "Usamos Slack, Teams o Discord para coordinación rápida, ChatOps y respuesta a incidentes en hilos, moviendo siempre las decisiones técnicas duraderas a tickets o ADRs."
+  },
+  "Trello": {
+    "que": "Herramienta visual de gestión de proyectos basada en tableros Kanban compuestos por tableros (Boards), listas verticales (Lists) y tarjetas (Cards) con checklists, etiquetas, fechas de vencimiento y automatizaciones sin código mediante Butler.",
+    "para": "Resuelve la organización visual inmediata de tareas y flujos sencillos sin la complejidad de configuración de plataformas empresariales como Jira. Se usa en proyectos académicos, equipos pequeños, gestión editorial, tableros personales y flujos transversales donde importa la adopción instantánea.",
+    "como": "Cada tablero modela listas ordenadas y tarjetas identificadas por UUIDs persistidos en servidor, sincronizando cambios de arrastrar y soltar en tiempo real hacia todos los clientes conectados mediante WebSockets. Su arquitectura admite extensiones llamadas Power-Ups (iframes cargados dentro de la UI que interactúan por `postMessage` con el SDK cliente) para añadir límites WIP o enlaces a GitHub, además de una API REST (`/1/cards`, `/1/lists`, webhooks por entidad) autenticada con `key` y `token`. El motor integrado Butler ejecuta reglas deterministas evento-acción (por ejemplo, mover o etiquetar tarjetas al completar un checklist).",
+    "practicas": [
+      "Activa un Power-Up de límites WIP por columna; sin topes explícitos un tablero Trello termina acumulando tarjetas estancadas en progreso.",
+      "Trello vs Jira/Linear: Trello destaca por simplicidad inmediata; migra a Linear o Jira cuando requieras épicas, métricas de Cycle Time e integración nativa con ramas y PRs.",
+      "Define criterios claros por columna y desglosa subtareas mediante checklists dentro de cada tarjeta.",
+      "Evita adjuntar documentos confidenciales o copiar credenciales en descripciones de tarjetas en tableros compartidos."
+    ],
+    "ejemplo": "# Crear una tarjeta en una lista concreta usando la REST API de Trello\ncurl -X POST \"https://api.trello.com/1/cards\" \\\n  --data-urlencode \"idList=65f1a2b3c4d5e6f708192a3b\" \\\n  --data-urlencode \"name=Configurar pipeline CI\" \\\n  --data-urlencode \"key=$TRELLO_KEY\" --data-urlencode \"token=$TRELLO_TOKEN\"",
+    "entrevista": "Trello es ideal para arrancar flujos Kanban sencillos con adopción cero y automatizaciones Butler, mientras que para equipos de software en crecimiento conviene migrar a Linear o Jira por su trazabilidad nativa con Git."
+  }
+}

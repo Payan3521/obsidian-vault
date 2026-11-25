@@ -1,0 +1,392 @@
+{
+  "Análisis coste-beneficio": {
+    "que": "El análisis coste-beneficio (CBA, Cost-Benefit Analysis) es una evaluación cuantitativa sistemática que compara los costes totales esperados de una iniciativa de software frente a los beneficios económicos proyectados, descontados a valor presente. Permite decidir objetivamente si construir, comprar, refactorizar o retirar un sistema genera valor neto positivo para la organización.",
+    "para": "Resuelve la ambigüedad al priorizar inversiones tecnológicas con recursos finitos, como migrar un monolito a microservicios, adoptar una plataforma SaaS o automatizar pipelines de despliegue. Se aplica en fases de prefactibilidad, casos de negocio (business cases) y revisiones de portafolio arquitectónico.",
+    "como": "El proceso comienza inventariando costes directos (salarios de ingeniería, licencias, infraestructura cloud) e indirectos (curva de aprendizaje, migración de datos, tiempo de inactividad) a lo largo de un horizonte temporal típico de 3 a 5 años. Después se cuantifican los beneficios tangibles (ahorro operativo, incremento de ingresos, reducción de MTTR) e intangibles traducidos a proxies monetarios (menor rotación o riesgo regulatorio). Cada flujo anual neto se descuenta mediante la tasa de descuento o coste de capital (WACC) para obtener el Valor Actual Neto (VAN = suma de Flujo_t / (1 + r)^t - Inversión_0), la Tasa Interna de Retorno (TIR) y el ratio beneficio-coste (BCR = VP Beneficios / VP Costes).",
+    "practicas": [
+      "Descontar flujos futuros con el WACC de la empresa y usar el mismo horizonte temporal al comparar alternativas mutuamente excluyentes (Build vs. Buy).",
+      "Error típico: contabilizar beneficios brutos ignorando costes recurrentes de operación (OpEx) o el tiempo de ingeniería necesario para mantener la solución.",
+      "Separar costes hundidos (sunk costs) del análisis; decisiones pasadas ya gastadas no deben justificar seguir invirtiendo en una arquitectura inviable.",
+      "Comparativa: el CBA evalúa el flujo neto absoluto ajustado por el valor del dinero en el tiempo (VAN), mientras que el ROI simple mide un porcentaje sin descuento temporal."
+    ],
+    "ejemplo": "# Cálculo de VAN y BCR a 3 años (tasa de descuento r = 10%)\nr = 0.10\ninversion_inicial = 80000\nflujos_netos = [35000, 45000, 50000]\nvan = sum(f / ((1 + r) ** t) for t, f in enumerate(flujos_netos, 1)) - inversion_inicial\n# van = 26483.85 USD -> proyecto viable (VAN > 0)",
+    "entrevista": "Un análisis coste-beneficio riguroso en ingeniería convierte decisiones arquitectónicas en flujos descontados comparables (VAN y BCR), evitando tanto infraestimar el OpEx futuro como caer en la falacia del coste hundido."
+  },
+  "Análisis de sensibilidad económica": {
+    "que": "El análisis de sensibilidad económica es una técnica de modelado financiero que mide cuánto varía la rentabilidad de un proyecto de software (VAN, ROI o margen) al perturbar una o más variables de entrada inciertas, manteniendo las demás constantes. Cuantifica la robustez de un caso de negocio frente a desviaciones en estimación, tráfico, precios cloud o adopción.",
+    "para": "Sirve para identificar qué supuestos críticos pueden volver deficitario un producto o migración antes de comprometer presupuesto. Se utiliza en planificación estratégica, negociación de SLAs, dimensionamiento de infraestructura SaaS y evaluación de riesgos financieros en proyectos de alto capex.",
+    "como": "Se parte de un modelo financiero base (caso esperado) definido por variables independientes como horas de desarrollo, coste por vCPU, tasa de conversión, churn mensual y precio por asiento. En el análisis univariante (OAT, One-At-a-Time) se varía cada parámetro en rangos plausibles (por ejemplo, +/-20% o escenarios pesimista/base/optimista) registrando el impacto en la métrica objetivo, que suele representarse en un diagrama de tornado. Para dependencias simultáneas se construyen matrices de dos variables (precio vs. churn) o simulaciones de Monte Carlo con miles de iteraciones sobre distribuciones probabilísticas.",
+    "practicas": [
+      "Priorizar la mitigación técnica sobre las variables que dominan la parte superior del diagrama de tornado (mayor elasticidad sobre el VAN).",
+      "Error típico: variar parámetros correlacionados de forma aislada, como subir el tráfico proyectado sin incrementar proporcionalmente el gasto de egress y base de datos.",
+      "Definir puntos de equilibrio (break-even) por variable para saber exactamente cuánta desviación soporta el proyecto antes de destruir valor.",
+      "Comparativa: el análisis de sensibilidad aísla el impacto de variables individuales, mientras que el análisis de escenarios evalúa conjuntos coherentes de condiciones macro o de mercado."
+    ],
+    "ejemplo": "# Sensibilidad del margen bruto SaaS ante variación de coste de inferencia LLM\ncoste_base_usuario = 3.20\narpu = 15.00\nfor factor in [0.8, 1.0, 1.5, 2.0]:\n    margen = (arpu - coste_base_usuario * factor) / arpu\n    print(f\"Factor {factor}x -> Margen bruto: {margen:.1%}\")",
+    "entrevista": "El análisis de sensibilidad transforma estimaciones puntuales frágiles en rangos de resiliencia financiera, señalando qué variable técnica o de negocio puede invertir el signo del VAN si se desvía."
+  },
+  "Burn rate y runway": {
+    "que": "El burn rate es la tasa mensual a la que una empresa o unidad de producto consume efectivo; se distingue entre gross burn (gasto operativo total mensual) y net burn (gasto menos ingresos mensuales). El runway es el número de meses que la organización puede seguir operando con su caja disponible al net burn actual antes de agotar liquidez.",
+    "para": "Resuelve el control de supervivencia financiera en startups, spin-offs internos y proyectos con financiación por hitos. Permite sincronizar la hoja de ruta técnica (contrataciones, inversiones en infraestructura, I+D) con los ciclos de recaudación de capital o llegada a rentabilidad (break-even).",
+    "como": "El cálculo parte de la tesorería líquida actual (Cash_Balance) y los estados de flujo de caja mensuales. El Gross Burn suma nóminas de ingeniería y producto, facturas cloud, licencias SaaS, oficina y marketing; el Net Burn resta el flujo de cobros mensuales recurrentes (MRR cobrado, no solo facturado). El Runway = Cash_Balance / Net_Burn expresa los meses de vida restantes, ajustándose dinámicamente mediante proyecciones de contratación y crecimiento de ingresos (burn rate proyectado). En ingeniería, decisiones como sobredimensionar clústeres de GPU o contratar perfiles senior alteran directamente el denominador.",
+    "practicas": [
+      "Calcular el runway usando net burn conservador (sin asumir rondas futuras ni ingresos no contratados) y activar planes de contingencia al bajar de 9 a 12 meses.",
+      "Error típico: confundir ingresos devengados o contratos anuales pendientes de cobro con flujo de caja real, sobreestimando el runway disponible.",
+      "Medir el burn multiple (Net Burn / Net New ARR) para evaluar eficiencia del capital: valores menores a 1.5x indican crecimiento saludable.",
+      "Comparativa: default alive (la empresa alcanza rentabilidad antes de agotar el runway actual) vs. default dead (requiere financiación externa obligatoria para sobrevivir)."
+    ],
+    "ejemplo": "Caja disponible: 1.800.000 USD\nGross burn mensual: 190.000 USD (130k nómina, 35k cloud/SaaS, 25k G&A)\nCobros mensuales (MRR): 70.000 USD\nNet burn = 190.000 - 70.000 = 120.000 USD/mes\nRunway = 1.800.000 / 120.000 = 15 meses",
+    "entrevista": "El burn rate conecta directamente las decisiones de arquitectura y plantilla con el runway de la empresa, obligando a ponderar cada gasto fijo de ingeniería frente a meses reales de supervivencia."
+  },
+  "Contrato de precio fijo": {
+    "que": "Un contrato de precio fijo (Fixed-Price o Lump-Sum) es un acuerdo comercial en el que el proveedor se compromete a entregar un alcance de software especificado por un importe total cerrado y, generalmente, una fecha límite pactada. El riesgo financiero de desviaciones en esfuerzo, productividad o errores de estimación recae principalmente sobre el proveedor.",
+    "para": "Se utiliza cuando el cliente exige certidumbre presupuestaria estricta (licitaciones públicas, presupuestos anuales cerrados) y los requisitos son altamente estables, bien acotados o replicables (por ejemplo, integraciones estándar o migraciones conocidas). Protege al comprador frente a ineficiencias del proveedor, aunque encarece los cambios de alcance.",
+    "como": "El proveedor descompone la especificación funcional (SRS) mediante WBS o puntos de función, estima el esfuerzo base y añade un colchón de contingencia por riesgo técnico (típicamente 20%-40%) y margen objetivo antes de fijar el precio. El contrato define criterios de aceptación formales, hitos de pago vinculados a entregables (por ejemplo, 30% al inicio, 40% en UAT, 30% en producción) y un proceso estricto de Control de Cambios (Change Request). Cualquier funcionalidad fuera de la línea base requiere una orden de cambio valorada por separado antes de ejecutarse.",
+    "practicas": [
+      "Exigir una fase previa de descubrimiento remunerada (Discovery Phase) para cerrar ambigüedades funcionales antes de firmar el precio cerrado.",
+      "Error típico: aplicar precio fijo a productos innovadores con requisitos emergentes, lo que genera fricción constante y reducción encubierta de calidad para salvar el margen.",
+      "Definir criterios de aceptación automatizables (Definition of Done y suite de pruebas UAT) para evitar bloqueos subjetivos en la liberación de pagos.",
+      "Comparativa: frente a Tiempo y Materiales, el precio fijo traslada el riesgo de ejecución al proveedor a cambio de primas de riesgo más altas y menor flexibilidad."
+    ],
+    "ejemplo": "Estructura contractual típica:\n- Hito 1 (Firma + Arquitectura aprobada): 25%\n- Hito 2 (Release en staging + pruebas integración): 45%\n- Hito 3 (UAT firmado + despliegue productivo): 30%\n- Cláusula CR: cambios fuera de SRS se facturan a tarifa hora acordada",
+    "entrevista": "Un contrato de precio fijo solo es sano cuando el alcance está cerrado mediante un discovery previo; de lo contrario, el proveedor protege su margen sacrificando calidad técnica o litigando cada cambio."
+  },
+  "Contratos por tiempo y materiales": {
+    "que": "Un contrato por tiempo y materiales (T&M, Time and Materials) es un modelo de facturación en el que el cliente paga por las horas o jornadas reales trabajadas por los ingenieros según tarifas por perfil, más los costes directos de infraestructura o licencias consumidas. El riesgo de incertidumbre en alcance y complejidad técnica es asumido por el cliente, a cambio de flexibilidad total.",
+    "para": "Sirve para desarrollo ágil de productos evolutivos, mantenimiento correctivo/evolutivo, equipos aumentados (staff augmentation) e iniciativas de I+D donde los requisitos cambian según el feedback de usuarios. Evita que el proveedor infle presupuestos con márgenes defensivos artificiales cuando no existe especificación cerrada.",
+    "como": "Las partes acuerdan un pliego de tarifas por rol (por ejemplo, Staff Engineer, QA Automation, SRE) y la cadencia de facturación (quincenal o mensual). Durante cada sprint, el equipo registra el tiempo imputado en herramientas de seguimiento vinculadas a tickets o épicas, junto con los gastos directos aprobados. Al cierre del periodo se emite una hoja de tiempos detallada (timesheet) acompañada de métricas de entrega o demos de sprint; habitualmente se añade un techo presupuestario (T&M with a Cap o Not-To-Exceed) para acotar la exposición financiera máxima.",
+    "practicas": [
+      "Implementar T&M con tope máximo (Not-To-Exceed) y revisiones quincenales de burn-up para combinar agilidad con gobernanza financiera.",
+      "Error típico: medir el éxito por horas quemadas en lugar de velocidad entregada o valor en producción, desincentivando la productividad.",
+      "Exigir transparencia en repositorios, CI/CD y tableros para que el cliente audite el progreso real más allá de los partes de horas.",
+      "Comparativa: T&M optimiza la adaptabilidad y elimina primas de riesgo en entornos inciertos, mientras que Precio Fijo maximiza la predictibilidad presupuestaria en alcances estáticos."
+    ],
+    "ejemplo": "Facturación mensual T&M (con Cap de 45.000 USD):\n- 2x Senior Backend (160h c/u * 95 USD/h) = 30.400 USD\n- 1x QA Engineer (120h * 70 USD/h)     =  8.400 USD\n- Cloud staging pass-through           =  1.150 USD\nTotal mes: 39.950 USD (dentro del Cap)",
+    "entrevista": "El modelo por tiempo y materiales alinea el desarrollo iterativo con requisitos cambiantes, siempre que se complemente con visibilidad técnica continua y topes presupuestarios por fase."
+  },
+  "Control de costes": {
+    "que": "El control de costes es el conjunto continuo de procesos de monitoreo, análisis de desviaciones y acciones correctivas destinado a mantener el gasto real de un proyecto o sistema de software dentro de su línea base presupuestaria. Abarca tanto la fase de construcción (CapEx/proyecto) como el gasto operativo recurrente (OpEx/cloud y licencias).",
+    "para": "Resuelve la deriva silenciosa de presupuesto provocada por scope creep, sobredimensionamiento de infraestructura, retrasos técnicos o ineficiencias de equipo. Se aplica durante toda la ejecución de proyectos mediante revisiones periódicas (mensuales o por sprint) y alertas automatizadas en entornos cloud.",
+    "como": "Opera comparando continuamente tres magnitudes: el presupuesto planificado (Baseline), el coste real incurrido (Actual Cost desde nóminas, ERP y billing cloud) y el progreso técnico real alcanzado. Cuando los umbrales de varianza se superan (por ejemplo, desviación >5% en coste o caída del CPI por debajo de 0.9), se ejecuta un análisis de causa raíz diferenciando si el sobrecoste proviene de tarifas, productividad, alcance no aprobado o consumo de recursos. Las medidas correctivas incluyen reasignación de alcance (MoSCoW), reajuste de arquitectura, right-sizing o congelación de contrataciones no críticas.",
+    "practicas": [
+      "Integrar datos de imputación de horas, licencias y facturación cloud en un único cuadro de mando actualizado al menos semanalmente.",
+      "Error típico: detectar desviaciones únicamente al cierre contable trimestral, cuando el margen de maniobra técnica ya es nulo.",
+      "Vincular todo gasto extraordinario a un proceso formal de aprobación (Change Control Board o presupuesto de alertas en AWS Budgets).",
+      "Comparativa: la estimación de costes proyecta el gasto antes de empezar; el control de costes gobierna la ejecución para evitar que el coste real se desvíe de esa línea base."
+    ],
+    "ejemplo": "# Alerta automática de control de costes en AWS Budgets (CLI)\naws budgets create-budget --account-id 123456789012 \\\n  --budget '{\"BudgetName\":\"prod-api\",\"BudgetLimit\":{\"Amount\":\"5000\",\"Unit\":\"USD\"},\"TimeUnit\":\"MONTHLY\",\"BudgetType\":\"COST\"}' \\\n  --notifications-with-subscribers '[{\"Notification\":{\"NotificationType\":\"FORECASTED\",\"ComparisonOperator\":\"GREATER_THAN\",\"Threshold\":90},\"Subscribers\":[{\"SubscriptionType\":\"EMAIL\",\"Address\":\"finops@corp.com\"}]}]'",
+    "entrevista": "Controlar costes en software no significa solo recortar facturas, sino detectar desviaciones respecto al progreso entregado a tiempo para ajustar alcance o arquitectura antes de quemar el presupuesto."
+  },
+  "Coste de cumplimiento": {
+    "que": "El coste de cumplimiento (Compliance Cost) es el gasto directo e indirecto necesario para diseñar, implementar, auditar y mantener un sistema de software conforme a marcos legales, normativos y contractuales obligatorios (GDPR, PCI-DSS, SOC 2, HIPAA, DORA, EU AI Act). Incluye controles técnicos, evidencias automatizadas, auditorías externas y sobrecarga operativa.",
+    "para": "Sirve para cuantificar el impacto financiero real de operar en sectores regulados o vender a clientes enterprise que exigen certificaciones de seguridad y privacidad. Se utiliza al estimar el TCO de nuevas líneas de producto, entrar en nuevos mercados geográficos y diseñar arquitecturas compliant-by-design.",
+    "como": "Se descompone en costes iniciales de adecuación (gap analysis, cifrado en tránsito y reposo, gestión de consentimientos, segregación de datos por región/data residency, logging inmutable) y costes recurrentes (auditorías anuales tipo SOC 2 Type II, herramientas de compliance-as-code como Vanta/Drata, pentesting obligatorio y tiempo de ingeniería para remediación). También incorpora la pérdida de velocidad de entrega por controles obligatorios (revisión de pares, segregación de funciones en despliegues). Su contrapartida es el coste de no cumplimiento: multas regulatorias (hasta 4% de facturación global en GDPR), pérdida de licencias de operación y bloqueo de ventas enterprise.",
+    "practicas": [
+      "Automatizar la recolección de evidencias con Policy-as-Code (OPA/Gatekeeper, AWS Config) para convertir auditorías manuales costosas en verificaciones continuas.",
+      "Error típico: tratar el cumplimiento como una capa cosmética al final del desarrollo, multiplicando por 5x-10x el coste de re-arquitecturar almacenamiento y logs.",
+      "Modelar el coste de cumplimiento como habilitador de ingresos (revenue enabler) cuando desbloquea contratos B2B regulados.",
+      "Comparativa: coste de conformidad (prevención + auditoría) vs. coste de no conformidad (sanciones, brechas, litigios y churn por pérdida de confianza)."
+    ],
+    "ejemplo": "# Regla OPA (Rego) para evitar despliegues fuera de la UE (GDPR data residency)\npackage kubernetes.admission\ndeny[msg] {\n  input.request.kind.kind == \"PersistentVolumeClaim\"\n  region := input.request.object.metadata.annotations[\"topology.kubernetes.io/region\"]\n  not startswith(region, \"eu-\")\n  msg := sprintf(\"Región no conforme con GDPR: %v\", [region])\n}",
+    "entrevista": "El coste de cumplimiento se minimiza integrando controles y recolección de evidencias como código en el pipeline CI/CD desde el inicio, transformándolo en un acelerador comercial en lugar de un cuello de botella."
+  },
+  "Coste de desarrollo": {
+    "que": "El coste de desarrollo es la suma de recursos financieros invertidos para concebir, diseñar, codificar, probar y llevar a producción una versión inicial o nueva capacidad de software (CapEx inicial). Comprende el coste laboral cargado del equipo técnico y de producto, más herramientas, entornos temporales y servicios de terceros usados durante la construcción.",
+    "para": "Resuelve la valoración de la inversión inicial necesaria para lanzar un producto, calcular el punto de equilibrio de proyectos y determinar qué parte del esfuerzo puede capitalizarse contablemente según normas como NIC 38 o ASC 350-40. Se emplea en presupuestos de proyecto, ROI y pricing de servicios.",
+    "como": "Se calcula multiplicando las horas o jornadas efectivas de cada rol (ingeniería, arquitectura, diseño UX, QA, Product Management) por su tarifa horaria totalmente cargada (Loaded Cost: salario bruto + cargas sociales + beneficios + proporción de estructura y licencias). A esto se añaden costes de infraestructura de desarrollo/staging, licencias de librerías o APIs de prueba y costes de gestión. En contabilidad financiera, los costes de la fase de investigación se registran como gasto inmediato (OpEx), mientras que los costes directos de desarrollo tras alcanzar viabilidad técnica pueden activarse como activo intangible y amortizarse.",
+    "practicas": [
+      "Usar siempre el coste totalmente cargado (típicamente 1.25x-1.45x del salario bruto) y considerar una capacidad productiva real del 70%-75% por ceremonias, soporte y vacaciones.",
+      "Error típico: asumir que el coste de desarrollo equivale al coste total del software, olvidando que suele representar solo el 20%-40% del ciclo de vida frente al mantenimiento.",
+      "Separar contablemente las horas de nueva funcionalidad (capitalizables) de las de corrección de bugs y mantenimiento rutinario (gasto operativo).",
+      "Comparativa: coste de desarrollo (construcción inicial hasta go-live) vs. coste de mantenimiento (operación, evolución y corrección tras la puesta en producción)."
+    ],
+    "ejemplo": "# Coste cargado por hora de un equipo de 4 ingenieros (2 sprints = 4 semanas)\nsalario_anual_bruto = 70000\nfactor_carga = 1.35  # Seguridad social + beneficios + herramientas\nhoras_productivas_ano = 1600\ncoste_hora_cargado = (salario_anual_bruto * factor_carga) / horas_productivas_ano  # 59.06 USD/h\ncoste_2_sprints = 4 * 120 * coste_hora_cargado  # 28.350 USD",
+    "entrevista": "El coste de desarrollo real se mide por el coste laboral totalmente cargado sobre horas productivas netas, y suele ser solo la fracción visible de la inversión si se compara con el mantenimiento posterior."
+  },
+  "Coste de deuda técnica": {
+    "que": "El coste de deuda técnica es el sobrecoste económico recurrente —análogo a los intereses de un préstamo— provocado por decisiones subóptimas de diseño, código acoplado, ausencia de pruebas o dependencias obsoletas que ralentizan cada cambio futuro y elevan la tasa de defectos. Se distingue entre el principal (coste de refactorizar) y el interés (fricción continua pagada en cada sprint).",
+    "para": "Sirve para traducir problemas internos de calidad de código en impacto financiero comprensible para negocio y dirección (pérdida de time-to-market, horas extra de QA, mayor tasa de incidentes). Se usa para justificar presupuestos de refactorización, replatforming y asignación de capacidad fija a salud técnica.",
+    "como": "El mecanismo económico funciona por acumulación compuesta: cada feature implementada sobre módulos con alta complejidad ciclomática o bajo coverage exige más horas de análisis, revisión y regresión manual (incremento del lead time for changes). Para cuantificarlo se estima el porcentaje de capacidad de ingeniería absorbido por retrabajo, workarounds y resolución de bugs evitables (por ejemplo, 25% de la capacidad de un equipo de 8 personas) multiplicado por su coste cargado anual. Si el interés anual supera el coste de amortizar el principal (refactorización), mantener la deuda es financieramente irracional.",
+    "practicas": [
+      "Distinguir deuda técnica deliberada y prudente (acelerar validación de mercado con plan de pago) de deuda imprudente o accidental que solo destruye productividad.",
+      "Error típico: pedir 'un sprint entero para limpiar código' sin cuantificar qué módulos críticos (hotspots de alto churn y alta complejidad) tienen mayor retorno al refactorizarse.",
+      "Asignar una cuota continua (por ejemplo, 15%-20% de cada sprint) o aplicar la regla del boy scout en módulos de alto cambio en lugar de esperar a reescrituras totales.",
+      "Comparativa: deuda técnica (reduce velocidad marginal de cambio y aumenta defectos en código propio) vs. coste de mantenimiento evolutivo normal por crecimiento del negocio."
+    ],
+    "ejemplo": "# Decisión económica de pagar deuda técnica (Break-even)\nequipo_coste_anual = 640000\nimpuesto_deuda_actual = 0.22  # 22% del tiempo perdido en workarounds/bugs\ninteres_anual = equipo_coste_anual * impuesto_deuda_actual  # 140.800 USD/año\ncoste_refactor = 65000\npayback_meses = (coste_refactor / interes_anual) * 12  # ~5.5 meses",
+    "entrevista": "La deuda técnica no es un problema estético del código, sino un impuesto compuesto sobre el opex de ingeniería: cuando el interés mensual en pérdida de velocidad supera el coste de refactorizar, no pagarla destruye rentabilidad."
+  },
+  "Coste de incidentes": {
+    "que": "El coste de incidentes es la pérdida financiera total ocasionada por caídas, degradaciones de rendimiento, brechas de seguridad o corrupción de datos en sistemas en producción. Integra pérdidas directas inmediatas (ingresos no capturados, penalizaciones por SLA) y costes indirectos posteriores (horas de respuesta SRE, soporte y pérdida de clientes).",
+    "para": "Resuelve la justificación económica de inversiones en alta disponibilidad, observabilidad, pruebas de carga, failover multi-región y reducción de MTTR. Permite calcular el presupuesto razonable de resiliencia sin caer ni en negligencia operativa ni en sobreingeniería de cinco nueves injustificada.",
+    "como": "El impacto se calcula sumando cinco componentes por incidente: 1) Pérdida de ingresos durante el tiempo de caída (Downtime_Minutos * Ingresos_Por_Minuto * Factor_No_Diferible); 2) Coste laboral de respuesta y postmortem (Ingenieros_Involucrados * Horas * Coste_Cargado, incluyendo tiempo de cambio de contexto); 3) Penalizaciones contractuales por incumplimiento de SLA/SLO (créditos a clientes); 4) Coste de remediación de datos o soporte al cliente; y 5) Churn inducido y daño reputacional medido como pérdida de LTV. Relacionando la frecuencia anual (MTBF) con el MTTR se obtiene el coste anual esperado de fallos.",
+    "practicas": [
+      "Calcular el coste por minuto de caída por servicio (Tier 0 checkout vs. Tier 2 backoffice) para alinear las inversiones en redundancia con el riesgo real de negocio.",
+      "Error típico: contabilizar solo el salario de los ingenieros de guardia e ignorar el lucro cesante, los créditos de SLA y la interrupción de otros equipos.",
+      "Invertir en reducir el MTTR (feature flags, rollbacks automáticos, runbooks y trazabilidad) suele ofrecer mayor ROI que intentar eliminar el 100% de los fallos.",
+      "Comparativa: coste de prevención/observabilidad (gasto predecible y acotado) vs. coste de incidente mayor no mitigado (varianza extrema y daño comercial)."
+    ],
+    "ejemplo": "# Estimación de coste de un incidente Sev-1 de 45 minutos en pasarela de pago\nperdida_ventas = 45 * 1800          # 81.000 USD (1.800 USD/min no recuperables)\nrespuesta_ing = 6 * 3 * 95          #  1.710 USD (6 ingenieros x 3h conteniendo + postmortem)\ncreditos_sla = 12000                # 12.000 USD en compensaciones B2B\ncoste_total = perdida_ventas + respuesta_ing + creditos_sla  # 94.710 USD",
+    "entrevista": "Medir el coste por minuto de caída incluyendo lucro cesante, respuesta de ingeniería y churn permite fijar SLOs económicamente óptimos en lugar de perseguir disponibilidad infinita a ciegas."
+  },
+  "Coste de mantenimiento": {
+    "que": "El coste de mantenimiento es el gasto continuo necesario para conservar un sistema de software operativo, seguro, compatible con su entorno y adaptado a cambios del negocio después de su lanzamiento a producción. Siguiendo la taxonomía clásica (ISO/IEC 14764), engloba mantenimiento correctivo, adaptativo, perfectivo y preventivo.",
+    "para": "Sirve para planificar presupuestos plurianuales realistas de TI, decidir el momento óptimo de retiro o reemplazo de aplicaciones heredadas (legacy) y evitar que el 100% de la capacidad de ingeniería quede secuestrada por operaciones de 'mantener las luces encendidas' (KTLO).",
+    "como": "En la industria, el mantenimiento suele absorber entre el 60% y el 80% del coste total del ciclo de vida del software. Sus motores de coste incluyen: parcheo continuo de vulnerabilidades (CVEs) y actualización de dependencias/runtimes, adaptación a cambios en APIs externas, sistemas operativos o normativas, resolución de incidentes y soporte nivel 3, más evolución incremental de funcionalidades (perfectivo). A medida que un sistema envejece sin refactorización preventiva, la entropía arquitectónica eleva el coste marginal de cada cambio hasta superar el coste anualizado de un reemplazo.",
+    "practicas": [
+      "Etiquetar explícitamente la proporción de capacidad dedicada a KTLO (Keep The Lights On) frente a innovación para detectar sistemas cuyo mantenimiento asfixia al negocio.",
+      "Error típico: aprobar presupuestos de proyecto financiando únicamente el primer lanzamiento sin dotación operativa para los 3-5 años siguientes.",
+      "Reducir el mantenimiento adaptativo y preventivo automatizando actualizaciones de dependencias (Renovate/Dependabot) y tests de regresión en CI.",
+      "Comparativa: mantenimiento correctivo (reparar defectos tras fallo, reactivo) vs. mantenimiento preventivo (refactorizar y actualizar para evitar fallos futuros, proactivo)."
+    ],
+    "ejemplo": "# Distribución anual típica de un presupuesto de software maduro (1M USD/año)\n- Perfectivo (mejoras menores/UX):      350.000 USD (35%)\n- Adaptativo (OS, cloud, APIs, normas): 250.000 USD (25%)\n- Correctivo (bugs e incidentes):       250.000 USD (25%)\n- Preventivo (refactor, tests, CVEs):   150.000 USD (15%)",
+    "entrevista": "Dado que el mantenimiento representa entre el 60% y el 80% del ciclo de vida del software, optimizar la mantenibilidad, las pruebas automatizadas y la observabilidad al diseñar reduce drásticamente el OpEx futuro."
+  },
+  "Coste de oportunidad": {
+    "que": "El coste de oportunidad en ingeniería de software es el valor económico del mejor uso alternativo al que se renuncia cada vez que se asignan ingenieros, presupuesto o tiempo a una iniciativa concreta. Aunque no aparece como asiento contable en la factura ni en el balance, representa el coste real más crítico de la capacidad finita de producto.",
+    "para": "Sirve para tomar decisiones de priorización de roadmap, elegir entre construir herramientas internas frente a comprar soluciones comerciales (Build vs. Buy) y evaluar el impacto de retrasar lanzamientos por deuda técnica o sobreingeniería. Evita evaluar proyectos en el vacío como si la capacidad de ingeniería fuera ilimitada.",
+    "como": "Se calcula comparando el retorno neto esperado de la opción elegida (por ejemplo, construir un sistema de facturación propio durante 4 meses) contra el retorno que ese mismo equipo generaría ejecutando la siguiente mejor alternativa del backlog (por ejemplo, lanzar una funcionalidad enterprise que desbloquea 500k USD en ARR). Incluye el concepto de Cost of Delay (CoD): cuánto beneficio semanal se deja de capturar por cada semana de retraso en la entrega de una iniciativa prioritaria. En estrategias WSJF (Weighted Shortest Job First), dividir el Cost of Delay entre la duración maximiza el valor económico entregado por unidad de tiempo.",
+    "practicas": [
+      "Aplicar siempre Build vs. Buy evaluando no solo el precio de la licencia SaaS, sino el valor del producto principal que el equipo dejará de construir si desarrolla una herramienta no diferenciadora.",
+      "Error típico: pensar que una herramienta 'gratis' u open source tiene coste cero cuando exige meses de integración, mantenimiento y desvía foco del core business.",
+      "Usar Cost of Delay y WSJF en la priorización de backlogs para penalizar iniciativas grandes que bloquean entregas rápidas de alto valor.",
+      "Comparativa: coste contable directo (dinero que sale de caja) vs. coste de oportunidad (valor neto perdido por no ejecutar la mejor alternativa posible)."
+    ],
+    "ejemplo": "# Evaluación Build vs. Buy con Coste de Oportunidad\nopcion_build = -90000 (desarrollo) - 320000 (ARR perdido por retrasar feature core)\nopcion_buy   = -48000 (licencia SaaS anual) + 320000 (feature core entregada a tiempo)\n# Diferencia económica real a favor de Buy: +682.000 USD el primer año",
+    "entrevista": "El mayor coste de construir software no diferenciador no es la nómina del equipo, sino el coste de oportunidad de las funcionalidades estratégicas que el negocio deja de lanzar a tiempo."
+  },
+  "Coste total de propiedad (TCO)": {
+    "que": "El Coste Total de Propiedad (TCO, Total Cost of Ownership) es la suma integral de todos los costes directos e indirectos asociados a adquirir, construir, implementar, operar, mantener y retirar un sistema de software durante todo su ciclo de vida útil. Integra tanto el gasto de capital inicial (CapEx) como el gasto operativo continuo (OpEx).",
+    "para": "Resuelve la miopía de comparar alternativas tecnológicas únicamente por su precio inicial de compra o desarrollo (el efecto iceberg). Se utiliza obligatoriamente al comparar SaaS vs. desarrollo a medida, cloud público vs. on-premise, bases de datos comerciales vs. open source gestionado por equipo propio.",
+    "como": "El modelo de TCO suma cinco capas temporales sobre un horizonte definido (habitualmente 3 o 5 años): 1) Adquisición/Construcción (licencias, desarrollo, migración inicial); 2) Implementación e integración (conectores, seguridad, formación); 3) Operación continua (cloud, soporte, monitorización, ancho de banda); 4) Mantenimiento y evolución (parches, actualizaciones mayores, deuda técnica, incidentes); y 5) Retiro o salida (migración final, exportación de datos y desmantelamiento, evitando lock-in oculto). La suma permite calcular el TCO anualizado para contrastarlo con el valor generado.",
+    "practicas": [
+      "Modelar un horizonte de 3 a 5 años que incluya costes de operación SRE, formación y coste de salida (egress y reescritura) para evitar trampas de lock-in.",
+      "Error típico: comparar la cuota anual de un servicio gestionado (RDS/Auth0) solo contra el coste de la instancia raw EC2, omitiendo las horas de DBA/seguridad necesarias para autogestionarlo.",
+      "Incluir costes ocultos como consumo de soporte al usuario, tiempos de inactividad planificados y auditorías de cumplimiento.",
+      "Comparativa: TCO mide únicamente el lado completo del coste en todo el ciclo de vida; el ROI y el VAN cruzan ese TCO contra los beneficios generados."
+    ],
+    "ejemplo": "# TCO a 3 años: PostgreSQL Autogestionado vs. Gestionado (RDS)\nAutogestionado = (3 * 4800_vm) + (3 * 36000_horas_SRE_backups_failover) = 122.400 USD\nGestionado_RDS = (3 * 11500_rds) + (3 * 6000_tuning_minimo)           =  52.500 USD\n# El servicio gestionado tiene mayor factura cloud pero un TCO 57% menor",
+    "entrevista": "Un análisis de TCO riguroso elimina el sesgo del precio inicial al sumar licencias, operación SRE, mantenimiento y costes de salida a lo largo de 3 a 5 años."
+  },
+  "Costes cloud": {
+    "que": "Los costes cloud representan el gasto variable por uso y reserva de recursos de infraestructura, plataforma y servicios gestionados consumidos en proveedores en la nube (AWS, GCP, Azure). A diferencia del hardware on-premise amortizado en CapEx, transforman la infraestructura en un gasto operativo elástico (OpEx) facturado por segundo, GB o petición.",
+    "para": "Sirven para entender los impulsores económicos de una arquitectura moderna y evitar facturas exponenciales al escalar tráfico o datos. Son esenciales para diseñar sistemas eficientes en costes (cost-aware architectures), calcular márgenes brutos en SaaS y presupuestar entornos de IA, datos y microservicios.",
+    "como": "La facturación cloud se descompone en cuatro vectores principales: 1) Cómputo (vCPU, RAM, GPU por hora/segundo en VMs, contenedores o serverless); 2) Almacenamiento (GB-mes en bloque, objeto o base de datos, más operaciones IOPS/requests); 3) Red y transferencia de datos (data transfer egress hacia Internet, entre zonas de disponibilidad AZ y entre regiones, frecuentemente subestimado); y 4) Servicios gestionados y observabilidad (ingestión y retención de logs/métricas, NAT Gateways, API Gateways). Los modelos de cobro combinan pago por uso (On-Demand), compromisos de uso/gasto (Reserved Instances / Savings Plans / CUDs) e instancias interrumpibles (Spot/Preemptible).",
+    "practicas": [
+      "Medir el coste de transferencia entre zonas de disponibilidad (cross-AZ) y egress de NAT Gateways en arquitecturas chatty de microservicios o Kafka.",
+      "Error típico: habilitar logging de debug y métricas de alta cardinalidad sin políticas de retención ni muestreo, haciendo que la factura de observabilidad supere a la de cómputo.",
+      "Etiquetar obligatoriamente todos los recursos (tags: env, team, service, cost-center) mediante IaC (Terraform) para tener atribución exacta del gasto.",
+      "Comparativa: On-Demand (máxima flexibilidad, precio unitario más alto) vs. Savings Plans / CUDs (descuentos de 30%-60% a cambio de compromiso de 1-3 años)."
+    ],
+    "ejemplo": "# Desglose mensual típico de factura cloud (arquitectura Kubernetes en producción)\nCómputo (EKS nodes + RDS):        42%  (8.400 USD)\nTransferencia (cross-AZ + CDN):   23%  (4.600 USD)\nObservabilidad (logs/métricas):   20%  (4.000 USD)\nAlmacenamiento + Snapshots:       15%  (3.000 USD)",
+    "entrevista": "En la nube cada decisión arquitectónica tiene etiqueta de precio: el tráfico cross-AZ, los NAT Gateways y la observabilidad sin muestreo suelen pesar tanto como el cómputo si no se diseñan con conciencia de costes."
+  },
+  "Earned value management (EVM)": {
+    "que": "Earned Value Management (Gestión del Valor Ganado) es una metodología estandarizada de control de proyectos que integra alcance, cronograma y coste en una única métrica monetaria objetiva para medir el desempeño real y predecir el coste final.",
+    "para": "Resuelve la ilusión de ir 'en presupuesto' simplemente porque se ha gastado menos dinero del previsto, cuando en realidad el proyecto lleva retraso técnico. Se utiliza en proyectos de software de gran escala, contratos gubernamentales/enterprise y programas híbridos con hitos formales.",
+    "como": "EVM opera sobre tres curvas base en un instante t: Planned Value (PV, presupuesto del trabajo que debería haberse completado), Earned Value (EV, presupuesto asignado al trabajo realmente completado y aceptado) y Actual Cost (AC, gasto real incurrido). A partir de ellas calcula la Varianza de Coste (CV = EV - AC), la Varianza de Cronograma (SV = EV - PV) y los índices de eficiencia: CPI = EV / AC (si < 1, hay sobrecoste por dólar gastado) y SPI = EV / PV (si < 1, hay retraso). Usando el CPI se proyecta la Estimación a la Conclusión (EAC = BAC / CPI, donde BAC es el presupuesto total al término).",
+    "practicas": [
+      "Contabilizar EV únicamente sobre entregables verificados (Definition of Done cumplido), nunca por porcentaje subjetivo de avance como '80% codificado'.",
+      "Error típico: pensar que un proyecto está sano porque AC < PV, ignorando que EV es aún menor (gastó menos solo porque avanzó mucho más lento).",
+      "Recordar que en fases finales el SPI converge artificialmente a 1 aunque el proyecto vaya tarde; complementar con Earned Schedule (ES) para medir desviación temporal real.",
+      "Comparativa: seguimiento tradicional (compara gasto real AC vs. presupuesto PV) vs. EVM (introduce EV para vincular dinero gastado con alcance realmente entregado)."
+    ],
+    "ejemplo": "BAC (Presupuesto total) = 200.000 USD | En el mes 3:\nPV = 100.000 | EV = 80.000 | AC = 95.000\nSPI = 80k / 100k = 0.80 (20% de retraso)\nCPI = 80k / 95k  = 0.84 (sobrecoste: rinde 0.84 USD por cada 1 USD gastado)\nEAC = 200k / 0.84 = 238.095 USD (proyección de sobrecoste de 38k USD)",
+    "entrevista": "El EVM evita la falsa tranquilidad de comparar solo presupuesto contra gasto, porque el Earned Value mide cuánto alcance real hemos entregado por cada dólar y día consumidos."
+  },
+  "Economía del software": {
+    "que": "La economía del software es la disciplina que estudia la producción, valoración, financiación, distribución y mantenimiento de productos y servicios basados en software, considerando sus propiedades económicas únicas: alto coste fijo inicial, coste marginal de replicación cercano a cero, efectos de red y depreciación por obsolescencia tecnológica.",
+    "para": "Sirve para conectar las decisiones de ingeniería (arquitectura, calidad, entrega continua, infraestructura) con resultados financieros de negocio (márgenes, flujo de caja, riesgo y ventaja competitiva). Orienta tanto a arquitectos y engineering managers como a directivos en la asignación eficiente de capital técnico.",
+    "como": "A diferencia de los bienes físicos, el software presenta economías de escala extremas en distribución y deseconomías de complejidad en producción (Ley de Brooks: añadir personas a un proyecto retrasado lo retrasa más por explosión de canales de comunicación n(n-1)/2). Su valor económico no reside en las líneas de código sino en los procesos automatizados, los datos y la capacidad de evolucionar rápidamente ante cambios de mercado. Modela trade-offs constantes entre velocidad de entrega, calidad estructural, fiabilidad operativa y gasto de capital/operación.",
+    "practicas": [
+      "Evaluar cualquier decisión técnica en términos de impacto en flujo de caja, riesgo y velocidad de aprendizaje del negocio, no solo por elegancia técnica.",
+      "Error típico: aplicar métricas industriales de manufactura (como líneas de código por hora o utilización al 100% de desarrolladores) que destruyen la calidad y el flujo en trabajo creativo.",
+      "Reconocer que el software es un sistema sociotécnico vivo: el coste real dominante está en la evolución continua y la coordinación entre equipos (Ley de Conway).",
+      "Comparativa: economía manufacturera (coste dominado por replicación física y materiales) vs. economía del software (coste dominado por I+D, mantenimiento y talento)."
+    ],
+    "ejemplo": "# Ley de Brooks: explosión de canales de comunicación al escalar un equipo\ndef canales(n): return n * (n - 1) // 2\n# Equipo de 5 personas  -> 10 canales\n# Equipo de 15 personas -> 105 canales (+10.5x carga de coordinación)",
+    "entrevista": "La economía del software se rige por costes marginales de copia nulos, alto coste de evolución y deseconomías de coordinación, por lo que el éxito financiero depende de maximizar la velocidad de cambio sostenible sin disparar la complejidad."
+  },
+  "Estimación de costes": {
+    "que": "La estimación de costes en ingeniería de software es el proceso sistemático de proyectar el esfuerzo, tiempo, recursos humanos e infraestructura necesarios para construir o modificar un sistema, traduciéndolos a rangos financieros antes y durante la ejecución. Reconoce la incertidumbre inherente mediante el Cono de Incertidumbre.",
+    "para": "Sirve para fijar presupuestos viables, presentar propuestas comerciales, evaluar la factibilidad económica de proyectos y tomar decisiones de alcance antes de comprometer fondos. Permite gestionar expectativas entre ingeniería y dirección con rangos probabilísticos en lugar de promesas arbitrarias.",
+    "como": "Combina múltiples técnicas complementarias según la madurez de la definición: estimación por analogía (comparación histórica con proyectos similares), juicio de expertos estructurado (Wideband Delphi / Planning Poker), descomposición bottom-up sobre una Work Breakdown Structure (WBS) y modelos paramétricos (COCOMO II, Function Points) o estimación por tres puntos PERT: E = (O + 4M + P) / 6 con desviación estándar sigma = (P - O) / 6. En etapas iniciales el Cono de Incertidumbre implica un error potencial de 4x a 0.25x, reduciéndose conforme se validan arquitectura y requisitos. Finalmente, el esfuerzo en persona-mes se multiplica por el coste cargado y se añaden riesgos e infraestructura.",
+    "practicas": [
+      "Expresar siempre las estimaciones iniciales como rangos con nivel de confianza (por ejemplo, P50-P80) en lugar de una cifra única determinista.",
+      "Error típico: confundir una estimación técnica probabilística con un objetivo comercial arbitrario (target) o compromiso cerrado (commitment).",
+      "Cruzar estimaciones bottom-up con datos históricos reales del equipo (throughput, cycle time) o forecasting de Monte Carlo en entornos ágiles.",
+      "Comparativa: estimación top-down/paramétrica (rápida en fases tempranas, menor detalle) vs. bottom-up/WBS (más precisa cuando la arquitectura está definida, más costosa de elaborar)."
+    ],
+    "ejemplo": "# Estimación PERT (en días-persona) para un módulo de pagos\nO, M, P = 10, 16, 34  # Optimista, Más probable, Pesimista\nesperado = (O + 4*M + P) / 6        # 18.0 días\nsigma = (P - O) / 6                 #  4.0 días\n# Rango P84 (E + 1*sigma): 18 a 22 días-persona",
+    "entrevista": "Una estimación profesional nunca es un número único ni una fecha impuesta, sino un rango probabilístico calibrado con histórico real que se estrecha conforme disminuye la incertidumbre técnica."
+  },
+  "Facturación por suscripción": {
+    "que": "La facturación por suscripción es un modelo de monetización recurrente en el que el cliente paga una tarifa periódica (mensual o anual) por el acceso continuo al software, actualizaciones y soporte, en lugar de adquirir una licencia perpetua única. Puede estructurarse por tarifa plana, por usuario/asiento (per-seat), por niveles (tiered) o basada en uso (usage-based/híbrida).",
+    "para": "Resuelve la volatilidad de ingresos por ventas puntuales, alinea la generación de valor continuo del producto con ingresos predecibles (ARR/MRR) y reduce la barrera de entrada inicial del cliente. Es el estándar comercial para plataformas SaaS, APIs y herramientas cloud B2B/B2C.",
+    "como": "Técnicamente requiere un motor de billing recurrente (como Stripe Billing, Chargebee o Lago) integrado con gestión de identidades y entitlements (feature flags por plan). El flujo automatiza ciclos de facturación, prorrateos en tiempo real ante upgrades/downgrades, medición de consumo (metering con agregación de eventos), generación de facturas fiscales, reintentos inteligentes ante fallos de cobro (dunning management) y reconocimiento contable de ingresos diferidos según ASC 606 / NIIF 15 (un cobro anual se reconoce mensualmente conforme se presta el servicio).",
+    "practicas": [
+      "Desacoplar los entitlements (qué puede hacer cada plan) del código de negocio y del proveedor de pagos para iterar precios sin reescribir la aplicación.",
+      "Error típico: implementar lógica casera de prorrateos, zonas horarias, impuestos globales (IVA/Sales Tax) y reintentos de tarjeta desde cero.",
+      "Implementar dunning automático y notificaciones preventivas de tarjeta caducada, ya que el churn involuntario suele representar entre el 20% y el 40% de las bajas.",
+      "Comparativa: precio por asiento (predecible, pero penaliza la adopción amplia en el cliente) vs. precio por uso o híbrido (alineado al valor consumido, exige infraestructura de metering robusta)."
+    ],
+    "ejemplo": "# Prorrateo simplificado al cambiar de plan a mitad de ciclo (30 días)\ndias_restantes = 12\ncredito_plan_actual = (49.00 / 30) * dias_restantes   # 19.60 USD a favor\ncargo_plan_nuevo    = (99.00 / 30) * dias_restantes   # 39.60 USD\nimporte_inmediato   = cargo_plan_nuevo - credito_plan_actual  # 20.00 USD",
+    "entrevista": "La facturación por suscripción exige desacoplar precios, entitlements y metering, además de automatizar el dunning y el diferimiento contable de ingresos anuales para que el crecimiento no genere caos operativo."
+  },
+  "FinOps": {
+    "que": "FinOps es una práctica operativa y cultural de gestión financiera en la nube que une a ingeniería, finanzas y negocio para maximizar el valor empresarial de cada dólar gastado en cloud. Se basa en la visibilidad en tiempo real, la responsabilidad distribuida de los equipos técnicos y la optimización continua basada en métricas unitarias.",
+    "para": "Resuelve la pérdida de control presupuestario derivada de la descentralización del gasto en la nube, donde cualquier desarrollador puede aprovisionar recursos costosos mediante código sin aprobación financiera previa. Se aplica en organizaciones con cargas cloud relevantes para alinear velocidad de entrega, rendimiento y rentabilidad.",
+    "como": "Sigue el marco iterativo de tres fases de la FinOps Foundation: 1) Inform (ingestión de archivos FOCUS o AWS CUR, etiquetado/showback/chargeback y detección de anomalías por equipo); 2) Optimize (right-sizing, compra centralizada de Commitments/Savings Plans, eliminación de desperdicio); y 3) Operate (definición de presupuestos por producto, guardrails en pipelines CI/CD como Infracost y KPIs de Cloud Unit Economics como coste por transacción o por tenant). La ingeniería asume el coste como un requisito no funcional medible junto a latencia y disponibilidad.",
+    "practicas": [
+      "Implementar showback transparente antes de imponer chargeback agresivo, integrando estimaciones de coste directamente en cada Pull Request de Terraform.",
+      "Error típico: reducir FinOps a 'apagar servidores' o delegarlo únicamente al departamento de compras sin dar visibilidad ni contexto arquitectónico a los ingenieros.",
+      "Normalizar los datos de facturación multicloud con el estándar abierto FOCUS (FinOps Open Cost and Usage Specification).",
+      "Comparativa: compras tradicionales de TI (centralizadas, lentas, enfocadas en capex) vs. FinOps (decisiones técnicas rápidas y descentralizadas gobernadas por métricas unitarias de negocio)."
+    ],
+    "ejemplo": "# Estimación de impacto de coste en Pull Request con Infracost en CI\ninfracost diff --path=terraform/prod \\\n  --compare-to=infracost-base.json \\\n  --format=table\n# Salida en PR: +$420/mes (+18%) por cambiar r6g.large a r6g.2xlarge",
+    "entrevista": "FinOps no trata simplemente de gastar menos en la nube, sino de dar visibilidad en tiempo real a ingeniería para conectar el gasto de infraestructura con el coste unitario por cliente o transacción."
+  },
+  "Function point analysis": {
+    "que": "El Análisis de Puntos de Función (FPA, Function Point Analysis, estandarizado en IFPUG / ISO 20926) es un método de medición funcional del tamaño del software independiente de la tecnología, el lenguaje de programación o las líneas de código. Cuantifica la funcionalidad entregada al usuario desde su perspectiva lógica.",
+    "para": "Sirve para estimar esfuerzo, comparar productividad entre distintas tecnologías (por ejemplo, Java vs. Python), controlar el scope creep y valorar activos o contratos de desarrollo basándose en volumen funcional objetivo. Se aplica principalmente en sistemas de gestión empresarial (MIS/ERP), banca y contratación pública.",
+    "como": "El conteo identifica cinco tipos de componentes lógicos: tres transaccionales —External Inputs (EI), External Outputs (EO) y External Inquiries (EQ)— y dos de datos —Internal Logical Files (ILF) y External Interface Files (EIF)—. Cada componente se clasifica en complejidad baja, media o alta según el número de elementos de datos (DET) y archivos referenciados (FTR/RET), asignándole un peso estándar para obtener los Puntos de Función Sin Ajustar (UFP). Opcionalmente se aplica un Factor de Ajuste de Valor (VAF) basado en 14 Características Generales del Sistema (rendimiento, seguridad, concurrencia) para obtener los Puntos de Función Ajustados (AFP = UFP * VAF), aunque la norma ISO moderna prioriza usar UFP directamente junto con factores de productividad históricos (horas/FP).",
+    "practicas": [
+      "Utilizar métricas basadas en UFP sin ajuste y calibrar la ratio histórica propia (horas por punto de función) para presupuestar con mayor rigor.",
+      "Error típico: contar tablas físicas de base de datos o endpoints técnicos internos en lugar de entidades lógicas y procesos elementales percibidos por el usuario.",
+      "Medir la tasa de variación de puntos de función entre el inicio y el cierre para auditar objetivamente ampliaciones de alcance (scope creep).",
+      "Comparativa: líneas de código (SLOC, dependiente del lenguaje y penaliza código conciso) vs. Function Points (medida funcional estable antes de escribir código)."
+    ],
+    "ejemplo": "Conteo rápido de un módulo CRUD de Pedidos:\n- 2 EI (Crear, Modificar pedido, complej. media: 2 * 4) =  8 UFP\n- 1 EO (Factura PDF calculada, complej. alta:  1 * 7) =  7 UFP\n- 1 EQ (Consulta estado pedido, complej. baja: 1 * 3) =  3 UFP\n- 1 ILF (Entidad lógica Pedidos, complej. baja: 1 * 7) =  7 UFP\nTotal = 25 UFP * 10 h/UFP (histórico equipo) = 250 horas estimadas",
+    "entrevista": "Function Point Analysis mide el tamaño lógico del software desde la perspectiva del usuario independientemente del lenguaje, permitiendo presupuestar y auditar el scope creep sin depender de las líneas de código."
+  },
+  "Licenciamiento y costes de dependencias": {
+    "que": "El análisis de licenciamiento y costes de dependencias evalúa el impacto económico, contractual y legal de incorporar software de terceros (librerías open source, SDKs comerciales, APIs externas, bases de datos y plataformas SaaS) dentro de un producto propio. Abarca tanto tasas monetarias como obligaciones de licencias copyleft o riesgos de cambio de modelo de precios.",
+    "para": "Resuelve sorpresas financieras por escalado de licencias comerciales (por núcleo, MAU o volumen) y protege la propiedad intelectual frente a incompatibilidades de licencias open source en auditorías de M&A o distribución on-premise. Se aplica en diseño de arquitectura, selección de stack (ADR) y gobernanza DevSecOps.",
+    "como": "El control combina gestión de SBOM (Software Bill of Materials en formato CycloneDX/SPDX) con escáneres automáticos en CI/CD que detectan licencias en el árbol completo de dependencias transitivas (MIT, Apache-2.0 frente a copyleft fuerte como GPL/AGPL o licencias source-available como BSL/SSPL). Paralelamente, para dependencias comerciales y APIs SaaS (mapas, pagos, LLMs, observabilidad), se modelan sus curvas de precios por escalones (tiers) y costes de cambio (switching costs) ante incrementos unilaterales de tarifa o deprecación de planes gratuitos.",
+    "practicas": [
+      "Automatizar políticas de licencias permitidas/bloqueadas sobre el SBOM en CI/CD (por ejemplo, bloqueando dependencias AGPL en código propietario distribuido o SaaS).",
+      "Error típico: adoptar librerías 'free tier' o frameworks con licencias source-available (SSPL/BSL) sin revisar las restricciones comerciales al superar cierto umbral de ingresos o uso.",
+      "Abstraer dependencias externas críticas tras interfaces/adaptadores propios (Ports & Adapters) para abaratar futuras migraciones si el proveedor cambia sus precios.",
+      "Comparativa: licencias permisivas (MIT/Apache-2.0, bajo riesgo legal, coste solo de mantenimiento) vs. licencias copyleft o comerciales restrictivas (exigen cumplimiento estricto o pago proporcional al éxito)."
+    ],
+    "ejemplo": "# Generación de SBOM y auditoría de licencias en CI con Syft + Trivy\nsyft . -o cyclonedx-json=sbom.json\ntrivy sbom sbom.json --scanners license --severity HIGH,CRITICAL\n# Falla el build si detecta dependencias con licencia GPL-3.0 o AGPL-3.0 no aprobadas",
+    "entrevista": "Las dependencias nunca son gratis: entre riesgos legales de licencias transitivas y cambios unilaterales de precios en APIs externas, gestionar un SBOM y abstraer proveedores críticos protege tanto el margen como la propiedad intelectual."
+  },
+  "Margen y rentabilidad": {
+    "que": "El margen y la rentabilidad miden la proporción de ingresos que la empresa retiene tras cubrir los costes directos de producir y entregar el software (Margen Bruto) y todos los gastos operativos de la organización (Margen Operativo / EBITDA). En software y servicios tecnológicos, distinguen negocios verdaderamente escalables de operaciones intensivas en mano de obra.",
+    "para": "Sirven para evaluar la viabilidad económica de productos SaaS, líneas de consultoría o proyectos individuales, definir políticas de precios (pricing) y asignar capital hacia las unidades más rentables. Son los indicadores finales que miran inversores y dirección financiera.",
+    "como": "El Margen Bruto = (Ingresos - COGS) / Ingresos descuenta el Cost of Goods Sold: en un SaaS incluye infraestructura cloud de producción, licencias embebidas (por ejemplo, APIs de LLM o mapas), soporte técnico al cliente y SRE de producción (pero excluye I+D de nuevas features y ventas). En consultoría o desarrollo a medida, el COGS son las horas cargadas del equipo asignado al proyecto. El Margen Operativo resta además S&M (Ventas y Marketing), R&D (Ingeniería de producto) y G&A (Administración). La rentabilidad neta incorpora impuestos e intereses.",
+    "practicas": [
+      "Vigilar que el margen bruto de un SaaS B2B tradicional se mantenga en torno al 75%-85% (en productos intensivos en IA/GPU suele ser 50%-65% por coste de inferencia).",
+      "Error típico: imputar todo el coste de desarrollo de producto dentro del COGS (subestimando el margen bruto) u omitir el soporte y la infraestructura de producción del COGS (inflándolo artificialmente).",
+      "Analizar el margen por segmento de cliente o funcionalidad (por ejemplo, clientes gratuitos o heavy users de IA) para corregir precios deficitarios.",
+      "Comparativa: margen bruto de software puro (alto apalancamiento operativo, 75%+) vs. margen bruto de servicios profesionales/consultoría (lineal con horas hombre, típicamente 30%-45%)."
+    ],
+    "ejemplo": "SaaS con ARR = 2.000.000 USD:\nCOGS = 280k (Cloud prod) + 120k (Soporte/SRE) + 80k (APIs terceros) = 480.000 USD\nMargen Bruto = (2.000.000 - 480.000) / 2.000.000 = 76%\nSi R&D = 700k, S&M = 600k, G&A = 200k -> EBITDA = +20.000 USD (Margen operativo 1%)",
+    "entrevista": "Separar correctamente el COGS de producción frente al I+D de producto permite medir el verdadero margen bruto del software y detectar a tiempo si el coste variable de nube o IA erosiona la escalabilidad del negocio."
+  },
+  "Modelos de estimación (COCOMO)": {
+    "que": "COCOMO (Constructive Cost Model, desarrollado por Barry Boehm y evolucionado a COCOMO II) es un modelo algorítmico paramétrico de estimación que predice el esfuerzo en personas-mes y la duración nominal de un proyecto de software a partir de su tamaño estimado y factores de coste.",
+    "para": "Sirve en ingeniería de software académica y en proyectos de gran escala (aeroespacial, defensa, sistemas críticos) para obtener estimaciones macro tempranas, dimensionar equipos y cuantificar el impacto de variables como experiencia del equipo, reutilización o complejidad de fiabilidad.",
+    "como": "La ecuación central de esfuerzo de COCOMO II es PM = A * (Size)^E * producto(EM_i), donde Size se mide en miles de líneas de código fuente lógicas (KSLOC) o equivalentes derivados de Puntos de Función. El exponente E = B + 0.01 * suma(SF_j) captura las deseconomías de escala mediante 5 Factores de Escala (precedencia, flexibilidad, resolución de riesgos, cohesión del equipo y madurez de procesos). Los 17 Multiplicadores de Esfuerzo (EM_i) ajustan el esfuerzo por atributos de producto (fiabilidad RELY, complejidad CPLX), plataforma, personal y proyecto. Finalmente, el tiempo óptimo de desarrollo se calcula como TDEV = C * (PM)^F.",
+    "practicas": [
+      "Calibrar las constantes A y B con datos históricos de la propia organización, ya que los valores por defecto reflejan promedios industriales de referencia.",
+      "Error típico: usar el modelo básico de COCOMO 81 (Orgánico, Semiacoplado, Empotrado) en proyectos modernos iterativos con frameworks y SaaS sin ajustar por reutilización.",
+      "Acompañar la salida de COCOMO con análisis de sensibilidad sobre el tamaño KSLOC, dado que el exponente E > 1 amplifica cualquier error de estimación de tamaño.",
+      "Comparativa: COCOMO II (modelo paramétrico continuo basado en escala y drivers de coste) vs. velocidad ágil/story points (estimación empírica relativa propia de cada equipo, no comparable entre equipos)."
+    ],
+    "ejemplo": "# Fórmula COCOMO II (Post-Architecture simplificada)\nA = 2.94\nSize_KSLOC = 40\nE = 1.0997          # B (0.91) + 0.01 * suma(Scale Factors = 18.97)\nEAF = 1.12          # Producto de los 17 Effort Multipliers\nPM = A * (Size_KSLOC ** E) * EAF  # ~190.4 personas-mes",
+    "entrevista": "COCOMO II sigue siendo la referencia formal para entender cómo el tamaño crece de forma superlineal en esfuerzo por las deseconomías de escala, aunque en práctica moderna requiera calibración histórica local."
+  },
+  "Optimización de costes cloud": {
+    "que": "La optimización de costes cloud es el conjunto de técnicas arquitectónicas, operativas y comerciales destinadas a eliminar desperdicio de infraestructura y reducir el coste unitario de las cargas de trabajo sin degradar los SLOs de latencia, disponibilidad ni seguridad.",
+    "para": "Resuelve la inflamación progresiva de facturas cloud provocada por recursos ociosos, sobredimensionamiento defensivo, arquitecturas ineficientes y tarifas On-Demand sin compromisos. Permite mejorar directamente el margen bruto y liberar presupuesto para innovación.",
+    "como": "Actúa de forma escalonada sobre el uso y la tarifa: primero reduce el consumo innecesario (usage optimization) mediante right-sizing de instancias basado en métricas P95 de CPU/RAM, autoescalado reactivo y predictivo (Karpenter/HPA), apagado programado de entornos non-prod fuera de horario, uso de procesadores ARM (Graviton/Tau) con mejor ratio precio-rendimiento, políticas de lifecycle en S3/GCS (transición a Glacier/Coldline) y reducción de transferencias cross-AZ. En segundo lugar aplica optimización de tarifa (rate optimization) comprando Savings Plans, Reserved Instances o ejecutando cargas tolerantes a fallos y batch sobre instancias Spot/Preemptible.",
+    "practicas": [
+      "Optimizar primero la arquitectura y el right-sizing (usage) antes de comprar Savings Plans o Reserved Instances a 1-3 años, evitando comprometerse por desperdicio.",
+      "Error típico: forzar optimizaciones agresivas (como pasar servicios stateful críticos a instancias Spot sin fallback) provocando caídas que cuestan más que el ahorro.",
+      "Migrar workloads compatibles a arquitecturas ARM (AWS Graviton) y activar almacenamiento inteligente por capas (S3 Intelligent-Tiering), logrando ahorros típicos del 20%-40% con mínimo riesgo.",
+      "Comparativa: optimización de tarifa (descuentos financieros contractuales, rápida pero no corrige ineficiencias) vs. optimización arquitectónica (reduce consumo real de cómputo y red de forma permanente)."
+    ],
+    "ejemplo": "# Política Terraform S3 Lifecycle para mover logs fríos y purgar obsoletos\nresource \"aws_s3_bucket_lifecycle_configuration\" \"logs\" {\n  bucket = aws_s3_bucket.logs.id\n  rule {\n    id = \"tiering-logs\"; status = \"Enabled\"\n    transition { days = 30; storage_class = \"STANDARD_IA\" }\n    transition { days = 90; storage_class = \"GLACIER_IR\" }\n    expiration { days = 365 }\n  }\n}",
+    "entrevista": "La optimización de costes cloud efectiva sigue un orden estricto: primero eliminar desperdicio y ajustar arquitectura (right-sizing, ARM, tráfico cross-AZ), y solo después fijar compromisos financieros como Savings Plans."
+  },
+  "Presupuesto de proyecto": {
+    "que": "El presupuesto de proyecto es la línea base financiera autorizada que distribuye temporalmente los costes estimados de un proyecto de software (personal, infraestructura, licencias, proveedores y reservas de contingencia) a lo largo de sus fases o hitos. Sirve como contrato financiero interno contra el cual se mide el desempeño real.",
+    "para": "Resuelve la asignación formal de fondos por parte de dirección o cliente y establece límites claros de gasto para evitar derivas descontroladas. Se elabora al aprobar el caso de negocio y gobierna el flujo de caja del proyecto desde el kickoff hasta el cierre.",
+    "como": "Se construye agregando los costes estimados de todos los paquetes de trabajo (WBS) o sprints planificados, calendarizados por mes o trimestre (curva S de Planned Value). Sobre la estimación base se añaden dos capas de protección separadas: la Reserva de Contingencia (controlada por el Project Manager para riesgos conocidos e identificados, 'known unknowns', típicamente 10%-20%) y la Reserva de Gestión (controlada por dirección/sponsor para imprevistos no anticipados, 'unknown unknowns', fuera de la línea base de medición de desempeño). El presupuesto total forma el Cost Baseline + Management Reserve.",
+    "practicas": [
+      "Calendarizar el presupuesto en una curva de flujo mensual (time-phased budget) y no como una bolsa plana anual, alineándolo con fechas reales de contratación y licencias.",
+      "Error típico: inflar arbitrariamente cada partida con márgenes ocultos (padding) en lugar de mantener reservas de contingencia transparentes ligadas a un registro de riesgos.",
+      "Separar explícitamente presupuestos de proyectos cerrados (CapEx por iniciativa) de presupuestos continuos de equipos de producto estables (Funding Products over Projects).",
+      "Comparativa: estimación de costes (ejercicio técnico previo de predicción) vs. presupuesto de proyecto (compromiso financiero aprobado, calendarizado y con reservas de riesgo)."
+    ],
+    "ejemplo": "Estructura de Presupuesto de Proyecto:\n- Estimación base (equipo + cloud + licencias): 240.000 USD\n- Reserva de contingencia (riesgos API/migración): 36.000 USD (15%)\n= Línea Base de Coste (BAC para EVM):             276.000 USD\n- Reserva de gestión (dirección, 10%):             27.600 USD\n= Presupuesto Total Autorizado:                   303.600 USD",
+    "entrevista": "Un presupuesto profesional no es una estimación aislada, sino una línea base calendarizada que separa explícitamente el coste esperado de las reservas de contingencia para riesgos conocidos y las reservas de gestión."
+  },
+  "ROI de automatización": {
+    "que": "El ROI de automatización mide el retorno económico neto generado al sustituir tareas manuales repetitivas (pruebas de regresión, despliegues, aprovisionamiento de entornos, respuesta a alertas o procesos de negocio) por scripts, pipelines CI/CD o flujos automatizados. Pondera el tiempo ahorrado y los errores evitados frente al coste de construir y mantener la automatización.",
+    "para": "Resuelve la duda práctica de qué tareas merece la pena automatizar y cuáles es más rentable seguir ejecutando manualmente (evitando automatizar procesos infrecuentes que nunca recuperan su inversión). Se usa para priorizar trabajo de DevOps, QA Automation y Platform Engineering.",
+    "como": "El cálculo compara el coste recurrente manual (Frecuencia_Ejecución * Tiempo_Manual * Coste_Hora + Coste_Errores_Humanos_Evitados) frente a la inversión de desarrollo de la automatización más su coste continuo de mantenimiento (flaky tests, roturas ante cambios de UI o APIs). La fórmula neta a un horizonte dado (1 o 2 años) es: ROI = ((Ahorro_Acumulado - Coste_Construcción - Coste_Mantenimiento) / (Coste_Construcción + Coste_Mantenimiento)) * 100. Además se calcula el punto de equilibrio (número de ejecuciones o semanas para amortizar la inversión inicial).",
+    "practicas": [
+      "Calcular siempre el coste de mantenimiento de la automatización (tests E2E frágiles pueden destruir el ROI si exigen más horas de reparación que las pruebas manuales).",
+      "Error típico: automatizar tareas que ocurren una vez al año durante 30 minutos invirtiendo 40 horas de ingeniería solo por perfeccionismo técnico.",
+      "Incluir en el beneficio el valor del feedback rápido (reducción de lead time) y la eliminación de incidentes por error humano en despliegues.",
+      "Comparativa: automatización de alta frecuencia/alto riesgo (CI/CD, smoke tests, IaC: ROI altísimo en semanas) vs. automatización de flujos inestables o esporádicos (ROI negativo)."
+    ],
+    "ejemplo": "# Evaluación ROI a 1 año de automatizar regresiones de QA (20h manuales/sprint, 26 sprints/año)\nahorro_bruto = 26 * 20 * 60       # 31.200 USD/año (a 60 USD/h)\ncoste_inicial = 140 * 75          # 10.500 USD (140h desarrollo)\ncoste_mant_anual = 52 * 4 * 75    # 15.600 USD/año (4h/semana manteniendo scripts)\nroi = ((31200 - 10500 - 15600) / (10500 + 15600)) * 100  # +19.5% en año 1",
+    "entrevista": "El ROI de automatizar depende tanto de la frecuencia de ejecución y los errores evitados como del coste oculto de mantener esa automatización; automatizar procesos frágiles o esporádicos puede tener retorno negativo."
+  },
+  "Return on investment (ROI)": {
+    "que": "El Return on Investment (ROI, Retorno sobre la Inversión) es una métrica financiera porcentual que relaciona el beneficio neto obtenido de una inversión tecnológica con el coste total invertido para lograrlo. Expresa de forma directa cuánta ganancia porcentual genera cada dólar invertido.",
+    "para": "Sirve como indicador universal de comunicación ejecutiva para comparar proyectos, justificar compras de herramientas o evaluar retrospectivamente el éxito de una iniciativa. Se utiliza tanto antes de aprobar una inversión (ROI proyectado) como tras su despliegue (ROI realizado).",
+    "como": "La fórmula estándar es ROI = ((Beneficio_Total - Coste_Total) / Coste_Total) * 100, equivalente a (Beneficio_Neto / Inversión) * 100. En software, el Beneficio_Total incluye ingresos incrementales atribuidos y ahorros operativos verificables durante el periodo evaluado, mientras que el Coste_Total suma desarrollo/licencias, implementación y operación del mismo periodo. Cuando el proyecto abarca varios años, suele complementarse con el periodo de recuperación (Payback Period = Inversión / Flujo_Anual) y el VAN para evitar ignorar el valor temporal del dinero.",
+    "practicas": [
+      "Especificar siempre el horizonte temporal junto al porcentaje (un 'ROI del 120%' en 5 años equivale a un rendimiento anual compuesto muy distinto a lograrlo en 12 meses).",
+      "Error típico: inflar el numerador atribuyendo el 100% de las ventas a una sola mejora técnica o excluir los costes continuos de mantenimiento del denominador.",
+      "Combinar el ROI con VAN/TIR cuando existan flujos de caja muy desfasados en el tiempo o costes iniciales elevados.",
+      "Comparativa: ROI simple (fácil de comunicar, ignora riesgo y valor temporal del dinero) vs. VAN/NPV (mide creación de riqueza absoluta descontada por coste de capital)."
+    ],
+    "ejemplo": "# ROI de migrar un proceso batch lento a arquitectura en paralelo\ninversion_total = 45000          # Ingeniería + pruebas + infraestructura año 1\nahorro_cloud_anual = 38000       # Menos instancias y tiempo de cómputo\nahorro_soporte_anual = 25000     # Menos fallos nocturnos\nroi_1_ano = ((38000 + 25000 - 45000) / 45000) * 100  # +40.0% en el primer año",
+    "entrevista": "El ROI es el idioma común entre ingeniería y dirección para priorizar inversiones, pero debe especificarse siempre con su horizonte temporal, el coste total de mantenimiento incluido y un payback realista."
+  },
+  "SaaS economics": {
+    "que": "La economía SaaS (SaaS economics) es el marco analítico que modela la dinámica financiera particular de las empresas de software como servicio, caracterizada por ingresos recurrentes, inversión comercial adelantada (CAC) y recuperación diferida de beneficios a lo largo de la vida del cliente.",
+    "para": "Resuelve la paradoja de crecimiento de los negocios SaaS: cuanto más rápido crece un SaaS sano adquiriendo clientes nuevos, más caja consume a corto plazo debido al adelanto de costes comerciales y de onboarding. Permite diagnosticar la salud del negocio más allá de los ingresos brutos.",
+    "como": "Se apoya en métricas estándar interconectadas: MRR/ARR (Monthly/Annual Recurring Revenue desglosado en New, Expansion, Contraction y Churned MRR), Net Revenue Retention (NRR = (ARR_inicio + Expansión - Contracción - Churn) / ARR_inicio, donde >110%-120% indica crecimiento orgánico en la base instalada), Gross Margin SaaS (75%+), CAC Payback Period (meses necesarios de margen bruto para recuperar el coste de adquisición) y la Regla del 40 (Tasa de crecimiento anual de ingresos + Margen EBITDA >= 40%). En ingeniería, la retención y el margen bruto dependen directamente de fiabilidad, rendimiento, velocidad de producto y costes cloud.",
+    "practicas": [
+      "Seguir la métrica NRR (Net Revenue Retention) por cohortes: un NRR > 100% significa que el negocio crece aunque no capte ningún cliente nuevo.",
+      "Error típico: celebrar el crecimiento de New ARR ignorando un Logo Churn o Contraction elevado (el síndrome del cubo agujereado).",
+      "Aplicar la Regla del 40 para equilibrar dinámicamente cuánto invertir en crecimiento agresivo frente a cuánto optimizar rentabilidad según el ciclo de mercado.",
+      "Comparativa: ARR (métrica de escala recurrente anualizada, excluye servicios puntuales de implementación) vs. ingresos GAAP totales (incluyen consultoría y setup fees)."
+    ],
+    "ejemplo": "# Cálculo de NRR y Regla del 40\narr_inicio, expansion, contraccion, churn = 1_000_000, 220_000, 30_000, 60_000\nnrr = (arr_inicio + expansion - contraccion - churn) / arr_inicio  # 113% (saludable)\ncrecimiento_arr_pct = 32\nmargen_ebitda_pct = 11\nrule_of_40 = crecimiento_arr_pct + margen_ebitda_pct  # 43% (>= 40% pasa el umbral)",
+    "entrevista": "En SaaS economics el crecimiento rápido consume caja por el CAC adelantado, por eso la salud real se mide con el NRR por encima del 100%, el periodo de payback del CAC y la Regla del 40."
+  },
+  "Software como activo": {
+    "que": "Considerar el software como activo significa tratar el código, la arquitectura, los datos y la propiedad intelectual desarrollada internamente como capital productivo que genera flujos de valor plurianuales —susceptible de capitalización contable y valoración patrimonial— en lugar de verlo únicamente como un centro de gasto operativo.",
+    "para": "Sirve para alinear la contabilidad financiera (CapEx vs. OpEx), la gobernanza tecnológica y la estrategia corporativa. Justifica inversiones en calidad estructural, documentación, propiedad intelectual y plataformas internas cuando construyen ventaja competitiva sostenible o aumentan la valoración de la compañía.",
+    "como": "Bajo normativas contables (IAS/NIC 38, US GAAP ASC 350-40 y su actualización para software en la nube), los costes de fases preliminares (investigación) se reconocen como gasto, pero una vez alcanzada la viabilidad tecnológica y el compromiso de finalización, el coste directo de desarrollo (salarios de ingeniería, infraestructura dedicada) puede activarse en el balance como activo intangible. Este activo se amortiza linealmente durante su vida útil estimada (típicamente 3 a 5 años), reduciendo el impacto inmediato en el estado de resultados (EBITDA) pero obligando a registrar deterioros si el software queda obsoleto o se abandona.",
+    "practicas": [
+      "Implementar registro trazable de tiempo o épicas etiquetadas (New Capability vs. Maintenance) para respaldar auditorías de capitalización de I+D sin burocracia excesiva.",
+      "Error típico: tratar todo código como activo eterno cuando la falta de mantenimiento, pruebas y documentación lo convierte rápidamente en un pasivo (liability) por riesgo operativo.",
+      "Capitalizar únicamente software que diferencia el negocio o genera ingresos futuros probables; evitar activar experimentos desechables que distorsionan el balance.",
+      "Comparativa: visión de software como gasto (maximiza recorte de costes a corto plazo) vs. software como activo (optimiza retorno y sostenibilidad del capital intelectual a largo plazo)."
+    ],
+    "ejemplo": "# Impacto contable de capitalizar 300k USD de desarrollo (vida útil 3 años)\nComo OpEx directo:   Impacto en resultado Año 1 = -300.000 USD\nComo Activo (CapEx):  Impacto en resultado Año 1 = -100.000 USD (amortización)\n                      Balance Año 1 refleja Activo Intangible Neto = 200.000 USD",
+    "entrevista": "El software solo se comporta como un activo financiero real cuando su calidad arquitectónica y cobertura de pruebas permiten evolucionarlo y amortizarlo en el tiempo; sin mantenibilidad, el código acumulado pasa a ser un pasivo."
+  },
+  "Unit economics": {
+    "que": "Los Unit Economics (economía unitaria) miden los ingresos directos y los costes variables asociados a la unidad mínima generadora de valor de un negocio de software (un cliente, una suscripción, un pedido o una llamada a API). Determinan si el modelo de negocio es intrínsecamente rentable por unidad antes de sumar costes fijos de estructura.",
+    "para": "Resuelven si escalar un producto multiplicará beneficios o simplemente escalará pérdidas cada vez mayores. Se utilizan en diseño de pricing, decisiones de arquitectura cloud (coste por tenant o por inferencia) y auditorías de viabilidad en startups y productos digitales.",
+    "como": "Se articulan en torno a dos métricas clave: el Coste de Adquisición de Cliente (CAC = Gasto_Marketing_y_Ventas / Nuevos_Clientes) y el Lifetime Value (LTV = (ARPU * Margen_Bruto) / Churn_Mensual_Ingresos). A nivel operativo técnico, se desagregan en Cloud Unit Economics: Coste por Usuario Activo (MAU), Coste por Transacción o Coste por 1.000 tokens/peticiones (incluyendo cómputo, almacenamiento y soporte). Un negocio sano busca típicamente un ratio LTV / CAC >= 3x y un CAC Payback Period inferior a 12-18 meses, garantizando que el margen de contribución unitario sea positivo.",
+    "practicas": [
+      "Calcular el LTV multiplicando siempre por el Margen Bruto (no sobre ingresos brutos), ya que los costes variables cloud e IA reducen el beneficio disponible para pagar el CAC.",
+      "Error típico: usar medias globales que ocultan cohortes ruinosas (por ejemplo, usuarios 'ilimitados' cuyo consumo de GPU supera su suscripción mensual).",
+      "Instrumentar métricas técnicas de coste unitario (USD por millón de peticiones o por tenant) junto a los dashboards de latencia y errores.",
+      "Comparativa: margen unitario positivo con pérdidas globales (problema de escala solucionable al crecer) vs. unit economics negativos (crecer acelera la quiebra)."
+    ],
+    "ejemplo": "# Cálculo de Unit Economics SaaS B2B\nARPU_mensual = 200\nmargen_bruto = 0.80\nchurn_mensual = 0.025  # 2.5% mensual (vida media 40 meses)\nLTV = (ARPU_mensual * margen_bruto) / churn_mensual  # 6.400 USD\nCAC = 1600\n# LTV:CAC = 4.0x | Payback = 1600 / (200 * 0.80) = 10 meses",
+    "entrevista": "Los unit economics confirman si cada cliente o transacción aporta margen de contribución positivo tras descontar el coste variable cloud y el CAC; escalar un producto con unit economics negativos solo acelera las pérdidas."
+  }
+}

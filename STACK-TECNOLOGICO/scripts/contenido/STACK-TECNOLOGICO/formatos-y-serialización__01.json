@@ -1,0 +1,106 @@
+{
+  "Schema evolution": {
+    "que": "La evolución de esquemas (schema evolution) es el conjunto de reglas y mecanismos que permiten modificar la estructura de datos serializados (añadir, eliminar o deprecar campos) sin romper la comunicación entre productores y consumidores desplegados con versiones distintas. A diferencia de las migraciones síncronas de bases de datos relacionales, opera sobre contratos de mensajes en tránsito o almacenados en streams y data lakes.",
+    "para": "Resuelve el acoplamiento temporal en arquitecturas distribuidas (microservicios, Kafka, gRPC, almacenamiento columnar en Parquet/Avro), donde es inviable actualizar simultáneamente a todos los productores y consumidores. Se usa en cualquier sistema con despliegues independientes, colas de eventos de larga retención o clientes móviles que tardan meses en actualizarse.",
+    "como": "Cada formato aplica reglas específicas de compatibilidad al serializar y deserializar. En Protobuf, los campos se identifican por su tag numérico en el formato wire (varint/length-delimited) y no por su nombre; los parsers ignoran tags desconocidos y asignan valores por defecto a tags ausentes. En Apache Avro, el lector recibe el schema del escritor (por ejemplo, mediante un magic byte + schema ID en los primeros 5 bytes del mensaje en Confluent Schema Registry) y ejecuta una resolución de esquemas campo por campo alineando nombres, aliases y valores default. En modo backward compatibility los consumidores nuevos leen datos viejos; en forward los viejos leen datos nuevos; y en full se garantizan ambas direcciones.",
+    "practicas": [
+      "En Protobuf nunca reutilices un tag numérico de un campo eliminado ni cambies su tipo wire de forma incompatible; márcalo con `reserved`.",
+      "Añade siempre campos opcionales o con valor por defecto explícito (en Avro, `default` debe coincidir con el primer tipo de una union, p. ej. `[\"null\", \"string\"]` con `\"default\": null`).",
+      "En pipelines con Schema Registry, configura el modo de compatibilidad (`BACKWARD`, `FORWARD` o `FULL_TRANSITIVE`) antes de registrar nuevas versiones y valida los cambios en CI.",
+      "Para cambios destructivos (renombrar sin alias o cambiar semántica), usa el patrón expand-and-contract: añade el campo nuevo, migra consumidores y retira el antiguo tras agotar la retención."
+    ],
+    "ejemplo": "// Evolución compatible en Protobuf (v1 -> v2)\nmessage OrderCreated {\n  reserved 2;\n  reserved \"legacy_status\";\n  string order_id = 1;\n  int64 total_cents = 3;\n  string currency = 4; // Nuevo campo opcional\n}",
+    "entrevista": "La evolución de esquemas permite desplegar productores y consumidores de forma independiente garantizando compatibilidad hacia atrás, hacia adelante o completa mediante reglas estrictas sobre tags, defaults y resolución de versiones."
+  },
+  "Serialización - Deserialización": {
+    "que": "La serialización es el proceso de convertir estructuras de datos o grafos de objetos en memoria en una secuencia lineal de bytes (o texto) para almacenarlos o transmitirlos por red. La deserialización es la operación inversa: reconstruir estructuras tipadas en memoria a partir de esa secuencia de bytes.",
+    "para": "Sirve para cruzar fronteras de proceso, máquina, lenguaje de programación o tiempo (persistencia en disco, colas de mensajes, cachés como Redis, RPC y APIs HTTP). Sin serialización, los punteros de memoria, la alineación de structs y el endianness de una CPU carecen de sentido fuera del proceso que los creó.",
+    "como": "Un codec implementa la pareja serializador/deserializador según un formato (JSON, Protobuf, MessagePack, Avro). Durante la serialización se recorre el árbol de objetos, se resuelven tipos y codificación de caracteres (UTF-8) o representación binaria (little/big-endian, varint, IEEE 754) para generar el payload, acompañado habitualmente de metadatos de transporte como la cabecera HTTP `Content-Type` (p. ej. `application/json` o `application/protobuf`). En sistemas RPC o FFI suele distinguirse entre encoding (codificar un valor primitivo o estructura) y marshalling (empaquetar argumentos, metadatos de llamada y referencias de objetos para cruzar un límite de ejecución).",
+    "practicas": [
+      "Nunca deserialices entradas no confiables con formatos que instancian clases arbitrarias o ejecutan código (p. ej. `pickle` de Python, `ObjectInputStream` de Java o `yaml.load` sin `SafeLoader`), ya que provocan ejecución remota de código (RCE).",
+      "Separa los DTOs de transporte de las entidades internas de dominio para evitar exponer campos sensibles o acoplar tu modelo interno al payload externo.",
+      "Elige formatos textuales (JSON) en bordes públicos y depuración, y formatos binarios con esquema (Protobuf, Avro) en comunicación interna de alto rendimiento o bajo ancho de banda.",
+      "Establece siempre límites de tamaño de payload y profundidad máxima de anidamiento para prevenir ataques de denegación de servicio por agotamiento de memoria o pila."
+    ],
+    "ejemplo": "POST /v1/orders HTTP/1.1\nContent-Type: application/json; charset=utf-8\nContent-Length: 45\n\n{\"orderId\":\"ord_123\",\"amountCents\":2500}",
+    "entrevista": "Serializar transforma estructuras dependientes de memoria en bytes portables definidos por un codec y anunciados vía `Content-Type`, mientras que deserializar debe validar estrictamente el formato y los tipos para evitar vulnerabilidades como RCE o DoS."
+  },
+  "TOML": {
+    "que": "TOML (Tom's Obvious, Minimal Language) es un formato de configuración textual diseñado para mapear de forma inequívoca a tablas hash (diccionarios) mediante una sintaxis explícita de pares clave-valor y secciones. A diferencia de YAML, evita la ambigüedad de la indentación significativa y las conversiones implícitas de tipos.",
+    "para": "Se utiliza principalmente para archivos de configuración humana y manifiestos de herramientas de desarrollo, empaquetado y compilación donde la legibilidad y el mantenimiento manual son prioritarios. Es el estándar de facto en ecosistemas modernos como Rust (`Cargo.toml`), Python (`pyproject.toml`), Go (`Gopkg.toml` histórico) y generadores estáticos como Hugo.",
+    "como": "Un archivo TOML se procesa línea a línea construyendo un árbol de tablas. Las claves simples (`clave = valor`) asignan strings, enteros, floats, booleanos, fechas nativas RFC 3339, arrays homogéneos o heterogéneos y tablas inline (`{ a = 1 }`). Los encabezados entre corchetes `[seccion]` abren tablas estándar y `[[array_de_tablas]]` añaden elementos a una lista de objetos; las claves punteadas (`a.b.c = 1`) crean subtablas automáticamente. Como toda tabla queda cerrada al abrir otra o mediante sangría puramente estética, un parser determinista (como `tomllib` en Python 3.11+) valida tipos estrictamente y rechaza claves duplicadas.",
+    "practicas": [
+      "Úsalo para configuración estática editada por humanos y versionada en Git, no como formato de intercambio de datos en APIs ni streaming (usa JSON o JSONL para eso).",
+      "Prefiere tablas estándar `[tool.ruff]` frente a tablas profundamente anidadas con inline tables `{ ... }` que superen una línea, ya que pierden legibilidad en diffs.",
+      "Aprovecha los strings literales (`'...'`) para expresiones regulares o rutas de Windows sin necesidad de escapar barras invertidas.",
+      "TOML vs YAML: TOML es más verboso en estructuras muy anidadas, pero elimina el 'Norway problem' (`NO` -> `false`), la sensibilidad a espacios y los riesgos de deserialización de tipos arbitrarios."
+    ],
+    "ejemplo": "[project]\nname = \"api-pagos\"\nversion = \"1.4.0\"\nrequires-python = \">=3.12\"\n\n[[tool.uvicorn.workers]]\nhost = \"0.0.0.0\"\nport = 8000",
+    "entrevista": "TOML sacrifica brevedad en jerarquías profundas a cambio de una sintaxis explícita, tipado estricto sin ambigüedades de indentación y mapeo directo a diccionarios, lo que lo hace ideal para archivos de configuración como `pyproject.toml` o `Cargo.toml`."
+  },
+  "Timezones y fechas": {
+    "que": "Es el conjunto de estándares y convenciones para representar instantes de tiempo, fechas de calendario y desplazamientos horarios sin ambigüedad entre sistemas distribuidos. En serialización textual, el estándar de referencia es ISO-8601 (y su perfil estricto para internet, RFC 3339), complementado con los identificadores de zona horaria de la base de datos IANA (tzdb).",
+    "para": "Evita errores críticos de cálculo, ordenación y expiración causados por cambios de horario de verano (DST), desfases entre servidor y cliente o distintos husos horarios de usuarios. Es indispensable en logs distribuidos, tokens JWT (`exp`, `iat`), facturación, reservas futuras y auditoría.",
+    "como": "Un instante absoluto en la línea temporal se representa como Unix epoch (segundos/milisegundos desde `1970-01-01T00:00:00Z` sin segundos intercalares) o en texto ISO-8601 con sufijo `Z` (UTC) u offset numérico (`+02:00`, `-05:00`). Para eventos pasados o instantes de máquina, el backend serializa y almacena en UTC; al llegar al cliente, la capa de presentación aplica la zona IANA (p. ej. `America/Bogota` o `Europe/Madrid`) usando reglas históricas de DST. En eventos futuros recurrentes a hora local (una alarma a las 08:00), no basta guardar UTC ni un offset fijo, porque los gobiernos cambian las reglas de DST: debe persistirse la fecha/hora local (`naive`) junto con el identificador IANA.",
+    "practicas": [
+      "Almacena, procesa y transmite timestamps de eventos y logs siempre en UTC con formato ISO-8601/RFC 3339 explícito (`Z`), nunca sin zona horaria.",
+      "No confundas un offset (`-05:00`) con una timezone IANA (`America/New_York`): el offset es una foto fija en un instante y no captura cambios futuros de horario de verano.",
+      "Para duraciones y medición de latencias usa relojes monotónicos (`time.monotonic()`), nunca relojes de pared (`wall-clock`), que pueden retroceder por sincronización NTP.",
+      "En bases de datos como PostgreSQL, usa `TIMESTAMPTZ` (almacena el instante en UTC) en lugar de `TIMESTAMP` sin zona para evitar conversiones silenciosas ligadas a la sesión."
+    ],
+    "ejemplo": "{\n  \"occurredAt\": \"2026-11-25T05:23:28Z\",\n  \"scheduledLocal\": \"2027-06-15T09:00:00\",\n  \"timezone\": \"Europe/Madrid\"\n}",
+    "entrevista": "Los instantes pasados se serializan siempre en UTC (ISO-8601 con `Z` o epoch), mientras que los eventos futuros ligados al calendario local deben guardar la hora local junto a la zona IANA para resistir cambios de horario de verano."
+  },
+  "UUID": {
+    "que": "Un UUID (Universally Unique Identifier, especificado en RFC 9562 —antes RFC 4122—) es un identificador de 128 bits (16 bytes) diseñado para ser único en el espacio y el tiempo sin necesidad de una autoridad central de coordinación. Textualmente suele representarse como 32 dígitos hexadecimales separados por guiones en formato 8-4-4-4-12.",
+    "para": "Permite que múltiples clientes, microservicios o nodos offline generen claves primarias, correlation IDs o claves de idempotencia de forma descentralizada sin colisiones ni cuellos de botella en secuencias autoincrementales. También evita exponer el volumen real de registros o permitir enumeración trivial (IDOR) que ocurre con enteros secuenciales en APIs públicas.",
+    "como": "Los 128 bits reservan 4 bits para la versión y 2-3 bits para la variante, dejando el resto para entropía o marcas temporales. UUIDv4 genera 122 bits criptográficamente aleatorios (CSPRNG), lo que ofrece unicidad práctica pero provoca escrituras aleatorias y fragmentación en índices B-Tree al insertar muchas filas. UUIDv7 (estandarizado en RFC 9562) resuelve este problema colocando un timestamp Unix de 48 bits en milisegundos en los bits más significativos seguido de bits aleatorios, logrando ordenación cronológica K-sortable y localidad de página en disco. UUIDv5 deriva determinísticamente un identificador mediante SHA-1 sobre un namespace y un nombre.",
+    "practicas": [
+      "Usa UUIDv7 para claves primarias en bases de datos relacionales (PostgreSQL, MySQL) porque mantiene la inserción secuencial en índices B-Tree y reduce la fragmentación frente a UUIDv4.",
+      "Almacena los UUIDs en columnas nativas binarias (`uuid` en PostgreSQL o `BINARY(16)`), no como `VARCHAR(36)`, para ahorrar más de la mitad de espacio en índices y acelerar comparaciones.",
+      "En APIs REST, serialízalo en formato canónico minúsculas con guiones o Base64URL si el tamaño del payload es crítico, y valida la versión/formato en el borde.",
+      "UUIDv4 no es por sí solo un secreto criptográfico de autenticación si el generador no es CSPRNG; para tokens de sesión usa generadores explícitos de tokens aleatorios."
+    ],
+    "ejemplo": "// UUIDv4 (aleatorio) vs UUIDv7 (timestamp 48b + random)\n\"v4\": \"550e8400-e29b-41d4-a716-446655440000\"\n\"v7\": \"019361a8-7c4e-7b2a-9f10-3c8d4e5f6a1b\"",
+    "entrevista": "Un UUID permite generar identificadores únicos sin coordinación central en 128 bits, pero para claves primarias en índices B-Tree conviene elegir UUIDv7 frente a UUIDv4 porque su prefijo temporal evita la fragmentación de páginas."
+  },
+  "Valores por defecto": {
+    "que": "En sistemas de serialización con esquema, los valores por defecto (default values) son asignaciones predefinidas que el serializador o deserializador aplica automáticamente cuando un campo está ausente en el payload o no se inicializó explícitamente. Su semántica varía críticamente según el formato (Protobuf, Avro, JSON Schema) y afecta la evolución de contratos.",
+    "para": "Permiten añadir nuevos campos a mensajes o eventos sin romper la compatibilidad con productores antiguos que aún no los envían ni con consumidores viejos que los ignoran. También reducen el tamaño del payload al omitir valores triviales en el cable (wire format).",
+    "como": "En Protobuf proto3, todo campo escalar tiene un valor cero implícito (`0`, `\"\"`, `false`) y por diseño no se serializa en el wire cuando toma ese valor; como contrapartida, el receptor no puede distinguir si el emisor envió `0` o lo omitió salvo que declare el campo con la palabra clave `optional` (presencia explícita mediante bitmask `has_*`). En Apache Avro, cada campo añadido en una nueva versión debe declarar un atributo `default` cuyo tipo coincida exactamente con la primera rama si el campo es una `union` (por ejemplo `[\"null\", \"string\"]` con `\"default\": null`), y el lector lo inyecta al resolver diferencias contra el writer schema. En JSON Schema, `default` es puramente informativo en la especificación estándar, aunque validadores como Ajv (`useDefaults: true`) o Pydantic pueden materializarlo al parsear.",
+    "practicas": [
+      "En Protobuf proto3, usa `optional` o tipos wrapper/oneof cuando necesites distinguir entre 'campo no enviado' y 'valor cero' (por ejemplo, `discount = 0` vs sin descuento en un PATCH).",
+      "En Avro, coloca `\"null\"` como primer elemento de las uniones opcionales (`[\"null\", \"T\"]`) para que `\"default\": null` sea válido y garantice compatibilidad backward y forward.",
+      "Evita cambiar el valor por defecto de un campo existente entre versiones del esquema: un consumidor antiguo y uno nuevo interpretarán el mismo mensaje ausente con valores distintos.",
+      "Ten presente que `default` en JSON Schema no rellena valores por sí solo durante la validación estándar; configúralo explícitamente en el deserializador (Pydantic, Ajv, Zod) si dependes de ello."
+    ],
+    "ejemplo": "{\n  \"type\": \"record\",\n  \"name\": \"UserEvent\",\n  \"fields\": [\n    {\"name\": \"id\", \"type\": \"string\"},\n    {\"name\": \"plan\", \"type\": \"string\", \"default\": \"free\"},\n    {\"name\": \"phone\", \"type\": [\"null\", \"string\"], \"default\": null}\n  ]\n}",
+    "entrevista": "Los valores por defecto sostienen la evolución de esquemas sin romper versiones antiguas, aunque exigen distinguir entre ausencia y valor cero (mediante `optional` en proto3) y respetar reglas estrictas como el orden de uniones en Avro."
+  },
+  "XML": {
+    "que": "XML (Extensible Markup Language) es un formato de serialización textual basado en etiquetas jerárquicas definidas por el usuario, estandarizado por el W3C. Soporta metadatos mediante atributos, espacios de nombres (namespaces), comentarios, instrucciones de procesamiento y validación formal estricta mediante esquemas XSD o DTD.",
+    "para": "Se utiliza en integración empresarial heredada, protocolos SOAP, facturación electrónica, estándares financieros y sanitarios (ISO 20022, HL7), documentos estructurados (SVG, DOCX/OOXML, RSS/Atom) y configuración de ecosistemas Java (Maven `pom.xml`, Spring clásico). Es la opción natural cuando se requiere validación contractual fuerte, firma digital (XMLDSig) o mezcla de texto y marcado.",
+    "como": "Un parser XML procesa el documento mediante dos modelos principales: DOM (Document Object Model), que construye todo el árbol de nodos en memoria permitiendo consultas XPath y transformaciones XSLT a costa de alto consumo de RAM; o SAX/StAX, parsers orientados a eventos o streaming que leen tokens secuencialmente con huella de memoria constante. El esquema XSD (XML Schema Definition) define tipos de datos ricos, cardinalidades (`minOccurs`, `maxOccurs`) y namespaces (`xmlns`) para validar el documento antes de procesarlo en la lógica de negocio.",
+    "practicas": [
+      "Desactiva siempre la resolución de entidades externas (DTD / External Entities) en el parser para prevenir ataques XXE (XML External Entity) de lectura de archivos locales o SSRF.",
+      "Para archivos XML grandes (cientos de MB o GB), usa parsers en streaming (StAX o `iterparse`) en lugar de DOM para evitar `OutOfMemoryError`.",
+      "XML vs JSON: XML ofrece namespaces, comentarios y validación XSD madura, pero su verbosidad (etiquetas de apertura/cierre), mayor tamaño en red y parsers complejos hacen que JSON domine en APIs REST modernas.",
+      "Usa atributos para metadatos identificadores (`id`, `lang`) y elementos hijos para datos complejos, listas o contenido extensible."
+    ],
+    "ejemplo": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<invoice xmlns=\"urn:example:billing\" currency=\"EUR\">\n  <id>INV-2026-001</id>\n  <total>149.90</total>\n</invoice>",
+    "entrevista": "XML aporta validación fuerte mediante XSD, namespaces y firma digital para entornos empresariales y documentos, pero exige desactivar DTDs contra ataques XXE y usar parsers en streaming como StAX cuando los volúmenes crecen."
+  },
+  "YAML": {
+    "que": "YAML (YAML Ain't Markup Language) es un formato de serialización textual centrado en la legibilidad humana que representa escalares, listas y diccionarios mediante indentación por espacios y sintaxis mínima sin llaves obligatorias. Es un superconjunto de JSON (en YAML 1.2), e incluye características avanzadas como comentarios, bloques multilínea, anclas (`&`) y alias (`*`).",
+    "para": "Domina en archivos de configuración declarativa de infraestructura, orquestación y CI/CD, como manifiestos de Kubernetes, Docker Compose, GitHub Actions, Ansible y especificaciones OpenAPI. Se elige cuando la configuración contiene estructuras jerárquicas profundas con documentación comentada que sería incómoda en JSON o TOML.",
+    "como": "El procesador YAML transforma el texto en cuatro etapas: análisis léxico/sintáctico dependiente de la indentación (solo espacios, nunca tabuladores), composición de un grafo dirigido de nodos resolviendo anclas (`&base`) y alias (`*base`) o claves de fusión (`<<:`), resolución de tags de tipo (como `!!str`, `!!int` o `!!timestamp`) y construcción de objetos nativos del lenguaje. En YAML 1.1 existían múltiples palabras clave implícitas para booleanos (`yes`, `no`, `on`, `off`), lo que generaba errores famosos como el 'Norway problem' (`NO` parseado como `false`), corregido parcialmente en YAML 1.2 que restringe los booleanos a `true`/`false`.",
+    "practicas": [
+      "Usa siempre un cargador seguro (`yaml.safe_load` en Python) y nunca deserialices tags de objetos arbitrarios (`!!python/object`), ya que permiten ejecución remota de código.",
+      "Entrecomilla códigos de país, versiones (`\"3.10\"` vs float `3.1`) o valores ambiguos para evitar conversiones implícitas inesperadas en parsers YAML 1.1.",
+      "Mantén una indentación consistente de 2 espacios y evita abusar de anclas/alias complejos o `<<:` cuando superen la legibilidad inmediata de un bloque explícito.",
+      "YAML vs JSON/TOML: YAML admite comentarios y es más limpio para humanos que JSON en infraestructura, pero su gramática compleja y sensibilidad al espaciado lo hacen más propenso a errores sutiles que TOML y mucho más lento de parsear que JSON."
+    ],
+    "ejemplo": "defaults: &common\n  retries: 3\n\nservices:\n  api:\n    <<: *common\n    image: \"ghcr.io/org/api:1.20\" # string explícito",
+    "entrevista": "YAML maximiza la legibilidad en configuración declarativa gracias a los comentarios, la indentación y las anclas, pero exige usar siempre `safe_load` y entrecomillar valores ambiguos para evitar riesgos de RCE y conversiones implícitas como el Norway problem."
+  }
+}

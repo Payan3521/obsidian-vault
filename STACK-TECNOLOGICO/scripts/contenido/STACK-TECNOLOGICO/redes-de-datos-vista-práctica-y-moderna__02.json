@@ -1,0 +1,392 @@
+{
+  "MITM": {
+    "que": "Un ataque Man-in-the-Middle (MITM) ocurre cuando un actor malicioso se interpone de forma transparente en la ruta de comunicación entre dos extremos legítimos para interceptar, leer o alterar el tráfico en tránsito. Ambos participantes creen comunicarse directamente entre sí mientras todo el flujo pasa por el nodo del atacante.",
+    "para": "Comprender el vector MITM sirve para diseñar controles criptográficos y de enrutamiento que garanticen confidencialidad, integridad y autenticidad incluso sobre redes no confiables como Wi-Fi públicos o Internet abierto. Permite evaluar dónde puede romperse la confianza: capa de enlace (ARP), resolución de nombres (DNS), BGP o emisión de certificados TLS.",
+    "como": "El atacante primero desvía el tráfico hacia su máquina mediante técnicas como ARP spoofing en una LAN, rogue DHCP, DNS spoofing, hijacking BGP o un punto de acceso Wi-Fi gemelo (Evil Twin). Al recibir los paquetes destinados a la víctima o al servidor, actúa como proxy bidireccional: reenvía la petición al destino real para evitar levantar sospechas y devuelve la respuesta modificada o copiada. Si el tráfico viaja en texto plano (HTTP, FTP, Telnet), lee credenciales y payloads directamente. Frente a HTTPS, intenta ataques de degradación (SSL stripping) o presenta un certificado falsificado esperando que el cliente ignore la advertencia de la CA.",
+    "practicas": [
+      "Exigir TLS 1.2/1.3 con verificación estricta de certificados y HSTS (con preload) para impedir degradaciones a HTTP.",
+      "Usar autenticación mutua (mTLS) o Certificate Pinning en comunicaciones críticas servicio-a-servicio o apps móviles.",
+      "MITM pasivo (solo escucha/sniffing) vs MITM activo (inyecta o modifica paquetes en vuelo como payloads o tokens).",
+      "Error típico: confiar en una VPN o red corporativa perimetral sin cifrado extremo a extremo, asumiendo que nadie puede interceptar el tramo interno."
+    ],
+    "ejemplo": "# Inspección rápida de certificado TLS recibido para detectar suplantación\nopenssl s_client -connect api.ejemplo.com:443 -servername api.ejemplo.com </dev/null 2>/dev/null | openssl x509 -noout -issuer -subject -fingerprint",
+    "entrevista": "Un MITM rompe el canal cuando la red carece de autenticación criptográfica de extremos; se mitiga haciendo que el atacante no pueda suplantar la identidad ni descifrar el tráfico mediante TLS validado, HSTS y mTLS."
+  },
+  "MTU - Fragmentación": {
+    "que": "La MTU (Maximum Transmission Unit) es el tamaño máximo en bytes de la unidad de datos de protocolo (paquete IP completo, incluyendo cabeceras IP y carga útil) que una interfaz de red puede transmitir en una sola trama sin dividirla. La fragmentación es el proceso de partir un paquete IP mayor que la MTU del siguiente enlace en múltiples fragmentos más pequeños para reensamblarlos en el destino.",
+    "para": "Ajustar la MTU y entender la fragmentación evita caídas silenciosas de conectividad (agujeros negros de PMTUD), latencia adicional y pérdida de rendimiento en túneles VPN, VXLAN, WireGuard o redes PPPoE. Cada encapsulación añade cabeceras que reducen el espacio útil disponible dentro de los 1500 bytes estándar de Ethernet.",
+    "como": "Cuando un paquete de 1500 bytes intenta cruzar un enlace con MTU de 1420 bytes (por ejemplo, un túnel WireGuard), en IPv4 el router fragmenta el paquete si el bit DF (Don't Fragment) está en 0, copiando las cabeceras e indicando el desplazamiento en el campo Fragment Offset; el destino reensambla todo, aunque si se pierde un solo fragmento debe retransmitirse el paquete completo. Si DF=1 (lo habitual hoy) o en IPv6 —donde los routers nunca fragmentan—, el router descarta el paquete y devuelve un mensaje ICMP 'Fragmentation Needed' (IPv4 tipo 3 código 4) o ICMPv6 'Packet Too Big' (tipo 2) con su MTU. Path MTU Discovery (PMTUD) usa esas respuestas para reducir el tamaño enviado, y en TCP el MSS clamping limita el payload TCP durante el handshake SYN.",
+    "practicas": [
+      "En redes con overlays (VXLAN, GRE, WireGuard, IPsec), reducir la MTU de las interfaces internas o activar MSS clamping para evitar fragmentación o descartes.",
+      "No bloquear completamente ICMP tipo 3 código 4 ni ICMPv6 tipo 2 en firewalls perimetrales o romperás PMTUD creando black holes.",
+      "MTU (nivel L3, incluye cabecera IP + TCP/UDP + datos, típico 1500 B) vs MSS (nivel L4 TCP, solo datos útiles, típico 1460 B en IPv4).",
+      "Error común: activar Jumbo Frames (MTU 9000) solo en algunos switches o hosts de una misma subred, provocando descartes asimétricos."
+    ],
+    "ejemplo": "# Probar el Path MTU real hasta un destino sin permitir fragmentación (-M do)\nping -M do -s 1472 -c 3 1.1.1.1\n# 1472 bytes ICMP payload + 8 bytes cabecera ICMP + 20 bytes cabecera IP = 1500 bytes",
+    "entrevista": "La fragmentación degrada el rendimiento y en IPv6 ni siquiera existe en routers intermedios, por eso dependemos de Path MTU Discovery —que requiere no filtrar los errores ICMP de tamaño— y de MSS clamping en túneles."
+  },
+  "Microsegmentación": {
+    "que": "La microsegmentación es una arquitectura de seguridad de red que divide la infraestructura en zonas granulares hasta el nivel de carga de trabajo, VM, contenedor o servicio individual, aplicando políticas de tráfico explícitas de mínimo privilegio entre cada par de nodos. A diferencia del firewall perimetral tradicional, controla el tráfico lateral (este-oeste) dentro del mismo centro de datos, VPC o clúster.",
+    "para": "Sirve para contener el movimiento lateral cuando un atacante compromete un endpoint o microservicio, evitando que alcance bases de datos u otros servicios internos por el simple hecho de compartir la misma red o subred. Es un pilar operativo clave para implementar Zero Trust en entornos cloud-native e híbridos.",
+    "como": "En lugar de depender solo de VLANs y subredes CIDR amplias, la microsegmentación asocia reglas de autorización L3/L4/L7 directamente a la identidad lógica o etiquetas de cada workload (por ejemplo, app=pagos, env=prod). Los planos de control (como Cilium/Calico con eBPF en Kubernetes, Security Groups referenciados entre sí en AWS o un service mesh como Istio) traducen esas etiquetas en reglas locales aplicadas en el vSwitch del hipervisor, iptables/nftables o programas eBPF en el kernel del host. Cada paquete o flujo este-oeste se evalúa en el origen y en el destino bajo una postura 'default deny', complementándose con mTLS cuando se exige identidad criptográfica L7.",
+    "practicas": [
+      "Empezar en modo auditoría/observabilidad (por ejemplo, VPC Flow Logs o Hubble) para mapear dependencias reales antes de aplicar políticas 'default deny'.",
+      "Definir reglas basadas en etiquetas o identidades de servicio en lugar de direcciones IP estáticas, que cambian constantemente en autoscaling.",
+      "Segmentación macro (VLANs/Subnets + NACLs para tráfico norte-sur) vs Microsegmentación (reglas por workload/pod + mTLS para tráfico este-oeste).",
+      "Trampa común: crear miles de reglas granulares manuales sin automatización GitOps, volviendo inmanejable el mantenimiento."
+    ],
+    "ejemplo": "# Regla conceptual de microsegmentación: solo el servicio 'checkout' accede a 'postgres' en 5432\nfrom: { label: \"app=checkout\" }\nto:   { label: \"app=postgres\" }\nallow: [{ protocol: \"TCP\", port: 5432 }]",
+    "entrevista": "La microsegmentación lleva el firewall del perímetro a cada carga de trabajo usando identidad lógica en lugar de IPs, bloqueando por defecto el tráfico lateral este-oeste si un servicio resulta comprometido."
+  },
+  "Modelo OSI (7 capas)": {
+    "que": "El modelo OSI (Open Systems Interconnection, estándar ISO/IEC 7498) es un marco conceptual de referencia que divide las comunicaciones de red en siete capas jerárquicas: Física (1), Enlace de Datos (2), Red (3), Transporte (4), Sesión (5), Presentación (6) y Aplicación (7). Cada capa abstrae los detalles de la inferior y ofrece servicios definidos a la superior mediante interfaces y PDUs específicas.",
+    "para": "Aunque Internet no implementa literalmente las siete capas por separado, el modelo OSI sirve como lenguaje común entre ingenieros para diagnosticar fallos de forma metódica y ubicar protocolos, dispositivos y controles de seguridad (por ejemplo, distinguir un corte de capa 2 frente a un error TLS o HTTP en capa 7).",
+    "como": "Cuando una aplicación transmite datos, el flujo desciende desde la capa 7 hasta la 1: la capa de Aplicación genera datos; Presentación gestiona codificación, compresión o cifrado; Sesión coordina diálogos y checkpoints; Transporte (TCP/UDP) segmenta y añade puertos; Red (IP) enruta paquetes entre redes distintas mediante direcciones lógicas; Enlace (Ethernet/Wi-Fi) arma tramas con MACs y control de acceso al medio; y Física convierte bits en señales eléctricas, ópticas o de radio. En el receptor, el proceso se invierte desde la capa 1 hasta la 7, retirando cada cabecera en la capa homóloga.",
+    "practicas": [
+      "Usar el enfoque 'bottom-up' (revisar enlace físico → ARP/MAC → IP/ping → puerto TCP → TLS/HTTP) o 'divide and conquer' (empezar en capa 3/4) al depurar incidentes.",
+      "No obsesionarse con encajar protocolos reales modernos en capas 5 y 6 de forma rígida; en la práctica, TLS y formatos como JSON viven en la capa de aplicación del stack TCP/IP.",
+      "Modelo OSI (marco teórico de 7 capas, muy útil para taxonomía y troubleshooting) vs Modelo TCP/IP (arquitectura práctica de 4 capas sobre la que corre Internet).",
+      "Error habitual: clasificar un Load Balancer o Firewall sin especificar si opera en L4 (TCP/UDP) o en L7 (HTTP/gRPC)."
+    ],
+    "ejemplo": "# Mapeo rápido de diagnóstico por capa OSI:\n# L1/L2: ip link show / ethtool eth0   (enlace y MAC)\n# L3:    ip route / ping 10.0.0.1      (enrutamiento IP)\n# L4:    ss -tulnp / nc -zv host 443   (puertos TCP/UDP)\n# L7:    curl -v https://api.local     (TLS y HTTP)",
+    "entrevista": "El modelo OSI es una herramienta mental de abstracción y diagnóstico en 7 capas que nos permite aislar exactamente en qué nivel —físico, enlace, red, transporte o aplicación— está fallando un sistema."
+  },
+  "Modelo TCP-IP (4 capas)": {
+    "que": "El modelo TCP/IP (también llamado suite de protocolos de Internet, RFC 1122) es la arquitectura práctica de cuatro capas que rige las redes modernas e Internet: Acceso a la Red (o Enlace), Internet, Transporte y Aplicación. Agrupa las capas superiores del modelo OSI (5, 6 y 7) en una sola capa de Aplicación y combina Física y Enlace en Acceso a la Red.",
+    "para": "Sirve para diseñar, implementar y operar software y servicios reales sobre redes IP, ya que refleja cómo los sistemas operativos y kernels organizan el stack de red (sockets, TCP/UDP, enrutamiento IP y drivers NIC). Toda programación de red con sockets o APIs web interactúa directamente con las abstracciones de este modelo.",
+    "como": "Una aplicación (HTTP, DNS, SSH, gRPC) escribe datos a través de un socket hacia la capa de Transporte, que elige TCP (orientado a conexión, fiable, con control de flujo/congestión) o UDP (sin conexión, baja latencia) añadiendo puertos origen y destino. La capa de Internet encapsula ese segmento/datagrama en un paquete IPv4 o IPv6 y consulta la tabla de rutas para decidir el siguiente salto. Finalmente, la capa de Acceso a la Red resuelve la MAC del siguiente salto vía ARP/NDP, añade la trama Ethernet o Wi-Fi y envía los bits por el medio físico.",
+    "practicas": [
+      "Diseñar protocolos de aplicación asumiendo que la red subyacente (capa Internet) es 'best-effort' y puede perder, duplicar o reordenar paquetes.",
+      "Conocer qué parte ejecuta el espacio de usuario (capa Aplicación) y qué parte ejecuta el kernel del SO (Transporte, Internet y driver de red) para optimizar latencia y CPU.",
+      "Modelo TCP/IP (4 capas, orientado a protocolos concretos implementados en BSD sockets y Linux) vs Modelo OSI (7 capas, modelo descriptivo independiente del protocolo).",
+      "En arquitecturas modernas con QUIC/HTTP-3, funciones de fiabilidad y cifrado se mueven de TCP/kernel a espacio de usuario sobre UDP."
+    ],
+    "ejemplo": "# Capas TCP/IP en acción al hacer una petición:\n# Aplicación:  HTTP/1.1 GET /health\n# Transporte:  TCP src_port=51422 dst_port=443\n# Internet:    IPv4 src=10.0.1.15 dst=93.184.216.34\n# Acceso Red:  Ethernet src_mac=02:42:... dst_mac=aa:bb:...",
+    "entrevista": "Mientras OSI es nuestro mapa conceptual de diagnóstico, TCP/IP es la implementación real en 4 capas donde la inteligencia reside en los extremos (Transporte y Aplicación) sobre una red IP simple y sin estado."
+  },
+  "Máscara de subred - Prefijo -24": {
+    "que": "Una máscara de subred es un número de 32 bits (en IPv4) compuesto por una secuencia continua de unos seguida de ceros que separa la porción de red de la porción de host en una dirección IP. En notación CIDR, un prefijo como /24 equivale a la máscara 255.255.255.0, indicando que los primeros 24 bits identifican la red y los 8 restantes identifican los hosts.",
+    "para": "Permite a cada dispositivo y router determinar mediante una operación lógica AND bit a bit si una IP destino pertenece a su misma red local (entrega directa en L2) o a una red remota (requiere enviar el paquete al default gateway). También define el tamaño exacto de cada subred al planificar direccionamiento IP.",
+    "como": "Al comparar la IP origen 192.168.10.25/24 con un destino 192.168.10.90, el sistema aplica `IP & Máscara`: ambas producen 192.168.10.0, por lo que están en la misma subred y se usa ARP para obtener la MAC destino. Si el destino es 192.168.11.90, el resultado es 192.168.11.0 ≠ 192.168.10.0, activando el envío al gateway por defecto. Con 8 bits de host ($2^8 = 256$ direcciones), se reservan la primera (dirección de red, .0) y la última (broadcast, .255), dejando 254 IPs utilizables (en nubes como AWS VPC se reservan 5 por subred, dejando 251 en un /24).",
+    "practicas": [
+      "Adoptar notación CIDR (/24, /26, /16) en lugar de pensar en 'clases' A, B o C obsoletas (classful addressing).",
+      "Dimensionar subredes con holgura para crecimiento futuro, recordando las IPs reservadas por el proveedor cloud (gateway, DNS, broadcast, red).",
+      "Prefijo /24 (254 hosts útiles en redes estándar) vs /32 (una única IP exacta, usada en rutas estáticas, loopback o reglas de firewall) vs /31 (enlaces punto a punto según RFC 3021).",
+      "Error clásico: cambiar la máscara en un host sin actualizarla en el resto de la subred o en el router, creando asimetrías donde un lado cree que el otro es local y no usa ARP/gateway correctamente."
+    ],
+    "ejemplo": "# Cálculo con /24 (255.255.255.0)\nIP:         192.168.1.45  -> 11000000.10101000.00000001.00101101\nMáscara:    255.255.255.0 -> 11111111.11111111.11111111.00000000\nRed (AND):  192.168.1.0   | Broadcast: 192.168.1.255 | Hosts: .1 - .254",
+    "entrevista": "La máscara o prefijo CIDR /24 fija la frontera exacta entre los bits de red y de host: mediante un AND binario decide al instante si un paquete se entrega directo por capa 2 o si debe salir hacia el gateway."
+  },
+  "Métodos HTTP (GET-POST-PUT-PATCH-DELETE)": {
+    "que": "Los métodos (o verbos) HTTP definen la semántica de la acción solicitada sobre un recurso identificado por una URI según la especificación RFC 9110. Los cinco principales en APIs REST son GET (leer), POST (crear o procesar), PUT (reemplazar por completo), PATCH (modificar parcialmente) y DELETE (eliminar).",
+    "para": "Estandarizan el contrato entre clientes, servidores, cachés, proxies y balanceadores, permitiendo que la infraestructura intermedia sepa qué peticiones puede reintentar, cachear o invalidar automáticamente sin inspeccionar el cuerpo JSON.",
+    "como": "Cada método posee dos propiedades clave en HTTP: seguridad (safe: no altera el estado del recurso en el servidor) e idempotencia (idempotent: ejecutarla 1 o N veces produce el mismo efecto observable en el recurso). GET es seguro, idempotente y cacheable por defecto. PUT y DELETE no son seguros pero sí idempotentes: repetir un PUT con el mismo payload deja el recurso idéntico, y repetir un DELETE mantiene el recurso ausente (aunque devuelva 200 o 404). POST no es ni seguro ni idempotente (dos POST crean dos órdenes, salvo que se use una `Idempotency-Key`), mientras que PATCH no garantiza idempotencia por definición (por ejemplo, una operación de incremento) aunque puede diseñarse para serlo.",
+    "practicas": [
+      "Usar `Idempotency-Key` en cabeceras para peticiones POST críticas (como pagos) y evitar duplicados ante reintentos de red.",
+      "No usar GET para operaciones que modifiquen estado (como `/logout` o `/delete?id=1`), pues crawlers, prefetching del navegador o ataques CSRF pueden dispararlos.",
+      "PUT (reemplazo completo del recurso; los campos omitidos se borran o vuelven a su valor por defecto) vs PATCH (actualización parcial con JSON Merge Patch o JSON Patch RFC 6902).",
+      "Error común: devolver siempre `200 OK` en todos los métodos o usar POST para todo tipo de lecturas y borrados en APIs RESTful."
+    ],
+    "ejemplo": "GET /api/v1/users/42 HTTP/1.1      # Lectura segura e idempotente\nPUT /api/v1/users/42 HTTP/1.1      # Reemplazo completo (idempotente)\nPATCH /api/v1/users/42 HTTP/1.1    # Actualización parcial de campos\nDELETE /api/v1/users/42 HTTP/1.1   # Borrado idempotente",
+    "entrevista": "Elegir bien entre GET, POST, PUT, PATCH y DELETE no es estética REST: define qué peticiones son seguras, cacheables e idempotentes ante reintentos automáticos de clientes y proxies."
+  },
+  "NACL": {
+    "que": "Una NACL (Network Access Control List) es un firewall virtual sin estado (stateless) que opera a nivel de subred en una nube pública (como AWS VPC) para permitir o denegar tráfico entrante (inbound) y saliente (outbound) según IPs CIDR, protocolos y puertos. Cada subred debe estar asociada exactamente a una NACL, y sus reglas se evalúan en orden numérico estricto hasta encontrar la primera coincidencia.",
+    "para": "Sirve como primera línea de defensa gruesa (macro-segmentación) en el borde de una subred, especialmente útil para aplicar reglas explícitas de denegación (`DENY`) contra rangos de IPs maliciosos, bloquear escaneos o aislar subredes enteras antes de que el tráfico llegue a las instancias.",
+    "como": "Al ser stateless, la NACL no mantiene tabla de conexiones abiertas: permitir tráfico entrante al puerto 443 no autoriza automáticamente la respuesta saliente hacia el cliente. Por ello, es obligatorio crear una regla de salida explícita que permita el rango de puertos efímeros (por ejemplo, TCP 1024-65535 en Linux/AWS) para el tráfico de retorno. La evaluación recorre las reglas en orden ascendente por número (ej. 100, 200...) deteniéndose en el primer match, hasta llegar a la regla final `*` que deniega todo lo no emparejado.",
+    "practicas": [
+      "Dejar la NACL por defecto permisiva cuando no haya necesidad de `DENY` explícito, delegando la granularidad fina a Security Groups.",
+      "Numerar reglas con saltos de 100 (100, 200, 300) para poder insertar bloqueos de emergencia delante sin reescribir toda la lista.",
+      "NACL (nivel subred, stateless, soporta reglas ALLOW y DENY con prioridad numérica) vs Security Group (nivel interfaz ENI/instancia, stateful, solo reglas ALLOW).",
+      "Error clásico: bloquear sin querer las respuestas HTTP/HTTPS en la NACL de salida por olvidar habilitar los puertos efímeros (1024-65535)."
+    ],
+    "ejemplo": "# Reglas inbound típicas en una NACL pública:\nRegla 50:  DENY   TCP 0-65535  desde 198.51.100.12/32  (IP atacante bloqueada)\nRegla 100: ALLOW  TCP 443      desde 0.0.0.0/0         (Tráfico HTTPS)\nRegla 200: ALLOW  TCP 1024-65535 desde 0.0.0.0/0       (Retorno de conexiones salientes)\nRegla *:   DENY   ALL          desde 0.0.0.0/0",
+    "entrevista": "Una NACL es un firewall stateless a nivel de subred: su valor diferencial frente a los Security Groups es poder escribir reglas DENY ordenadas por prioridad, siempre recordando abrir puertos efímeros para el tráfico de retorno."
+  },
+  "NAT - PAT": {
+    "que": "NAT (Network Address Translation, RFC 3022) es el mecanismo por el cual un router o firewall reescribe las direcciones IP de origen o destino en las cabeceras de paquetes en tránsito. PAT (Port Address Translation, o NAPT / masquerading) es la variante más común de NAT (many-to-one), donde múltiples hosts con IPs privadas comparten una única IP pública diferenciando sus flujos mediante puertos origen únicos.",
+    "para": "Resuelve el agotamiento de direcciones IPv4 públicas permitiendo que miles de dispositivos con IPs privadas (RFC 1918) naveguen por Internet, a la vez que oculta la topología interna y permite publicar servicios internos tras una única IP externa mediante redirección de puertos (DNAT / port forwarding).",
+    "como": "Cuando un host interno `192.168.1.50:54321` envía un paquete hacia `93.184.216.34:443`, el router NAT sustituye la IP origen por su IP pública (ej. `203.0.113.5`) y, si otro cliente ya usa ese puerto o por política de PAT, asigna un puerto origen libre (ej. `40001`). Guarda esa tupla en su tabla de traducción de estados (`192.168.1.50:54321 <-> 203.0.113.5:40001 -> 93.184.216.34:443`) y recalcula los checksums IP y TCP/UDP. Al regresar la respuesta al puerto `40001`, el router consulta la tabla, restaura la IP y puerto privados originales y reenvía el paquete al host interno.",
+    "practicas": [
+      "Dimensionar los límites de puertos efímeros (máximo ~64k puertos por IP pública y destino) en entornos con alto volumen de conexiones salientes para evitar agotamiento de puertos (SNAT port exhaustion).",
+      "No depender de NAT como sustituto de un firewall; usar reglas explícitas de filtrado porque los estados NAT caducan y protocolos como SIP o FTP requieren helpers (ALG) problemáticos.",
+      "SNAT/PAT (traduce origen para salida de clientes privados) vs DNAT (traduce destino para exponer un servidor interno detrás de una IP pública) vs CGNAT (NAT a escala de ISP).",
+      "En IPv6, prescindir de NAT en favor de direccionamiento extremo a extremo con firewall stateful."
+    ],
+    "ejemplo": "# Regla típica de PAT (masquerading) en Linux nftables / iptables:\niptables -t nat -A POSTROUTING -s 192.168.1.0/24 -o eth0 -j MASQUERADE\n# Ver tabla activa de traducciones con conntrack:\nconntrack -L -n",
+    "entrevista": "NAT traduce direcciones entre redes privadas y públicas, pero es PAT —al multiplexar conexiones en una tabla de traducción por puertos— lo que realmente permite que toda una red corporativa o VPC salga a Internet por una sola IP."
+  },
+  "NAT Gateway": {
+    "que": "Un NAT Gateway es un componente gestionado de red en infraestructura cloud (AWS, GCP, Azure) que realiza traducción de direcciones de origen (SNAT/PAT) altamente disponible para que instancias en subredes privadas accedan a Internet o a servicios externos sin recibir conexiones entrantes no solicitadas desde fuera. Se despliega típicamente en una subred pública con una IP elástica (EIP) fija asociada.",
+    "para": "Permite que bases de datos, workers, nodos Kubernetes o lambdas en subredes privadas descarguen parches, consulten APIs de terceros o extraigan imágenes de contenedores manteniendo ocultas sus IPs y bloqueado cualquier tráfico entrante directo desde Internet.",
+    "como": "En la tabla de rutas de la subred privada se configura una ruta por defecto (`0.0.0.0/0`) apuntando al NAT Gateway (en lugar de al Internet Gateway). Cuando una instancia privada inicia una conexión saliente, el paquete llega al NAT Gateway en la subred pública; este reemplaza la IP origen privada por su IP pública fija usando puertos efímeros para rastrear la sesión y reenvía el paquete al Internet Gateway hacia el destino. Las respuestas vuelven al NAT Gateway, que traduce la dirección de vuelta hacia la instancia privada, pero cualquier paquete nuevo iniciado desde Internet hacia esa IP pública es descartado.",
+    "practicas": [
+      "Desplegar al menos un NAT Gateway por Zona de Disponibilidad (AZ) en producción para evitar fallos de zona única y cargos por tráfico cross-AZ.",
+      "Usar VPC Endpoints / PrivateLink para tráfico frecuente hacia servicios del propio cloud (como S3 o ECR) en lugar de pasarlo por el NAT Gateway y pagar por GB procesado.",
+      "NAT Gateway (gestionado, escala automática, sin mantenimiento de SO) vs NAT Instance (EC2/VM autogestionada, más barata para labs pero cuello de botella y punto de fallo manual).",
+      "Error típico de arquitectura: colocar un NAT Gateway en una subred privada esperando que salga a Internet; debe residir en una subred pública con ruta hacia el Internet Gateway."
+    ],
+    "ejemplo": "# Tabla de rutas de Subred Privada (enrutamiento cloud):\n10.0.0.0/16  -> local\n0.0.0.0/0    -> nat-0a1b2c3d4e5f  (NAT Gateway en subred pública)\n\n# Tabla de rutas de Subred Pública:\n0.0.0.0/0    -> igw-9988776655   (Internet Gateway)",
+    "entrevista": "Un NAT Gateway da salida segura e IP pública predecible a subredes privadas sin exponerlas al tráfico entrante, aunque conviene complementarlo con VPC Endpoints y uno por AZ para ahorrar costes y evitar puntos únicos de fallo."
+  },
+  "Network Policy": {
+    "que": "Una Network Policy en seguridad de redes es el conjunto formal de reglas declarativas que especifica qué entidades (usuarios, subredes, grupos de seguridad o cargas de trabajo) pueden comunicarse con otras, bajo qué protocolos, puertos y condiciones de cifrado o inspección. Actúa como el contrato ejecutable de segmentación y defensa en profundidad dentro de una arquitectura Zero Trust.",
+    "para": "Traduce los requisitos de seguridad y cumplimiento (PCI-DSS, HIPAA, aislamiento de entornos) en controles verificables automáticamente, evitando que la comunicación interna quede abierta por defecto ('flat network') frente a amenazas como movimiento lateral, spoofing o acceso indebido entre entornos dev y prod.",
+    "como": "Una política de red define selectores de origen y destino, dirección del flujo (Ingress/Egress), protocolos/puertos permitidos y acción (`ALLOW`, `DENY`, `AUDIT`). Un plano de control central o de plataforma compila estas definiciones en reglas concretas aplicadas en el punto de ejecución correspondiente: firewalls L3/L4/L7, Security Groups, NACLs, reglas eBPF/iptables o proxies de service mesh. Bajo un enfoque moderno de microsegmentación, se combinan políticas de aislamiento L3/L4 con políticas L7 que validan identidad mTLS y rutas HTTP.",
+    "practicas": [
+      "Adoptar el modelo 'Deny-by-default' en entornos productivos y abrir únicamente los flujos estrictamente documentados.",
+      "Versionar las políticas en Git (Policy-as-Code) y validarlas en CI/CD antes del despliegue para detectar accesos excesivos (`0.0.0.0/0`).",
+      "Política de red L3/L4 (filtra por IP/etiqueta y puerto) vs Política de Firewall de Aplicación / Service Mesh L7 (filtra además por métodos HTTP, rutas URI e identidad SPIFFE/mTLS).",
+      "Error frecuente: definir reglas de Ingress pero olvidar restringir el Egress, permitiendo que un servidor comprometido exfiltre datos o descargue malware libremente."
+    ],
+    "ejemplo": "# Política declarativa conceptual (modelo Zero Trust Ingress + Egress):\npolitica: \"aislamiento-pagos\"\n  aplica_a: grupo=pagos\n  ingress: permitir desde grupo=api-gateway puerto=8443/TCP (mTLS requerido)\n  egress:  permitir hacia grupo=db-pagos puerto=5432/TCP; denegar resto",
+    "entrevista": "Una Network Policy formaliza el principio de mínimo privilegio en la red como código declarativo, pasando de redes planas abiertas a comunicaciones explícitamente autorizadas tanto en entrada como en salida."
+  },
+  "NetworkPolicy": {
+    "que": "Una `NetworkPolicy` es un objeto nativo de la API de Kubernetes (`networking.k8s.io/v1`) que controla el flujo de tráfico de red a nivel de IP y puerto (capas 3 y 4) entre Pods y hacia/desde endpoints externos. Por defecto en Kubernetes todos los Pods pueden comunicarse libremente entre sí hasta que una `NetworkPolicy` los selecciona.",
+    "para": "Sirve para microsegmentar un clúster Kubernetes multi-tenant o de microservicios, impidiendo por ejemplo que un Pod de frontend o de un namespace de pruebas acceda directamente a las bases de datos de producción.",
+    "como": "El servidor API de Kubernetes solo almacena el manifiesto `NetworkPolicy`, pero quien realmente lo hace cumplir es el plugin CNI instalado (como Calico o Cilium; Flannel por sí solo no las aplica). Cuando un Pod coincide con el `podSelector` de una política que incluye `Ingress` o `Egress` en `policyTypes`, ese Pod queda aislado: solo pasará el tráfico que coincida con alguna regla `from`/`to` (usando `podSelector`, `namespaceSelector` o `ipBlock`). Si varias políticas seleccionan al mismo Pod, sus reglas permitidas se unen de forma aditiva (OR lógico); no existen reglas `Deny` nativas en `NetworkPolicy` estándar.",
+    "practicas": [
+      "Crear una política `default-deny-all` en cada namespace de producción y añadir políticas específicas por servicio para abrir solo los puertos necesarios.",
+      "No olvidar permitir explícitamente el tráfico UDP/TCP al puerto 53 hacia `kube-dns` / `CoreDNS` cuando se restringe el `Egress`, o los Pods perderán resolución DNS.",
+      "`NetworkPolicy` nativa de K8s (solo L3/L4 y reglas ALLOW aditivas) vs `CiliumNetworkPolicy` / Istio `AuthorizationPolicy` (añaden filtrado L7 HTTP/gRPC, DNS-aware egress y reglas DENY).",
+      "Error habitual: desplegar `NetworkPolicy` en un clúster con un CNI que no las soporta (ej. Flannel básico) y asumir que el tráfico está bloqueado sin probarlo."
+    ],
+    "ejemplo": "apiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata: { name: allow-api-to-db, namespace: prod }\nspec:\n  podSelector: { matchLabels: { app: postgres } }\n  policyTypes: [Ingress]\n  ingress:\n  - from: [{ podSelector: { matchLabels: { app: backend } } }]\n    ports: [{ protocol: TCP, port: 5432 }]",
+    "entrevista": "La NetworkPolicy estándar de Kubernetes es un recurso aditivo de nivel L3/L4 que no hace nada por sí solo: depende del CNI para aislar Pods por etiquetas, y al restringir Egress siempre debes acordarte de abrir el puerto 53 para CoreDNS."
+  },
+  "Números de secuencia y ACK": {
+    "que": "En TCP (RFC 9293), el Número de Secuencia (Sequence Number, 32 bits) identifica el primer byte de datos del segmento actual dentro del flujo bidireccional, mientras que el Número de Acuse de Recibo (Acknowledgment Number, 32 bits) indica el siguiente byte que el receptor espera recibir. Juntos convierten un envío de paquetes potencialmente desordenado sobre IP en un flujo continuo y ordenado de bytes.",
+    "para": "Permiten detectar bytes perdidos, descartar segmentos duplicados, reordenar paquetes que llegaron por rutas distintas y confirmar exactamente qué porción del stream ha sido entregada al receptor sin tener que esperar un ACK por cada paquete individual.",
+    "como": "Durante el handshake de 3 vías, cada extremo escoge un Número de Secuencia Inicial (ISN) pseudoaleatorio para evitar colisiones con conexiones viejas o secuestros de sesión; el SYN consume 1 número virtual. Si el cliente inicia en ISN=1000, su ACK inicial del servidor confirma 1001, y al enviar 500 bytes de payload su `Seq` será 1001; el servidor responderá con `ACK=1501` (ACK acumulativo: confirma todo hasta el byte 1500 inclusive). Si llega un segmento fuera de orden (ej. bytes 2001-2500 antes que 1501-2000), el receptor lo almacena en buffer pero sigue enviando `ACK=1501` (ACK duplicado), señalando el hueco.",
+    "practicas": [
+      "Usar ISNs aleatorios (RFC 6528, estándar en kernels modernos) para prevenir ataques de predicción de secuencia e inyección de paquetes TCP.",
+      "Habilitar SACK (Selective Acknowledgment, RFC 2018) en ambos extremos para que el receptor informe exactamente qué bloques no contiguos ya tiene y evitar retransmitir datos sanos.",
+      "ACK acumulativo estándar (solo confirma el límite contiguo más bajo) vs SACK (añade opciones TCP indicando rangos posteriores recibidos).",
+      "Al leer trazas con `tcpdump` o Wireshark, recordar que Wireshark muestra números relativos (empezando en 0/1) por defecto frente a los números absolutos reales de 32 bits en red."
+    ],
+    "ejemplo": "# Flujo TCP simplificado (números relativos):\nCliente -> Servidor: [SYN] Seq=0\nServidor -> Cliente: [SYN, ACK] Seq=0 Ack=1\nCliente -> Servidor: [ACK] Seq=1 Ack=1\nCliente -> Servidor: [PSH, ACK] Seq=1 Ack=1 Len=120\nServidor -> Cliente: [ACK] Seq=1 Ack=121  # Confirma los 120 bytes recibidos",
+    "entrevista": "TCP numera cada byte enviado, no cada paquete: el Sequence Number ubica los datos en el stream y el ACK acumulativo confirma todo lo recibido hasta ese punto indicando cuál es el próximo byte esperado."
+  },
+  "OAuth 2.0": {
+    "que": "OAuth 2.0 (RFC 6749 y RFC 9700 sobre mejores prácticas de seguridad) es un marco estándar de delegación de autorización que permite a una aplicación cliente obtener acceso limitado a recursos protegidos de un usuario sin conocer ni almacenar sus credenciales. Separa claramente los roles de Resource Owner (usuario), Client (app), Authorization Server (emisor de tokens) y Resource Server (API).",
+    "para": "Resuelve el problema de dar permisos granulares (scopes) a aplicaciones propias o de terceros —como permitir a una app leer tu calendario o a una SPA consumir una API— con tokens de vida corta revocables, eliminando el anti-patrón de compartir contraseñas.",
+    "como": "En el flujo recomendado para aplicaciones con usuario (Authorization Code + PKCE), la app redirige al usuario al Authorization Server enviando un `code_challenge` (hash de un secreto aleatorio `code_verifier`). El usuario se autentica y consiente los `scopes`; el Authorization Server devuelve un `authorization_code` temporal de un solo uso vía redirección al navegador. Luego, el cliente intercambia ese código junto con el `code_verifier` (y su `client_secret` si es cliente confidencial) en un canal seguro back-channel para recibir un `access_token` (habitualmente JWT u opaco) y opcionalmente un `refresh_token`, enviando el `access_token` como `Authorization: Bearer <token>` a la API.",
+    "practicas": [
+      "Usar siempre Authorization Code Flow con PKCE (RFC 7636) tanto para SPAs y apps móviles como para clientes confidenciales de backend.",
+      "Abandonar el Implicit Flow y el Resource Owner Password Credentials (ROPC), considerados inseguros u obsoletos por el RFC 9700.",
+      "OAuth 2.0 (protocolo de AUTORIZACIÓN: otorga permisos mediante access tokens y scopes) vs OpenID Connect (capa de AUTENTICACIÓN sobre OAuth 2.0 que añade el ID Token).",
+      "Mantener `access_token` con vida corta (5–15 min) y rotar los `refresh_token` con detección de reutilización; validar estrictamente el parámetro `state` contra CSRF y coincidencia exacta de `redirect_uri`."
+    ],
+    "ejemplo": "# Intercambio de Authorization Code + PKCE por Access Token\nPOST /oauth/token HTTP/1.1\nHost: auth.ejemplo.com\nContent-Type: application/x-www-form-urlencoded\n\ngrant_type=authorization_code&code=SplxlOBeZQQYbYS6WxSbIA\n&redirect_uri=https://app.ejemplo.com/cb&client_id=web-app\n&code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+    "entrevista": "OAuth 2.0 no autentica usuarios sino que delega autorización con permisos acotados; en 2026 el estándar seguro es Authorization Code con PKCE y tokens de acceso de corta duración."
+  },
+  "OSPF": {
+    "que": "OSPF (Open Shortest Path First, RFC 2328 para OSPFv2 IPv4 y RFC 5340 para OSPFv3 IPv6) es un protocolo de enrutamiento dinámico interior (IGP) de tipo estado de enlace (link-state) que opera directamente sobre IP (protocolo 89). Cada router mantiene un mapa topológico idéntico de su área y calcula rutas óptimas libres de bucles mediante el algoritmo de Dijkstra (SPF).",
+    "para": "Se utiliza dentro de redes corporativas, campus o centros de datos de un mismo Sistema Autónomo (AS) para lograr convergencia rápida ante caídas de enlaces y balanceo ECMP, superando las limitaciones de escala y conteo al infinito de protocolos antiguos como RIP.",
+    "como": "Los routers descubren vecinos enviando paquetes `Hello` periódicos por multicast (`224.0.0.5` / `224.0.0.6`), verificando compatibilidad de área, timers y máscaras para formar adyacencias (en redes broadcast eligen un Designated Router, DR, para reducir intercambios). Luego intercambian Link-State Advertisements (LSAs) que describen sus interfaces y costes (inversamente proporcionales al ancho de banda), construyendo una base de datos topológica sincronizada llamada LSDB. Cada router ejecuta independientemente el algoritmo Shortest Path First (Dijkstra) sobre la LSDB usando sí mismo como raíz para poblar su tabla de enrutamiento, segmentando grandes redes en Áreas conectadas al Área 0 (backbone).",
+    "practicas": [
+      "Diseñar la red con jerarquía clara alrededor del Área 0 (backbone) y sumarizar rutas en los ABR (Area Border Routers) para mantener pequeñas las LSDB.",
+      "Ajustar el ancho de banda de referencia (`auto-cost reference-bandwidth`) en enlaces de 10G/40G/100G, ya que el valor por defecto histórico (100 Mbps) trata 1G y 100G con el mismo coste = 1.",
+      "OSPF (IGP dentro de un único Sistema Autónomo, métrica por coste/ancho de banda y estado de enlace) vs BGP (EGP entre Sistemas Autónomos o en data centers masivos, basado en vector de ruta y políticas).",
+      "Autenticar las adyacencias OSPF (HMAC-SHA / MD5) y marcar interfaces hacia usuarios como `passive-interface` para impedir inyección de rutas falsas."
+    ],
+    "ejemplo": "# Inspección típica de vecindades y rutas OSPF en FRR / Cisco IOS\nshow ip ospf neighbor\nshow ip ospf database\nshow ip route ospf",
+    "entrevista": "OSPF es un IGP link-state donde todos los routers de un área comparten el mismo mapa LSDB mediante LSAs y ejecutan Dijkstra de forma independiente para converger rápido y sin bucles según el coste del enlace."
+  },
+  "OpenID Connect": {
+    "que": "OpenID Connect (OIDC) es una capa estandarizada de identidad y autenticación construida directamente sobre el protocolo OAuth 2.0. Introduce el concepto de `ID Token` (un JSON Web Token firmado), el scope reservado `openid` y un endpoint estándar `/userinfo` para verificar quién es el usuario final y obtener sus atributos básicos (claims).",
+    "para": "Resuelve la ambigüedad de usar OAuth 2.0 puro para iniciar sesión ('Sign in with Google/Okta/Keycloak'), dando a aplicaciones web, móviles y SPAs un mecanismo moderno, ligero en JSON/REST y seguro para hacer Single Sign-On (SSO) federado.",
+    "como": "El cliente inicia un flujo OAuth 2.0 estándar (Authorization Code + PKCE) incluyendo `scope=openid profile email` y un parámetro `nonce` aleatorio para prevenir ataques de repetición (replay). Tras autenticar al usuario, el Identity Provider (IdP) devuelve un `authorization_code` que la aplicación canjea en el endpoint `/token` por un `access_token` y un `id_token` JWT firmado (habitualmente con RS256 o EdDSA). La aplicación verifica la firma del `id_token` usando las claves públicas publicadas en el documento de descubrimiento `/.well-known/openid-configuration` (JWKS), comprueba `iss`, `aud`, `exp` y `nonce`, y opcionalmente consulta `/userinfo` con el `access_token`.",
+    "practicas": [
+      "Usar siempre `id_token` exclusivamente para autenticar en el cliente y `access_token` para autorizar llamadas hacia APIs; nunca enviar el `id_token` como Bearer token a un Resource Server.",
+      "Validar obligatoriamente firma criptográfica, `iss` (emisor), `aud` (client_id esperado), expiración (`exp`) y `nonce` en el `id_token`.",
+      "OpenID Connect (JSON/REST, pensado para web, móvil, SPAs y APIs modernas sobre OAuth 2.0) vs SAML 2.0 (XML, pesado, orientado sobre todo a SSO empresarial clásico en navegador).",
+      "Aprovechar el endpoint `/.well-known/openid-configuration` para autoconfigurar endpoints y rotar claves públicas JWKS automáticamente sin código hardcodeado."
+    ],
+    "ejemplo": "# Descubrimiento automático OIDC y claims típicos de un ID Token decodificado\nGET https://idp.ejemplo.com/.well-known/openid-configuration\n\n{\n  \"iss\": \"https://idp.ejemplo.com\", \"sub\": \"usr_9f82a1\",\n  \"aud\": \"mi-cliente-web\", \"nonce\": \"n-0S6_WzA2Mj\",\n  \"email\": \"ana@ejemplo.com\", \"exp\": 1764049200\n}",
+    "entrevista": "OpenID Connect añade la capa de identidad que le faltaba a OAuth 2.0 mediante el ID Token JWT firmado y el descubrimiento automático JWKS, siendo el estándar actual para autenticación y SSO en web y móvil."
+  },
+  "P2P": {
+    "que": "P2P (Peer-to-Peer, o red entre pares) es una arquitectura de red distribuida en la que los nodos participantes (peers) actúan simultáneamente como clientes y servidores, compartiendo recursos, ancho de banda, almacenamiento o cómputo directamente entre sí sin depender de un servidor central coordinador para el plano de datos.",
+    "para": "Sirve para distribuir archivos masivos evitando cuellos de botella centrales (BitTorrent, distribución de actualizaciones o artefactos OCI en clústeres), establecer comunicaciones multimedia directas de baja latencia (WebRTC) o construir redes resilientes sin punto único de fallo (IPFS, Tailscale en malla).",
+    "como": "En una red P2P pura o híbrida, los nodos se localizan mediante un mecanismo de descubrimiento como un servidor tracker/rendezvous o una Tabla Hash Distribuida (DHT, como Kademlia) que mapea claves de contenido hacia los peers que lo alojan. Una vez encontrados, los peers establecen conexiones directas (TCP, UDP o QUIC) atravesando firewalls y NAT mediante técnicas como STUN, UDP hole punching o ICE (con fallback a un relay TURN si ambos están tras NAT simétricos). La carga se reparte en fragmentos (chunks) que se intercambian en paralelo entre múltiples pares.",
+    "practicas": [
+      "Prever mecanismos de NAT traversal (ICE/STUN/TURN) desde el diseño, porque la mayoría de los peers domésticos y móviles están detrás de NAT o CGNAT.",
+      "Implementar verificación de integridad por hash criptográfico (como Merkle trees o SHA-256 por chunk) ya que no existe un servidor único de confianza.",
+      "P2P (alta escalabilidad en descarga/ancho de banda y tolerancia a fallos, pero complejo en coherencia, moderación y NAT traversal) vs Cliente-Servidor (control centralizado, seguridad y consistencia más simples).",
+      "En entornos empresariales, controlar tráfico P2P no autorizado y dimensionar que el tráfico de subida (egress) de cada nodo aumenta proporcionalmente."
+    ],
+    "ejemplo": "# Flujo ICE/WebRTC típico para establecer canal P2P directo tras NAT:\n1. Peer A y Peer B consultan STUN -> descubren su IP:puerto público reflejado\n2. Intercambian candidatos ICE vía servidor de señalización (WebSocket)\n3. Ambos disparan paquetes UDP simultáneos (hole punching)\n4. Si falla por NAT simétrico -> fallback transparente a servidor TURN",
+    "entrevista": "En una arquitectura P2P cada nodo consume y provee capacidad a la red escalando de forma descentralizada, a cambio de resolver retos complejos de descubrimiento (DHT), verificación de integridad y atravesamiento de NAT."
+  },
+  "PDU (datos, segmento, paquete, trama, bits)": {
+    "que": "Una PDU (Protocol Data Unit) es el nombre que recibe la unidad de información intercambiada en cada capa del stack de red al ir añadiendo cabeceras de control durante el encapsulamiento. En el flujo descendente estándar se denomina: Datos (Aplicación), Segmento/Datagrama (Transporte), Paquete (Red), Trama (Enlace) y Bits (Física).",
+    "para": "Usar el término exacto de cada PDU evita ambigüedades técnicas al leer capturas de red, diseñar firewalls, ajustar la MTU o explicar qué dispositivo procesa qué cabecera (un switch inspecciona tramas; un router inspecciona paquetes).",
+    "como": "Cuando una aplicación envía un mensaje JSON (Datos), la capa de Transporte añade la cabecera TCP creando un Segmento (o cabecera UDP creando un Datagrama). Al bajar a la capa de Red, se agrega la cabecera IP (IPs origen/destino, TTL) convirtiéndolo en un Paquete IP. La capa de Enlace envuelve ese paquete con la cabecera Ethernet (MACs origen/destino, EtherType) y un tráiler FCS de comprobación de errores, formando una Trama (Frame). Finalmente, la capa Física serializa esa trama en Bits modulados sobre el cable o el aire.",
+    "practicas": [
+      "Respetar la nomenclatura al escribir documentación o incidencias: hablar de pérdida de tramas por errores CRC en L2 vs pérdida de paquetes por congestión en L3.",
+      "Recordar que cada encapsulación reduce el tamaño disponible para la PDU superior (overhead acumulado de Ethernet + IP + TCP ≈ 54 bytes sobre 1500).",
+      "Segmento (TCP, flujo orientado a conexión) vs Datagrama (UDP, unidad independiente sin conexión) vs Paquete (IP, unidad enrutable entre redes).",
+      "En redes virtualizadas (VXLAN), un paquete completo de capa 3 del tenant viaja encapsulado como datos UDP dentro de otra trama Ethernet física externa."
+    ],
+    "ejemplo": "[Datos HTTP]                                  -> Capa Aplicación\n[TCP Header | Datos]                          -> Segmento (L4)\n[IP Header  | TCP Header | Datos]             -> Paquete (L3)\n[ETH Header | IP | TCP | Datos | FCS]         -> Trama (L2)\n101100101010...                               -> Bits (L1)",
+    "entrevista": "Nombrar las PDUs con precisión —datos, segmento, paquete, trama y bits— refleja exactamente qué cabecera se está procesando y en qué frontera del encapsulamiento ocurre un fallo o transformación."
+  },
+  "PrivateLink - Endpoints": {
+    "que": "PrivateLink (en AWS, y equivalentes como Private Service Connect en GCP o Private Link en Azure) y los VPC Endpoints permiten conectar una VPC directamente con servicios gestionados del cloud o de terceros a través de la red troncal privada del proveedor, sin atravesar la Internet pública. Exponen el servicio destino como una interfaz de red elástica (ENI) con IP privada dentro de tu propia subred (Interface Endpoint) o mediante rutas en la tabla (Gateway Endpoint).",
+    "para": "Elimina la exposición de tráfico sensible a Internet, evita necesitar Internet Gateways o NAT Gateways para consumir servicios como S3, KMS o APIs SaaS, reduce costes de transferencia por NAT y simplifica arquitecturas donde dos VPCs tienen rangos CIDR solapados.",
+    "como": "Un Interface Endpoint crea una ENI dentro de tus subredes privadas con una IP local de tu rango CIDR y configura DNS privado (vía Route 53 Private Hosted Zone) para que el dominio del servicio resuelva a esa IP interna. Cuando un pod o instancia conecta con el servicio, el paquete entra a la ENI y el hipervisor/plano de red del proveedor lo encapsula por su backbone interno directamente hacia el Network Load Balancer del proveedor del servicio en la otra VPC, preservando flujo unidireccional (solo el consumidor inicia conexiones). En el caso particular de Gateway Endpoints (como S3 y DynamoDB en AWS), se añade un prefijo a la Route Table sin crear ENIs ni costes por hora.",
+    "practicas": [
+      "Habilitar siempre Gateway Endpoints gratuitos para S3/DynamoDB antes de enrutar backups o logs de contenedores por un NAT Gateway de pago.",
+      "Adjuntar Endpoint Policies restrictivas (IAM resource policy) para evitar que alguien dentro de la VPC use el endpoint para acceder a buckets externos no autorizados.",
+      "PrivateLink (unidireccional, sin necesidad de rangos CIDR no solapados, conecta un servicio concreto por puerto) vs VPC Peering (conectividad L3 completa bidireccional entre redes que exige CIDRs distintos).",
+      "Error frecuente: crear un Interface Endpoint pero olvidar habilitar `Private DNS` o el puerto 443 en el Security Group adjunto al endpoint."
+    ],
+    "ejemplo": "# Resolución DNS tras activar Interface Endpoint con Private DNS:\n$ dig +short secretsmanager.us-east-1.amazonaws.com\n10.0.12.45   # Resuelve a una IP privada dentro de la propia VPC, no a IP pública",
+    "entrevista": "PrivateLink proyecta un servicio externo dentro de tu subred como una IP privada usando el backbone interno del proveedor, evitando Internet y NAT Gateways incluso cuando las VPCs tienen CIDRs solapados."
+  },
+  "Proxy inverso": {
+    "que": "Un proxy inverso (Reverse Proxy) es un servidor intermediario situado delante de uno o varios servidores backend que recibe las peticiones de los clientes en su nombre, las procesa y reenvía la respuesta como si él mismo fuera el origen. Ejemplos habituales en producción son Nginx, Envoy, HAProxy, Caddy y Traefik.",
+    "para": "Centraliza funciones transversales antes de tocar el código de aplicación: terminación TLS, ocultamiento de la topología interna de servidores, compresión, caché de estáticos, limitación de tasa (rate limiting) y enrutamiento L7 por ruta o dominio hacia distintos microservicios.",
+    "como": "El cliente resuelve el dominio público hacia la IP del proxy inverso y establece una conexión TCP + TLS con él (el proxy posee el certificado público). Tras descifrar la petición HTTP, el proxy inspecciona cabeceras como `Host`, la ruta URI o cookies, aplica políticas (headers de seguridad, rate limit, WAF o autenticación previa) y abre una segunda conexión HTTP/gRPC (habitualmente reutilizando un pool keep-alive) hacia el backend seleccionado. Al reenviar la petición, inyecta cabeceras estándar como `X-Forwarded-For`, `X-Forwarded-Proto` o `Forwarded` para que el backend conozca la IP real y el protocolo original del cliente.",
+    "practicas": [
+      "Configurar los backends para confiar en `X-Forwarded-For` únicamente cuando la conexión proviene de la IP del proxy inverso, evitando spoofing de IP.",
+      "Reutilizar conexiones TCP (`keepalive`) entre el proxy inverso y los upstreams para eliminar la sobrecarga de handshakes continuos.",
+      "Proxy Directo / Forward Proxy (actúa en nombre del cliente hacia Internet para control/anonimato) vs Proxy Inverso (protege y abstrae a los servidores) vs Load Balancer (especializado en distribuir carga y health checks, muchas veces integrado en el mismo software).",
+      "Error común: olvidar reenviar cabeceras `Upgrade` y `Connection` cuando se exponen WebSockets tras un proxy inverso, rompiendo la conexión en tiempo real."
+    ],
+    "ejemplo": "# Bloque básico de proxy inverso en Nginx con terminación TLS y cabeceras reales\nserver {\n  listen 443 ssl http2;\n  location /api/ {\n    proxy_pass http://backend_pool;\n    proxy_set_header Host $host;\n    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n    proxy_set_header X-Forwarded-Proto $scheme;\n  }\n}",
+    "entrevista": "Un proxy inverso actúa como fachada única ante el cliente para desacoplar la infraestructura interna, absorbiendo terminación TLS, caché, seguridad y enrutamiento L7 sin sobrecargar a los servidores de aplicación."
+  },
+  "Puertos": {
+    "que": "Un puerto de red es un identificador numérico entero de 16 bits sin signo (rango `0` a `65535`) usado en las cabeceras de la capa de Transporte (TCP, UDP, SCTP) para multiplexar múltiples conversaciones simultáneas sobre una misma dirección IP. Permite que el sistema operativo entregue cada segmento entrante al proceso o socket exacto que lo espera.",
+    "para": "Hace posible que un mismo servidor ejecute simultáneamente un servidor web, SSH, métricas y base de datos bajo una sola IP, y que un cliente abra decenas de pestañas o conexiones salientes concurrentes sin mezclar sus flujos de datos.",
+    "como": "La IANA divide el espacio en tres rangos: Well-Known Ports (`0–1023`, reservados para servicios estándar como HTTP 80, HTTPS 443, SSH 22, DNS 53), Registered Ports (`1024–49151`, usados por aplicaciones y bases de datos como PostgreSQL 5432 o Redis 6379) y Ephemeral/Dynamic Ports (`49152–65535` según IANA, o `32768–60999` por defecto en Linux). Cuando un servidor hace `listen()` en el 443, el kernel asocia ese puerto a su socket; cuando un cliente se conecta, el kernel asigna automáticamente un puerto efímero libre como puerto origen, identificando de forma única cada conexión TCP mediante la 5-tupla `(protocolo, IP_origen, puerto_origen, IP_destino, puerto_destino)`.",
+    "practicas": [
+      "No ejecutar procesos de aplicación como `root` solo para escuchar en puertos `< 1024`: usar `CAP_NET_BIND_SERVICE`, un proxy inverso delante o puertos altos (`8080`, `8443`).",
+      "Recordar que un puerto TCP 443 y un puerto UDP 443 son espacios independientes (por eso HTTP/2 usa TCP/443 y HTTP/3/QUIC usa UDP/443 a la vez).",
+      "Puerto en escucha (`LISTEN` en servidor) vs Puerto efímero (asignado temporalmente al cliente saliente, sujeto a agotamiento si quedan demasiados sockets en `TIME_WAIT`).",
+      "Seguridad básica: cerrar y no exponer puertos administrativos (22, 3389) ni de bases de datos (5432, 6379, 27017) a `0.0.0.0/0`."
+    ],
+    "ejemplo": "# Ver puertos en escucha y procesos asociados en Linux\nss -tulnp\n# Ejemplo de salida:\n# tcp  LISTEN 0 4096 0.0.0.0:443  0.0.0.0:*  users:((\"nginx\",pid=1240,fd=6))\n# udp  UNCONN 0 0    0.0.0.0:443  0.0.0.0:*  users:((\"nginx\",pid=1240,fd=7))",
+    "entrevista": "Los puertos son el mecanismo de multiplexación de capa 4 que, junto con las IPs y el protocolo, forman la 5-tupla única con la que el kernel distingue cada conexión concurrente sobre una misma máquina."
+  },
+  "QUIC - HTTP-3": {
+    "que": "QUIC (RFC 9000) es un protocolo de transporte seguro, multiplexado y de baja latencia construido sobre UDP que integra cifrado TLS 1.3 de forma nativa. HTTP/3 (RFC 9114) es la tercera gran versión del protocolo HTTP, diseñada específicamente para ejecutarse sobre QUIC en lugar de TCP.",
+    "para": "Elimina el bloqueo de cabecera de línea a nivel de transporte (TCP Head-of-Line blocking) que afectaba a HTTP/2 cuando se perdía un solo paquete en redes móviles o con pérdida, acelera el establecimiento inicial combinando transporte y TLS en 1-RTT (o 0-RTT en reconexiones) y permite migrar conexiones sin cortes al cambiar entre Wi-Fi y 5G.",
+    "como": "Al ir sobre UDP, QUIC implementa control de congestión, retransmisión y ordenación en espacio de usuario dentro de cada flujo (stream) independiente: si se pierde un paquete UDP perteneciente al stream A, solo se detiene el stream A mientras los streams B y C siguen entregándose a la aplicación. El handshake criptográfico TLS 1.3 viaja embebido dentro del handshake inicial de QUIC, reduciendo la latencia de arranque frente a TCP (1 RTT) + TLS (1-2 RTTs). Además, sustituye la identificación rígida por IP:puerto con un `Connection ID` explícito, de modo que si el móvil cambia de IP manteniendo el `Connection ID`, la sesión HTTP/3 sobrevive.",
+    "practicas": [
+      "Anunciar soporte HTTP/3 desde HTTP/2 mediante la cabecera `Alt-Svc: h3=\":443\"; ma=86400` para que el navegador actualice sin romper clientes antiguos.",
+      "Asegurar que los firewalls corporativos y balanceadores permiten tráfico UDP/443 saliente y entrante y no lo limitan agresivamente (UDP throttling).",
+      "HTTP/2 sobre TCP+TLS (resuelve HoL blocking en capa HTTP, pero un paquete TCP perdido frena todos los streams) vs HTTP/3 sobre QUIC/UDP (streams totalmente independientes incluso ante pérdida de paquetes).",
+      "Restringir 0-RTT en QUIC únicamente a peticiones idempotentes (GET) porque los datos 0-RTT son vulnerables a ataques de repetición (replay attacks)."
+    ],
+    "ejemplo": "# Cabecera de descubrimiento HTTP/3 enviada en respuesta HTTP/2\nHTTP/2 200 OK\nalt-svc: h3=\":443\"; ma=86400\n\n# Probar petición HTTP/3 directamente con curl (si está compilado con nghttp3/quiche)\ncurl --http3-only -I https://cloudflare.com",
+    "entrevista": "HTTP/3 sobre QUIC reescribe el transporte web sobre UDP con TLS 1.3 integrado: elimina el Head-of-Line blocking de TCP entre streams, reduce RTTs de conexión y soporta migración transparente entre redes móviles y Wi-Fi."
+  },
+  "Registros A - AAAA - CNAME - MX - TXT - NS - SOA - PTR": {
+    "que": "Son los tipos fundamentales de Resource Records (RR) en el sistema DNS que definen cómo se traducen nombres de dominio a direcciones y metadatos en una zona autoritativa. Cada registro contiene un nombre, tipo, clase (`IN`), TTL y valor específico (`RDATA`).",
+    "para": "Controlan todo el direccionamiento y confianza de servicios en Internet: apuntar webs a servidores IPv4/IPv6 (`A`/`AAAA`), crear alias (`CNAME`), enrutar correo electrónico (`MX`), validar propiedad y seguridad antispam (`TXT`), delegar zonas (`NS`/`SOA`) y realizar resolución inversa de IPs (`PTR`).",
+    "como": "Un registro `A` mapea un nombre a una IPv4 (32 bits) y `AAAA` a una IPv6 (128 bits). `CNAME` crea un alias de un subdominio hacia otro nombre canónico (no puede coexistir con otros registros en el mismo nodo, incluido el apex `@`). `MX` indica los servidores de correo y su prioridad (menor número = mayor preferencia). `TXT` almacena cadenas arbitrarias para SPF, DKIM, DMARC o verificación de certificados ACME. `NS` señala los servidores autoritativos de la zona; `SOA` (Start of Authority) guarda metadatos maestros como el número de serie y timers de refresco; y `PTR` mapea una IP invertida (`.in-addr.arpa` / `.ip6.arpa`) de vuelta a un hostname.",
+    "practicas": [
+      "No colocar nunca un `CNAME` en el dominio raíz/apex (`ejemplo.com`); usar `A`/`AAAA` o registros `ALIAS`/`ANAME` propios de proveedores DNS modernos (Route 53 Alias, Cloudflare CNAME flattening).",
+      "Configurar correctamente `PTR` (rDNS) junto con `SPF`, `DKIM` y `DMARC` en registros `TXT` para evitar que los correos salientes terminen en spam.",
+      "`CNAME` (alias a nivel DNS que devuelve otro nombre para volver a resolver) vs Redirección HTTP 301/302 (respuesta L7 del servidor web que cambia la URL en el navegador).",
+      "Incrementar el `serial` en el `SOA` (típicamente formato `YYYYMMDDnn`) al editar archivos de zona manualmente para que los DNS secundarios repliquen los cambios."
+    ],
+    "ejemplo": "ejemplo.com.        300  IN  SOA   ns1.ejemplo.com. admin.ejemplo.com. 2026112501 3600 600 86400 300\nejemplo.com.        300  IN  NS    ns1.ejemplo.com.\nejemplo.com.        300  IN  A     93.184.216.34\nejemplo.com.        300  IN  AAAA  2606:2800:220:1:248:1893:25c8:1946\nwww.ejemplo.com.    300  IN  CNAME ejemplo.com.\nejemplo.com.        300  IN  MX    10 mail.ejemplo.com.\nejemplo.com.        300  IN  TXT   \"v=spf1 mx -all\"\n34.216.184.93.in-addr.arpa. IN PTR web1.ejemplo.com.",
+    "entrevista": "Conocer los registros DNS clave permite diagnosticar desde por qué no carga una web (`A`/`AAAA`/`CNAME`) hasta fallos de entregabilidad de correo (`MX`/`TXT`/`PTR`) o de delegación de zonas (`NS`/`SOA`)."
+  },
+  "Resolvedor - recursive resolver": {
+    "que": "Un resolvedor recursivo (recursive resolver, como `1.1.1.1`, `8.8.8.8`, el DNS de tu ISP o un daemon local como Unbound) es el servidor DNS que recibe una consulta completa de un cliente (stub resolver) y asume la responsabilidad de recorrer toda la jerarquía DNS hasta entregar la respuesta final o un error.",
+    "para": "Libera a los sistemas operativos y aplicaciones de tener que saber consultar servidores raíz, TLDs y autoritativos manualmente, a la vez que proporciona una caché compartida que reduce drásticamente la latencia y la carga global sobre Internet.",
+    "como": "El cliente envía una petición con el bit `RD` (Recursion Desired) activo al resolvedor recursivo. Si la respuesta está en caché y su TTL no ha expirado, la devuelve de inmediato. En caso contrario (cache miss), el resolvedor hace consultas iterativas paso a paso: pregunta primero a un Root Server (`.`), que responde con una referencia hacia los servidores del TLD (`.com`); luego consulta al TLD, que devuelve los registros `NS` del dominio autoritativo; finalmente consulta al servidor autoritativo, valida opcionalmente las firmas DNSSEC, guarda el resultado en caché durante su TTL y responde al cliente.",
+    "practicas": [
+      "En entornos privados o clústeres, usar resolvedores locales con caché (como `systemd-resolved`, `CoreDNS` con `NodeLocal DNSCache` o `Unbound`) para reducir latencia y fallos por rate limiting.",
+      "Asegurar que el resolvedor valide firmas DNSSEC (flag `AD`) y no opere como open resolver hacia Internet (evitar ataques de amplificación DNS).",
+      "Consulta Recursiva (el cliente pide la respuesta completa y espera al resultado final) vs Consulta Iterativa (el servidor consultado responde con el mejor puntero/referencia que conoce hacia abajo).",
+      "Cuidado con usar resolvedores públicos en redes con Split-Horizon DNS, pues no verán las zonas internas privadas de tu empresa o VPC."
+    ],
+    "ejemplo": "# Ver el camino recursivo/iterativo real desde los servidores raíz con dig +trace\ndig +trace api.github.com A\n# Ver solo qué servidor respondió y tiempo de consulta:\ndig @1.1.1.1 api.github.com +noall +answer +stats",
+    "entrevista": "El cliente hace una única consulta recursiva al resolvedor, y este ejecuta una cadena de consultas iterativas desde la raíz hasta el servidor autoritativo, cacheando el resultado según su TTL."
+  },
+  "Retransmisión": {
+    "que": "La retransmisión en TCP es el mecanismo de recuperación de errores por el cual el emisor vuelve a enviar segmentos que no han recibido acuse de recibo (ACK) debido a pérdida de paquetes, corrupción o descarte por congestión en la red. Es la base de la fiabilidad de TCP sobre una red IP no fiable.",
+    "para": "Garantiza que ningún dato enviado por la aplicación se pierda silenciosamente en tránsito, recuperándose automáticamente de microcortes o saturación de colas sin que el desarrollador deba reprogramar lógica de reintentos en capa 4.",
+    "como": "TCP emplea dos disparadores principales para retransmitir. Primero, el temporizador RTO (Retransmission Timeout, RFC 6298), calculado dinámicamente a partir del RTT suavizado (`SRTT`) y su variación (`RTTVAR`): si expira sin recibir ACK, el emisor reenvía el segmento más antiguo no confirmado y duplica el RTO (backoff exponencial), reduciendo además su ventana de congestión. Segundo, Fast Retransmit: si el emisor recibe 3 ACKs duplicados seguidos (4 ACKs con el mismo número), deduce que un segmento puntual se perdió mientras los siguientes sí llegaron, y lo retransmite al instante sin esperar al timeout RTO.",
+    "practicas": [
+      "Monitorear tasas de retransmisión TCP (`TcpRetransSegs` o `ss -ti`); valores por encima del 1–2% suelen indicar saturación de enlaces, errores físicos o congestión severa.",
+      "Habilitar SACK y ECN (Explicit Congestion Notification) en kernels Linux para recuperar múltiples pérdidas dentro de una misma ventana sin reiniciar todo el flujo.",
+      "Retransmisión por RTO (lenta, cientos de ms, señal de caída grave o pérdida de cola) vs Fast Retransmit (rápida tras 3 ACK duplicados, típica de pérdida aislada).",
+      "Trampa en aplicaciones: configurar timeouts HTTP cortos con reintentos agresivos encima de retransmisiones TCP lentas puede provocar tormentas de reintentos en cascada (retry storm)."
+    ],
+    "ejemplo": "# Ver métricas de retransmisión TCP en el sistema y por socket activo\nnstat -az TcpRetransSegs TcpOutSegs\nss -ti dst 10.0.2.15   # Muestra rtt, rto, cwnd y bytes_retrans del socket",
+    "entrevista": "TCP recupera pérdidas mediante dos mecanismos complementarios: Fast Retransmit tras tres ACKs duplicados para reaccionar en milisegundos, y el temporizador dinámico RTO con backoff exponencial cuando no llegan respuestas posteriores."
+  },
+  "Route table": {
+    "que": "Una Route Table (tabla de enrutamiento) es una estructura de datos mantenida por un router, sistema operativo o plano de control cloud que almacena prefijos de red destino (CIDR) asociados a su siguiente salto (next-hop), interfaz de salida y métrica. Dicta exactamente hacia dónde debe reenviarse cada paquete IP saliente o en tránsito.",
+    "para": "Es el mapa operativo de decisión de capa 3: sin una entrada coincidente en la tabla de rutas, un paquete no puede abandonar la red local ni alcanzar subredes remotas, túneles VPN, peering o Internet.",
+    "como": "Al procesar un paquete, el motor de reenvío compara la IP destino contra todos los prefijos de la tabla usando Longest Prefix Match (LPM): siempre gana la ruta más específica (mayor longitud de prefijo, ej. `/28` vence a `/24`, y `/24` vence a la ruta por defecto `0.0.0.0/0`). En caso de empate exacto en el prefijo, decide la Distancia Administrativa (prioridad de la fuente: conectada > estática > OSPF > BGP) y luego la métrica/coste. Si existen varias rutas equivalentes, puede repartir flujos mediante ECMP (Equal-Cost Multi-Path); si no coincide ninguna entrada, descarta el paquete y devuelve ICMP Network Unreachable.",
+    "practicas": [
+      "Verificar siempre la simetría de rutas (ruta de ida y de vuelta) al trabajar con firewalls stateful o VPNs, ya que el enrutamiento asimétrico provoca descartes por estado faltante.",
+      "En nubes como AWS/GCP, recordar que cada subred se asocia a una tabla de rutas; si creas una subred sin asociarla, heredará la tabla principal (`main`), exponiendo potencialmente servicios privados.",
+      "Longest Prefix Match (decide qué ruta aplica según especificidad de máscara) vs Métrica/Distancia Administrativa (desempata rutas cuando provienen de distintos protocolos o enlaces).",
+      "Usar rutas específicas (`/32` o `/24`) hacia túneles VPN/Transit Gateway manteniendo `0.0.0.0/0` hacia Internet o NAT según el caso (split tunneling)."
+    ],
+    "ejemplo": "# Consultar la tabla de rutas en Linux y simular decisión para una IP\nip route show\n# default via 10.0.1.1 dev eth0\n# 10.0.1.0/24 dev eth0 proto kernel scope link src 10.0.1.15\n# 10.20.0.0/16 via 10.0.1.254 dev eth0\nip route get 10.20.5.8   # Muestra la interfaz e IP origen elegidas por LPM",
+    "entrevista": "Un router o kernel consulta la tabla de rutas aplicando Longest Prefix Match: siempre prevalece el prefijo más específico y, solo si ningún prefijo específico coincide, el paquete cae en la ruta por defecto 0.0.0.0/0."
+  },
+  "Router": {
+    "que": "Un Router es un dispositivo (hardware dedicado, VM o función del kernel) que opera en la capa 3 (Red) del modelo OSI para interconectar redes IP diferentes y reenviar paquetes entre ellas. A diferencia de un switch de capa 2, separa dominios de broadcast y toma decisiones basadas en direcciones lógicas IP.",
+    "para": "Es indispensable para conectar distintas subredes, VLANs (Inter-VLAN routing), sedes corporativas mediante VPN/WAN o enlazar una red privada con Internet a través de protocolos de enrutamiento dinámico o rutas estáticas.",
+    "como": "Cuando una trama Ethernet llega a una interfaz del router cuya MAC destino coincide con la suya (o es multicast de protocolo), el router desencapsula la trama L2 para inspeccionar la cabecera del paquete IP. Decrementa en 1 el campo TTL (si llega a 0 descarta el paquete y envía ICMP Time Exceeded) y recalcula el checksum IPv4. Luego consulta su tabla de enrutamiento (FIB / RIB) usando Longest Prefix Match para hallar la interfaz de salida y el next-hop, resuelve la MAC del siguiente salto vía ARP/NDP y reencapsula el paquete en una nueva trama Ethernet (cambiando las MAC origen y destino, pero manteniendo intactas las IP origen y destino salvo que aplique NAT).",
+    "practicas": [
+      "Activar redundancia de primer salto mediante protocolos como VRRP o HSRP para que el Default Gateway de los hosts no sea un punto único de fallo.",
+      "Separar conceptualmente el Control Plane (BGP/OSPF calculando rutas en RIB) del Data Plane (ASIC/FIB reenviando paquetes a velocidad de línea).",
+      "Router L3 (interconecta redes distintas, detiene broadcasts L2, reescribe MACs y decrementa TTL) vs Switch L2 (conmuta tramas por MAC dentro de la misma subred/VLAN).",
+      "Proteger el plano de control (CoPP / ACLs en acceso SSH/SNMP/BGP) para evitar que un pico de tráfico o ataque tumbe las sesiones de enrutamiento."
+    ],
+    "ejemplo": "# Convertir un host Linux en router básico habilitando IP forwarding\nsysctl -w net.ipv4.ip_forward=1\n# Ver camino salto a salto de routers atravesados hasta un destino\ntraceroute -n 8.8.8.8",
+    "entrevista": "Un router interconecta redes IP distintas deteniendo los dominios de broadcast: en cada salto desencapsula la trama L2, decrementa el TTL, consulta su tabla por Longest Prefix Match y reencapsula el paquete con nuevas MACs."
+  },
+  "SAML": {
+    "que": "SAML 2.0 (Security Assertion Markup Language) es un estándar abierto basado en XML para intercambiar información de autenticación y autorización entre un proveedor de identidad (IdP, como Okta, Entra ID o ADFS) y un proveedor de servicios (SP, como una aplicación SaaS corporativa). Ha sido históricamente el estándar dominante del Single Sign-On (SSO) empresarial en navegador.",
+    "para": "Permite que los empleados accedan a múltiples aplicaciones internas o SaaS externas con una sola sesión corporativa y políticas centralizadas de MFA y baja automática, sin que cada aplicación gestione contraseñas propias.",
+    "como": "En el flujo más habitual (SP-Initiated SSO), el usuario intenta entrar en la aplicación (SP), que genera un `<samlp:AuthnRequest>` en XML (deflate + Base64 o POST) y redirige el navegador hacia el IdP. El IdP autentica al usuario (contraseña, MFA, biometría) y responde devolviendo al navegador un formulario HTML autoenviable con una `SAMLResponse` XML firmada digitalmente (XML Signature, y opcionalmente cifrada) que contiene la `Assertion` con identidad (`NameID`) y atributos/grupos. El navegador hace `POST` de esa aserción al endpoint ACS (Assertion Consumer Service) del SP, que verifica la firma con el certificado X.509 público preintercambiado en el metadata XML del IdP y crea la sesión local.",
+    "practicas": [
+      "Firmar siempre la Aserción (o toda la respuesta SAML) y validar estrictamente el certificado X.509 del IdP, el campo `Audience`, `Recipient` y la ventana temporal (`NotBefore` / `NotOnOrAfter`).",
+      "Usar librerías SAML auditadas para mitigar vulnerabilidades clásicas de parseo XML como XML Signature Wrapping (XSW) o XXE.",
+      "SAML 2.0 (XML en navegador vía redirecciones/POST, estándar legacy-enterprise para SaaS B2B) vs OpenID Connect (JSON/JWT sobre OAuth 2.0, nativo para APIs, móviles y SPAs modernas).",
+      "Planificar la rotación automática de certificados de firma del IdP mediante metadata URL para evitar caídas masivas de login cuando caduca el certificado."
+    ],
+    "ejemplo": "<!-- Fragmento conceptual de una SAML Assertion devuelta por el IdP al ACS del SP -->\n<saml:Assertion ID=\"_a1b2\" IssueInstant=\"2026-11-25T05:00:00Z\">\n  <saml:Issuer>https://idp.empresa.com/saml</saml:Issuer>\n  <ds:Signature>...</ds:Signature>\n  <saml:Subject><saml:NameID>ana@empresa.com</saml:NameID></saml:Subject>\n  <saml:AttributeStatement>\n    <saml:Attribute Name=\"role\"><saml:AttributeValue>sre-admin</saml:AttributeValue></saml:Attribute>\n  </saml:AttributeStatement>\n</saml:Assertion>",
+    "entrevista": "SAML 2.0 resuelve el SSO corporativo en navegador intercambiando aserciones XML firmadas entre un IdP y un SP; frente a OIDC es más pesado y ligado a XML, pero sigue siendo requisito estándar en integraciones SaaS B2B."
+  },
+  "SSE": {
+    "que": "Server-Sent Events (SSE) es una especificación estándar de HTML5 / HTTP que permite a un servidor enviar un flujo continuo de eventos en tiempo real al navegador o cliente sobre una única conexión HTTP persistente unidireccional. Utiliza el tipo MIME `text/event-stream` y cuenta con la API nativa `EventSource` en los navegadores.",
+    "para": "Es ideal para streaming de respuestas de modelos de IA (LLMs), notificaciones en vivo, barras de progreso de jobs, tickers financieros o feeds de logs donde el flujo va exclusivamente del servidor hacia el cliente sin la complejidad operativa de WebSockets.",
+    "como": "El cliente abre una petición `GET` estándar con cabecera `Accept: text/event-stream`. El servidor responde con `200 OK`, `Content-Type: text/event-stream` y mantiene el socket abierto enviando bloques de texto UTF-8 delimitados por doble salto de línea (`\\n\\n`), con campos opcionales como `event:`, `data:`, `id:` y `retry:`. Si la conexión se cae, el cliente `EventSource` reconecta automáticamente tras el intervalo indicado enviando la cabecera `Last-Event-ID` con el último `id:` recibido para reanudar sin perder mensajes.",
+    "practicas": [
+      "Desactivar el buffering en proxies inversos (por ejemplo, cabecera `X-Accel-Buffering: no` en Nginx) para que los chunks lleguen al instante y no queden retenidos en memoria.",
+      "Ejecutar SSE sobre HTTP/2 o HTTP/3 para evitar el límite histórico de ~6 conexiones concurrentes por dominio que sufría HTTP/1.1.",
+      "SSE (unidireccional servidor→cliente sobre HTTP estándar, reconexión automática nativa y amigable con proxies) vs WebSockets (bidireccional full-duplex sobre protocolo `ws://`/`wss://`, necesario para chats o juegos en tiempo real).",
+      "Enviar comentarios keep-alive periódicos (ej. `: ping\\n\\n`) cada 15–30 segundos para evitar que balanceadores o NATs cierren la conexión por inactividad."
+    ],
+    "ejemplo": "HTTP/1.1 200 OK\nContent-Type: text/event-stream\nCache-Control: no-cache\nX-Accel-Buffering: no\n\nid: 101\nevent: token\ndata: {\"text\": \"Hola\"}\n\nid: 102\nevent: done\ndata: [DONE]\n\n",
+    "entrevista": "SSE ofrece streaming servidor-a-cliente y reconexión automática con Last-Event-ID sobre HTTP puro, siendo mucho más simple de operar tras proxies y firewalls que WebSockets cuando no necesitas comunicación bidireccional."
+  },
+  "STP": {
+    "que": "STP (Spanning Tree Protocol, IEEE 802.1D, y su evolución rápida RSTP 802.1w) es un protocolo de capa 2 diseñado para eliminar bucles físicos en topologías de switches Ethernet redundantes. Calcula lógicamente un árbol libre de bucles bloqueando puertos redundantes mientras los mantiene en reserva por si falla un enlace activo.",
+    "para": "Sin STP, conectar dos switches con doble enlace para tener redundancia destruiría la red en segundos: las tramas broadcast (ARP, DHCP) no tienen campo TTL en Ethernet y girarían infinitamente multiplicándose (broadcast storm) y corrompiendo las tablas de direcciones MAC.",
+    "como": "Los switches intercambian tramas especiales llamadas BPDUs (Bridge Protocol Data Units) cada 2 segundos para elegir un único Root Bridge (el switch con menor Bridge ID = prioridad + MAC). A partir de ahí, cada switch no-raíz elige su único Root Port (el camino de menor coste acumulado hacia el Root Bridge), cada segmento de red elige un Designated Port para reenviar hacia abajo, y cualquier otro puerto redundante pasa al estado Blocking/Discarding (descarta tráfico de usuario pero sigue escuchando BPDUs). Si un enlace activo cae, RSTP (802.1w) reconverge en menos de un segundo activando el puerto de respaldo frente a los 30–50 segundos del STP clásico.",
+    "practicas": [
+      "Configurar manualmente la prioridad del Root Bridge en los switches core (valor bajo como `4096` o `0`) para evitar que un switch viejo o de borde asuma el rol raíz por tener una MAC menor.",
+      "Usar siempre RSTP (802.1w) o MSTP, y activar `PortFast` / `edge-port` + `BPDU Guard` en puertos hacia servidores y usuarios para conectar al instante y tumbar el puerto si alguien enchufa un switch no autorizado.",
+      "STP (bloquea enlaces redundantes dejando un solo camino activo) vs LACP / Port-Channel (agrega varios enlaces paralelos en uno lógico para sumar ancho de banda sin crear bucles STP).",
+      "En data centers modernos (Leaf-Spine), evitar depender de grandes dominios STP en favor de enrutamiento L3 (BGP/OSPF con ECMP) y VXLAN."
+    ],
+    "ejemplo": "# Configuración típica segura en puertos de acceso (estilo Cisco IOS)\nspanning-tree mode rapid-pvst\ninterface GigabitEthernet0/1\n  spanning-tree portfast\n  spanning-tree bpduguard enable\nshow spanning-tree summary",
+    "entrevista": "Como Ethernet carece de TTL, STP es vital para evitar tormentas de broadcast en topologías redundantes de capa 2: elige un Root Bridge y bloquea lógicamente los puertos redundantes hasta que ocurra un fallo."
+  }
+}

@@ -1,0 +1,392 @@
+{
+  "Gmail - Sheets - Drive": {
+    "que": "Conjunto de integraciones y APIs REST de Google Workspace (Gmail API, Google Sheets API v4 y Google Drive API v3) conectadas habitualmente mediante OAuth 2.0 o cuentas de servicio. En automatización con IA actúan como conectores de entrada y salida para leer correos, registrar datos tabulares y gestionar documentos corporativos.",
+    "para": "Resuelve la conexión directa de agentes y flujos automatizados con la operativa diaria de negocio sin construir interfaces propias. Se usa para triaje automático de correos, extracción de facturas hacia hojas de cálculo, generación de reportes y almacenamiento o indexación de documentación para RAG.",
+    "como": "El cliente o orquestador (como n8n o un servidor MCP) autentica al usuario mediante OAuth 2.0 obteniendo tokens de acceso con scopes granulares (`gmail.readonly`, `spreadsheets`, `drive.file`). Las lecturas y escrituras se realizan vía peticiones HTTPS JSON o mediante suscripciones push (Google Cloud Pub/Sub para cambios en Gmail o Drive `changes.watch`). En flujos con LLM, un nodo extractor convierte el cuerpo del correo o documento en JSON estructurado y lo inserta mediante `spreadsheets.values.append` o crea archivos con `files.create`.",
+    "practicas": [
+      "Aplica principio de mínimo privilegio en los scopes OAuth (p. ej. `drive.file` en lugar de `drive` completo) para limitar el daño ante prompt injection en correos entrantes.",
+      "Respeta los límites de cuota por usuario/proyecto implementando exponential backoff ante respuestas HTTP 429 o 403 `rateLimitExceeded`.",
+      "Usa Google Sheets solo como almacenamiento ligero o interfaz operativa; supera ~100k filas o consultas concurrentes migrando a PostgreSQL/Supabase.",
+      "Comparación: webhooks push con Pub/Sub reducen latencia y consumo de cuota frente al polling periódico cada minuto sobre la bandeja de entrada."
+    ],
+    "ejemplo": "# Lectura de rango en Google Sheets API v4 con curl\ncurl -H \"Authorization: Bearer $GOOGLE_OAUTH_TOKEN\" \\\n  \"https://sheets.googleapis.com/v4/spreadsheets/SPREADSHEET_ID/values/Leads!A1:D50\"",
+    "entrevista": "Conectar Gmail, Sheets y Drive con OAuth de mínimo privilegio y webhooks push convierte a un agente de IA en operativo sobre procesos reales, siempre que Sheets no sustituya a una base de datos transaccional."
+  },
+  "Google ADK": {
+    "que": "Google Agent Development Kit (ADK) es un framework open-source de enfoque code-first desarrollado por Google para construir, evaluar y desplegar agentes de IA y sistemas multi-agente. Aunque está optimizado para modelos Gemini y Vertex AI Agent Engine, es agnóstico de modelo mediante adaptadores (p. ej. LiteLLM) y soporta Python, Java y Go.",
+    "para": "Resuelve la complejidad de pasar de un prototipo de agente con llamadas simples a un sistema modular, testeable y desplegable en producción. Se usa cuando se requieren jerarquías de sub-agentes deterministas y dinámicas, estado de sesión persistente, streaming bidireccional y compatibilidad nativa con MCP y A2A.",
+    "como": "ADK estructura la aplicación alrededor de un `Runner` que gestiona `Session` y `State`, invocando agentes base (`LlmAgent`) o agentes de flujo determinista (`SequentialAgent`, `ParallelAgent`, `LoopAgent`). Cada agente define instrucciones, herramientas Python/MCP y sub-agentes a los que puede delegar mediante `transfer_to_agent`. Incluye callbacks de ciclo de vida (`before_model_callback`, `before_tool_callback`) para aplicar guardrails y un entorno CLI (`adk web`, `adk eval`) para depuración visual y evaluación por trayectorias.",
+    "practicas": [
+      "Combina `SequentialAgent` y `ParallelAgent` para pasos predecibles, reservando la delegación dinámica por LLM solo donde el enrutamiento dependa del contexto.",
+      "Usa `before_tool_callback` para validar argumentos y exigir confirmación humana antes de ejecutar acciones destructivas.",
+      "Evalúa no solo la respuesta final sino la trayectoria de tool calls con `adk eval` y conjuntos de pruebas versionados.",
+      "Comparación: Google ADK aporta primitivas de flujo determinista y despliegue nativo en Vertex AI/Cloud Run similares a LangGraph, pero con menor acoplamiento a grafos explícitos."
+    ],
+    "ejemplo": "from google.adk.agents import LlmAgent\n\ndef buscar_pedido(order_id: str) -> dict:\n    return {\"order_id\": order_id, \"estado\": \"enviado\"}\n\nroot_agent = LlmAgent(\n    name=\"soporte_pedidos\", model=\"gemini-2.5-flash\",\n    instruction=\"Consulta pedidos con buscar_pedido.\", tools=[buscar_pedido],\n)",
+    "entrevista": "Google ADK permite diseñar sistemas multi-agente combinando orquestación determinista y razonamiento LLM con estado de sesión, callbacks de seguridad y soporte nativo para MCP y A2A."
+  },
+  "GraphRAG": {
+    "que": "Patrón avanzado de Generación Aumentada por Recuperación que combina búsqueda vectorial con un grafo de conocimiento estructurado (entidades, relaciones y resúmenes jerárquicos). Fue popularizado por Microsoft Research y ecosistemas de bases de datos de grafos como Neo4j.",
+    "para": "Supera la limitación del RAG clásico basado en chunks independientes cuando la pregunta requiere razonamiento multi-salto (multi-hop) o síntesis global sobre todo el corpus (por ejemplo, '¿qué temas conectan los incidentes de los últimos seis meses?'). Se utiliza en inteligencia corporativa, análisis legal, investigación biomédica y bases de conocimiento densamente enlazadas.",
+    "como": "Durante la indexación, un LLM extrae entidades (nodos) y relaciones (aristas) de los fragmentos de texto, construye el grafo y aplica algoritmos de detección de comunidades como Leiden para generar resúmenes por clúster. En tiempo de consulta, una búsqueda local parte de entidades cercanas al embedding de la pregunta y recorre $k$-saltos en el grafo (Cypher/SPARQL), mientras que una búsqueda global agrega mediante map-reduce los resúmenes de comunidades relevantes antes de sintetizar la respuesta.",
+    "practicas": [
+      "Define un esquema estricto de tipos de entidades y relaciones antes de indexar para evitar grafos ruidosos e inconsistentes.",
+      "Controla el coste de indexación ejecutando la extracción de triples con modelos rápidos/económicos o técnicas NLP (spaCy/GLiNER) para entidades obvias.",
+      "Combina búsqueda vectorial sobre resúmenes de nodos/comunidades con traversals acotados en profundidad (`1..2` saltos) para mantener la latencia bajo control.",
+      "Comparación: GraphRAG mejora drásticamente las preguntas globales y relacionales frente al RAG vectorial estándar, a costa de mayor coste de ingesta y mantenimiento incremental del grafo."
+    ],
+    "ejemplo": "// Consulta híbrida en Neo4j: nodos semilla por vector + expansión 2 saltos\nCALL db.index.vector.queryNodes('entity_idx', 5, $query_embedding) YIELD node, score\nMATCH path = (node)-[r:DEPENDS_ON|CAUSES*1..2]-(relacionado)\nRETURN node.name, [rel IN relationships(path) | type(rel)], relacionado.name LIMIT 25;",
+    "entrevista": "GraphRAG complementa los embeddings con estructura relacional y resúmenes por comunidades, resolviendo consultas globales y multi-salto donde el top-k por similitud de coseno pierde el hilo."
+  },
+  "Guardrails (NeMo - Guardrails AI)": {
+    "que": "Capa de validación y control programable en tiempo de ejecución situada entre el usuario, el LLM y las herramientas para garantizar seguridad, formato y cumplimiento de políticas. Destacan NVIDIA NeMo Guardrails (basado en flujos conversacionales Colang) y Guardrails AI (basado en validadores modulares y especificaciones RAIL).",
+    "para": "Evita que un modelo responda fuera de dominio, filtre datos sensibles, ignore instrucciones de negocio o devuelva salidas incompatibles con el código consumidor. Es indispensable en entornos regulados (banca, salud) y asistentes orientados al cliente final.",
+    "como": "Las peticiones atraviesan un pipeline de Input Rails antes de llegar al LLM (detección de prompt injection, idioma, tópico permitido o PII) y un pipeline de Output Rails tras la generación (moderación, comprobación de alucinaciones contra contexto RAG, validación de JSON Schema). NeMo Guardrails traduce las reglas a diálogos canónicos en Colang usando embeddings ligeros para clasificar intenciones y decidir si bloquear, redirigir o invocar al LLM. Guardrails AI ejecuta validadores en cadena y, ante un fallo, aplica acciones correctivas (`reask`, `fix`, `filter` o `exception`).",
+    "practicas": [
+      "Ejecuta guardrails ligeros (clasificadores locales, regex, validación de esquema) en paralelo o antes del LLM principal para no duplicar la latencia.",
+      "Separa las reglas deterministas (regex de secretos, Pydantic/JSON Schema) de los validadores basados en LLM, reservando estos últimos para semántica compleja.",
+      "Trata siempre los guardrails como defensa en profundidad, nunca como único sustituto de permisos RBAC en las herramientas del backend.",
+      "Comparación: NeMo Guardrails brilla en control de flujo dialógico y tópicos (Colang); Guardrails AI destaca en validación composable de salidas y validadores del Hub."
+    ],
+    "ejemplo": "from guardrails import Guard\nfrom guardrails.hub import DetectPII\n\nguard = Guard().use(DetectPII(pii_entities=[\"EMAIL_ADDRESS\", \"CREDIT_CARD\"], on_fail=\"fix\"))\nres = guard.validate(\"Escríbeme a ana@empresa.com para confirmar.\")\nprint(res.validated_output)",
+    "entrevista": "Los guardrails añaden defensa en profundidad en entrada y salida mediante reglas deterministas y clasificadores rápidos, garantizando formato y políticas sin confiar ciegamente en el system prompt."
+  },
+  "Human-in-the-loop": {
+    "que": "Patrón arquitectónico (HITL) en sistemas agénticos donde la ejecución autónoma se pausa en puntos de control definidos para solicitar revisión, edición o aprobación humana antes de continuar. Convierte al agente en un copiloto supervisado para decisiones críticas.",
+    "para": "Mitiga el riesgo de acciones irreversibles, costosas o ambiguas (enviar correos masivos, ejecutar migraciones SQL, aprobar reembolsos o publicar código en producción). Se aplica siempre que el coste del error supere al coste de esperar la validación de una persona.",
+    "como": "El orquestador (por ejemplo LangGraph mediante `interrupt()` o plataformas con webhooks asíncronos) serializa el estado completo del agente en un checkpointer persistente (PostgreSQL/Redis) cuando el flujo alcanza una herramienta marcada como sensible o un umbral de baja confianza. La ejecución libera recursos y emite una notificación (Slack, correo o UI) con el payload propuesto. Cuando el operador responde (`approve`, `edit` o `reject`), el backend rehidrata el estado por `thread_id` y reanuda el grafo exactamente desde el punto interrumpido.",
+    "practicas": [
+      "Persiste el estado en base de datos externa y nunca en memoria RAM del proceso, ya que la aprobación humana puede tardar minutos u horas.",
+      "Presenta al revisor el diff o impacto exacto de la acción (destinatarios, SQL, importe) y no solo el razonamiento textual del agente.",
+      "Clasifica las herramientas por nivel de riesgo: solo lectura automática, escritura reversible con auditoría y acciones destructivas con bloqueo HITL.",
+      "Evita la 'fatiga de aprobación' pidiendo confirmación en pasos triviales, pues los usuarios terminan aprobando sin leer."
+    ],
+    "ejemplo": "# Pausa declarativa en LangGraph antes de ejecutar un pago\nfrom langgraph.types import interrupt\n\ndef aprobar_pago(state):\n    decision = interrupt({\"accion\": \"transferencia\", \"importe\": state[\"monto\"]})\n    if not decision.get(\"aprobado\"):\n        return {\"estado\": \"cancelado\"}\n    return {\"estado\": \"autorizado\"}",
+    "entrevista": "Human-in-the-loop desacopla la ejecución del agente mediante checkpoints persistentes e interrupciones antes de side-effects críticos, equilibrando autonomía con control operativo."
+  },
+  "Imagen": {
+    "que": "Familia de modelos generativos de texto a imagen desarrollada por Google DeepMind (como Imagen 3 e Imagen 4), disponible a través de Vertex AI y la Gemini API. Combina comprensión lingüística avanzada con generación fotorrealista de alta resolución y renderizado preciso de tipografía.",
+    "para": "Resuelve la creación automatizada de activos visuales comerciales, mockups de producto, ilustraciones editoriales y variaciones creativas a partir de descripciones en lenguaje natural. Se usa en pipelines de marketing, diseño asistido y generación programática de portadas o creatividades.",
+    "como": "El prompt del usuario se codifica mediante un codificador de texto de gran capacidad (basado en arquitectura T5/LLM) que captura relaciones espaciales, estilos y texto literal entre comillas. Un modelo de difusión latente transforma ruido gaussiano iterativamente guiado por el embedding textual mediante atención cruzada y Classifier-Free Guidance (CFG), seguido de etapas de superresolución o decodificación VAE. Todas las imágenes generadas incorporan por defecto la marca de agua digital imperceptible SynthID.",
+    "practicas": [
+      "Especifica explícitamente composición, iluminación, lente/estilo y encierra entre comillas el texto exacto que debe aparecer renderizado.",
+      "Aprovecha la integración con Gemini como 'prompt rewriter' para enriquecer descripciones cortas del usuario antes de llamar al endpoint de Imagen.",
+      "Valida las imágenes generadas contra filtros de seguridad (personajes públicos, NSFW, copyright) y conserva la trazabilidad SynthID en flujos empresariales.",
+      "Comparación: frente a Stable Diffusion/Flux autoalojados, Imagen ofrece mayor fidelidad tipográfica y cero gestión de GPUs a cambio de menor control a nivel de pesos/LoRAs."
+    ],
+    "ejemplo": "from google import genai\n\nclient = genai.Client()\nresult = client.models.generate_images(\n    model=\"imagen-3.0-generate-002\",\n    prompt=\"Fotografía editorial minimalista de una taza cerámica sobre roble, luz de mañana\",\n    config={\"number_of_images\": 1, \"aspect_ratio\": \"16:9\"}\n)",
+    "entrevista": "Google Imagen destaca por su adherencia a prompts complejos y renderizado fiable de texto dentro de la imagen, integrándose vía Vertex AI con trazabilidad SynthID lista para producción."
+  },
+  "Ingesta de datos": {
+    "que": "Primera fase del pipeline ETL/ELT en un sistema RAG encargada de extraer, limpiar, normalizar y enriquecer documentos heterogéneos antes de fragmentarlos e indexarlos. Abarca conectores hacia PDFs, HTML, Markdown, bases de datos, Slack o repositorios de código.",
+    "para": "Determina el techo de calidad de todo el sistema RAG ('garbage in, garbage out'): si las tablas de un PDF quedan destruidas o el boilerplate HTML contamina el texto, ningún embedding o re-ranker lo compensará. Se usa en cualquier base de conocimiento empresarial que necesite mantenerse sincronizada con sus fuentes originales.",
+    "como": "Los conectores descargan documentos de origen de forma incremental (usando hashes SHA-256 o timestamps `updated_at` para evitar reindexar todo). Motores especializados (Docling, Unstructured, LlamaParse, Marker o OCR con VLM) extraen texto preservando la jerarquía de encabezados, listas y tablas en Markdown estructurado. Finalmente se limpia ruido (cabeceras/pies repetitivos), se asocian metadatos obligatorios (fuente, fecha, idioma, permisos ACL) y se emite el documento normalizado hacia la etapa de chunking.",
+    "practicas": [
+      "Convierte documentos complejos (PDFs multi-columna, tablas financieras) a Markdown estructurado con parsers conscientes del layout antes de trocear.",
+      "Adjunta siempre metadatos de permisos (ACLs, tenant_id, grupos) durante la ingesta para poder filtrar en la Vector DB y evitar fugas entre usuarios.",
+      "Implementa idempotencia por hash de contenido y manejo de borrados (soft/hard deletes) cuando un archivo fuente desaparece o se actualiza.",
+      "Evita indexar texto extraído sin inspección visual previa sobre una muestra representativa de tus documentos reales."
+    ],
+    "ejemplo": "# Extracción estructurada a Markdown con Docling\nfrom docling.document_converter import DocumentConverter\n\nconverter = DocumentConverter()\nresult = converter.convert(\"informe_q3.pdf\")\nmarkdown_limpio = result.document.export_to_markdown()",
+    "entrevista": "En RAG, la calidad de la ingesta —preservar estructura de tablas, limpiar ruido, propagar ACLs y hacer sincronización incremental— impacta más en la precisión final que cambiar de modelo de embeddings."
+  },
+  "Jailbreaks": {
+    "que": "Técnicas adversarias diseñadas intencionadamente por un usuario para eludir la alineación de seguridad (RLHF/DPO) y las restricciones de política de un LLM con el fin de obtener contenido prohibido o restringido. No explotan datos externos no confiables, sino los propios límites conductuales del modelo.",
+    "para": "Conocer los patrones de jailbreak es esencial en red teaming y defensa de aplicaciones de IA para evaluar la robustez real de un modelo o sistema de guardrails antes de salir a producción. Permite diseñar pruebas automatizadas que prevengan abusos reputacionales, legales o de seguridad.",
+    "como": "Los ataques explotan la tensión entre el objetivo de utilidad (seguir instrucciones) y el objetivo de inocuidad del modelo mediante técnicas como cambio de rol o ficción hipotética ('actúa como un personaje sin reglas'), ofuscación léxica (Base64, Leetspeak, idiomas minoritarios), saturación de contexto (many-shot jailbreaking) o escalada progresiva en múltiples turnos (Crescendo). En modelos abiertos o vía API sin filtros adicionales, el atacante también puede forzar prefijos de respuesta afirmativa (prefill attacks) para sesgar la distribución del siguiente token.",
+    "practicas": [
+      "Distingue claramente jailbreak (el usuario intenta romper la alineación del modelo) de prompt injection (datos externos secuestran el flujo de instrucciones de la aplicación).",
+      "No confíes solo en el system prompt para impedir usos indebidos; combina guardrails de entrada/salida y clasificadores de moderación independientes.",
+      "Ejecuta campañas periódicas de red teaming automatizado (p. ej. Garak o PyRIT) cubriendo ataques multi-turno y codificaciones no ASCII.",
+      "Aplica límites de tasa y detección de patrones repetitivos por usuario para frenar búsquedas iterativas de bypass."
+    ],
+    "ejemplo": "# Escaneo automatizado de jailbreaks con Garak (NVIDIA)\ngarak --model_type openai --model_name gpt-4o-mini \\\n  --probes dan,encoding,promptinject",
+    "entrevista": "Mientras la prompt injection secuestra la jerarquía de instrucciones desde datos externos, el jailbreak ataca la alineación del modelo, por lo que requiere defensa multicapa con clasificadores independientes y red teaming continuo."
+  },
+  "Junie": {
+    "que": "Agente autónomo de ingeniería de software desarrollado por JetBrains e integrado nativamente en sus IDEs (IntelliJ IDEA, PyCharm, WebStorm, GoLand, etc.). Combina la comprensión semántica del grafo PSI del IDE con ejecución autónoma de tareas multi-archivo.",
+    "para": "Resuelve tareas de desarrollo completas —implementar funcionalidades, refactorizar módulos, escribir pruebas unitarias o corregir fallos— directamente dentro del entorno JetBrains sin copiar código manualmente. Es especialmente útil en bases de código empresariales grandes (Java, Kotlin, Python, TypeScript) donde los índices del IDE aportan precisión superior.",
+    "como": "Al recibir una tarea, Junie inspecciona la estructura del proyecto utilizando las capacidades nativas del IDE (navegación de símbolos, referencias, tipos y estructura de build Gradle/Maven/pytest). Genera un plan de acción, edita múltiples archivos manteniendo un sandbox de cambios revisables, ejecuta comandos en terminal o runners de test integrados, analiza los errores de compilación o aserciones fallidas e itera de forma autónoma hasta verificar el resultado o pedir confirmación.",
+    "practicas": [
+      "Define criterios de verificación claros en el prompt (p. ej. 'asegura que `./gradlew test` pase sin nuevos warnings') para cerrar el bucle de retroalimentación.",
+      "Mantén archivos de reglas del proyecto (`.junie/guidelines.md`) con convenciones de arquitectura, stack y comandos de validación.",
+      "Revisa siempre el diff completo antes de aceptar cambios en lógica crítica o migraciones, aprovechando las herramientas de diff del IDE.",
+      "Comparación: frente a agentes puramente CLI como Aider o Claude Code, Junie aprovecha los índices semánticos profundos de IntelliJ/PyCharm para refactorizaciones seguras en lenguajes tipados."
+    ],
+    "ejemplo": "# Ejemplo de .junie/guidelines.md en la raíz del repo\n- Lenguaje: Kotlin 2.1 con Spring Boot 3.\n- Tras cualquier cambio ejecuta: ./gradlew test detekt\n- No introduzcas dependencias nuevas sin justificarlo.",
+    "entrevista": "Junie aporta autonomía agéntica dentro de los IDEs de JetBrains combinando edición multi-archivo y ejecución de tests con la comprensión semántica exacta del compilador e índices del proyecto."
+  },
+  "Jupyter Notebook": {
+    "que": "Entorno computacional interactivo basado en documentos JSON (`.ipynb`) que combina celdas de código ejecutable, prosa enriquecida en Markdown/LaTeX y salidas inline (tablas, gráficos, HTML). Se ejecuta mediante un servidor conectado a kernels de distintos lenguajes, principalmente IPython.",
+    "para": "Es el estándar de facto para exploración de datos (EDA), experimentación rápida de modelos de ML, prototipado de prompts y análisis visual de resultados de evaluación de IA. Se usa en fases de investigación y diagnóstico, antes de empaquetar código estable en módulos Python.",
+    "como": "La interfaz web (JupyterLab o VS Code) envía bloques de código a través de WebSockets al servidor Jupyter, que los reenvía mediante ZeroMQ a un kernel persistente en memoria. El kernel evalúa la celda manteniendo variables y modelos cargados en RAM/VRAM entre ejecuciones, y devuelve resultados serializados (texto, PNG, JSON MIME bundles) que se incrustan en el archivo `.ipynb`. Herramientas como Papermill permiten parametrizar y ejecutar notebooks de forma headless en pipelines.",
+    "practicas": [
+      "Evita el estado oculto por ejecución desordenada de celdas: verifica siempre con 'Restart Kernel and Run All Cells' antes de dar un resultado por válido.",
+      "No lleves notebooks directamente a producción como servicios críticos; extrae la lógica validada a paquetes Python con tests unitarios.",
+      "Usa `nbstripout` o Jupytext (`.py` / `.md` emparejado) en Git para evitar diffs ilegibles llenos de salidas Base64.",
+      "Nunca pegues claves API en celdas; cárgalas mediante variables de entorno (`python-dotenv`) para no filtrarlas en el JSON del notebook."
+    ],
+    "ejemplo": "# Ejecutar un notebook parametrizado en CI/batch con Papermill\npapermill eval_prompts.ipynb salida_eval.ipynb -p model_name \"gpt-4o-mini\" -p temp 0.0",
+    "entrevista": "Jupyter acelera la iteración en ciencia de datos y prototipado de IA gracias al estado persistente del kernel, pero requiere limpieza de salidas en Git y extracción a código modular para producción."
+  },
+  "LM Studio": {
+    "que": "Aplicación de escritorio multiplataforma y runtime de inferencia local que permite descargar, configurar y ejecutar LLMs open-weights directamente en el hardware del usuario. Utiliza internamente motores optimizados como `llama.cpp` (CUDA, Vulkan, CPU) y Apple MLX en Apple Silicon.",
+    "para": "Permite probar modelos locales, desarrollar aplicaciones de IA sin coste de API por token, trabajar offline y procesar datos estrictamente confidenciales sin enviar información a la nube. Se usa tanto para experimentación visual como para exponer un servidor HTTP local compatible con la API de OpenAI durante el desarrollo.",
+    "como": "LM Studio consulta el registro de Hugging Face filtrando cuantizaciones compatibles (GGUF o MLX según el hardware detectado) y calcula en tiempo real la VRAM/RAM requerida para el modelo y la ventana de contexto. Al cargar un modelo, asigna capas entre GPU y CPU (`n_gpu_layers`), reserva el KV cache y levanta opcionalmente un servidor REST local (`localhost:1234/v1`) con soporte para chat completions, embeddings, tool calling y salidas estructuradas. También ofrece un CLI (`lms`) para automatizar carga/descarga de modelos en segundo plano.",
+    "practicas": [
+      "Ajusta la cuantización (p. ej. `Q4_K_M` o `Q5_K_M`) y la longitud del contexto para que todo el modelo y el KV cache quepan en VRAM, evitando caídas drásticas de tokens/segundo.",
+      "Usa `lms server start` en flujos automatizados para evitar tener la interfaz gráfica consumiendo recursos extra.",
+      "Activa Flash Attention y cuantización del KV cache cuando trabajes con ventanas de contexto largas en GPUs con VRAM justa.",
+      "Comparación: frente a Ollama (enfocado en CLI/daemon ligero tipo Docker) y vLLM (serving multi-usuario de alto throughput en servidores), LM Studio destaca por su UI de inspección y facilidad en estaciones de trabajo."
+    ],
+    "ejemplo": "# Iniciar servidor local con CLI de LM Studio y consumir vía OpenAI SDK\nlms server start --port 1234\ncurl http://localhost:1234/v1/chat/completions -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"qwen2.5-coder-7b-instruct\",\"messages\":[{\"role\":\"user\",\"content\":\"Hola\"}]}'",
+    "entrevista": "LM Studio envuelve llama.cpp y MLX en una interfaz accesible con servidor compatible con OpenAI, ideal para prototipado privado, offline y evaluación comparativa de cuantizaciones en local."
+  },
+  "LangChain": {
+    "que": "Framework modular open-source (Python y TypeScript) que estandariza las primitivas para construir aplicaciones basadas en LLMs: modelos de chat, plantillas de prompt, parsers de salida, cargadores de documentos, almacenes vectoriales y herramientas. Su núcleo de composición se basa en el protocolo `Runnable` y LCEL (LangChain Expression Language).",
+    "para": "Resuelve el acoplamiento directo con el SDK de un proveedor específico y acelera la construcción de cadenas RAG, extracción estructurada y prototipos conectando decenas de integraciones listas para usar. Se emplea cuando se valora la portabilidad entre proveedores y un ecosistema amplio de conectores.",
+    "como": "Las piezas del pipeline heredan de `Runnable`, exponiendo una interfaz uniforme (`invoke`, `ainvoke`, `stream`, `batch`). Mediante LCEL, el operador pipe (`|`) encadena componentes tipados —por ejemplo `prompt | llm.with_structured_output(Schema)`— propagando automáticamente callbacks de observabilidad, reintentos, fallbacks y streaming token a token. En arquitecturas modernas del ecosistema, LangChain aporta las abstracciones e integraciones de componentes mientras la orquestación agéntica cíclica se delega a LangGraph.",
+    "practicas": [
+      "Utiliza únicamente las abstracciones que aporten valor (`langchain-core`, integraciones concretas) y evita cadenas opacas heredadas (`LLMChain` clásico) difíciles de depurar.",
+      "Aprovecha `.with_structured_output()` sobre function calling nativo o JSON Schema en lugar de parsear texto libre con regex.",
+      "Configura `.with_fallbacks()` y `.with_retry()` directamente en los Runnables críticos para tolerar errores transitorios de red o rate limits.",
+      "Comparación: frente a SDKs puros (OpenAI/Anthropic/Google GenAI) que son más simples y ligeros para un solo proveedor, LangChain brilla cuando necesitas cambiar de modelo o integrar múltiples vector DBs."
+    ],
+    "ejemplo": "from langchain_core.prompts import ChatPromptTemplate\nfrom langchain_openai import ChatOpenAI\n\nchain = ChatPromptTemplate.from_template(\"Resume en 1 frase: {texto}\") | ChatOpenAI(model=\"gpt-4o-mini\")\nprint(chain.invoke({\"texto\": \"...\"}).content)",
+    "entrevista": "LangChain estandariza proveedores, retrievers y salidas estructuradas bajo la interfaz Runnable/LCEL, aunque conviene evitar capas innecesarias si basta con el SDK nativo de un único proveedor."
+  },
+  "LangGraph": {
+    "que": "Framework de orquestación stateful para construir agentes y flujos multi-agente como grafos dirigidos que permiten ciclos, bifurcaciones condicionales y persistencia. Forma parte del ecosistema LangChain, aunque puede usarse de forma independiente sin depender de cadenas de alto nivel.",
+    "para": "Resuelve las limitaciones de los DAGs lineales cuando un agente necesita iterar en bucle (razonar → llamar herramienta → observar → corregir), mantener memoria de sesión durable, soportar streaming granular o pausarse para aprobación humana. Es el estándar de facto en Python/JS para agentes complejos en producción.",
+    "como": "Inspirado en el modelo Pregel (Bulk Synchronous Parallel), define un `StateGraph` tipado con un esquema de estado compartido (TypedDict/Pydantic) y reductores (`Annotated[..., add_messages]`). Cada nodo es una función que lee el estado y devuelve actualizaciones parciales; las aristas normales y condicionales determinan el siguiente nodo a ejecutar en super-pasos. Un `Checkpointer` (SQLite, PostgreSQL) guarda una instantánea del estado tras cada super-paso indexada por `thread_id`, habilitando tolerancia a fallos, time-travel debugging y `interrupt()` para Human-in-the-loop.",
+    "practicas": [
+      "Mantén el estado del grafo mínimo y serializable en JSON; evita guardar objetos no serializables como conexiones abiertas o clientes HTTP dentro del `State`.",
+      "Establece siempre un `recursion_limit` y condiciones explícitas de salida para prevenir bucles infinitos costosos en producción.",
+      "Usa `PostgresSaver` en producción para persistir checkpoints entre reinicios y escalado horizontal sin estado en memoria.",
+      "Comparación: frente a CrewAI (alto nivel basado en roles) o AutoGen (conversacional), LangGraph ofrece control fino y determinista sobre cada transición y estado."
+    ],
+    "ejemplo": "from langgraph.graph import StateGraph, START, END\nfrom typing import TypedDict\n\nclass State(TypedDict): pasos: int\ng = StateGraph(State)\ng.add_node(\"pensar\", lambda s: {\"pasos\": s[\"pasos\"] + 1})\ng.add_edge(START, \"pensar\")\ng.add_conditional_edges(\"pensar\", lambda s: END if s[\"pasos\"] >= 2 else \"pensar\")\napp = g.compile()",
+    "entrevista": "LangGraph modela agentes como máquinas de estado cíclicas con checkpoints persistentes por super-paso, aportando determinismo, recuperación ante fallos y soporte nativo para human-in-the-loop."
+  },
+  "LangSmith": {
+    "que": "Plataforma comercial de observabilidad, depuración, gestión de prompts y evaluación para aplicaciones LLM desarrollada por LangChain Inc. Está disponible como servicio SaaS gestionado y en modalidad autoalojada para empresas.",
+    "para": "Resuelve la opacidad de los sistemas basados en LLMs donde un fallo puede deberse al retriever, a un prompt modificado o a una llamada de herramienta mal formada. Se usa para inspeccionar trazas completas en producción, monitorizar latencia/costes y automatizar regresiones con datasets reales.",
+    "como": "Mediante SDKs (`langsmith`, decorador `@traceable`), wrappers de OpenAI/Anthropic o variables de entorno (`LANGSMITH_TRACING=true`), cada invocación captura un árbol jerárquico de `Runs` (LLM, retriever, tool, chain) con entradas, salidas, metadatos, tokens y tiempos. Las trazas interesantes o erróneas se promueven con un clic a `Datasets`, sobre los que corren evaluadores deterministas o LLM-as-a-judge comparando experimentos lado a lado. También permite versionar prompts en el Prompt Hub y sincronizarlos por tag (`prod`, `staging`).",
+    "practicas": [
+      "Instrumenta incluso proyectos que no usen LangChain mediante `@traceable` o `wrap_openai` para mantener observabilidad sin acoplamiento de framework.",
+      "Enmascara PII o secretos en los callbacks antes de enviar trazas al SaaS de terceros, o usa despliegue self-hosted en datos regulados.",
+      "Convierte los bugs reales capturados en trazas de producción en ejemplos permanentes dentro de tu dataset de regresión.",
+      "Comparación: frente a Langfuse (open-source MIT con self-hosting sencillo), LangSmith ofrece integración más profunda con LangGraph Studio aunque bajo licencia propietaria."
+    ],
+    "ejemplo": "from langsmith import traceable\nfrom openai import OpenAI\nfrom langsmith.wrappers import wrap_openai\n\nclient = wrap_openai(OpenAI())\n\n@traceable(name=\"pipeline_rag\")\ndef responder(pregunta: str):\n    return client.chat.completions.create(model=\"gpt-4o-mini\", messages=[{\"role\": \"user\", \"content\": pregunta}])",
+    "entrevista": "LangSmith proporciona trazabilidad jerárquica de cada paso del agente y convierte fallos de producción en datasets versionados para detectar regresiones antes de desplegar cambios de prompt o modelo."
+  },
+  "Langfuse": {
+    "que": "Plataforma open-source (licencia MIT en su núcleo) de ingeniería, observabilidad y evaluación para aplicaciones LLM. Ofrece tanto servicio Cloud como despliegue self-hosted completo mediante contenedores Docker (PostgreSQL, ClickHouse, Redis y S3/MinIO).",
+    "para": "Resuelve la falta de visibilidad en producción sobre trazas multi-paso, costes reales por usuario/tenant, rendimiento de prompts y calidad percibida sin atarse a un proveedor SaaS propietario. Es la opción preferida en equipos que exigen soberanía de datos o integración vía OpenTelemetry.",
+    "como": "Los SDKs de Python/JS, el decorador `@observe()`, los callbacks de LangChain/LlamaIndex o el colector OpenTelemetry OTLP registran eventos anidados (`Trace` → `Span` / `Generation`) de forma asíncrona en segundo plano. ClickHouse ingesta métricas analíticas de latencia (TTFT, duración total), tokens y cálculo automático de costes según tablas de precios de modelos. Además integra gestión versionada de prompts con caché local en cliente, recopilación de feedback explícito (`scores`) y pipelines de evaluación LLM-as-a-judge.",
+    "practicas": [
+      "Etiqueta cada traza con `user_id`, `session_id` y `tags` de entorno/versión para poder atribuir costes y aislar regresiones por funcionalidad.",
+      "Usa `prompt.compile()` con caché TTL en el SDK para actualizar prompts sin redeploy manteniendo disponibilidad si Langfuse cae temporalmente.",
+      "Configura muestreo (sampling) en trazas de altísimo volumen no críticas y garantiza `langfuse.flush()` en funciones serverless (AWS Lambda) antes de terminar.",
+      "Comparación: frente a LangSmith (SaaS propietario) y MLflow (ML clásico adaptado a GenAI), Langfuse destaca por ser open-source nativo para LLMs y fácil de autoalojar."
+    ],
+    "ejemplo": "from langfuse.decorators import observe, langfuse_context\n\n@observe()\ndef agente_consulta(pregunta: str, user_id: str):\n    langfuse_context.update_current_trace(user_id=user_id, tags=[\"prod\"])\n    return \"respuesta generada\"",
+    "entrevista": "Langfuse es la plataforma open-source referente para observabilidad LLM, permitiendo autoalojar trazas OpenTelemetry, versionado de prompts, atribución de costes y evaluaciones continuas sin vendor lock-in."
+  },
+  "Llama": {
+    "que": "Familia de modelos fundacionales open-weights desarrollada por Meta AI (incluyendo las series Llama 2, Llama 3/3.1/3.2/3.3 con modelos densos y Llama 4 con arquitecturas Mixture-of-Experts multimodales). Se distribuyen bajo la Llama Community License con pesos descargables públicamente.",
+    "para": "Permite desplegar LLMs de alto rendimiento en infraestructura propia (on-premise o VPC privada), eliminando la dependencia de APIs cerradas y habilitando fine-tuning completo o LoRA sobre pesos abiertos. Es la base más extendida en ecosistemas de inferencia local (vLLM, Ollama, llama.cpp) y benchmarks abiertos.",
+    "como": "Los modelos Llama emplean arquitectura Transformer decoder-only con mejoras de eficiencia como Grouped-Query Attention (GQA) para reducir el KV cache, embeddings posicionales RoPE escalados para contextos largos (hasta 128K+ en Llama 3.1 y millones en variantes Llama 4), activación SwiGLU y RMSNorm. En su familia Llama 4 adopta Mixture-of-Experts (MoE) donde solo una fracción de parámetros se activa por token. Los pesos se sirven en precisión BF16 o cuantizados (FP8, AWQ, GGUF) mediante motores como vLLM o TGI.",
+    "practicas": [
+      "Elige tamaños eficientes (p. ej. 8B o Scout MoE) cuantizados en FP8/AWQ antes de escalar a 70B/405B si tus tareas son extracción o RAG acotado.",
+      "Respeta siempre la plantilla exacta de tokens especiales de chat (`<|begin_of_text|>`, `<|start_header_id|>`) del modelo para no degradar drásticamente la calidad.",
+      "Revisa los términos de la Llama Community License (umbral de 700M de usuarios activos mensuales y requisito de atribución 'Built with Llama').",
+      "Comparación: frente a APIs cerradas (GPT/Claude), Llama ofrece control total de privacidad, cero cambios sorpresa de modelo y capacidad de fine-tuning, a cambio de operar la GPU."
+    ],
+    "ejemplo": "# Servir Llama 3.1 8B Instruct con vLLM en GPU local\nvllm serve meta-llama/Llama-3.1-8B-Instruct \\\n  --dtype bfloat16 --max-model-len 16384 --port 8000",
+    "entrevista": "Llama democratizó los pesos abiertos de nivel fronterizo, permitiendo inferencia privada de alto rendimiento con GQA/MoE y fine-tuning personalizado sin depender de APIs externas."
+  },
+  "LoRA - QLoRA": {
+    "que": "LoRA (Low-Rank Adaptation) y QLoRA (Quantized LoRA) son técnicas de Parameter-Efficient Fine-Tuning (PEFT) para adaptar modelos grandes entrenando menos del 1% de sus parámetros. LoRA congela los pesos originales y añade adaptadores de bajo rango; QLoRA combina esto con cuantización del modelo base a 4 bits.",
+    "para": "Resuelve el coste prohibitivo en VRAM y cómputo del fine-tuning completo (full fine-tuning), permitiendo especializar modelos de 7B a 70B en tono, formatos estrictos o jerga de dominio usando una sola GPU de consumo o servidor modesto. También facilita servir cientos de clientes compartiendo un único modelo base e intercambiando adaptadores ligeros.",
+    "como": "En LoRA, para una matriz de pesos congelada $W_0 \\in \\mathbb{R}^{d \\times k}$, se inyecta una rama paralela factorizada en dos matrices pequeñas $B \\in \\mathbb{R}^{d \\times r}$ y $A \\in \\mathbb{R}^{r \\times k}$ con rango $r \\ll \\min(d, k)$, computando $h = W_0 x + \\frac{\\alpha}{r} B A x$ solo en capas de atención y MLP. QLoRA almacena $W_0$ cuantizado en 4-bit NormalFloat (NF4) con doble cuantización de constantes y optimizadores paginados en CPU, des-cuantizando al vuelo a BF16 únicamente durante el paso forward/backward mientras los adaptadores se entrenan en BF16.",
+    "practicas": [
+      "Aplica LoRA tanto a proyecciones de atención (`q_proj`, `v_proj`, `k_proj`, `o_proj`) como a las capas lineales MLP (`gate_proj`, `up_proj`, `down_proj`) para máxima calidad.",
+      "Ajusta hiperparámetros con criterio: rangos $r$ de 8 a 32 suelen bastar para estilo/formato, con `lora_alpha` típicamente igual a $r$ o $2r$.",
+      "Usa QLoRA durante el entrenamiento por ahorro de VRAM, pero evalúa fusionar (`merge_and_unload`) el adaptador LoRA sobre pesos BF16 o FP8 si necesitas máxima velocidad en inferencia.",
+      "Comparación: nunca uses LoRA/QLoRA para inyectar conocimiento que cambia a diario (usa RAG); úsalo para enseñar habilidades, formato consistente o estilo."
+    ],
+    "ejemplo": "from peft import LoraConfig, get_peft_model\n\nlora_cfg = LoraConfig(\n    r=16, lora_alpha=32, lora_dropout=0.05,\n    target_modules=[\"q_proj\", \"v_proj\", \"k_proj\", \"o_proj\"],\n    task_type=\"CAUSAL_LM\"\n)\nmodel = get_peft_model(base_model, lora_cfg)",
+    "entrevista": "LoRA entrena matrices de bajo rango sobre pesos congelados reduciendo drásticamente los parámetros optimizados, y QLoRA añade cuantización NF4 del modelo base para ajustar LLMs grandes en una sola GPU."
+  },
+  "MCP (Model Context Protocol)": {
+    "que": "Protocolo abierto estandarizado por Anthropic que define cómo las aplicaciones anfitrionas de IA (IDEs, chatbots, agentes) se conectan de forma uniforme con fuentes de datos externas, herramientas y flujos de trabajo. Funciona como un puerto estándar (análogo a USB-C o LSP) para el contexto de modelos.",
+    "para": "Elimina el problema de integración $M \\times N$ en el que cada aplicación de IA debía implementar conectores propios para cada API o base de datos. Permite escribir una sola vez un servidor MCP (p. ej. para Postgres, GitHub o Jira) y reutilizarlo en Claude, Cursor, VS Code, Windsurf o agentes propios.",
+    "como": "Se apoya en una arquitectura cliente-servidor sobre JSON-RPC 2.0 utilizando dos transportes principales: `stdio` para servidores locales ejecutados como subprocesos y `Streamable HTTP` (evolución de HTTP+SSE) para servidores remotos con autenticación OAuth 2.1. Al iniciar la sesión (`initialize`), cliente y servidor negocian capacidades y versión del protocolo; posteriormente el cliente consulta listas de herramientas, recursos o prompts y ejecuta invocaciones con validación de esquemas JSON.",
+    "practicas": [
+      "Expón en cada servidor MCP un conjunto cohesionado y acotado de herramientas con descripciones claras; saturar el contexto con cientos de tools degrada la selección del modelo.",
+      "En servidores remotos HTTP, aplica siempre autenticación OAuth 2.1/tokens por sesión y nunca expongas credenciales de servidor compartidas sin control de acceso.",
+      "Valida y sanea las entradas de cada tool en el servidor y marca anotaciones de comportamiento (`readOnlyHint`, `destructiveHint`) para que el cliente solicite confirmación al usuario.",
+      "Usa `stdio` para acceso local seguro al sistema de archivos/CLI y Streamable HTTP para servicios multi-tenant en la nube."
+    ],
+    "ejemplo": "{\n  \"mcpServers\": {\n    \"postgres\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-postgres\", \"postgresql://localhost/app\"]\n    }\n  }\n}",
+    "entrevista": "MCP estandariza mediante JSON-RPC 2.0 la conexión entre clientes LLM y capacidades externas, resolviendo la fragmentación M×N igual que Language Server Protocol lo hizo para los editores de código."
+  },
+  "MCP tools - resources - prompts": {
+    "que": "Las tres primitivas fundamentales que un servidor MCP puede exponer hacia un cliente LLM, diferenciadas por quién controla su invocación: Tools (controladas por el modelo), Resources (controladas por la aplicación cliente) y Prompts (controladas por el usuario).",
+    "para": "Separa limpiamente la ejecución de acciones con efectos secundarios o consultas dinámicas (Tools), la lectura pasiva de contexto estructurado (Resources) y las plantillas de interacción reproducibles (Prompts). Diseñar cada capacidad con la primitiva adecuada evita confundir al modelo o sobrecargar su ventana de herramientas.",
+    "como": "El servidor declara en `capabilities` qué primitivas soporta y responde a peticiones JSON-RPC estandarizadas: `tools/list` y `tools/call` permiten al LLM invocar funciones tipadas con `inputSchema` JSON Schema; `resources/list`, `resources/templates/list` y `resources/read` exponen datos identificados por URI (ej. `file://`, `db://schema/users`) con opción de suscripción a cambios; y `prompts/list` junto a `prompts/get` devuelven mensajes preconfigurados con argumentos que el usuario dispara explícitamente (como slash commands en el IDE).",
+    "practicas": [
+      "Modela lecturas estáticas o esquemas de referencia como `Resources` adjuntables al contexto, reservando `Tools` para operaciones parametrizadas o acciones.",
+      "Escribe descripciones precisas de parámetros en `inputSchema` (tipos, enums, ejemplos y restricciones) porque son el contrato que lee el LLM para invocar bien.",
+      "Devuelve mensajes de error accionables en `tools/call` (`isError: true`) explicando qué parámetro falló para que el modelo pueda autocorregirse en el siguiente turno.",
+      "No expongas secretos ni volcados gigantes en un Resource sin paginación o truncado para no desbordar la ventana de contexto del cliente."
+    ],
+    "ejemplo": "// Petición JSON-RPC para invocar una MCP Tool\n{\n  \"jsonrpc\": \"2.0\", \"id\": 3, \"method\": \"tools/call\",\n  \"params\": {\"name\": \"crear_ticket\", \"arguments\": {\"titulo\": \"Error 500 en checkout\", \"prioridad\": \"alta\"}}\n}",
+    "entrevista": "La clave de MCP es su división de control: Tools son invocadas por el modelo, Resources las gestiona la aplicación host mediante URIs y Prompts los dispara el usuario como plantillas."
+  },
+  "MCP": {
+    "que": "En el contexto de automatización empresarial (junto a n8n, APIs y Webhooks), MCP actúa como el estándar puente que expone flujos de automatización deterministas como herramientas invocables por agentes de IA y viceversa. Convierte workflows tradicionales en capacidades autodescubribles por modelos de lenguaje.",
+    "para": "Resuelve la brecha entre automatizaciones rígidas basadas en reglas (if-this-then-that) y agentes de IA capaces de decidir qué flujo ejecutar según el contexto no estructurado. Permite que un agente en Claude/Cursor dispare un workflow de n8n, o que un nodo de agente en n8n consuma cualquier servidor MCP externo sin programar integraciones custom.",
+    "como": "En plataformas como n8n existen dos roles complementarios: mediante el nodo `MCP Server Trigger`, un workflow queda publicado tras un endpoint Streamable HTTP/SSE exponiendo sus parámetros como una tool con JSON Schema hacia clientes externos; mediante el nodo `MCP Client Tool`, un AI Agent dentro de n8n descubre dinámicamente en tiempo de ejecución las herramientas de servidores MCP externos y las invoca vía JSON-RPC durante su bucle ReAct.",
+    "practicas": [
+      "Expón workflows complejos de negocio (p. ej. alta completa de cliente) como una única MCP tool de alto nivel en lugar de exponer 15 llamadas CRUD sueltas.",
+      "Asegura siempre el endpoint MCP de automatización con Bearer tokens, OAuth o túneles privados; nunca dejes triggers MCP públicos sin autenticación.",
+      "Combina webhooks y APIs tradicionales para la lógica determinista repetitiva, dejando a MCP la interfaz flexible hacia el agente.",
+      "Comparación: un Webhook espera un payload rígido preacordado entre sistemas; una tool MCP incluye esquema semántico autodescriptivo para que un LLM la elija dinámicamente."
+    ],
+    "ejemplo": "# Cliente MCP en n8n / agente conectando a un workflow expuesto como servidor MCP\nEndpoint: https://n8n.miempresa.com/mcp/soporte-crm\nHeaders: Authorization: Bearer $MCP_TRIGGER_TOKEN\nTool expuesta: actualizar_crm(email, estado, notas)",
+    "entrevista": "En automatización, MCP complementa a webhooks y APIs REST permitiendo que workflows deterministas de n8n se publiquen como herramientas autodescubribles y seguras para cualquier agente LLM."
+  },
+  "MLflow": {
+    "que": "Plataforma open-source (Linux Foundation / Databricks) para gestionar el ciclo de vida completo de Machine Learning tradicional y GenAI. Reúne seguimiento de experimentos, empaquetado reproducible, registro de modelos y, en sus versiones recientes, trazabilidad y evaluación específica para LLMs (`mlflow.tracing` y `mlflow.genai`).",
+    "para": "Centraliza la reproducibilidad y gobernanza cuando un equipo entrena modelos, ajusta LoRAs o despliega pipelines RAG/agénticos y necesita comparar métricas, hiperparámetros, prompts y artefactos en un único repositorio auditable. Es habitual en organizaciones que ya operan ML clásico y quieren unificar la observabilidad de IA generativa sin añadir otra herramienta.",
+    "como": "Un servidor de Tracking (respaldado por una base relacional SQL para metadatos y almacenamiento de objetos S3/GCS/local para artefactos) recibe logs vía API REST desde los scripts de entrenamiento o inferencia. Para GenAI, `mlflow.autolog()` o `@mlflow.trace` instrumentan automáticamente OpenAI, LangChain o LangGraph emitiendo spans compatibles con OpenTelemetry que registran prompts, latencias y tokens. Los modelos o cadenas validadas se promueven en el Model Registry con alias (`@champion`, `@challenger`) antes de servirse en producción.",
+    "practicas": [
+      "Usa `mlflow.sklearn.autolog()` o `mlflow.openai.autolog()` para capturar trazas y parámetros sin ensuciar la lógica de negocio con decenas de llamadas manuales.",
+      "Promueve versiones mediante aliases (`@production`) en el Model Registry en lugar de hardcodear números de versión en despliegue.",
+      "Registra junto al modelo o prompt el dataset hash y la versión de dependencias (`pip freeze` / `conda.yaml`) para garantizar reproducibilidad real.",
+      "Comparación: MLflow sobresale si unificas entrenamiento ML/fine-tuning y GenAI en un stack; si solo construyes agentes LLM y priorizas UX de trazas de chat, Langfuse o LangSmith son más directos."
+    ],
+    "ejemplo": "import mlflow\n\nmlflow.set_tracking_uri(\"http://localhost:5000\")\nmlflow.openai.autolog()\nwith mlflow.start_run(run_name=\"eval_rag_v3\"):\n    mlflow.log_param(\"chunk_size\", 512)\n    mlflow.log_metric(\"faithfulness\", 0.91)",
+    "entrevista": "MLflow unifica el ciclo de vida de ML clásico, fine-tuning y GenAI en un solo tracking server y model registry, añadiendo trazabilidad compatible con OpenTelemetry para comparar prompts y modelos con rigor."
+  },
+  "Memoria a corto-largo plazo": {
+    "que": "Arquitectura de gestión de estado en agentes de IA que distingue entre memoria a corto plazo (contexto inmediato de la conversación o tarea en curso) y memoria a largo plazo (conocimiento persistente entre sesiones sobre usuarios, hechos y procedimientos). Replica la separación cognitiva entre memoria de trabajo y memoria semántica/episódica.",
+    "para": "Evita que el agente olvide preferencias del usuario, decisiones previas o aprendizajes tras cerrar una sesión, al tiempo que impide saturar la ventana de contexto con historiales infinitos y costosos. Es clave en asistentes personales, tutores, soporte recurrente y agentes autónomos de larga duración.",
+    "como": "La memoria a corto plazo vive en el historial de mensajes del turno actual y en checkpoints de hilo (`thread_id`) gestionados mediante ventanas deslizantes, recorte por tokens o resúmenes progresivos (`summarization`). La memoria a largo plazo extrae información relevante de forma asíncrona (en background tras el turno) y la persiste en almacenes externos clasificados como memoria semántica (hechos en Vector DB o grafo), episódica (casos exitosos previos recuperados como few-shot) y procedimental (actualización de reglas en el prompt). En cada nueva petición, un paso de recuperación consulta las memorias del `user_id` e inyecta solo las pertinentes en el prompt.",
+    "practicas": [
+      "No guardes todo el chat crudo en la Vector DB como memoria a largo plazo; extrae hechos atómicos consolidados y resuelve contradicciones (ej. cambio de ciudad del usuario).",
+      "Aísla estrictamente la memoria a largo plazo por `tenant_id` y `user_id` para impedir fugas cruzadas de datos personales.",
+      "Resume la memoria a corto plazo antes de alcanzar el límite del modelo para mantener baja latencia y evitar el fenómeno 'lost in the middle'.",
+      "Permite al usuario inspeccionar y borrar sus memorias almacenadas para cumplir con normativas de privacidad como GDPR."
+    ],
+    "ejemplo": "# Inyección híbrida de memoria antes de invocar al modelo\nmemorias_lp = memory_store.search(namespace=(\"users\", user_id), query=mensaje, limit=5)\nhistorial_cp = checkpointer.get_messages(thread_id)[-10:]\nprompt = [system_msg(memorias_lp), *historial_cp, user_msg(mensaje)]",
+    "entrevista": "La memoria a corto plazo mantiene la coherencia de la sesión vía checkpoints y resúmenes acotados, mientras la memoria a largo plazo consolida hechos y episodios en almacenamiento vectorial o grafo aislado por usuario."
+  },
+  "Mermaid": {
+    "que": "Lenguaje de diagramación declarativo basado en texto plano (Markdown-friendly) y motor de renderizado en JavaScript para crear diagramas técnicos (flujo, secuencia, clases, entidad-relación, estado, C4). Su sintaxis ligera es generada con alta fiabilidad por LLMs directamente desde lenguaje natural o código fuente.",
+    "para": "Resuelve la rápida desactualización de diagramas dibujados a mano en herramientas binarias cuando la arquitectura cambia. En flujos asistidos por IA se usa para generar automáticamente documentación viva en repositorios Git, PRs, ADRs y notas de Obsidian o GitHub/GitLab.",
+    "como": "El autor o un LLM escribe bloques de código etiquetados como `mermaid` especificando el tipo de diagrama (`sequenceDiagram`, `flowchart LR`, `erDiagram`) y las relaciones en texto ASCII (`A -->|HTTP| B`). Motores como `mermaid.js` (nativos en GitHub, GitLab, Notion y Obsidian) o `mermaid-cli` (`mmdc`) parsean la gramática, calculan el layout automáticamente usando Dagre/ELK y renderizan un SVG en el navegador o en CI. Al ser texto plano, admite control de versiones, revisión en diffs de Pull Request y regeneración automatizada por agentes sobre el AST del código.",
+    "practicas": [
+      "Envuelve los textos de nodos con caracteres especiales o paréntesis entre comillas (`id[\"Servicio (v2)\"]`) para evitar errores de parseo en el navegador.",
+      "Mantén cada diagrama por debajo de ~20-25 nodos; si crece más, divídelo por niveles C4 o sub-flujos para que siga siendo legible.",
+      "Valida los diagramas generados por IA en CI usando `mmdc` o un parser sintáctico para evitar bloques rotos en el README.",
+      "Comparación: frente a herramientas visuales como Excalidraw o Eraser, Mermaid sacrifica control estético pixel-perfect a cambio de ser versionable en Git y nativo en Markdown."
+    ],
+    "ejemplo": "```mermaid\nsequenceDiagram\n    participant U as Usuario\n    participant A as Agente\n    participant M as MCP Server\n    U->>A: Consulta estado\n    A->>M: tools/call(get_status)\n    M-->>A: JSON resultado\n    A-->>U: Respuesta final\n```",
+    "entrevista": "Mermaid convierte la diagramación arquitectónica en texto versionable en Git que los LLMs generan con precisión desde código o ADRs, integrándose nativamente en GitHub y Markdown."
+  },
+  "Meta-prompting": {
+    "que": "Técnica de ingeniería de prompts en la que se utiliza un LLM (o un bucle de optimización guiado por métricas) para generar, analizar, reescribir o seleccionar automáticamente los prompts que ejecutará un modelo en una tarea objetivo. Trata al prompt como un artefacto optimizable mediante código y evaluación.",
+    "para": "Supera la iteración manual y subjetiva ('prompt tweaking a ojo') cuando se cambia de modelo base (p. ej. migrar de GPT a Claude o Llama) o cuando un prompt complejo tiene decenas de casos límite que degradan al editarlo manualmente. Se usa para mejorar sistemáticamente precisión, formato y adherencia sobre un dataset de evaluación.",
+    "como": "En su forma interactiva, un modelo 'meta' recibe la descripción de la tarea, ejemplos de fallos actuales y restricciones, y redacta un system prompt estructurado o descompone el problema asignando prompts expertos por sub-tarea. En su forma algorítmica automatizada (frameworks como DSPy con optimizadores MIPROv2 o OPRO), un bucle ejecuta el prompt candidato contra un conjunto de validación, mide una métrica objetivo (p. ej. exact match o F1), analiza los errores con un LLM y propone nuevas instrucciones y ejemplos few-shot hasta converger en la mejor variante.",
+    "practicas": [
+      "No hagas meta-prompting a ciegas sin un dataset de validación dividido en train/test; de lo contrario solo generarás prompts más largos que sobreajustan.",
+      "Registra cada iteración generada en una plataforma de experimentos (Langfuse, LangSmith, MLflow) para comparar coste y latencia además de precisión.",
+      "Fija siempre las reglas de seguridad e invariantes de negocio manualmente fuera del alcance editable por el optimizador automático.",
+      "Comparación: frente al prompt chaining (encadenar pasos manuales secuenciales), el meta-prompting automatiza el diseño y refinamiento de las instrucciones mismas."
+    ],
+    "ejemplo": "# Optimización programática de prompts con DSPy\nimport dspy\n\noptimizador = dspy.MIPROv2(metric=mi_metrica, auto=\"light\")\nprograma_optimo = optimizador.compile(mi_modulo_rag, trainset=ejemplos_train)",
+    "entrevista": "El meta-prompting convierte la redacción artesanal de prompts en un proceso sistemático guiado por métricas y ejemplos de fallo, facilitando además migrar instrucciones entre distintos LLMs."
+  },
+  "Midjourney": {
+    "que": "Plataforma propietaria de generación de imágenes mediante modelos de difusión avanzados, operada a través de su interfaz web y bot de Discord. Es ampliamente reconocida por su alta coherencia estética, iluminación cinematográfica y dirección artística por defecto.",
+    "para": "Resuelve la creación rápida de arte conceptual, moodboards, ilustraciones editoriales, recursos de marketing y prototipos visuales (mockups) sin requerir conocimientos profundos de flujos de difusión. Se utiliza cuando prima el acabado visual y la dirección de estilo sobre la integración programática en pipelines propios.",
+    "como": "A diferencia de herramientas abiertas con API oficial, Midjourney opera sobre infraestructura cerrada interpretando prompts descriptivos modificados por parámetros de línea (`--ar` para relación de aspecto, `--stylize` para peso artístico, `--chaos` para variación, `--v` para versión del modelo). Para mantener coherencia entre múltiples piezas, utiliza referencias visuales ponderadas mediante `--sref` (Style Reference) para clonar paleta/estilo y `--cref` o `--oref` para consistencia de personajes y objetos. La generación entrega una cuadrícula inicial de cuatro candidatos sobre la que se aplica variación selectiva, inpainting (`Vary Region`), zoom out o escalado.",
+    "practicas": [
+      "Combina descripciones concisas de sujeto, iluminación y cámara con `--sref` en lugar de apilar decenas de adjetivos redundantes ('8k, ultra realistic, masterpiece').",
+      "Ten en cuenta la ausencia de API pública oficial estable si necesitas automatizar generación masiva desde backend (evalúa Flux o Imagen para producción programática).",
+      "Usa el modo `--style raw` cuando necesites fidelidad fotográfica o mayor obediencia literal al prompt reduciendo el sesgo estilístico de Midjourney.",
+      "Verifica los términos de licencia comercial según tu plan y evita generar marcas registradas o likeness de personas reales en material público."
+    ],
+    "ejemplo": "/imagine prompt: minimal isometric cloud architecture icon set on dark slate background, soft cyan rim light --ar 16:9 --stylize 150 --style raw --v 6.1",
+    "entrevista": "Midjourney lidera en calidad estética y consistencia visual mediante style/character references, aunque su naturaleza cerrada sin API oficial suele limitarlo a diseño y prototipado frente a Flux o Imagen."
+  },
+  "Mistral": {
+    "que": "Laboratorio europeo de IA (Mistral AI) y su familia de modelos de lenguaje open-weights y comerciales, incluyendo modelos densos eficientes (Mistral 7B, Mistral Small), arquitecturas Sparse Mixture-of-Experts (Mixtral 8x7B, 8x22B), modelos frontera (Mistral Large), de código (Codestral, Devstral) y OCR/multimodales (Pixtral, Mistral OCR).",
+    "para": "Ofrece una alternativa competitiva a los modelos estadounidenses y chinos con fuerte soporte multilingüe en lenguas europeas (español, francés, alemán), alta eficiencia inferencial y opciones flexibles tanto en API gestionada (La Plateforme / Azure / Bedrock) como autoalojada bajo licencias Apache 2.0 o comerciales.",
+    "como": "Sus modelos abiertos introdujeron optimizaciones clave en producción como Sliding Window Attention (SWA) combinada con Grouped-Query Attention (GQA) y cachés rotativos, reduciendo memoria y latencia en inferencia. En la serie Mixtral (SMoE), cada capa reemplaza el bloque feed-forward único por 8 expertos de los cuales un router selecciona solo los top-2 por token, logrando capacidad equivalente a un modelo grande con el coste de cómputo de uno pequeño. Pueden desplegarse directamente vía vLLM, Ollama o la API oficial con soporte nativo para function calling y formato JSON.",
+    "practicas": [
+      "Usa modelos especializados como `Codestral` para autocompletado/edición de código o `Mistral OCR` para convertir PDFs complejos a Markdown antes de un RAG.",
+      "Evalúa `Mistral Small` cuantizado en local cuando necesites baja latencia y cumplimiento estricto en español/francés sin pagar costes de modelos frontera.",
+      "Distingue las licencias antes de desplegar en producto comercial: algunos pesos antiguos son Apache 2.0 y los modelos comerciales más recientes usan MRL (Mistral Research License).",
+      "Comparación: frente a Llama, Mistral suele ofrecer excelente rendimiento multilingüe europeo y modelos dedicados como OCR/código listos de fábrica."
+    ],
+    "ejemplo": "from mistralai import Mistral\nimport os\n\nclient = Mistral(api_key=os.environ[\"MISTRAL_API_KEY\"])\nres = client.chat.complete(model=\"mistral-small-latest\", messages=[{\"role\": \"user\", \"content\": \"Explica SMoE\"}])",
+    "entrevista": "Mistral combina innovación arquitectónica como Sparse MoE y Sliding Window Attention con fuerte rendimiento multilingüe europeo y opciones tanto Apache 2.0 autoalojadas como APIs especializadas en OCR y código."
+  },
+  "Moderación": {
+    "que": "Capa de clasificación de seguridad encargada de detectar, categorizar y filtrar contenido dañino, tóxico, ilegal o inapropiado tanto en los prompts entrantes del usuario como en las respuestas generadas por el LLM. Opera mediante clasificadores dedicados ligeros y rápidos separados del modelo generativo principal.",
+    "para": "Protege a usuarios finales y a la organización frente a discursos de odio, violencia, autolesiones, contenido sexual explícito o acoso, además de reducir la responsabilidad legal y cumplir políticas de uso aceptable de plataformas y tiendas de aplicaciones. Es obligatoria en chatbots públicos, redes sociales con IA, educación y salud.",
+    "como": "Cada texto (entrada y, opcionalmente, salida en chunks o completa) se envía a un endpoint de clasificación especializado como OpenAI Moderation API (`omni-moderation-latest`), Llama Guard, ShieldGemma o Azure AI Content Safety. Estos clasificadores evalúan categorías taxonómicas estandarizadas (p. ej. MLCommons safety taxonomy) devolviendo puntuaciones continuas de probabilidad (`0.0` a `1.0`) y flags booleanos por categoría. Según los umbrales configurados por el equipo de riesgo, el proxy de IA permite el paso, bloquea con un mensaje seguro predefinido o deriva el caso a revisión humana.",
+    "practicas": [
+      "Modera tanto el input del usuario como el output del modelo: el input evita procesar abuso y el output atrapa desviaciones o contenido recuperado tóxico desde RAG.",
+      "Ejecuta la moderación de entrada en paralelo o con modelos clasificadores pequeños (<100 ms) para no penalizar la percepción de velocidad (TTFT).",
+      "Calibra los umbrales por dominio (un foro médico necesita mayor tolerancia anatómica que un asistente infantil) y registra falsos positivos para ajustar.",
+      "Comparación: a diferencia de los guardrails de negocio/formato (JSON, tópico), la moderación se centra específicamente en seguridad ética y contenido nocivo."
+    ],
+    "ejemplo": "from openai import OpenAI\n\nclient = OpenAI()\nmod = client.moderations.create(model=\"omni-moderation-latest\", input=texto_usuario)\nif mod.results[0].flagged:\n    raise ValueError(\"Contenido bloqueado por política de seguridad\")",
+    "entrevista": "La moderación utiliza clasificadores rápidos independientes en entrada y salida para filtrar contenido nocivo con umbrales calibrados por dominio, sin depender únicamente de la alineación interna del LLM."
+  },
+  "Multi-agente": {
+    "que": "Arquitectura de software con IA donde múltiples agentes especializados —cada uno con su propio system prompt, conjunto acotado de herramientas, memoria y opcionalmente distinto modelo LLM— colaboran para resolver un problema complejo. Sustituye a un único agente monolítico sobrecargado de instrucciones.",
+    "para": "Resuelve la degradación de razonamiento y confusión de herramientas que ocurre cuando un solo prompt intenta cubrir docenas de responsabilidades y 30+ tools distintas. Se usa en flujos complejos como investigación + redacción + verificación, triaje de soporte técnico con especialistas o pipelines de ingeniería de software.",
+    "como": "Los patrones más comunes son: Supervisor/Orquestador (un agente central descompone la tarea, delega a sub-agentes trabajadores y sintetiza el resultado), Red/Handoff descentralizado (cada agente transfiere el control directamente a otro especialista mediante tool calls) y Flujo Jerárquico/Pipeline (equipos anidados que operan secuencial o paralelamente). La comunicación se realiza mediante paso de mensajes en un estado compartido (LangGraph), conversaciones estructuradas (AutoGen) o protocolos entre servicios distribuidos como A2A.",
+    "practicas": [
+      "Empieza siempre con un solo agente bien diseñado y herramientas claras; migra a multi-agente solo cuando el contexto o el número de herramientas degrade la precisión.",
+      "Minimiza el paso completo de historiales verbosos entre agentes: transfiere resúmenes estructurados o artefactos en estado compartido para no multiplicar tokens y latencia.",
+      "Define presupuestos máximos de turnos, tokens y profundidad de delegación para evitar bucles de conversación infinitos entre agentes.",
+      "Usa modelos pequeños y rápidos para agentes de enrutamiento o extracción, reservando modelos de razonamiento costosos para planificación o síntesis crítica."
+    ],
+    "ejemplo": "# Patrón Supervisor con herramientas de delegación en grafo\nsupervisor_tools = [delegar_a_investigador, delegar_a_revisor_codigo]\n# El supervisor decide en cada paso qué especialista invocar y consolida la respuesta",
+    "entrevista": "Una arquitectura multi-agente divide responsabilidades y acota herramientas por especialista para mejorar la fiabilidad, siempre cuidando la latencia, el paso compacto de contexto y el coste acumulado de llamadas."
+  },
+  "Nomic Embed": {
+    "que": "Familia de modelos de embeddings open-weights, auditables y totalmente reproducibles desarrollada por Nomic AI (incluyendo `nomic-embed-text-v1.5`, `nomic-embed-text-v2-moe` y `nomic-embed-vision`). Destaca por soportar ventanas de 8192 tokens, arquitectura Mixture-of-Experts en su v2 y entrenamiento Matryoshka.",
+    "para": "Permite ejecutar búsqueda semántica, clustering y RAG con embeddings de alta calidad de forma local o autoalojada (Ollama, Hugging Face, ONNX) sin enviar documentos privados a APIs externas ni pagar por millón de tokens. Gracias a Matryoshka Representation Learning (MRL), permite comprimir vectores para ahorrar memoria en la Vector DB.",
+    "como": "Basado en un encoder bidireccional con embeddings posicionales RoPE extendidos hasta 8192 tokens (y arquitectura MoE multilingüe en v2), proyecta texto en vectores densos de 768 dimensiones. El entrenamiento Matryoshka concentra la información semántica más importante en las primeras dimensiones, permitiendo truncar el vector (p. ej. de 768 a 256 o 128 dimensiones) y renormalizarlo con mínima pérdida de recall. Exige prefijos de tarea explícitos al inicio de cada cadena (`search_query: ` para consultas y `search_document: ` para indexación) para alinear el espacio asimétrico.",
+    "practicas": [
+      "Incluye obligatoriamente los prefijos `search_query:` y `search_document:` (o `clustering:` / `classification:`), ya que omitirlos reduce notablemente la precisión de recuperación.",
+      "Si tu Vector DB está limitada en RAM, trunca los vectores de 768 a 256 dimensiones gracias a MRL reduciendo 3x el almacenamiento con mínimo impacto.",
+      "Para corpus multilingües fuera del inglés, prioriza `nomic-embed-text-v2-moe` frente a la v1.5 (centrada en inglés).",
+      "Comparación: frente a `text-embedding-3` de OpenAI, Nomic Embed ofrece ejecución 100% privada, offline y coste marginal cero en local."
+    ],
+    "ejemplo": "# Embeddings locales con Nomic Embed vía Ollama\nollama pull nomic-embed-text\ncurl http://localhost:11434/api/embeddings \\\n  -d '{\"model\": \"nomic-embed-text\", \"prompt\": \"search_document: Guía de configuración de PostgreSQL\"}'",
+    "entrevista": "Nomic Embed ofrece embeddings open-weights con contexto de 8K, prefijos por tarea y truncado Matryoshka para reducir hasta 3x el tamaño en la Vector DB manteniendo privacidad y coste API cero."
+  },
+  "Observabilidad de costes IA": {
+    "que": "Disciplina de telemetría y FinOps aplicada a sistemas de IA generativa para medir, desglosar, atribuir y optimizar el gasto en tokens y cómputo por usuario, funcionalidad, modelo y traza de ejecución. Incluye el seguimiento granular de tokens de entrada, salida, caché y razonamiento.",
+    "para": "Evita sorpresas en la factura mensual causadas por bucles de agentes, prompts sobredimensionados, reintentos silenciosos o usuarios abusivos, y permite calcular el margen real por cliente en productos SaaS con IA. Es indispensable para tomar decisiones basadas en datos sobre caché, cuantización y model routing.",
+    "como": "Cada respuesta de proveedor LLM o gateway (LiteLLM, Portkey, Helicone, Langfuse) expone metadatos `usage` (`prompt_tokens`, `completion_tokens`, `cached_tokens`, `reasoning_tokens`). Un middleware o interceptor propaga etiquetas de negocio (`tenant_id`, `feature`, `environment`, `trace_id`) hacia un almacén analítico (ClickHouse/Prometheus/BigQuery), multiplicando cada tipo de token por la tabla de precios vigente de cada modelo (dado que los tokens de salida y razonamiento suelen costar 3x–10x más que los de entrada). Sobre estos agregados se configuran presupuestos por cliente, alertas de anomalías y circuitos de degradación automática hacia modelos más económicos.",
+    "practicas": [
+      "Mide siempre el coste por tarea completada con éxito y no solo el precio por millón de tokens: un modelo barato que requiere 4 reintentos puede salir más caro.",
+      "Monitoriza por separado la tasa de acierto de prompt caching (`cached_tokens / prompt_tokens`) y los `reasoning_tokens` ocultos en modelos de razonamiento.",
+      "Aplica cuotas y hard/soft limits por `tenant_id` o usuario en tu LLM Gateway para contener ataques de denegación de cartera (Denial of Wallet).",
+      "Etiqueta cada llamada con la versión de prompt y modelo para detectar de inmediato cuando un cambio de prompt dispara el uso de tokens."
+    ],
+    "ejemplo": "# Atribución de coste por tenant y caché vía metadata en LiteLLM / OpenAI\nresponse = completion(\n    model=\"anthropic/claude-sonnet-4-5\",\n    messages=msgs,\n    metadata={\"tenant_id\": \"acme_corp\", \"feature\": \"resumen_contratos\", \"prompt_v\": \"v4\"}\n)",
+    "entrevista": "La observabilidad de costes en IA atribuye tokens de entrada, salida, caché y razonamiento por tenant y traza, permitiendo calcular el ROI por feature, prevenir Denial of Wallet y justificar el model routing."
+  }
+}

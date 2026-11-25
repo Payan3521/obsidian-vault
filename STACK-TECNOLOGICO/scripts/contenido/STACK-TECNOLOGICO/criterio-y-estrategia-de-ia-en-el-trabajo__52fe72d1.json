@@ -1,0 +1,392 @@
+{
+  "AI literacy": {
+    "que": "AI literacy es el conjunto de competencias técnicas, analíticas y críticas que permite a profesionales de ingeniería y producto comprender cómo funcionan los sistemas de IA probabilísticos, qué pueden resolver y dónde fallan. Va más allá de saber redactar prompts: abarca modelos mentales sobre datos, inferencia, sesgos, evaluación y límites operativos.",
+    "para": "Resuelve la brecha entre la adopción superficial de herramientas generativas y su uso riguroso en ingeniería de software. Se aplica al capacitar equipos para distinguir alucinaciones, fugas de datos, degradación de contexto y tareas donde un sistema determinista es superior.",
+    "como": "Se estructura en cuatro capas progresivas: 1) fundamentos de modelos (tokenización, ventana de contexto, inferencia probabilística y RAG vs fine-tuning); 2) interacción y especificación (prompts estructurados, salidas tipadas mediante JSON Schema y verificación); 3) evaluación y riesgo (uso de datasets golden, métricas de precisión/latencia y detección de sesgo de automatización); 4) gobernanza práctica (clasificación de datos antes de enviarlos a APIs externas y trazabilidad de código generado).",
+    "practicas": [
+      "Evaluar la comprensión con ejercicios prácticos de detección de fallos (prompts adversarios, alucinaciones sutiles) en lugar de tests teóricos.",
+      "Error típico: confundir AI literacy con dominar trucos de prompt engineering de corta vida útil en vez de entender contratos de entrada/salida y evaluación.",
+      "Diferenciar alfabetización técnica (para desarrolladores que integran APIs y evals) de alfabetización operativa (para usuarios de negocio que validan salidas).",
+      "Incluir siempre higiene de datos y cumplimiento (qué información nunca debe entrar a un modelo público o sin ZDR)."
+    ],
+    "ejemplo": "rubrica_ai_literacy:\n  nivel_1_usuario: [\"identificar alucinaciones\", \"no pegar secretos/PII\"]\n  nivel_2_builder: [\"structured_outputs\", \"evals en CI\", \"control de costes\"]\n  nivel_3_arquitecto: [\"task-ai fit\", \"guardrails\", \"calibracion y fallback\"]",
+    "entrevista": "La AI literacy en ingeniería no consiste en escribir mejores prompts, sino en entender los modos de fallo probabilísticos del modelo para diseñar verificación, límites de datos y fallbacks deterministas."
+  },
+  "AI readiness": {
+    "que": "AI readiness es el grado de preparación técnica, organizativa, de datos y de gobernanza que tiene una empresa para construir, integrar y operar sistemas de IA en producción de forma segura y rentable. Mide si existen los cimientos previos antes de comprometer presupuesto en casos de uso complejos.",
+    "para": "Evita iniciar proyectos de IA condenados al fracaso por datos fragmentados, ausencia de observabilidad o falta de patrocinio legal y operativo. Se evalúa antes de aprobar un roadmap de IA o pasar de prototipos aislados a integraciones críticas.",
+    "como": "Se diagnostica mediante una auditoría ponderada en cinco pilares: 1) Datos (calidad, linaje, permisos ACL y disponibilidad vía API/warehouse); 2) Infraestructura y MLOps/LLMOps (entornos CI/CD, gestión de secretos, gateways de modelos y telemetría); 3) Talento y cultura (perfiles de datos, ingeniería y ownership de producto); 4) Seguridad y cumplimiento (políticas de privacidad, retención cero ZDR, clasificación de riesgo); 5) Negocio (KPIs base medibles antes de introducir IA). Cada pilar recibe una puntuación de 1 a 5 y los bloqueos críticos se convierten en prerrequisitos del roadmap.",
+    "practicas": [
+      "Tratar los permisos de acceso a datos (ACL en fuentes para RAG) como prerrequisito duro: si el buscador interno filtra nóminas, la empresa no está lista para un asistente corporativo.",
+      "Error típico: comprar licencias masivas de copilotos o GPU sin tener métricas base (baseline) del proceso que se quiere mejorar.",
+      "AI readiness vs Evaluación de madurez de IA: readiness mide si puedes arrancar con garantías hoy; madurez evalúa el nivel evolutivo continuo en toda la organización.",
+      "Priorizar la limpieza de APIs internas y documentación estructurada antes de entrenar modelos propios."
+    ],
+    "ejemplo": "{\n  \"pilares\": {\"datos_acl\": 2, \"infra_gateway\": 4, \"seguridad_zdr\": 4, \"kpis_base\": 3},\n  \"umbral_produccion\": 3.5,\n  \"bloqueo_critico\": \"datos_acl < 3 -> resolver permisos antes de indexar en vector DB\"\n}",
+    "entrevista": "Antes de proponer un agente o un RAG, mido el AI readiness en datos, permisos ACL, observabilidad y baseline de negocio, porque la IA amplifica tanto tus buenos procesos como tu deuda técnica."
+  },
+  "Adopción de IA": {
+    "que": "La adopción de IA es el proceso sistemático mediante el cual una organización integra herramientas, flujos asistidos y sistemas basados en IA en el trabajo real hasta generar impacto medible y sostenido. Abarca desde la selección de casos de uso y habilitación técnica hasta el cambio de hábitos operativos.",
+    "para": "Cierra la brecha entre comprar licencias o hacer demos llamativas y lograr mejoras reales en productividad, calidad o ingresos. Se gestiona de forma continua cuando se despliegan copilotos de desarrollo, automatizaciones internas o productos con IA.",
+    "como": "Opera en un ciclo iterativo de cuatro fases: 1) Descubrimiento y baseline (medir tiempos de ciclo, tasa de defectos o coste actual de cada flujo); 2) Despliegue controlado con guardrails (habilitar acceso vía AI Gateway corporativo con políticas de datos y modelos aprobados); 3) Habilitación y acompañamiento (formación por rol, plantillas de trabajo y champions internos); 4) Medición de impacto real (correlacionar uso activo con métricas DORA, CSAT o ahorro de horas verificadas, retirando lo que no aporta valor).",
+    "practicas": [
+      "Medir adopción por impacto en resultados (lead time, tasa de aceptación mantenida, reducción de retrabajo) y no solo por número de licencias activadas.",
+      "Error típico: imponer cuotas de uso de IA o incentivar líneas de código generadas, lo que infla código duplicado y deuda técnica.",
+      "Empezar por flujos de baja fricción y alto volumen (búsqueda documental, triaje, tests unitarios) antes de tocar procesos regulados.",
+      "Mantener canales rápidos de feedback para capturar fallos frecuentes y ajustar prompts, contexto o herramientas."
+    ],
+    "ejemplo": "SELECT team, COUNT(DISTINCT user_id) AS wau,\n       AVG(pr_lead_time_hours) AS lead_time,\n       AVG(revert_rate) AS defect_proxy\nFROM eng_telemetry\nWHERE ai_assisted = true AND week >= CURRENT_DATE - INTERVAL '30 days'\nGROUP BY team;",
+    "entrevista": "La adopción de IA no se mide por licencias asignadas ni por volumen de código generado, sino por la mejora sostenida en lead time y calidad sin disparar la tasa de errores o reverts."
+  },
+  "Alfabetización en IA": {
+    "que": "La alfabetización en IA es la capacitación transversal de toda la plantilla —técnica y no técnica— para comprender capacidades, sesgos, riesgos legales y criterios de verificación al trabajar con sistemas de IA. Incluye tanto el uso responsable cotidiano como el cumplimiento normativo aplicable (por ejemplo, el deber de AI literacy del EU AI Act).",
+    "para": "Reduce incidentes de shadow AI, fugas de propiedad intelectual y aceptación acrítica de respuestas erróneas en departamentos como ingeniería, soporte, legal o finanzas. Es imprescindible al abrir herramientas de IA a toda la empresa o desplegar sistemas que afectan a clientes o empleados.",
+    "como": "Se implementa mediante un programa continuo adaptado por perfil: 1) Tronco común obligatorio (cómo predice un LLM, qué es una alucinación, confidencialidad de datos y política de uso); 2) Módulos por función (revisión crítica de código para ingeniería, verificación de fuentes para legal/soporte, interpretación de sesgos para RR. HH.); 3) Simulacros con casos reales fallidos (outputs plausibles pero falsos); 4) Certificación ligera periódica y actualización trimestral ante nuevas capacidades como agentes o multimodalidad.",
+    "practicas": [
+      "Hacer la formación práctica sobre documentos y flujos reales del puesto de trabajo, no con diapositivas genéricas.",
+      "Error típico: dar una única charla inicial cuando los modelos, herramientas agénticas y riesgos cambian cada trimestre.",
+      "Enseñar cuándo NO usar IA con el mismo énfasis que cuándo usarla.",
+      "Integrar recordatorios contextuales en la propia interfaz (avisos de verificación, clasificación de confidencialidad)."
+    ],
+    "ejemplo": "curriculum_alfabetizacion:\n  todos: [\"natura_probabilistica\", \"politica_datos\", \"shadow_ai\"]\n  ingenieria: [\"revision_seguridad_codigo_ia\", \"evals\", \"licencias_oss\"]\n  negocio: [\"deteccion_sesgo_automatizacion\", \"validacion_fuentes\"]",
+    "entrevista": "La alfabetización en IA organiza la defensa humana del sistema: asegura que cada rol sepa verificar lo que recibe del modelo y reconocer qué datos nunca deben cruzar la frontera de una API."
+  },
+  "Auditoría de decisiones de IA": {
+    "que": "La auditoría de decisiones de IA es el proceso técnico y organizativo de registrar, reconstruir y evaluar ex post cómo un sistema de IA produjo una salida o acción concreta. Exige trazabilidad completa desde la entrada original hasta la versión del modelo, contexto recuperado y decisión humana asociada.",
+    "para": "Permite investigar incidentes en producción, demostrar cumplimiento regulatorio, detectar sesgos sistemáticos y asignar responsabilidades cuando una decisión automatizada o asistida causa daño. Es obligatoria en sectores regulados (finanzas, salud, contratación) y recomendable en cualquier flujo agéntico con efectos externos.",
+    "como": "Funciona capturando un rastro inmutable por cada inferencia relevante: 1) Identificador de traza (trace_id) y marca temporal; 2) Entrada normalizada y usuario/sistema solicitante; 3) Artefactos recuperados (IDs de documentos y fragmentos RAG con sus permisos); 4) Metadatos de ejecución (modelo exacto, snapshot/versión, temperatura, prompt template hash y llamadas a herramientas); 5) Salida generada, puntuación de confianza o guardrails activados y registro de aprobación/edición humana. Un equipo independiente o pipeline programado muestrea trazas para verificar equidad, precisión y adherencia a políticas.",
+    "practicas": [
+      "Versionar juntos el prompt, el esquema de herramientas y el índice de recuperación (no basta con guardar solo el nombre del modelo).",
+      "Error típico: loguear respuestas sin enmascarar PII/secretos, convirtiendo el log de auditoría en un nuevo riesgo de seguridad.",
+      "Auditoría vs Observabilidad: la observabilidad monitorea latencia, coste y salud operativa en tiempo real; la auditoría garantiza reconstrucción forense e inmutable de decisiones.",
+      "Definir períodos de retención diferenciados según nivel de riesgo del caso de uso."
+    ],
+    "ejemplo": "{\n  \"trace_id\": \"tr_9f31c2\",\n  \"model_snapshot\": \"gpt-4o-2024-08-06\",\n  \"prompt_hash\": \"sha256:8b1a9953\",\n  \"rag_doc_ids\": [\"pol_credito_v4#p12\"],\n  \"tool_calls\": [\"score_risk(client=redacted)\"],\n  \"human_override\": false\n}",
+    "entrevista": "Sin versionar el hash del prompt, los IDs exactos del RAG y las tool calls junto a cada salida, no puedes auditar ni reproducir por qué un sistema de IA tomó una decisión en producción."
+  },
+  "Automatización vs augmentación": {
+    "que": "Es el eje de diseño que distingue entre delegar la ejecución completa de una tarea a un sistema de IA sin intervención humana paso a paso (automatización) frente a usar la IA para ampliar la capacidad de análisis, velocidad o criterio de un humano que mantiene el control (augmentación o inteligencia aumentada).",
+    "para": "Guía la arquitectura de producto, la UX y el diseño de controles de riesgo según el coste del error y la ambigüedad de la tarea. Evita automatizar de golpe procesos con alta incertidumbre o limitar a un copiloto lento tareas mecánicas bien acotadas.",
+    "como": "La decisión se toma evaluando cuatro variables de la tarea: 1) Coste y reversibilidad del error; 2) Disponibilidad de verificación automática determinista (tests, compiladores, reglas contables); 3) Ambigüedad del contexto y necesidad de empatía o juicio ético; 4) Volumen y latencia requerida. Si el error es barato/reversible o verificable en código, conviene automatización (pipeline o agente acotado); si el juicio es abierto o el impacto es alto, se diseña augmentación con borradores, comparativas y confirmación explícita.",
+    "practicas": [
+      "Adoptar una estrategia progresiva: empezar con augmentación para recolectar trazas y casos borde, y automatizar solo las subtareas con alta tasa de acierto verificada.",
+      "Error típico: diseñar falsa augmentación donde el humano solo pulsa 'Aceptar' por falta de contexto para revisar (sesgo de automatización).",
+      "Automatización vs augmentación: la automatización optimiza throughput y coste marginal; la augmentación optimiza calidad de decisión en problemas complejos.",
+      "En augmentación, mostrar evidencias y alternativas en vez de una única respuesta autoritativa."
+    ],
+    "ejemplo": "matriz_diseno:\n  triaje_tickets_bajo_riesgo: {verificable: false, impacto_error: \"bajo\", modo: \"automatizacion_con_fallback\"}\n  diagnostico_incidente_sev1: {verificable: false, impacto_error: \"critico\", modo: \"augmentacion_human_in_command\"}\n  formateo_y_tests_unitarios: {verificable: true, impacto_error: \"bajo\", modo: \"automatizacion_en_ci\"}",
+    "entrevista": "Automatizo cuando el error es reversible o verificable de forma determinista; diseño augmentación cuando el contexto es ambiguo y el coste del fallo exige criterio humano."
+  },
+  "Calibración del modelo": {
+    "que": "La calibración del modelo mide y ajusta la correspondencia entre la probabilidad o nivel de confianza que reporta un modelo y la frecuencia real con la que acierta. Un modelo bien calibrado acierta aproximadamente el 80 % de las veces cuando asigna una probabilidad de 0,8.",
+    "para": "Es crítica para tomar decisiones basadas en umbrales: derivar casos inciertos a revisión humana, activar respuestas de abstención ('no lo sé') o combinar señales en sistemas de riesgo. Un modelo muy preciso pero mal calibrado suele mostrarse excesivamente seguro cuando se equivoca.",
+    "como": "Se evalúa mediante diagramas de fiabilidad (reliability diagrams), Expected Calibration Error (ECE) y Brier score sobre un conjunto de validación representativo. Para corregir la sobreconfianza típica de redes neuronales y LLMs se aplican técnicas post-hoc sobre los logits o logprobs: Temperature Scaling (dividir logits por un escalar T > 1 aprendido en validación), Platt Scaling o regresión isotónica. En LLMs sin acceso fiable a logprobs, se recurre a consistencia entre múltiples muestreos (self-consistency) o calibradores externos entrenados sobre features de la respuesta y del RAG.",
+    "practicas": [
+      "No confundir exactitud (accuracy) con calibración: puedes tener 95 % de accuracy y un ECE pésimo si tus errores salen con confianza 0,99.",
+      "Error típico: confiar en que un LLM diga 'Estoy 90 % seguro' en texto libre; la confianza verbalizada suele estar mal calibrada frente a logprobs calibrados o verificación externa.",
+      "Evaluar la calibración por subgrupos y fuera de distribución (OOD), donde los modelos suelen mantener alta confianza pese a fallar.",
+      "Usar la calibración para fijar umbrales de abstención o escalado a humano (selective prediction)."
+    ],
+    "ejemplo": "# Temperature scaling simple sobre logits de clasificacion\nimport torch\nT = torch.nn.Parameter(torch.ones(1) * 1.5)\ncalibrated_probs = torch.softmax(logits / T, dim=-1)\n# Validar con Expected Calibration Error (ECE) y Brier score",
+    "entrevista": "Un modelo puede tener alta precisión y estar pésimamente calibrado; necesito calibrarlo con temperature scaling o verificación externa antes de usar su score para decidir cuándo abstenerse o escalar a un humano."
+  },
+  "Casos de uso de IA": {
+    "que": "Los casos de uso de IA son aplicaciones concretas y acotadas de capacidades de IA (clasificación, extracción, síntesis, generación, búsqueda semántica o ejecución asistida) vinculadas a un problema de negocio o ingeniería específico. Cada caso define usuario, entrada, salida esperada, restricciones y métrica de éxito.",
+    "para": "Transforman el interés genérico por la IA en iniciativas evaluables y comparables en un portfolio. Sirven para alinear a producto, ingeniería, seguridad y finanzas antes de escribir código o contratar proveedores.",
+    "como": "Se formulan mediante una ficha estructurada: 1) Problema actual y baseline cuantitativo (ej. 12 minutos por triaje); 2) Por qué encaja IA frente a reglas o código clásico; 3) Arquitectura mínima (modelo, datos fuente, si requiere RAG o tool calling); 4) Criterios de calidad y riesgo (exactitud mínima, latencia máxima, impacto si falla); 5) Estimación de TCO e impacto esperado. Luego se ordenan en una matriz de valor vs factibilidad/riesgo para seleccionar pilotos.",
+    "practicas": [
+      "Formular el caso por el problema y la métrica ('reducir tiempo de resolución de L1 en 25 %'), nunca por la tecnología ('hacer un chatbot con RAG').",
+      "Error típico: definir casos de uso demasiado amplios ('asistente universal de empresa') que impiden medir calidad o fijar guardrails.",
+      "Incluir siempre el escenario de fallo y su plan de mitigación desde la ficha inicial.",
+      "Descartar sin piloto los casos que una expresión regular, SQL o un formulario bien diseñado resuelven más rápido y barato."
+    ],
+    "ejemplo": "caso_de_uso:\n  id: UC-04-triaje-soporte\n  problema: \"Clasificacion manual de 4.000 tickets/semana (4 min/ticket)\"\n  tecnica: \"Clasificador + extraccion JSON estructurada\"\n  baseline_precision_humana: 0.91\n  objetivo_latencia_p95_ms: 800\n  riesgo: \"bajo (etiqueta editable, sin accion externa automatica)\"",
+    "entrevista": "Un buen caso de uso de IA empieza con un cuello de botella medible y una justificación de por qué falla el código determinista, no con ganas de meter un LLM."
+  },
+  "Centro de excelencia de IA": {
+    "que": "Un Centro de Excelencia de IA (AI CoE) es un equipo multidisciplinar transversal encargado de definir estándares, plataformas compartidas, guardrails de seguridad, evaluación y habilitación para que los equipos de producto adopten IA de forma coherente y segura.",
+    "para": "Evita que cada squad reinvente gateways, integraciones con proveedores, controles de PII y pipelines de evaluación desde cero. Es útil en organizaciones medianas o grandes con múltiples equipos construyendo o integrando capacidades de IA en paralelo.",
+    "como": "Opera como equipo habilitador (modelo platform/enabling team, no cuello de botella de aprobación): 1) Provee infraestructura común (AI Gateway con rate limits, logging, gestión de claves y enrutamiento multimodelo); 2) Publica plantillas de evaluación, seguridad y compliance preaprobadas; 3) Acompaña a los equipos de dominio durante los primeros despliegues mediante inmersiones temporales; 4) Centraliza aprendizajes, costes agregados y relación con proveedores, devolviendo la operación diaria a cada equipo de producto.",
+    "practicas": [
+      "Diseñar el CoE como habilitador ('paved road') y no como comité burocrático que frena cada PR o experimento.",
+      "Error típico: aislar al CoE construyendo prototipos que los equipos de producto nunca mantienen ni integran en su roadmap.",
+      "Centro de excelencia vs Comunidad de práctica: el CoE tiene dedicación formal, presupuesto y plataforma compartida; la comunidad de práctica es una red horizontal voluntaria de intercambio entre pares.",
+      "Medir el éxito del CoE por la velocidad y seguridad con la que otros equipos lanzan a producción, no por proyectos propios."
+    ],
+    "ejemplo": "ai_coe_responsabilidades:\n  plataforma: [\"AI Gateway corporativo\", \"eval_harness_ci\", \"redaction_pii\"]\n  gobernanza: [\"modelos_aprobados\", \"plantilla_riesgo\"]\n  habilitacion: [\"office_hours\", \"pairing_primer_piloto\"]",
+    "entrevista": "Un AI CoE eficaz construye el camino pavimentado —gateway, evals y compliance preaprobado— para que los squads entreguen con autonomía, en lugar de convertirse en una aduana central."
+  },
+  "Clasificación de riesgo de IA": {
+    "que": "La clasificación de riesgo de IA es la taxonomía formal que categoriza cada sistema o caso de uso según la severidad y probabilidad del daño potencial (técnico, operativo, financiero, de privacidad o derechos fundamentales) para asignar controles proporcionales.",
+    "para": "Evita aplicar la misma burocracia a un generador de resúmenes internos que a un motor de scoring crediticio o a un agente con acceso de escritura en producción. Sirve como puerta de entrada en arquitectura, seguridad y cumplimiento normativo (p. ej., categorías de riesgo del EU AI Act o NIST AI RMF).",
+    "como": "Se ejecuta mediante un cuestionario de triaje previo al desarrollo que evalúa: 1) Exposición de datos (públicos, internos, PII, regulados); 2) Autonomía y blast radius (solo lectura/sugerencia vs acciones irreversibles o externas); 3) Impacto en personas (acceso a empleo, crédito, salud, seguridad); 4) Trazabilidad y facilidad de reversión. El resultado ubica el sistema en niveles (p. ej. Bajo, Medio, Alto, Prohibido), disparando requisitos obligatorios como revisión legal, red teaming, HITL obligatorio o logging inmutable.",
+    "practicas": [
+      "Clasificar por el impacto del uso real en contexto, no por el modelo base usado (GPT-4 o Llama puede ser riesgo bajo en resumen interno y riesgo alto en triaje médico).",
+      "Error típico: dejar la clasificación como trámite único de papel al inicio y no reevaluar cuando se añade tool calling con permisos de escritura.",
+      "Vincular cada nivel de riesgo a controles técnicos concretos (evals adversarias, sandbox, aprobación humana) en el pipeline de release.",
+      "Definir explícitamente qué usos están prohibidos por política interna o ley."
+    ],
+    "ejemplo": "niveles_riesgo:\n  bajo: {ejemplo: \"resumen docs internos\", controles: [\"zdr\", \"feedback_usuario\"]}\n  medio: {ejemplo: \"asistente soporte externo\", controles: [\"rag_grounding\", \"pii_filter\", \"evals_ci\"]}\n  alto: {ejemplo: \"aprobacion credito / acciones write\", controles: [\"hitl_obligatorio\", \"auditoria_inmutable\", \"red_teaming\"]}",
+    "entrevista": "Clasifico cada caso de IA por autonomía, sensibilidad de datos y blast radius: si un fallo tiene consecuencias irreversibles o afecta a personas, pasa automáticamente a controles de riesgo alto con HITL y auditoría."
+  },
+  "Colaboración humano-IA": {
+    "que": "La colaboración humano-IA es el diseño del reparto de tareas, comunicación bidireccional y puntos de control entre personas y sistemas de IA para resolver juntos problemas donde ninguno rinde igual por separado.",
+    "para": "Maximiza la calidad de las decisiones complejas combinando la velocidad de síntesis, generación de hipótesis y cobertura de la IA con el juicio contextual, responsabilidad ética y detección de anomalías del humano. Se aplica en ingeniería (code review, debugging), medicina, diseño y análisis operativo.",
+    "como": "Se articula mediante protocolos de interacción claros: 1) Descomposición complementaria (la IA prepara borradores, extrae evidencias, genera casos borde; el humano define objetivos, restricciones y valida invariantes); 2) Interfaces transparentes (citas clicables, diffs claros, indicadores de incertidumbre y supuestos explícitos); 3) Bucle de refinamiento iterativo (crítica guiada por el humano sobre criterios específicos); 4) Captura de correcciones humanas como señal para mejorar prompts, contexto o datasets de evaluación.",
+    "practicas": [
+      "Exigir que la IA presente su razonamiento en artefactos verificables (diffs, consultas SQL, citas con enlace) y no solo conclusiones finales.",
+      "Error típico: delegar el primer borrador y aprobarlo sin pensar cuando la salida suena fluida (automatización encubierta).",
+      "Alternar roles: usar la IA como revisor crítico ('encuentra fallos en mi diseño') es tan valioso como usarla de generador.",
+      "Preservar la capacidad humana: evitar que el equipo pierda comprensión del sistema subyacente por delegar toda la escritura."
+    ],
+    "ejemplo": "flujo_colaboracion_pr:\n  1_humano: \"Define invariantes de arquitectura y casos borde en spec\"\n  2_ia: \"Genera implementacion + suite de tests\"\n  3_humano: \"Revisa diff de seguridad, logica de negocio y cobertura\"\n  4_ia: \"Ejecuta analisis estatico y propone simplificaciones\"",
+    "entrevista": "La mejor colaboración humano-IA reparte el trabajo por ventaja comparativa: la IA explora opciones y genera borradores verificables, mientras el humano define invariantes, evalúa el riesgo y asume la decisión."
+  },
+  "Comunidad de práctica de IA": {
+    "que": "Una comunidad de práctica de IA (AI CoP) es una red transversal y voluntaria de ingenieros, científicos de datos, diseñadores y product managers que comparten patrones, fallos reales, herramientas y aprendizajes sobre trabajo con IA más allá de sus equipos jerárquicos.",
+    "para": "Acelera la difusión de buenas prácticas orgánicas (cómo evaluar prompts, qué patrones de RAG funcionan, qué falló en producción) sin esperar directivas rígidas. Es especialmente valiosa cuando la tecnología evoluciona más rápido que los manuales oficiales.",
+    "como": "Funciona con una cadencia ligera pero constante: 1) Sesiones periódicas (quincenales o mensuales) con demos técnicas cortas de casos reales y postmortems de fallos sin culpa; 2) Repositorio vivo de recetas reutilizables (prompts evaluados, utilidades de testing, checklists); 3) Canal asíncrono moderado para resolver dudas y detectar necesidades comunes que luego el CoE o plataforma convierte en herramientas oficiales.",
+    "practicas": [
+      "Fomentar demos de 'qué no funcionó y por qué' además de casos de éxito para evitar sesgo de supervivencia.",
+      "Error típico: convertir la comunidad en un grupo de enlaces de noticias sin aplicación al código o procesos internos.",
+      "Dar tiempo protegido (p. ej. 2 horas al mes) y reconocimiento en evaluaciones para que no dependa solo de horas extra.",
+      "Conectar la CoP con el AI CoE para que los problemas repetidos de la comunidad alimenten el backlog de plataforma."
+    ],
+    "ejemplo": "agenda_cop_mensual:\n  - \"10 min: Postmortem de alucinacion en extractor de facturas\"\n  - \"15 min: Demo de evals con promptfoo en CI\"\n  - \"15 min: Debate abierto sobre limites de copilotos en codigo legacy\"",
+    "entrevista": "Una comunidad de práctica bien llevada funciona como sensor temprano de la organización: difunde patrones probados entre squads y detecta fricciones reales antes de que escalen a deuda de plataforma."
+  },
+  "Confianza calibrada": {
+    "que": "La confianza calibrada (appropriate reliance) es el ajuste preciso entre el grado de confianza que un usuario humano deposita en un sistema de IA y la fiabilidad real del sistema en esa situación concreta. Se sitúa en el punto óptimo entre la sobreconfianza ciega y el rechazo sistemático (aversión al algoritmo).",
+    "para": "Evita los dos fallos humanos más costosos al operar con IA: aceptar errores graves por fluidez aparente del modelo, o ignorar recomendaciones útiles y perder todo el retorno de inversión. Es clave en interfaces de soporte a decisiones clínicas, financieras, legales y de ingeniería.",
+    "como": "Se construye combinando diseño de modelo, UX y formación: 1) El sistema expone señales honestas de fiabilidad (intervalos, citas verificables, avisos cuando la consulta cae fuera de su dominio o faltan datos); 2) La interfaz introduce fricción productiva solo en zonas de baja confianza o alto riesgo (resaltar supuestos, obligar a revisar campos críticos); 3) El usuario conoce el historial real de error del sistema mediante feedback continuo y métricas de desempeño por categoría de tarea.",
+    "practicas": [
+      "Mostrar siempre la evidencia fuente junto a la respuesta para que verificar sea más rápido que adivinar.",
+      "Error típico: usar lenguaje asertivo y diseño pulido cuando la probabilidad de error es alta, induciendo falsa seguridad.",
+      "Calibración del modelo vs Confianza calibrada: la calibración del modelo es una propiedad matemática de sus probabilidades; la confianza calibrada es la conducta resultante del humano que interactúa con él.",
+      "Medir en pruebas de usuario cuánto aceptan respuestas erróneas (over-reliance) y cuánto rechazan aciertos (under-reliance)."
+    ],
+    "ejemplo": "ui_confianza_calibrada:\n  si_score_calibrado >= 0.90: \"Mostrar respuesta + fuentes clicables\"\n  si_score_calibrado < 0.90: \"Mostrar advertencia 'Evidencia parcial' + resaltar huecos\"\n  si_fuera_de_dominio: \"Abstenerse y derivar a especialista\"",
+    "entrevista": "El objetivo UX de un sistema de IA no es maximizar la confianza del usuario, sino calibrarla para que confíe donde el sistema es sólido y sospeche justo donde tiende a fallar."
+  },
+  "Copiloto vs agente": {
+    "que": "Es la distinción arquitectónica entre un copiloto —sistema reactivo que asiste paso a paso dentro del flujo del usuario, proponiendo borradores o acciones bajo confirmación continua— y un agente —sistema orientado a objetivos que planifica múltiples pasos, invoca herramientas, observa resultados y actúa con mayor autonomía.",
+    "para": "Define la complejidad de ingeniería, los riesgos de seguridad y la experiencia de usuario necesarias para un problema. Evita sobredimensionar un problema sencillo con bucles agénticos impredecibles o quedarse corto usando un chat manual para flujos repetitivos de varios pasos.",
+    "como": "En un copiloto, el ciclo es síncrono y corto: evento del usuario -> contexto local -> inferencia -> sugerencia que el humano acepta, edita o descarta. En un agente, el bucle es iterativo (p. ej. ReAct/plan-and-execute): objetivo -> LLM decide tool call -> entorno ejecuta y devuelve observación -> LLM re-planifica hasta condición de parada, requiriendo sandbox, límites de iteraciones/presupuesto, permisos acotados (least privilege) y puntos de aprobación (HITL) ante acciones irreversibles.",
+    "practicas": [
+      "Preferir copilotos o workflows deterministas con pasos de LLM (state machines) antes que agentes autónomos abiertos cuando la predictibilidad y latencia importan.",
+      "Error típico: desplegar un agente con credenciales amplias sin presupuesto máximo de pasos ni confirmación en acciones de escritura o pago.",
+      "Copiloto vs agente: los copilotos multiplican la velocidad con bajo blast radius; los agentes reducen coordinación manual pero multiplican errores compuestos en pasos largos.",
+      "Si una secuencia de 5 pasos siempre ocurre en el mismo orden, codificarla como pipeline fijo en código, no como bucle agéntico libre."
+    ],
+    "ejemplo": "arquitectura:\n  copiloto: \"usuario -> prompt+contexto -> sugerencia -> confirmacion_humana\"\n  agente: \"objetivo -> loop(plan -> tool_call -> observacion, max_steps=8) -> hitl_si_write\"",
+    "entrevista": "Uso un copiloto o un flujo guiado por máquina de estados siempre que el camino sea predecible; solo justifico un agente autónomo cuando la secuencia de pasos depende dinámicamente del entorno y puedo acotar sus permisos."
+  },
+  "Coste total de propiedad de IA": {
+    "que": "El Coste Total de Propiedad (TCO) de IA es la suma completa de costes directos e indirectos para diseñar, construir, integrar, evaluar, operar y mantener un sistema de IA a lo largo de su ciclo de vida, no solo el precio por millón de tokens o licencia.",
+    "para": "Impide aprobar proyectos basándose únicamente en la factura estimada de la API del modelo, que suele representar una fracción menor del gasto real. Se calcula en casos de negocio, comparativas build vs buy y revisiones de sostenibilidad financiera.",
+    "como": "Se desglosa en cinco partidas acumuladas a 12-36 meses: 1) Datos y preparación (pipelines ETL, limpieza, etiquetado, base vectorial y mantenimiento); 2) Desarrollo e integración (ingeniería backend, UX, guardrails, conexión con sistemas legacy); 3) Inferencia y cómputo (tokens de entrada/salida multiplicados por retries y contexto largo, o GPUs dedicadas); 4) Calidad y operación (evaluaciones continuas, LLM-as-a-judge, observabilidad, revisión humana HITL y reentrenamientos ante drift); 5) Gobernanza y riesgo (auditorías, cumplimiento legal y soporte).",
+    "practicas": [
+      "Incluir el coste de la revisión humana (HITL) y del mantenimiento de datos en el TCO: muchas veces supera con creces al coste de inferencia.",
+      "Error típico: calcular tokens por petición simple y olvidar que un agente o RAG con 10 llamadas internas y reintentos multiplica por 15x el consumo.",
+      "Aplicar técnicas de optimización continua: prompt caching, model routing (modelo pequeño para tareas simples, grande solo en escalados) y caché semántica.",
+      "Evaluar soluciones SaaS maduras frente a desarrollos propios sumando el coste de oportunidad del equipo de ingeniería."
+    ],
+    "ejemplo": "tco_mensual_usd:\n  inferencia_tokens: 450      # con prompt caching y model routing\n  vector_db_y_etl: 300\n  observabilidad_y_evals: 200\n  revision_humana_hitl: 1800  # 60h/mes de analistas\n  mantenimiento_eng: 2500     # fraccion de sprint continuo\n  total_mensual: 5250",
+    "entrevista": "El coste de tokens suele ser la punta del iceberg; el TCO real de un sistema de IA está dominado por la ingeniería de datos, el mantenimiento de evaluaciones y las horas de supervisión humana."
+  },
+  "Coste-beneficio de IA": {
+    "que": "El análisis coste-beneficio de IA compara el valor económico u operativo neto esperado (ahorro verificable de tiempo, incremento de ingresos, reducción de errores) frente al TCO y al riesgo residual de implementar una solución de IA frente a la mejor alternativa no-IA.",
+    "para": "Sirve para priorizar iniciativas y decidir con rigor cuándo invertir, cuándo simplificar con ingeniería tradicional y cuándo detener un proyecto cuyo retorno no compensa la complejidad probabilística añadida.",
+    "como": "Se ejecuta comparando tres escenarios sobre el mismo proceso: 1) Estado base actual (status quo); 2) Mejora determinista (automatización con código, SQL, reglas o mejor UX sin IA); 3) Solución con IA. Para el escenario con IA se calcula el beneficio neto ajustado por la tasa de error y coste de verificación humana: si la IA ahorra 5 minutos por caso pero requiere 3 minutos de revisión cuidadosa más un 5 % de retrabajo por errores sutiles, el ahorro neto real cae drásticamente frente a la promesa nominal.",
+    "practicas": [
+      "Comparar siempre la IA contra la mejor alternativa determinista barata, no solo contra el proceso manual actual.",
+      "Error típico: multiplicar 'tiempo ahorrado en demo x número de empleados' asumiendo que el 100 % del tiempo liberado se convierte en valor neto sin tiempo de verificación.",
+      "Exigir un umbral mínimo de margen neto (p. ej. payback < 6-12 meses) para absorber la volatilidad de precios y cambios de modelo.",
+      "Medir también beneficios indirectos reales (reducción de tiempos de espera del cliente) con métricas de negocio concretas."
+    ],
+    "ejemplo": "ahorro_bruto_min = 6.0\nrevision_humana_min = 2.5\ncoste_retrabajo_esperado_min = 0.08 * 15.0  # 8% error * 15 min corregir\nahorro_neto_min = ahorro_bruto_min - revision_humana_min - coste_retrabajo_esperado_min\n# Resultado: 2.3 min netos (evaluar si compensa el TCO)",
+    "entrevista": "Al calcular el coste-beneficio de una solución de IA siempre resto el tiempo de verificación humana y el coste esperado de los fallos silenciosos, y la comparo contra una alternativa determinista simple."
+  },
+  "Criterio de confianza en IA": {
+    "que": "El criterio de confianza en IA es el conjunto explícito de umbrales, evidencias y reglas de validación que debe satisfacer un sistema o una salida de IA antes de ser aceptada automáticamente, mostrada al usuario o promovida a producción.",
+    "para": "Elimina decisiones subjetivas basadas en 'parece que funciona bien en un par de ejemplos' y establece un contrato objetivo entre ingeniería, producto y riesgo sobre qué nivel de certeza exige cada operación.",
+    "como": "Se define por nivel de criticidad combinando múltiples señales: 1) Calidad offline (tasa de acierto mínima sobre un golden dataset y métricas de grounding/faithfulness); 2) Señales en tiempo real (score calibrado por encima del umbral, citas verificadas contra documentos recuperados y cumplimiento estricto de esquema JSON); 3) Reglas de gating (si falla cualquiera de los checks, se degrada a abstención, fallback determinista o cola de revisión humana). El criterio se revisa tras cada incidente o cambio de versión de modelo.",
+    "practicas": [
+      "Separar el umbral de confianza para 'sugerir al humano' (más laxo) del umbral para 'ejecutar automáticamente' (muy estricto).",
+      "Error típico: usar un único umbral global sin diferenciar entre falsos positivos inocuos y falsos negativos costosos.",
+      "Combinar confianza del modelo con verificadores externos independientes (compilador, regex de formato, validación de stock en DB).",
+      "Documentar explícitamente quién tiene autoridad para rebajar o aprobar cambios en los umbrales."
+    ],
+    "ejemplo": "criterio_confianza_reembolso:\n  auto_aprobar: \"importe <= 30 && confidence >= 0.96 && grounded_in_policy == true\"\n  revisar_hitl: \"importe <= 500 || confidence < 0.96\"\n  bloquear_fallback: \"pii_leak_detected || schema_invalid\"",
+    "entrevista": "No despliego funciones con IA sin un criterio de confianza por niveles: qué score, qué verificación determinista y qué evidencia de grounding se exigen para sugerir, para ejecutar o para escalar a humano."
+  },
+  "Criterios de uso de IA": {
+    "que": "Los criterios de uso de IA son las reglas técnicas, económicas y de riesgo que determinan si un problema debe abordarse con IA, qué arquitectura mínima corresponde y bajo qué salvaguardas operativas está permitido utilizarla.",
+    "para": "Estandariza la toma de decisiones en equipos de ingeniería y producto, evitando tanto la parálisis por miedo como la adopción indiscriminada de LLMs donde degradan fiabilidad, latencia o coste.",
+    "como": "Se implementan como un árbol de decisión previo a la arquitectura: 1) Necesidad (¿existe entrada no estructurada, ambigüedad semántica o síntesis compleja que el código determinista no cubre?); 2) Verificabilidad (¿puede validarse la salida de forma automática o barata por el usuario?); 3) Tolerancia al error y latencia (¿soporta el flujo fallos ocasionales y cientos de ms extra?); 4) Datos y cumplimiento (¿existen datos limpios con permisos legales?); 5) Economía (¿el valor neto supera el TCO?). Si falla algún criterio crítico, se descarta o se rediseña como híbrido determinista.",
+    "practicas": [
+      "Aplicar la regla del 'determinismo primero': resolver con código clásico todo lo estructurado y acotar la IA a la frontera ambigua.",
+      "Error típico: evaluar la viabilidad solo con 5 prompts felices en un playground sin probar casos borde ni latencia bajo carga.",
+      "Hacer que los criterios formen parte de la plantilla de RFC o ADR de arquitectura del equipo.",
+      "Revisar periódicamente si un modelo nuevo o un cambio en requisitos altera el encaje inicial."
+    ],
+    "ejemplo": "checklist_rfc_ia:\n  - requiere_comprension_no_estructurada: true\n  - salida_verificable_o_error_tolerable: true\n  - latencia_p95_aceptable_ms: 1500\n  - datos_autorizados_y_sin_fuga: true\n  - alternativa_determinista_descartada_por: \"variabilidad linguistica alta\"",
+    "entrevista": "En un RFC aplico cinco filtros antes de aceptar IA: ambigüedad real de entrada, verificabilidad de salida, tolerancia al error, permisos de datos y ventaja neta frente a lógica determinista."
+  },
+  "Cuándo no usar IA": {
+    "que": "Es el criterio de descarte explícito para identificar problemas donde el uso de IA (especialmente modelos generativos o probabilísticos) es contraproducente frente a código determinista, bases de datos, reglas de negocio o rediseño del proceso.",
+    "para": "Protege la fiabilidad, el presupuesto y la simplicidad del sistema evitando introducir latencia, no determinismo, alucinaciones y coste operativo donde no aportan ventaja real. Saber decir no a la IA es una competencia clave de arquitectura senior.",
+    "como": "Se detecta mediante señales claras de rechazo: 1) Requisitos de exactitud del 100 % sin verificación externa (cálculos financieros, permisos de autorización, control de acceso); 2) Lógica ya formalizable en pocas reglas o consultas SQL; 3) Presupuestos estrictos de latencia sub-10 ms o energía mínima; 4) Ausencia total de datos confiables o imposibilidad legal de procesarlos; 5) Casos donde el humano tarda más revisando al modelo que haciendo la tarea directa (p. ej. redactar un mensaje breve crítico de 2 líneas).",
+    "practicas": [
+      "Nunca usar un LLM para hacer aritmética, validación de permisos o enrutamiento crítico que un if/regex/SQL resuelve con 100 % de exactitud.",
+      "Error típico: usar un LLM para traducir lenguaje natural a un filtro simple cuando 4 controles desplegables en la UI son más rápidos, baratos y exactos.",
+      "Rechazar proyectos donde no hay forma de medir si el sistema mejoró o empeoró respecto al estado previo.",
+      "Evitar IA en decisiones irreversibles sin supervisión humana ni validación formal posible."
+    ],
+    "ejemplo": "# ANTIPATRON: usar LLM para calcular IVA o validar permisos\n# CORRECTO: regla determinista pura (0 ms red, 100% exactitud, auditable)\ndef can_refund(role: str, days_since_order: int) -> bool:\n    return role == \"support_lead\" and days_since_order <= 30",
+    "entrevista": "No uso IA cuando necesito determinismo al 100 %, latencia de milisegundos, aritmética o control de acceso, ni cuando un buen diseño de interfaz elimina la ambigüedad mejor que un chat."
+  },
+  "Cuándo usar IA": {
+    "que": "Es el conjunto de condiciones bajo las cuales un problema se beneficia genuinamente de modelos estadísticos o generativos frente a algoritmos explícitos, al equilibrar complejidad de entrada, escala y tolerancia al riesgo.",
+    "para": "Orienta la inversión técnica hacia problemas donde la IA desbloquea capacidades imposibles o prohibitivas con reglas manuales, maximizando retorno y satisfacción del usuario.",
+    "como": "La IA encaja cuando confluyen estas condiciones: 1) Entradas de alta dimensionalidad o no estructuradas (texto libre, PDFs heterogéneos, audio, código fuente, imágenes); 2) Reglas demasiado numerosas o cambiantes para mantenerlas a mano (clasificación semántica, deduplicación difusa); 3) Generación de primeros borradores en tareas donde verificar es mucho más rápido que crear desde cero (P vs NP práctico en UX: revisar una query SQL o un resumen toma segundos, escribirlos toma minutos); 4) Existencia de verificadores o flujos de fallback que absorben errores ocasionales.",
+    "practicas": [
+      "Buscar la asimetría generación-verificación: tareas difíciles de redactar/buscar desde cero pero fáciles y rápidas de verificar por un humano o un test.",
+      "Error típico: asumir que un buen desempeño en generación creativa implica fiabilidad en extracción estricta de datos sin validación de esquema.",
+      "Combinar IA para entender/extraer con motores deterministas para calcular y ejecutar.",
+      "Asegurar volumen suficiente que amortice la ingeniería de evaluación y operación."
+    ],
+    "ejemplo": "# Patron optimo: IA interpreta entrada ambigua -> codigo valida y ejecuta\nintent = llm.extract_structured(user_email, schema=TicketIntent)\nvalidate_against_catalog(intent.product_id)  # check determinista en DB\ncreate_draft_response(intent)",
+    "entrevista": "Uso IA cuando la entrada es ambigua o no estructurada y existe asimetría a nuestro favor: es mucho más barato verificar la salida del modelo —con tests o revisión rápida— que producirla manualmente."
+  },
+  "De piloto a producción con IA": {
+    "que": "El paso de piloto a producción con IA (Production Readiness) es la transición de una prueba de concepto funcional con casos seleccionados hacia un servicio robusto, observable, seguro, evaluado en CI y sostenible en costes bajo tráfico real.",
+    "para": "Resuelve el 'valle de la muerte' de los proyectos de IA, donde el 80 % de demos impresionantes fracasan al enfrentarse a usuarios reales, datos sucios, picos de latencia, inyecciones de prompt y regresiones silenciosas.",
+    "como": "Exige cerrar seis brechas antes del lanzamiento gradual: 1) Evaluación automatizada (golden dataset con casos reales y adversarios integrado en CI para detectar regresiones al cambiar modelo o prompt); 2) Seguridad y guardrails (defensa contra prompt injection, redacción de PII, límites de herramientas y permisos por usuario en RAG); 3) Resiliencia (timeouts, retries con backoff, circuit breakers y fallback a otro modelo o flujo sin IA); 4) Observabilidad y FinOps (trazas OpenTelemetry, alertas de latencia p95, coste por usuario y tasa de error de esquema); 5) Despliegue progresivo (canary o shadow mode); 6) Runbooks de incidentes y dueño operativo (on-call).",
+    "practicas": [
+      "Ejecutar primero en shadow mode o canary al 5 % del tráfico comparando resultados contra el sistema anterior antes de abrir al 100 %.",
+      "Error típico: pasar un notebook o prototipo de hackathon a producción sin pruebas de regresión ni control de presupuesto ante bucles o ataques.",
+      "Fijar versiones de modelo (pinned snapshots) y nunca apuntar producción a alias móviles sin pasar la suite de evals.",
+      "Tener un kill switch y modo degradado que mantenga el producto funcionando si la API del modelo cae o dispara costes."
+    ],
+    "ejemplo": "gate_produccion:\n  evals_golden_pass_rate: \">= 0.92\"\n  red_team_injection_block: \">= 0.98\"\n  fallback_si_timeout_ms: 3000\n  rollout: \"shadow -> 5% canary -> 25% -> 100%\"\n  alertas: [\"coste_hora > $50\", \"schema_error_rate > 1%\"]",
+    "entrevista": "Un piloto prueba que el modelo puede hacerlo una vez; pasar a producción exige evals de regresión en CI, permisos estrictos en datos, fallback determinista, límites de coste y despliegue canary."
+  },
+  "Encaje tarea-IA": {
+    "que": "El encaje tarea-IA (Task-AI fit) es la adecuación estructural entre las propiedades intrínsecas de una tarea (ambigüedad, tolerancia al fallo, verificabilidad, coste de error) y las capacidades y limitaciones reales del tipo de modelo de IA elegido.",
+    "para": "Evita forzar LLMs en tareas de cálculo exacto o usar modelos pequeños en razonamiento complejo, y viceversa. Permite descomponer un flujo de trabajo grande en subtareas asignando a cada una la herramienta óptima (código clásico, ML clásico, LLM pequeño, LLM razonador o humano).",
+    "como": "Se analiza descomponiendo la tarea en subtareas atómicas y puntuando cuatro dimensiones: 1) Naturaleza de la entrada/salida (tabular estructurada -> ML clásico/reglas; texto libre/código -> LLM); 2) Tolerancia a la varianza probabilística; 3) Facilidad de verificación de salida; 4) Restricciones de latencia y coste unitario. El mapa resultante asigna cada bloque al mecanismo más simple que cumpla el SLA, evitando pipelines monolíticos donde un único prompt intenta hacer todo.",
+    "practicas": [
+      "Descomponer procesos complejos en subtareas antes de juzgar el encaje: suele haber partes con alto encaje IA (extraer campos de un email) y partes con encaje nulo (actualizar saldo contable).",
+      "Error típico: usar un LLM generativo para predicción tabular numérica donde XGBoost/LightGBM es más preciso, explicable y mil veces más barato.",
+      "Reevaluar el Task-AI fit cuando cambian el volumen o el coste del error del negocio.",
+      "Emparejar tareas de alto riesgo con salidas estructuradas verificables o revisión humana integrada."
+    ],
+    "ejemplo": "descomposicion_factura:\n  paso_1_ocr_y_extraccion: \"VLM / LLM con JSON Schema\"   # alto encaje\n  paso_2_cuadre_totales: \"Codigo Python exacto\"        # cero encaje IA\n  paso_3_anomalia_fraude: \"Modelo tabular + reglas\"    # ML clasico\n  paso_4_aprobacion_pago: \"Humano si > umbral\"         # criterio humano",
+    "entrevista": "Evaluar el Task-AI fit consiste en trocear un flujo y dar a cada subtarea su herramienta óptima: extracción semántica al LLM, aritmética e invariantes al código, y datos tabulares a ML clásico."
+  },
+  "Errores de IA en producción": {
+    "que": "Los errores de IA en producción son fallos operativos y de calidad específicos de sistemas probabilísticos desplegados: alucinaciones factuales, rotura de esquemas JSON, derivas de datos/prompt (drift), fugas de contexto por RAG, bucles de agentes y degradación por cambios silenciosos del proveedor.",
+    "para": "Comprender su taxonomía permite diseñar defensas por capas, alertas específicas y runbooks de mitigación antes de que un fallo dañe a clientes o dispare costes. Complementa la ingeniería de fiabilidad tradicional (SRE), que por sí sola no detecta respuestas sintácticamente HTTP 200 pero semánticamente falsas.",
+    "como": "Se gestionan instrumentando todo el ciclo de inferencia: 1) Validación estructural en el borde (Pydantic/JSON Schema con reintento acotado si falla sintaxis); 2) Detección semántica continua mediante métricas proxy (tasa de abstención, longitud anómala, baja similitud en RAG, feedback negativo, LLM-as-a-judge muestreado); 3) Análisis de causa raíz separando errores de recuperación (RAG trajo documentos equivocados o vacíos) de errores de generación (el modelo ignoró el contexto o inventó hechos); 4) Corrección en el golden dataset para prevenir regresiones.",
+    "practicas": [
+      "Distinguir siempre en el diagnóstico si falló el retrieval (contexto ausente/erróneo) o el generador (razonamiento/instrucción).",
+      "Error típico: monitorear solo códigos HTTP 5xx y latencia, ignorando respuestas HTTP 200 con alucinaciones o rechazos falsos.",
+      "Mantener un dataset vivo de errores reales en producción ('flywheel de fallos') conectado a la suite de evaluación en CI.",
+      "Fijar límites duros de presupuesto y tokens por petición para contener ataques o bucles infinitos de reintentos."
+    ],
+    "ejemplo": "try:\n    out = parse_json_schema(raw_response, InvoiceSchema)\nexcept ValidationError:\n    metrics.inc(\"ai.schema_error\")\n    out = retry_with_repair_prompt(raw_response, max_retries=1) or fallback_manual()",
+    "entrevista": "En producción con IA un HTTP 200 no significa éxito; monitoreo errores de esquema, fallos de retrieval en RAG y muestreo semántico continuo, y convierto cada incidente en un nuevo caso del golden dataset."
+  },
+  "Estrategia de IA en la empresa": {
+    "que": "La estrategia de IA en la empresa es el plan integral que alinea las inversiones en capacidades de IA, datos, arquitectura, talento y gobernanza con las ventajas competitivas y objetivos económicos reales del negocio a medio plazo.",
+    "para": "Evita el 'teatro de IA' (decenas de pruebas de concepto inconexas que no mueven la aguja) y concentra el capital en iniciativas defendibles, diferenciadoras y operables. Sirve de brújula para dirección, arquitectura, producto y compras.",
+    "como": "Se formula en cuatro decisiones clave: 1) Posicionamiento (qué comprar como commodity —copilotos estándar— frente a dónde construir diferenciación propia sobre datos y flujos exclusivos); 2) Apuestas de portfolio balanceadas (mejoras internas de eficiencia a corto plazo + capacidades diferenciales de producto a medio plazo); 3) Arquitectura agnóstica a un solo proveedor (abstracción vía AI Gateway y evaluación propia para evitar lock-in extremo); 4) Gobierno de datos, presupuesto y cumplimiento integrado en el ciclo estratégico anual.",
+    "practicas": [
+      "Comprar commodities (productividad general) y construir solo donde tus datos propios, distribución o integración de flujo crean ventaja defendible.",
+      "Error típico: basar la ventaja competitiva en un wrapper delgado sobre un modelo público que el propio proveedor absorberá en meses.",
+      "Invertir tanto en calidad de datos, APIs internas y evaluación propia como en los modelos.",
+      "Vincular cada iniciativa estratégica a métricas de negocio auditables y puntos claros de decisión 'seguir o parar' (kill criteria)."
+    ],
+    "ejemplo": "portfolio_estrategico:\n  comprar_saas: [\"copiloto_ofimatica\", \"copiloto_ide\"]\n  construir_diferencial: [\"asistente_diagnostico_con_telemetria_propia\"]\n  principio_arquitectura: \"gateway_multimodelo + evals_propios_anti_lockin\"",
+    "entrevista": "Una estrategia seria de IA distingue qué comprar como commodity y dónde construir con datos propietarios, respaldada por una capa de evaluación propia para no quedar atrapado en un único proveedor."
+  },
+  "Evaluación de madurez de IA": {
+    "que": "La evaluación de madurez de IA es el marco diagnóstico periódico que ubica a una organización en una escala evolutiva (por ejemplo, de nivel 1 Ad-hoc a nivel 5 Optimizado) a través de dimensiones de estrategia, datos, ingeniería LLMOps, talento y gobernanza.",
+    "para": "Proporciona una línea base objetiva para planificar inversiones realistas, comparar áreas internas y evitar saltos prematuros (como intentar operar agentes autónomos desde un nivel 1 sin gobierno de datos ni observabilidad).",
+    "como": "Se ejecuta combinando entrevistas técnicas, revisión de artefactos reales (repositorios, pipelines, políticas) y rúbricas observables por nivel: Nivel 1 (uso aislado/shadow AI); Nivel 2 (pilotos guiados con política de datos básica); Nivel 3 (producción repetible con AI Gateway, RAG con ACL y evals en CI); Nivel 4 (operación escalada con FinOps, monitorización de drift y métricas de impacto); Nivel 5 (mejora continua con flywheels de datos y automatización segura). El diagnóstico entrega brechas prioritarias para avanzar al siguiente peldaño.",
+    "practicas": [
+      "Basar la puntuación en evidencias verificables (¿tienen evals bloqueantes en CI? ¿tienen trazas con prompt hash?) y no en autopercepción optimista.",
+      "Error típico: intentar llegar al nivel máximo en todas las áreas a la vez en lugar de equilibrar los eslabones más débiles (normalmente datos y evaluación).",
+      "Repetir la evaluación cada 6-12 meses para medir progreso real del roadmap.",
+      "Adaptar la ambición de los casos de uso al nivel de madurez actual de ingeniería y cumplimiento."
+    ],
+    "ejemplo": "madurez_niveles:\n  nivel_1_adhoc: \"Uso individual sin politicas ni metricas\"\n  nivel_2_piloto: \"PoCs aisladas, evaluacion manual\"\n  nivel_3_repetible: \"Gateway comun, golden datasets en CI, ACLs\"\n  nivel_4_gestionado: \"Observabilidad semantica, FinOps y ROI medido\"",
+    "entrevista": "La evaluación de madurez evita saltos al vacío: audita evidencias en datos, evaluación en CI y gobernanza para saber qué nivel de autonomía en IA puede sostener la empresa hoy."
+  },
+  "Explicabilidad como criterio": {
+    "que": "La explicabilidad como criterio es el requisito arquitectónico de elegir modelos, representaciones y salidas que permitan justificar de manera comprensible y verificable por qué el sistema llegó a una recomendación o decisión antes de adoptarlo en un dominio.",
+    "para": "Es decisiva cuando la regulación exige derecho a la explicación, cuando los expertos humanos deben validar el resultado rápido o cuando el negocio necesita depurar sesgos. A veces obliga a preferir modelos lineales/árboles con SHAP o sistemas híbridos con citas sobre cajas negras opacas.",
+    "como": "Se aplica evaluando el nivel de transparencia requerido por el caso de uso: 1) Explicabilidad intrínseca (árboles de decisión, regresión logística, motores de reglas donde los coeficientes o ramas son directos); 2) Explicabilidad post-hoc en ML tabular (valores SHAP o LIME para atribución por variable); 3) Trazabilidad por evidencia en LLMs (grounded citations vinculadas a pasajes exactos, pasos intermedios estructurados sin confundir chain-of-thought con explicación fiel real). Si el sistema no cumple el estándar de explicabilidad exigido por auditoría o usuario, se descarta o restringe.",
+    "practicas": [
+      "No confundir una explicación narrada por un LLM (que puede ser racionalización plausible a posteriori) con explicabilidad causal fiel del modelo.",
+      "Error típico: sacrificar explicabilidad en scoring regulado por ganar un 0,5 % de AUC con un ensemble complejo imposible de justificar ante un regulador.",
+      "Exigir citas literales verificables contra la fuente en asistentes documentales (groundedness).",
+      "Ajustar el nivel de explicación al destinatario: detalle técnico para auditoría/ingeniería, razones accionables para el usuario final."
+    ],
+    "ejemplo": "# En scoring crediticio: preferir GBDT + SHAP sobre caja negra opaca\nimport shap\nexplainer = shap.TreeExplainer(model)\nshap_values = explainer(cliente_features)\n# Devuelve contribucion exacta por variable (ingresos, endeudamiento, mora)",
+    "entrevista": "En dominios regulados la explicabilidad es un requisito de diseño, no un extra: si un LLM solo racionaliza su respuesta y necesito atribución fiel, opto por modelos interpretables, SHAP o reglas auditables."
+  },
+  "Fallo silencioso de IA": {
+    "que": "Un fallo silencioso de IA ocurre cuando un sistema basado en modelos produce resultados degradados, sesgados, obsoletos o falsos sin lanzar excepciones, errores HTTP ni caídas de servicio, manteniendo la apariencia de operación normal.",
+    "para": "Es uno de los riesgos más peligrosos en producción porque erosiona decisiones de negocio, confianza del usuario o integridad de datos durante días o semanas antes de ser detectado. Requiere vigilancia específica más allá de la monitorización clásica de infraestructura.",
+    "como": "Suele originarse por cuatro causas: 1) Data o concept drift (cambia la distribución de entrada o el significado de los conceptos del negocio); 2) Degradación silenciosa de upstream (un parser de PDF empieza a entregar texto truncado o cambia el índice vectorial); 3) Cambios ocultos de pesos o guardrails en APIs de modelos no pineados; 4) Alucinaciones plausibles dentro de formato JSON válido. Se detecta mediante canaries sintéticos periódicos, monitoreo de distribuciones de entrada/salida, tasas de abstención, muestreo evaluado por jueces/humanos y métricas de negocio retardadas.",
+    "practicas": [
+      "Ejecutar sondas sintéticas periódicas (synthetic canaries) con respuestas conocidas para detectar regresiones tras cambios externos o de pipeline.",
+      "Error típico: validar solo que la respuesta cumple el JSON Schema y asumir que los valores dentro del JSON son correctos.",
+      "Monitorizar señales tempranas del pipeline upstream (longitud media de chunks recuperados, tasa de documentos vacíos en RAG).",
+      "Combinar validación estadística (PSI/KL divergence en embeddings o features) con revisión muestreada humana."
+    ],
+    "ejemplo": "# Monitorizacion anti-fallo silencioso en pipeline RAG\nassert len(retrieved_chunks) > 0, \"silent_rag_empty\"\nif avg_similarity_score < BASELINE_MIN_SIM:\n    alert(\"drift_o_indice_corrupto\", severity=\"high\")\n# Sonda horaria con 20 preguntas golden y aserciones semanticas",
+    "entrevista": "El mayor riesgo de la IA en producción no es un HTTP 500 sino el fallo silencioso: respuestas válidas en esquema pero falsas en contenido; por eso monitoreo calidad de retrieval, drift y sondas golden continuas."
+  },
+  "Fatiga de automatización": {
+    "que": "La fatiga de automatización (y el sesgo de automatización asociado) es el deterioro de la atención y capacidad crítica del operador humano tras revisar repetidamente salidas de IA mayoritariamente correctas, llevándolo a aprobar errores graves sin detectarlos ('rubber-stamping').",
+    "para": "Pone en riesgo la eficacia real de los controles Human-in-the-loop (HITL): si el revisor aprueba el 99 % de casos en piloto automático, el control humano deja de ser una barrera de seguridad real y se convierte en teatro de cumplimiento.",
+    "como": "Se produce por carga cognitiva repetitiva, baja tasa base de errores visibles y falta de señales visuales de incertidumbre: el cerebro optimiza esfuerzo confiando por defecto en la máquina (sesgo de automatización) o desatendiendo alertas frecuentes (fatiga de alertas). Se mitiga reduciendo el volumen de revisiones triviales mediante auto-aprobación con umbrales altos calibrados, reservando al humano los casos de alta incertidumbre o alto riesgo, rotando tareas, resaltando diferencias/campos críticos e inyectando controles de calidad ciegos.",
+    "practicas": [
+      "No enviar el 100 % de salidas triviales a revisión humana; escalar solo la banda incierta o de alto impacto para mantener alerta al revisor.",
+      "Error típico: diseñar pantallas donde aprobar toma 1 clic y corregir toma 10 pasos, incentivando aprobar todo por defecto.",
+      "Inyectar ocasionalmente casos de prueba conocidos (canary audits) para medir si los revisores realmente detectan errores.",
+      "Mostrar resúmenes comparativos con fuente resaltada en lugar de muros largos de texto generado."
+    ],
+    "ejemplo": "diseno_hitl_anti_fatiga:\n  auto_aprobar: \"confianza >= 0.97 y riesgo == 'bajo'\"  # quita ruido al humano\n  cola_humana: \"0.60 <= confianza < 0.97 o riesgo == 'alto'\"\n  ux_revision: \"resaltar campos con baja confianza + requerir motivo al aprobar excepciones\"",
+    "entrevista": "Un Human-in-the-loop que revisa mil casos fáciles al día sufre fatiga de automatización y acaba aprobando errores; para evitarlo, automatizo lo verificable y reservo al humano solo los casos inciertos o críticos."
+  },
+  "Formación en IA para equipos": {
+    "que": "La formación en IA para equipos es el plan técnico y práctico por roles (backend, frontend, datos, QA, producto, seguridad) para capacitar al personal en la construcción, evaluación, operación y uso seguro de sistemas con IA en sus flujos cotidianos.",
+    "para": "Cierra el déficit de habilidades prácticas cuando una organización pasa de experimentar con chats individuales a desarrollar software con componentes probabilísticos en producción. Reduce errores de arquitectura, brechas de seguridad y frustración por expectativas irreales.",
+    "como": "Se diseña por competencias específicas de rol: 1) Ingeniería de software (patrones de integración, salidas estructuradas, manejo de latencia/fallbacks, testing probabilístico y prevención de fugas en código asistido); 2) Datos y ML (diseño de golden datasets, evaluación de RAG, calibración, FinOps); 3) QA y Seguridad (evals adversarias, red teaming de prompt injection, validación de permisos); 4) Producto y Diseño (Task-AI fit, UX de incertidumbre y confianza calibrada). Se consolida con talleres prácticos sobre repositorios reales y pair programming.",
+    "practicas": [
+      "Formar con retos reales del código y datos de la empresa (con datos saneados), no solo con tutoriales genéricos de API.",
+      "Error típico: entrenar solo en herramientas de generación de código olvidando enseñar cómo revisar y probar ese código para evitar vulnerabilidades y bloat.",
+      "Incluir a QA, Seguridad y Producto en las sesiones para construir lenguaje común sobre evals y riesgos.",
+      "Medir transferencia a la práctica viendo si los nuevos PRs incorporan evaluaciones, manejo de errores y trazabilidad."
+    ],
+    "ejemplo": "plan_formacion_ingenieria:\n  semana_1: \"Evals y golden datasets antes de optimizar prompts\"\n  semana_2: \"RAG seguro con ACLs y prevencion de prompt injection\"\n  semana_3: \"Observabilidad, caching, model routing y fallbacks\"\n  practica: \"Migrar endpoint existente anadiendo evals en CI\"",
+    "entrevista": "Cuando formo a un equipo de ingeniería en IA, priorizo evaluación automatizada, seguridad en tool calling y revisión crítica de código asistido antes que trucos avanzados de prompting."
+  },
+  "Gestión del cambio con IA": {
+    "que": "La gestión del cambio con IA es el conjunto estructurado de acciones de comunicación, rediseño de procesos, incentivos y acompañamiento que permite a las personas y equipos adoptar nuevas formas de trabajar asistidas por IA sin resistencia oculta ni pérdida de calidad.",
+    "para": "Aborda el factor humano que hace fracasar implementaciones técnicamente sólidas: miedo al reemplazo, desconfianza en nuevas métricas, pérdida de autonomía o adopción desigual entre departamentos. Es crítica al introducir copilotos, automatizar flujos operativos o cambiar roles.",
+    "como": "Sigue un despliegue participativo en fases: 1) Transparencia sobre propósito y alcance (explicar qué tareas se automatizan, cómo evolucionan los roles y qué no cambia en responsabilidad); 2) Co-diseño con usuarios clave y early adopters que validan fricciones reales antes del lanzamiento general; 3) Rediseño explícito de flujos e incentivos (quitar métricas punitivas obsoletas y ajustar definiciones de hecho/calidad); 4) Canales seguros de feedback y soporte continuo durante los primeros meses para ajustar herramientas y formación.",
+    "practicas": [
+      "Involucrar desde el diseño a quienes ejecutan el trabajo diario; los flujos impuestos sin contexto suelen generar boicot pasivo o workarounds.",
+      "Error típico: anunciar la IA únicamente como recorte de plantilla mientras se pide a los equipos que la entrenen y adopten con entusiasmo.",
+      "Identificar y apoyar a 'champions' locales dentro de cada equipo en lugar de depender solo de comunicados corporativos.",
+      "Rediseñar también los procesos de revisión y responsabilidad (quién firma, qué se mide) cuando cambia la velocidad de producción."
+    ],
+    "ejemplo": "plan_cambio_adopcion:\n  audiencia: \"Equipo de soporte tecnico (80 personas)\"\n  paso_1_transparencia: \"Objetivo: eliminar copia/pega de resúmenes, no medir por volumen bruto\"\n  paso_2_cohorte_piloto: \"8 agentes senior co-diseñan plantillas y validan fallos 2 semanas\"\n  paso_3_ajuste_kpi: \"Pasar de tiempo por ticket a resolucion en primer contacto + CSAT\"",
+    "entrevista": "La gestión del cambio en IA fracasa cuando se impone la herramienta desde arriba o se mantienen métricas obsoletas; hay que co-diseñar el flujo con los usuarios reales y alinear los incentivos con la calidad."
+  }
+}

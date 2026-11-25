@@ -1,0 +1,392 @@
+{
+  "6LoWPAN": {
+    "que": "6LoWPAN (IPv6 over Low-Power Wireless Personal Area Networks) es un estándar del IETF (RFC 4944 y RFC 6282) que adapta el protocolo IPv6 para operar sobre redes inalámbricas de baja potencia y tramas pequeñas, como IEEE 802.15.4. Actúa como una capa de adaptación entre la capa de enlace y la capa de red IPv6.",
+    "para": "Resuelve la incompatibilidad entre el tamaño máximo de trama de IEEE 802.15.4 (127 bytes) y el requisito mínimo de MTU de IPv6 (1280 bytes). Se utiliza en sensores embebidos, domótica y redes malladas (como Thread) donde los nodos tienen restricciones estrictas de memoria, CPU y batería.",
+    "como": "La capa de adaptación de 6LoWPAN aplica compresión de cabeceras (IPHC/NHC) para reducir los 40 bytes de cabecera IPv6 y 8 bytes de UDP a unos pocos bytes utilizando contextos compartidos y prefijos conocidos. Cuando un datagrama excede la trama de enlace, lo fragmenta usando cabeceras FRAG1 y FRAGN con etiquetas de datagrama y desplazamientos. Además, soporta enrutamiento en malla bajo IP (mesh-under) o en capa de red (route-over, habitualmente con RPL). En seguridad, delega el cifrado de enlace a AES-128 en IEEE 802.15.4 y el de extremo a extremo a DTLS o IPsec sobre IPv6.",
+    "practicas": [
+      "Combinar el cifrado de capa de enlace (IEEE 802.15.4 AES-CCM) con cifrado de extremo a extremo (DTLS sobre UDP/CoAP) para proteger el tráfico tras cruzar el router de borde.",
+      "Proteger contra ataques de agotamiento de buffer por fragmentación aplicando límites de reensamblado y autenticación previa de nodos en el borde.",
+      "6LoWPAN vs Zigbee clásico: 6LoWPAN ofrece direccionamiento IPv6 nativo sin pasarelas de traducción de aplicación, facilitando la integración con arquitecturas estándar basadas en IP.",
+      "Deshabilitar el enrutamiento sin autenticación en redes RPL mediante modos de seguridad precompartidos o basados en certificados."
+    ],
+    "ejemplo": "# Captura lógica de compresión IPHC (RFC 6282)\n[802.15.4 Header (23B)] -> [IPHC Dispatch: 0x7A 0x11] -> [Compressed UDP] -> [CoAP Payload]\n# Router de borde Linux (wpan0 -> eth0) con radvd:\ninterface lowpan0 {\n  AdvSendAdvert on;\n  prefix fd00:db8:1::/64 { AdvOnLink on; AdvAutonomous on; };\n};",
+    "entrevista": "6LoWPAN permite llevar IPv6 nativo a redes IEEE 802.15.4 mediante compresión de cabeceras y fragmentación, aunque exige proteger tanto el router de borde como el reensamblado de fragmentos frente a denegación de servicio."
+  },
+  "Actualización OTA segura": {
+    "que": "La actualización OTA (Over-The-Air) segura es el mecanismo criptográfico y operativo que permite distribuir, verificar e instalar nuevo firmware o software de forma remota en dispositivos IoT y OT sin comprometer su integridad ni disponibilidad.",
+    "para": "Sirve para corregir vulnerabilidades críticas, rotar credenciales o añadir funciones en flotas desplegadas en campo donde el acceso físico es inviable o costoso. Previene que un atacante inyecte firmware malicioso, degrade la versión a una vulnerable (rollback) o deje el equipo inoperable (bricking).",
+    "como": "El servidor de actualizaciones publica un manifiesto firmado digitalmente (p. ej., bajo estándares como SUIT o TUF) que incluye metadatos de versión, hash SHA-256/512 de la imagen y un contador monotónico anti-rollback. El dispositivo descarga la imagen cifrada o sobre canal mutuo TLS (mTLS) hacia una partición secundaria inactiva (esquema A/B dual-bank). El gestor de arranque o agente OTA verifica la firma asimétrica (ECDSA/Ed25519) con la clave pública anclada en hardware antes de marcar la partición como candidata. Tras reiniciar, una prueba de salud confirma el arranque correcto; si falla o expira el watchdog, el sistema revierte automáticamente a la partición anterior.",
+    "practicas": [
+      "Implementar particionamiento A/B con rollback automático por watchdog para garantizar recuperación ante cortes eléctricos o imágenes corruptas.",
+      "Verificar siempre la firma digital sobre el binario completo y su manifiesto antes de escribir o ejecutar en la partición activa, nunca confiar solo en TLS de transporte.",
+      "Incluir protección anti-rollback mediante contadores monotónicos en memoria no volátil protegida (eFuses o TPM) para impedir la reinstalación de versiones vulnerables.",
+      "Desplegar actualizaciones por fases (canary rollouts) para contener posibles fallos funcionales antes de afectar a toda la flota."
+    ],
+    "ejemplo": "# Manifiesto lógico de actualización verificada (estilo SUIT/TUF)\n{\n  \"device_class\": \"sensor-gw-v2\",\n  \"sequence_number\": 42,\n  \"payload_sha256\": \"e3b0c44298fc1c149afbf4c8996fb924...\",\n  \"signature_alg\": \"ES256\",\n  \"signature\": \"MEUCIQDz...\"\n}",
+    "entrevista": "Una OTA segura exige firma criptográfica del manifiesto e imagen verificada en el dispositivo, contadores anti-rollback en hardware y particiones A/B con reversión automática ante fallos."
+  },
+  "Arranque seguro en IoT": {
+    "que": "El arranque seguro (Secure Boot) es una cadena de verificación criptográfica ejecutada desde el encendido del dispositivo que garantiza que únicamente firmware auténtico, íntegro y autorizado por el fabricante pueda ejecutarse.",
+    "para": "Evita la persistencia de malware a nivel de bootloader o kernel y bloquea la ejecución de código modificado por atacantes con acceso físico o mediante actualizaciones comprometidas. Es la base que sustenta la confianza en el resto del sistema operativo y las aplicaciones embebidas.",
+    "como": "El proceso comienza en una Root of Trust inmutable en máscara ROM (BootROM), que contiene o accede al hash de la clave pública del fabricante almacenado en eFuses programables una sola vez (OTP). La BootROM carga el bootloader de primera etapa (FSBL), calcula su hash y verifica su firma digital (RSA-PSS o ECDSA) antes de transferirle el control. Cada etapa posterior verifica criptográficamente a la siguiente (FSBL -> U-Boot/MCUboot -> Kernel/RTOS -> RootFS) formando una Cadena de Confianza (Chain of Trust). Si alguna verificación falla, el dispositivo detiene el arranque o entra en un modo de recuperación restringido.",
+    "practicas": [
+      "Almacenar el hash de la clave pública raíz en memoria OTP/eFuses y bloquear las interfaces de depuración (JTAG/SWD) en producción.",
+      "Diferenciar entre Secure Boot (verifica y bloquea código no firmado) y Measured Boot (registra hashes en un TPM para atestación remota).",
+      "Evitar almacenar claves privadas de firma en entornos de desarrollo sin HSM y separar claves de pruebas de las de producción.",
+      "Combinar arranque seguro con verificación de integridad del sistema de archivos raíz (dm-verity o equivalente) para no dejar hueco tras el kernel."
+    ],
+    "ejemplo": "# Flujo de Cadena de Confianza (Chain of Trust)\n[BootROM (inmutable)] --(verifica firma con hash en eFuse)--> [MCUboot / FSBL]\n[MCUboot / FSBL]     --(verifica firma ECDSA-P256)-------> [RTOS / Kernel]\n[Kernel]             --(verifica dm-verity root hash)----> [RootFS]",
+    "entrevista": "El arranque seguro construye una cadena de confianza desde una BootROM inmutable y eFuses OTP para asegurar que cada etapa del firmware valide criptográficamente a la siguiente antes de ejecutarse."
+  },
+  "Autenticación de dispositivo": {
+    "que": "La autenticación de dispositivo es el proceso criptográfico mediante el cual un dispositivo IoT/OT demuestra de manera verificable su identidad única ante un broker, gateway o plataforma en la nube, y opcionalmente autentica al servidor (autenticación mutua).",
+    "para": "Impide la suplantación de dispositivos (spoofing), la inyección de telemetría falsa y el acceso no autorizado de nodos maliciosos a la red o plataforma de gestión. Es imprescindible cuando se opera en redes no confiables o con miles de nodos autónomos.",
+    "como": "En esquemas robustos basados en mTLS, el servidor envía un desafío aleatorio durante el handshake TLS y el dispositivo firma el transcript usando su clave privada protegida en un elemento seguro (SE) o TPM. El servidor valida la firma usando la clave pública contenida en el certificado X.509 del dispositivo y comprueba su cadena de confianza hasta la CA emisora y su estado de revocación (CRL/OCSP). En dispositivos muy restringidos sin pila TLS completa, se emplean alternativas como claves simétricas únicas por dispositivo con HMAC/AES-CCM o tokens JWT firmados mediante clave asimétrica en hardware.",
+    "practicas": [
+      "Exigir autenticación mutua (mTLS) con credenciales únicas por dispositivo en lugar de contraseñas compartidas o claves maestras globales.",
+      "Mantener la clave privada dentro de un elemento seguro o TPM para que nunca sea extraíble en texto plano ni por el firmware de aplicación.",
+      "Evitar autenticar dispositivos únicamente por dirección MAC, número de serie o IMEI, ya que son triviales de falsificar.",
+      "Implementar rotación automática y revocación rápida de credenciales ante sospecha de compromiso físico o lógico."
+    ],
+    "ejemplo": "# Verificación mutua TLS con mosquitto / cliente IoT\nmosquitto_pub -h broker.iot.local -p 8883 \\\n  --cafile ca-chain.pem \\\n  --cert device-0142.crt \\\n  --key pkcs11:token=SE050;object=devkey \\\n  -t \"telemetry/0142\" -m '{\"temp\":22.4}'",
+    "entrevista": "La autenticación de dispositivo debe basarse en mTLS o protocolos de desafío-respuesta con claves únicas no exportables alojadas en elementos seguros, nunca en identificadores estáticos como MAC o credenciales compartidas."
+  },
+  "Botnet IoT": {
+    "que": "Una botnet IoT es una red de dispositivos conectados (cámaras IP, routers, grabadores DVR, sensores o pasarelas) comprometidos y controlados de forma coordinada por un operador remoto mediante infraestructura de mando y control (C2).",
+    "para": "Desde el punto de vista defensivo, comprender su arquitectura sirve para diseñar controles de endurecimiento, segmentación y detección temprana que eviten que los activos IoT sean reclutados para ataques DDoS masivos, proxies de tráfico ilícito o pivoteo hacia redes corporativas u OT.",
+    "como": "La formación de una botnet IoT sigue un ciclo de descubrimiento, compromiso y consolidación: escaneo automatizado de servicios expuestos (como Telnet, SSH o interfaces HTTP administrativas), acceso mediante credenciales por defecto o explotación de fallos conocidos en firmware desactualizado, y descarga de un binario adaptado a la arquitectura embebida (ARM, MIPS, x86). Una vez residente (en memoria o persistente en flash), el nodo se registra en servidores C2 o redes peer-to-peer a la espera de órdenes. Para mitigar este fenómeno, las arquitecturas seguras bloquean puertos administrativos en WAN, eliminan contraseñas preestablecidas y aíslan los segmentos IoT mediante firewalls con control de egreso.",
+    "practicas": [
+      "Deshabilitar servicios de administración inseguros (Telnet, HTTP plano) y bloquear el acceso directo desde Internet a dispositivos IoT.",
+      "Aplicar políticas de control de egreso (egress filtering) en la red IoT para detectar y bloquear tráfico saliente anómalo hacia puertos externos no autorizados.",
+      "Establecer un inventario continuo y mecanismos de actualización OTA firmada para cerrar vulnerabilidades de firmware conocidas.",
+      "Monitorizar picos de consultas DNS o flujos UDP/TCP repetitivos característicos de actividad coordinada."
+    ],
+    "ejemplo": "# Regla defensiva de aislamiento de egreso en firewall perimetral (conceptual)\n# Permitir a subred IoT solo tráfico DNS interno y MQTT TLS hacia el broker autorizado\niptables -A FORWARD -s 10.20.0.0/24 -d 10.10.5.10 -p tcp --dport 8883 -j ACCEPT\niptables -A FORWARD -s 10.20.0.0/24 -d 10.10.5.2 -p udp --dport 53 -j ACCEPT\niptables -A FORWARD -s 10.20.0.0/24 -j DROP",
+    "entrevista": "Las botnets IoT explotan credenciales por defecto, servicios expuestos y firmware sin parchear; la defensa efectiva combina eliminación de servicios heredados, credenciales únicas por dispositivo y filtrado estricto de egreso."
+  },
+  "CIS Controls para IoT": {
+    "que": "Los CIS Controls aplicados a IoT/OT son un conjunto priorizado de salvaguardas técnicas y operativas derivadas del marco Center for Internet Security (CIS Critical Security Controls) adaptadas a las limitaciones de dispositivos ciberfísicos y entornos embebidos.",
+    "para": "Proporcionan una hoja de ruta pragmática y medible para reducir la superficie de ataque en flotas IoT donde no siempre es posible instalar agentes EDR tradicionales, priorizando inventario, configuración segura, gestión de vulnerabilidades y segmentación de red.",
+    "como": "La adaptación se organiza en grupos de implementación (IG1 a IG3) ajustando cada control a las capacidades del hardware. En inventario y control de activos (Controles 1 y 2), se sustituye el escaneo activo intrusivo por descubrimiento pasivo de red y registro en plataforma IoT. En configuración segura y gestión de cuentas (Controles 4, 5 y 6), se exige rotación de contraseñas de fábrica, desactivación de interfaces físicas/lógicas innecesarias y autenticación basada en certificados. En monitorización y defensa de red (Controles 8, 12 y 13), se consolida la telemetría en SIEM/NDR mediante SPAN/TAP y se refuerza el aislamiento mediante VLANs y listas de control de acceso.",
+    "practicas": [
+      "Priorizar la higiene básica (IG1) antes de controles avanzados: inventario pasivo, eliminación de credenciales por defecto y segmentación de red.",
+      "Evitar escaneos activos agresivos (como Nmap completo) sobre dispositivos OT/IoT sensibles que puedan colapsar pilas TCP/IP embebidas.",
+      "Mapear los controles CIS con estándares sectoriales específicos como IEC 62443 o NISTIR 8259 para evitar duplicidad en auditorías.",
+      "Automatizar la verificación de cumplimiento de configuración mediante auditorías periódicas en gateways y brokers centrales."
+    ],
+    "ejemplo": "# Mapeo resumido CIS Controls -> Implementación IoT\n- Control 1 (Inventario): Descubrimiento pasivo DHCP/ARP/mDNS en gateway.\n- Control 4 (Configuración Segura): Deshabilitar Telnet/UPnP; habilitar Secure Boot.\n- Control 5 (Cuentas): Credenciales únicas en aprovisionamiento de fábrica.\n- Control 12 (Infraestructura de Red): VLAN dedicada con ACLs de denegación por defecto.",
+    "entrevista": "Adaptar los CIS Controls a IoT implica reemplazar controles basados en agente por descubrimiento pasivo, segmentación estricta de red, gestión de identidad en el aprovisionamiento y actualizaciones OTA verificadas."
+  },
+  "Cadena de suministro IoT": {
+    "que": "La seguridad de la cadena de suministro IoT abarca la protección de todos los componentes hardware, firmware, SDKs de terceros, herramientas de compilación, procesos de fabricación y canales de distribución que conforman un dispositivo conectado.",
+    "para": "Mitiga el riesgo de que vulnerabilidades heredadas (como librerías open-source obsoletas en un BSP), implantes hardware o compromisos en fábricas ODM/OEM afecten masivamente a todos los dispositivos producidos antes incluso de llegar al cliente.",
+    "como": "La gestión segura comienza exigiendo un SBOM (Software Bill of Materials) en formatos estándar como CycloneDX o SPDX generado en el pipeline de compilación para rastrear dependencias (FreeRTOS, OpenSSL, busybox, drivers propietarios). Durante la fabricación, el aprovisionamiento de identidades y claves criptográficas se realiza mediante HSM aislados en planta para limitar el volumen de certificados emitidos y evitar fugas de secretos. Además, se verifica la integridad de las imágenes enviadas a la línea de montaje mediante firmas digitales y se audita el hardware frente a componentes falsificados o puertos de depuración habilitados.",
+    "practicas": [
+      "Generar y mantener un SBOM actualizado por cada versión de firmware para identificar rápidamente exposición ante nuevos CVEs.",
+      "Aprovisionar certificados únicos en fábrica usando servicios de PKI controlados por HSM con cuotas estrictas por lote de producción.",
+      "Evaluar y restringir los BSP (Board Support Packages) de proveedores de silicio, que suelen incluir kernels antiguos sin parches de seguridad.",
+      "Verificar el diseño físico (PCB) en busca de componentes no autorizados o pines de depuración activos antes de aprobar producción en masa."
+    ],
+    "ejemplo": "# Generación de SBOM para imagen de firmware Linux embebido con Syft\nsyft dir:./build/rootfs -o cyclonedx-json=firmware-v1.4.sbom.json\n# Evaluación de vulnerabilidades sobre el SBOM generado\ngrype sbom:./firmware-v1.4.sbom.json --fail-on high",
+    "entrevista": "Asegurar la cadena de suministro IoT requiere mantener un SBOM completo del firmware y BSP, firmar artefactos de compilación y usar HSM con cuotas estrictas durante el aprovisionamiento en fábrica."
+  },
+  "Certificado de dispositivo": {
+    "que": "Un certificado de dispositivo es un documento digital estructurado (habitualmente bajo el estándar X.509) emitido por una Autoridad de Certificación (CA) que vincula criptográficamente la clave pública de un equipo IoT/OT con su identidad única y atributos operativos.",
+    "para": "Permite autenticar el dispositivo de forma escalable sin que el servidor tenga que almacenar secretos compartidos por cada nodo, habilitando además el cifrado de las comunicaciones y el control de acceso granular basado en atributos o roles.",
+    "como": "Durante la fabricación o el aprovisionamiento inicial (enrollment), el dispositivo genera un par de claves asimétricas (preferiblemente ECDSA P-256) dentro de su elemento seguro para que la clave privada nunca salga del chip. Envía una solicitud de firma (CSR) o sigue protocolos automatizados como EST (Enrollment over Secure Transport) o SCEP hacia una CA intermedia dedicada a la flota. La CA valida la autenticidad del fabricante (p. ej., vía certificado de nacimiento o IDevID según IEEE 802.1AR) y emite el certificado operativo (LDevID). En cada conexión, el dispositivo presenta este certificado y prueba posesión de la clave privada.",
+    "practicas": [
+      "Separar el certificado de identidad de fábrica (IDevID, larga duración) del certificado operativo local (LDevID, rotación periódica).",
+      "Incluir el identificador único del dispositivo en el campo Subject Alternative Name (SAN) o Common Name (CN) para evitar ambigüedades en políticas de autorización.",
+      "Usar criptografía de curva elíptica (ECDSA P-256) en lugar de RSA-2048/4096 en dispositivos embebidos para reducir latencia de handshake, memoria y consumo energético.",
+      "Planificar desde el diseño la renovación automatizada antes de la caducidad y los mecanismos de revocación cuando el dispositivo no tenga acceso directo a Internet."
+    ],
+    "ejemplo": "# Inspección de campos clave de un certificado IoT X.509\nopenssl x509 -in device-cert.pem -noout -text | grep -E \"Subject:|Issuer:|Public Key Algorithm|Not After\"\n# Salida esperada:\n# Issuer: CN=Corp IoT Issuing CA 01\n# Subject: CN=urn:dev:mac:001122334455\n# Public Key Algorithm: id-ecPublicKey (prime256v1)",
+    "entrevista": "Un certificado de dispositivo vincula una clave pública generada en hardware seguro con una identidad única, permitiendo autenticar flotas enteras mediante PKI sin secretos compartidos en la nube."
+  },
+  "Ciclo de vida del dispositivo IoT": {
+    "que": "El ciclo de vida del dispositivo IoT describe las fases secuenciales por las que atraviesa un activo conectado desde su diseño y fabricación hasta su aprovisionamiento, operación, mantenimiento y retirada segura (decommissioning).",
+    "para": "Sirve para garantizar que los controles de seguridad no se limiten al desarrollo inicial, sino que acompañen al dispositivo durante años en campo, previniendo fugas de datos al desechar equipos o la pérdida de control sobre flotas obsoletas.",
+    "como": "Comienza en la fase de diseño y fabricación, donde se establece la raíz de confianza y se graba la identidad inicial. En el aprovisionamiento (onboarding), el equipo se registra en la plataforma destino, obtiene credenciales operativas y configura sus políticas. Durante la operación y mantenimiento, transmite telemetría cifrada, recibe parches OTA y rota certificados periódicamente. Finalmente, en el desmantelamiento o transferencia de propiedad (end-of-life/decommissioning), se revocan sus certificados en la PKI, se eliminan las claves de sesión y se ejecuta un borrado criptográfico o físico (zeroization) de los datos sensibles almacenados en flash o elemento seguro.",
+    "practicas": [
+      "Definir fechas claras de fin de soporte (EoS) y comunicar al usuario las implicaciones cuando cesen las actualizaciones de seguridad.",
+      "Automatizar el proceso de revocación de credenciales y baja lógica en el broker/cloud durante la retirada o reemplazo por RMA.",
+      "Implementar borrado seguro (crypto-shredding destruyendo la clave de cifrado de almacenamiento) antes de revender o reciclar dispositivos.",
+      "Diseñar procesos de transferencia de propiedad limpios para dispositivos de consumo o industriales reacondicionados."
+    ],
+    "ejemplo": "# Fases de seguridad en el ciclo de vida (NISTIR 8259 / EN 303 645)\n1. Diseño & Fabricación  -> Threat Modeling + Root of Trust + IDevID\n2. Aprovisionamiento     -> Zero-Touch Onboarding + LDevID\n3. Operación             -> mTLS + Monitorización + OTA firmada\n4. Retirada (EoL)        -> Revocación PKI + Zeroization de claves",
+    "entrevista": "La seguridad del ciclo de vida IoT cubre desde el aprovisionamiento criptográfico en fábrica y las actualizaciones OTA en operación hasta la revocación de certificados y borrado seguro en la retirada."
+  },
+  "Comunicación sin cifrar en IoT": {
+    "que": "La comunicación sin cifrar en IoT ocurre cuando dispositivos, gateways o aplicaciones de control intercambian telemetría, credenciales o comandos en texto plano mediante protocolos como HTTP, Telnet, MQTT sin TLS, CoAP sin DTLS o protocolos de radio sin cifrado de capa de enlace.",
+    "para": "Identificar y remediar este fallo evita la interceptación pasiva (eavesdropping) de información sensible, el robo de credenciales en tránsito y la manipulación activa (MitM) de lecturas de sensores o comandos hacia actuadores.",
+    "como": "Sin cifrado ni integridad criptográfica, cualquier actor en la misma subred física, enlace inalámbrico o ruta de red intermedia puede capturar paquetes con herramientas de análisis de tráfico o inyectar tramas alteradas. En protocolos industriales o IoT ligeros, esto suele originarse por limitaciones históricas de CPU/RAM en microcontroladores de 8 o 16 bits o por configuraciones por defecto donde TLS/DTLS viene deshabilitado para simplificar pruebas. La mitigación implica habilitar TLS 1.2/1.3, DTLS o cifrado autenticado en capa de aplicación (como OSCORE para CoAP) y restringir las comunicaciones heredadas sin cifrar mediante túneles IPsec o pasarelas aisladas.",
+    "practicas": [
+      "Habilitar TLS 1.2/1.3 (con cifrados AEAD como AES-GCM o ChaCha20-Poly1305) o DTLS en todos los enlaces IP.",
+      "En dispositivos extremadamente restringidos, usar OSCORE (RFC 8613) sobre CoAP para proteger la carga útil extremo a extremo incluso a través de proxies.",
+      "Para equipos OT heredados incapaces de soportar cifrado nativo, encapsular su tráfico en túneles IPsec/MACsec entre gateways de seguridad adyacentes.",
+      "Validar certificados del servidor en el cliente IoT (evitar flags como insecure/skip-verify en producción)."
+    ],
+    "ejemplo": "# Verificación defensiva de que un broker rechaza conexiones en texto plano (puerto 1883)\n# Configuración segura en mosquitto.conf:\nlistener 8883\ncafile /etc/mosquitto/certs/ca.crt\ncertfile /etc/mosquitto/certs/server.crt\nkeyfile /etc/mosquitto/certs/server.key\nrequire_certificate true",
+    "entrevista": "Transmitir telemetría o comandos IoT sin cifrado expone credenciales y permite manipulación en tránsito; debe corregirse con TLS/DTLS, OSCORE o encapsulación en gateways aislados para hardware heredado."
+  },
+  "Contraseña débil en IoT": {
+    "que": "Una contraseña débil en IoT consiste en el uso de credenciales cortas, predecibles, comunes de diccionario o generadas con algoritmos deterministas fáciles de revertir para proteger interfaces web, SSH, Telnet, brokers MQTT o puntos de acceso Wi-Fi de dispositivos conectados.",
+    "para": "Eliminar este riesgo evita el acceso no autorizado automatizado, la toma de control de dispositivos de borde y su incorporación a botnets o uso como punto de pivote dentro de redes domésticas o corporativas.",
+    "como": "Cuando un dispositivo expone interfaces de gestión con contraseñas de baja entropía o derivadas de atributos públicos (como la dirección MAC o el número de serie), los atacantes pueden deducirlas o probarlas mediante ataques de fuerza bruta o diccionario distribuido. Además, muchos sistemas embebidos carecen de bloqueo de cuenta (rate limiting) o registro de intentos fallidos por falta de memoria. La defensa técnica requiere generar contraseñas únicas de alta entropía en fábrica (o eliminar contraseñas en favor de claves criptográficas/certificados), aplicar funciones de derivación costosas (Argon2/PBKDF2) en el almacenamiento local y limitar los intentos de autenticación.",
+    "practicas": [
+      "Prohibir contraseñas universales o derivadas de datos públicos como el número de serie o MAC (cumpliendo normativas como ETSI EN 303 645 y SB-327).",
+      "Forzar el cambio de contraseña inicial en el primer uso o utilizar emparejamiento físico (botón/QR con secreto aleatorio por unidad).",
+      "Implementar retardos exponenciales (exponential backoff) o bloqueo temporal tras múltiples intentos fallidos de inicio de sesión.",
+      "Migrar la autenticación máquina-a-máquina de usuario/contraseña hacia certificados X.509 o tokens asimétricos."
+    ],
+    "ejemplo": "# Política recomendada de almacenamiento de credenciales en gateway Linux embebido\n# /etc/pam.d/common-password (usando yescrypt/sha512 con rondas y pam_faillock)\npassword required pam_unix.so yescrypt\nauth required pam_faillock.so preauth silent deny=5 unlock_time=900",
+    "entrevista": "Las contraseñas débiles o derivables en IoT facilitan el compromiso masivo; deben sustituirse por secretos únicos de alta entropía generados en fábrica, rate limiting y transición hacia autenticación por certificados."
+  },
+  "Convergencia IT OT": {
+    "que": "La convergencia IT/OT es la integración arquitectónica, operativa y de red entre los sistemas de Tecnologías de la Información (IT: servidores, nube, ERP, correo) y las Tecnologías de Operación (OT: PLCs, SCADA, sensores industriales y líneas de producción).",
+    "para": "Permite habilitar analítica predictiva, telemetría en tiempo real hacia la nube (IIoT) y gestión centralizada, pero exige controles de ciberseguridad estrictos porque expone redes industriales históricamente aisladas (air-gapped) a amenazas originadas en entornos corporativos o Internet.",
+    "como": "En una arquitectura convergente segura, no se conectan directamente las subredes corporativas con los controladores de planta, sino que se interpone una Zona Desmilitarizada Industrial (IDMZ) siguiendo el modelo de Purdue. Los datos de proceso suben mediante agentes unidireccionales, data diodes o brokers replicadores (como OPC UA o MQTT en espejo) alojados en la IDMZ, sin que el entorno IT pueda iniciar sesiones hacia el nivel de control. Al mismo tiempo, se unifica la visibilidad en el SOC enviando logs y telemetría pasiva de red OT hacia el SIEM corporativo para correlacionar incidentes sin afectar el determinismo ni la latencia de la planta.",
+    "practicas": [
+      "Nunca permitir enrutamiento directo entre la red IT y los niveles de control OT; utilizar siempre una IDMZ con salto de protocolo o proxy inverso.",
+      "Priorizar la tríada de seguridad adaptada a OT: Disponibilidad e Integridad física (seguridad funcional/safety) por encima de la Confidencialidad.",
+      "Evitar aplicar parches IT automatizados o reinicios forzados en activos OT sin ventanas de mantenimiento aprobadas.",
+      "Establecer gobernanza conjunta entre CISO, ingeniería de planta y operaciones para responder coordinadamente ante incidentes."
+    ],
+    "ejemplo": "# Flujo arquitectónico seguro de convergencia IT/OT\n[PLCs / SCADA (Nivel 1-2)] --> [Historiador OT (Nivel 3)] --> [IDMZ (Nivel 3.5: Broker/Proxy)] --> [Data Lake / ERP IT (Nivel 4-5)]\n# Regla clave: IT solo consulta réplicas en IDMZ; nunca inicia conexiones TCP hacia Niveles 1-3.",
+    "entrevista": "La convergencia IT/OT aporta eficiencia operativa pero elimina el aislamiento físico; requiere una IDMZ estricta, flujos controlados de datos y respeto absoluto por la disponibilidad y seguridad física de planta."
+  },
+  "Credenciales por defecto en IoT": {
+    "que": "Las credenciales por defecto en IoT son combinaciones estáticas y preconfiguradas de usuario y contraseña integradas de fábrica en el firmware de un modelo o línea completa de dispositivos (por ejemplo, cuentas administrativas codificadas en duro o idénticas en todas las unidades).",
+    "para": "Erradicarlas previene que cualquier actor pueda acceder inmediatamente a interfaces administrativas, shells de depuración o APIs locales de miles de dispositivos idénticos simplemente consultando manuales públicos o bases de datos de fabricantes.",
+    "como": "Durante la fabricación, muchos proveedores graban una única imagen maestra de firmware en todos los equipos que incluye cuentas privilegiadas en `/etc/passwd` o en código binario sin obligar a cambiarlas en el primer arranque. Si el dispositivo expone puertos como Telnet, SSH, HTTP o RTSP, herramientas automatizadas prueban listas breves de combinaciones conocidas para obtener acceso root o administrativo inmediato. La remediación en diseño consiste en eliminar cuentas codificadas en duro (hardcoded), generar credenciales únicas por unidad en planta e inyectarlas en particiones de configuración protegidas.",
+    "practicas": [
+      "Cumplir normativas como ETSI EN 303 645 y la ley de California SB-327, que prohíben explícitamente contraseñas predeterminadas universales en dispositivos conectados.",
+      "Generar una contraseña aleatoria única por dispositivo durante el aprovisionamiento de fábrica, impresa en etiqueta física o vinculada por QR.",
+      "Eliminar cuentas de servicio ocultas o de mantenimiento del fabricante (backdoor accounts) antes de compilar imágenes de producción.",
+      "Auditar los binarios de firmware en el pipeline CI/CD buscando secretos estáticos o hashes de cuentas predefinidas."
+    ],
+    "ejemplo": "# Comprobación defensiva en pipeline de build de firmware (Yocto/Buildroot)\n# Verificar que no existan contraseñas estáticas ni usuarios de prueba en /etc/shadow\ngrep -E '^root:[^!*]' ./rootfs/etc/shadow && echo \"ERROR: root password set in image\" && exit 1",
+    "entrevista": "Las credenciales por defecto compartidas entre modelos enteros son la causa principal de compromisos masivos en IoT; deben eliminarse en diseño mediante secretos únicos por dispositivo y auditoría de imágenes en CI/CD."
+  },
+  "DCS": {
+    "que": "Un DCS (Distributed Control System o Sistema de Control Distribuido) es una arquitectura de automatización industrial donde los controladores autónomos están distribuidos físicamente por toda la planta y coordinados mediante redes deterministas para gestionar procesos continuos complejos.",
+    "para": "Se emplea en industrias de proceso continuo de alto riesgo y alta criticidad (refinerías, plantas químicas, generación eléctrica, farmacéutica) donde la caída de un nodo central paralizaría la producción o causaría incidentes de seguridad física (safety).",
+    "como": "A diferencia de una arquitectura centralizada, un DCS distribuye múltiples controladores dedicados a lazos de control locales (temperatura, presión, flujo) enlazados mediante buses de red redundantes (como Ethernet industrial redundante o buses de campo) hacia estaciones de ingeniería, servidores de históricos y consolas de operación (HMI). Cada controlador ejecuta su lógica en tiempo real de manera autónoma incluso si pierde temporalmente contacto con las consolas superiores. Desde el punto de vista de ciberseguridad, su naturaleza distribuida y la interdependencia entre estaciones de ingeniería y controladores hacen crítica la segmentación de red y el control estricto de cambios en la lógica.",
+    "practicas": [
+      "Aislar la estación de ingeniería del DCS (Engineering Workstation), ya que desde ella se reprograman todos los controladores distribuidos.",
+      "Implementar redundancia de red y monitoreo pasivo sin introducir latencia ni paquetes activos en el bus de control determinista.",
+      "DCS vs SCADA: el DCS prioriza el control de procesos continuos locales y cerrados con alta integración nativa, mientras SCADA supervisa activos dispersos geográficamente.",
+      "Restringir el uso de medios extraíbles (USB) y aplicar listas blancas de aplicaciones (application allowlisting) en consolas operativas basadas en Windows."
+    ],
+    "ejemplo": "# Jerarquía típica de un DCS protegido en niveles Purdue\nNivel 0: Válvulas y transmisores 4-20mA / HART\nNivel 1: Controladores DCS redundantes (lazos PID continuos)\nNivel 2: Estaciones de operador (HMI) y Estación de Ingeniería (en VLAN controlada)\nNivel 3: Servidor de históricos y gestión de lotes",
+    "entrevista": "Un DCS distribuye el control en tiempo real en procesos industriales continuos; protegerlo exige blindar la estación de ingeniería, segmentar los buses de control y usar allowlisting en consolas sin afectar el determinismo."
+  },
+  "DNP3": {
+    "que": "DNP3 (Distributed Network Protocol 3) es un protocolo de comunicación estándar (IEEE 1815) diseñado originalmente para sistemas SCADA en sectores como energía eléctrica, agua y gas, orientado a la transmisión fiable de telemetría y comandos entre estaciones maestras y unidades remotas (RTU/IED).",
+    "para": "Permite recolectar eventos con marca de tiempo, soportar enlaces intermitentes o de bajo ancho de banda y ejecutar operaciones críticas de control (como apertura/cierre de interruptores eléctricos) con confirmaciones de doble paso (Select-Before-Operate).",
+    "como": "DNP3 utiliza una arquitectura de tres capas simplificada (Enlace, Transporte y Aplicación) capaz de operar tanto sobre enlaces serie (RS-232/RS-485) como encapsulado sobre TCP/IP (puerto 20000). En su diseño original carecía de autenticación y cifrado, lo que permitía a cualquiera en la red inyectar comandos de control no autorizados. Para remediarlo, la especificación introdujo DNP3 Secure Authentication (DNP3-SA, actualmente en su versión SAv5/SAv6), que añade autenticación de mensajes mediante desafío-respuesta con HMAC-SHA-256 sobre comandos críticos (como escritura o reinicio) sin requerir necesariamente cambiar el transporte.",
+    "practicas": [
+      "Habilitar DNP3 Secure Authentication (SAv5 o superior) con claves asimétricas o rotación segura para autenticar comandos críticos entre Master y Outstation.",
+      "Encapsular DNP3 sobre TLS 1.2/1.3 cuando opere sobre redes IP para aportar confidencialidad además de integridad.",
+      "Configurar firewalls con inspección profunda de paquetes (DPI) específica para DNP3 que bloqueen códigos de función peligrosos (ej. Cold Restart, Write) desde orígenes no autorizados.",
+      "Mantener el flujo Select-Before-Operate (SBO) en actuadores críticos como salvaguarda operativa adicional."
+    ],
+    "ejemplo": "# Regla conceptual de firewall industrial DPI para DNP3 (puerto TCP 20000)\nALLOW src=SCADA_Master_IP dst=RTU_Subnet proto=TCP dport=20000 \\\n  dnp3_function_codes=[READ(0x01), SELECT(0x03), OPERATE(0x04)]\nDENY  dnp3_function_codes=[COLD_RESTART(0x0D), STOP_APP(0x12)]",
+    "entrevista": "DNP3 es clave en redes eléctricas y de agua, pero en su versión base carece de seguridad; debe protegerse habilitando DNP3 Secure Authentication, encapsulando en TLS sobre IP y filtrando códigos de función mediante DPI."
+  },
+  "DTLS": {
+    "que": "DTLS (Datagram Transport Layer Security, RFC 6347 para 1.2 y RFC 9147 para 1.3) es la adaptación del protocolo TLS diseñada para proteger comunicaciones basadas en datagramas no fiables como UDP, garantizando confidencialidad, integridad y autenticación.",
+    "para": "Se utiliza en protocolos IoT ligeros como CoAP (CoAPs), LwM2M y comunicaciones en tiempo real donde la sobrecarga de establecer sesiones TCP o el bloqueo por orden estricto (head-of-line blocking) perjudicarían el rendimiento y la vida útil de la batería.",
+    "como": "Dado que UDP no garantiza entrega ni orden de paquetes, DTLS añade a las cabeceras de registro números de secuencia explícitos, identificadores de época (epoch) y ventanas deslizantes (anti-replay) para descartar datagramas duplicados o antiguos. Durante el handshake inicial, incluye un mecanismo obligatorio de intercambio de cookies (HelloVerifyRequest en 1.2 o cookie en 1.3) para verificar la dirección origen del cliente y mitigar ataques de amplificación DDoS. Además, incorpora temporizadores de retransmisión y fragmentación de mensajes de handshake para adaptarse a enlaces con pérdida de paquetes y MTUs reducidas, soportando suites optimizadas para IoT como PSK o ECDSA con AES-CCM.",
+    "practicas": [
+      "Adoptar DTLS 1.3 (RFC 9147) cuando el hardware lo permita, ya que reduce la latencia del handshake, elimina cifrados débiles y añade Connection ID (CID).",
+      "Utilizar DTLS Connection ID (CID) en dispositivos móviles o con NAT dinámico para mantener la sesión segura aunque cambie la IP o puerto de origen.",
+      "Activar siempre el intercambio de cookies en el servidor DTLS para evitar que el dispositivo o gateway sea usado como reflector DDoS.",
+      "DTLS vs TLS: elegir DTLS sobre UDP cuando se requiera menor consumo de memoria y tolerancia a latencia intermitente en sensores."
+    ],
+    "ejemplo": "# Prueba de conexión CoAP sobre DTLS usando libcoap (coap-client) con certificados\ncoap-client -m get -C ca.pem -c client.pem -k client.key \\\n  \"coaps://[fd00::1]:5684/sensors/temp\"",
+    "entrevista": "DTLS traslada las garantías de TLS a transporte por datagramas UDP añadiendo números de secuencia explícitos, ventana anti-replay y cookies anti-amplificación, siendo esencial para CoAP y LwM2M."
+  },
+  "Detección de anomalías en OT": {
+    "que": "La detección de anomalías en OT es la monitorización pasiva del tráfico de red industrial y comportamiento de activos para identificar desviaciones respecto a la línea base determinista esperada, ya sean ciberataques, errores humanos o fallos de proceso.",
+    "para": "Permite detectar intrusiones en fases tempranas (como reconocimiento de PLCs, descarga no autorizada de lógica o comandos fuera de horario) sin instalar software invasivo en controladores propietarios ni interferir en la operación en tiempo real.",
+    "como": "Sensores de red conectados mediante puertos SPAN o TAPs ópticos pasivos capturan una copia exacta del tráfico industrial entre los niveles 1, 2 y 3 del modelo de Purdue. Un motor de análisis realiza inspección profunda de protocolos industriales (Modbus, S7comm, DNP3, OPC UA, PROFINET) para construir un inventario automático de activos y aprender patrones estables de comunicación (qué HMI habla con qué PLC, qué registros lee y con qué frecuencia). Cuando detecta una conexión nueva, un comando de escritura inesperado, cambios en el estado de ejecución del PLC o tráfico TCP anómalo, genera una alerta contextualizada hacia el SOC o consola OT.",
+    "practicas": [
+      "Desplegar sensores estrictamente pasivos (TAPs físicos o puertos SPAN unidireccionales) para garantizar que un fallo del monitor no interrumpa la red de planta.",
+      "Definir un periodo de aprendizaje (baselining) representativo que incluya ciclos de mantenimiento y cambios de turno para minimizar falsos positivos.",
+      "Integrar las alertas OT con el SIEM corporativo pero manteniendo guías de respuesta (playbooks) específicas que involucren a los ingenieros de planta.",
+      "No depender solo de firmas estáticas; combinar reglas de comportamiento determinista con detección de cambios de configuración en controladores."
+    ],
+    "ejemplo": "# Regla lógica de detección de anomalía en protocolo industrial (Modbus TCP)\nEVENTO: Petición Function Code 0x06 (Write Single Register) o 0x10 (Write Multiple)\nCONDICIÓN: src_ip NOT IN [HMI_Master_01, Eng_Workstation_01] OR horario == \"mantenimiento_no_programado\"\nACCIÓN: Alerta crítica SOC/OT -> Posible modificación no autorizada de consigna PLC.",
+    "entrevista": "La detección de anomalías en OT aprovecha la naturaleza determinista de las redes industriales mediante captura pasiva (TAP/SPAN) e inspección profunda de protocolos para alertar sobre comandos o enlaces fuera de la línea base."
+  },
+  "Detección de manipulación": {
+    "que": "La detección de manipulación (Tamper Detection) comprende mecanismos físicos y lógicos integrados en dispositivos IoT/OT para advertir cuando un actor intenta abrir el chasis, alterar sensores, inyectar fallos eléctricos o modificar componentes internos sin autorización.",
+    "para": "Protege dispositivos desplegados en ubicaciones físicas no supervisadas (contadores inteligentes, terminales de pago, nodos en campo o vehículos) frente a extracción de secretos de memoria, derivación de sensores o reemplazo malicioso de placas.",
+    "como": "A nivel físico, incluye microinterruptores en la carcasa, mallas conductoras activas (tamper mesh) impresas en el encapsulado y sensores ambientales que vigilan variaciones anómalas de voltaje, frecuencia de reloj o temperatura (ataques de inyección de fallos o glitching). Estas señales conectan directamente con un módulo supervisor siempre alimentado (por batería auxiliar) en el elemento seguro o SoC. Al dispararse una alerta de manipulación, el sistema puede registrar un evento inmutable de auditoría, bloquear el arranque o ejecutar una respuesta activa (Tamper Response) borrando de inmediato las claves criptográficas de la SRAM protegida.",
+    "practicas": [
+      "Conectar los sensores de apertura física a pines dedicados de un elemento seguro o MCU con capacidad de zeroization instantánea de claves.",
+      "Proteger las líneas de bus internas (SPI/I2C entre MCU y memoria flash) mediante cifrado en tiempo real o encapsulado epóxico si hay alto riesgo físico.",
+      "Distinguir entre detección pasiva (solo registra el evento para auditoría o mantenimiento) y respuesta activa (borra secretos y deshabilita el equipo) según el riesgo operativo.",
+      "Monitorizar también la coherencia física de lecturas de sensores (detección de manipulación lógica o spoofing ambiental, como imanes en contadores)."
+    ],
+    "ejemplo": "# Flujo lógico de respuesta ante evento de manipulación física (Tamper IRQ)\nvoid on_tamper_interrupt(tamper_source_t src) {\n    secure_element_zeroize_keys();     // Borrado inmediato de claves privadas\n    nvm_write_audit_flag(TAMPER_FLAG); // Registro persistente del incidente\n    system_halt_safe_state();          // Bloqueo hasta reacondicionamiento autorizado\n}",
+    "entrevista": "La detección de manipulación combina sensores físicos y ambientales conectados a hardware seguro para registrar intentos de intrusión física y ejecutar el borrado inmediato de claves críticas (zeroization)."
+  },
+  "Dispositivo shadow": {
+    "que": "Un dispositivo shadow (o Shadow IoT / Rogue IoT) es cualquier equipo conectado a la red corporativa o industrial —como impresoras inteligentes, asistentes de voz, termostatos, adaptadores Wi-Fi personales o gateways celulares ocultos— instalado sin conocimiento, aprobación ni gestión de TI o ciberseguridad.",
+    "para": "Identificar y controlar dispositivos shadow elimina puntos ciegos críticos que escapan a las políticas de parcheo, inventario y segmentación, evitando que equipos de consumo con seguridad deficiente sirvan como puerta trasera hacia redes internas.",
+    "como": "Estos dispositivos suelen entrar conectados por empleados a puertos Ethernet libres, redes Wi-Fi internas o mediante módems LTE/5G propios que crean puentes clandestinos (dual-homed) saltándose el firewall perimetral. Al no contar con agentes corporativos, operan de forma invisible para la gestión tradicional de endpoints. Su detección requiere combinar control de acceso a la red (NAC 802.1X), análisis pasivo de huellas DHCP/OUI/TLS (fingerprinting) en switches y puntos de acceso, y escaneos de espectro inalámbrico para localizar puntos de acceso no autorizados.",
+    "practicas": [
+      "Implementar Control de Acceso a Red (NAC) basado en IEEE 802.1X y autenticación por MAC (MAB) restringida en puertos de acceso para bloquear conexiones desconocidas.",
+      "Deshabilitar puertos de switch no utilizados físicamente y asignar puertos de invitados o dispositivos no gestionados a una VLAN de cuarentena sin acceso interno.",
+      "Usar descubrimiento pasivo en red (análisis de banners, User-Agent, JA3/JA4 TLS y OUI) para clasificar automáticamente nuevos activos.",
+      "Prohibir e inspeccionar la presencia de routers portátiles o gateways celulares conectados en paralelo a redes OT críticas."
+    ],
+    "ejemplo": "# Política de switch de acceso para contener dispositivos Shadow (estilo Cisco IOS)\ninterface GigabitEthernet1/0/12\n switchport mode access\n authentication port-control auto\n dot1x pae authenticator\n authentication event no-response action authorize vlan 999  ! VLAN cuarentena/invitados",
+    "entrevista": "Un dispositivo shadow es un activo IoT no autorizado conectado a la red sin visibilidad ni controles; se mitiga combinando NAC con 802.1X, deshabilitación de puertos libres, descubrimiento pasivo y VLANs de cuarentena."
+  },
+  "Entorno de ejecución confiable": {
+    "que": "Un Entorno de Ejecución Confiable (TEE, Trusted Execution Environment) es una zona de procesamiento aislada por hardware dentro del procesador principal (como ARM TrustZone o RISC-V PMP/Keystone) que se ejecuta en paralelo al sistema operativo normal garantizando confidencialidad e integridad para código y datos sensibles.",
+    "para": "Sirve para proteger operaciones críticas —gestión de claves criptográficas, verificación de identidad, DRM o procesamiento seguro de credenciales— frente a vulnerabilidades o compromiso total del sistema operativo enriquecido (Rich OS, como Linux o Android).",
+    "como": "El procesador divide sus recursos (CPU, memoria RAM, cachés e interrupciones) en dos mundos aislados por hardware: el Normal World (donde corre el Rich OS y aplicaciones convencionales) y el Secure World (donde corre un microkernel confiable como OP-TEE). Un bit de estado a nivel de bus de hardware (p. ej. el bit NS en buses ARM AMBA AXI) impide que el código del Normal World lea o modifique páginas de memoria asignadas al Secure World. La transición entre ambos mundos solo ocurre a través de instrucciones privilegiadas controladas (Secure Monitor Call, SMC) gestionadas por un monitor seguro que valida parámetros antes de ejecutar Aplicaciones Confiables (Trusted Applications).",
+    "practicas": [
+      "Mantener el código que reside dentro del Secure World (TCB - Trusted Computing Base) lo más pequeño y auditado posible para reducir su propia superficie de ataque.",
+      "Validar rigurosamente todos los punteros y tamaños de buffer pasados desde el Normal World vía SMC para evitar ataques de escritura arbitraria (boomerang).",
+      "TEE vs Elemento Seguro (SE): el TEE protege contra ataques de software con alto rendimiento, pero un SE externo ofrece mayor resistencia frente a ataques físicos de canal lateral.",
+      "Integrar las APIs de criptografía del Rich OS (como PKCS#11) respaldadas por el TEE para que las aplicaciones nunca vean las claves en claro."
+    ],
+    "ejemplo": "# Arquitectura lógica ARM TrustZone en IoT Edge\n+--------------------------+   SMC   +---------------------------+\n| Normal World (NS=1)      | ------> | Secure Monitor (EL3)      |\n| Linux / App IoT / MQTT   |         +---------------------------+\n| (Sin acceso a claves)    | <------ | Secure World (NS=0)       |\n+--------------------------+         | OP-TEE + Keystore TA      |\n                                     +---------------------------+",
+    "entrevista": "Un TEE aísla por hardware código y claves sensibles en un mundo seguro separado del sistema operativo principal, mitigando el robo de secretos aunque el kernel Linux o RTOS convencional resulte comprometido."
+  },
+  "Firma de firmware": {
+    "que": "La firma de firmware es el procedimiento criptográfico mediante el cual el fabricante aplica una firma digital asimétrica sobre un binario de firmware y sus metadatos utilizando una clave privada protegida, permitiendo que cualquier dispositivo verifique su origen e integridad.",
+    "para": "Garantiza que el código que se va a flashear o arrancar proviene legítimamente del proveedor autorizado y no ha sido manipulado en repositorios, canales de distribución ni en la memoria del dispositivo.",
+    "como": "Al finalizar la compilación reproducible en el pipeline CI/CD, se calcula un resumen criptográfico seguro (SHA-256 o SHA-384) de la imagen de firmware junto con su cabecera de versión. Este hash se envía a un servicio de firma respaldado por un Módulo de Seguridad Hardware (HSM), donde se firma con una clave privada asimétrica (habitualmente ECDSA P-256 o Ed25519). La firma resultante y el identificador de clave se adjuntan en la cabecera de la imagen. En el dispositivo, el bootloader o agente OTA recalcula el hash y comprueba la firma usando la clave pública embebida de forma inmutable antes de aceptar la imagen.",
+    "practicas": [
+      "Nunca almacenar claves privadas de firma en servidores CI/CD ni repositorios Git; delegar la operación de firma a un HSM o servicio KMS con control de acceso estricto.",
+      "Usar claves distintas para entornos de desarrollo/QA y producción, evitando que un dispositivo comercial acepte firmwares de prueba.",
+      "Firmar también los metadatos críticos (número de versión, modelo objetivo, flags de arranque) junto con el payload para evitar ataques de sustitución.",
+      "Planificar mecanismos de rotación o revocación de claves de firma de firmware mediante claves secundarias o certificados intermedios."
+    ],
+    "ejemplo": "# Firma de imagen embebida con imgtool (MCUboot) usando clave ECDSA\nimgtool sign --key root-ec-p256.pem \\\n  --header-size 0x200 --align 4 --slot-size 0x40000 \\\n  --version 1.2.3+0 --security-counter 12 \\\n  zephyr.bin zephyr.signed.bin",
+    "entrevista": "La firma de firmware emplea criptografía asimétrica respaldada por HSM para garantizar autenticidad e integridad desde el build hasta el dispositivo, vinculando versión y contadores de seguridad en el mismo bloque firmado."
+  },
+  "HMI": {
+    "que": "Una HMI (Human-Machine Interface o Interfaz Hombre-Máquina) es el panel físico, pantalla táctil o software gráfico que permite a los operadores de planta visualizar el estado de los procesos industriales en tiempo real, reconocer alarmas y enviar consignas o comandos a PLCs y controladores.",
+    "para": "Traduce variables complejas de proceso (registros, entradas/salidas digitales, tendencias) en representaciones visuales comprensibles para operar maquinaria de forma segura y eficiente.",
+    "como": "La HMI se conecta típicamente en el Nivel 2 del modelo de Purdue mediante protocolos industriales (Modbus TCP, OPC UA, EtherNet/IP, S7comm) sondeando periódicamente los registros de los PLCs de Nivel 1. Muchos paneles HMI modernos ejecutan sistemas operativos embebidos o Windows/Linux con servicios web integrados (VNC, HTTP/HTTPS, RDP) para visualización remota. Al tener capacidad directa de escritura sobre los PLCs y acceso frecuente de operadores, una HMI comprometida permite a un atacante alterar consignas físicas o mostrar lecturas falsas al operador para ocultar un sabotaje.",
+    "practicas": [
+      "Exigir autenticación individual por operador y control de acceso basado en roles (RBAC) en la HMI, evitando cuentas compartidas o sesiones permanentes sin bloqueo por inactividad.",
+      "Deshabilitar servidores VNC, RDP o interfaces web administrativas innecesarias en paneles HMI, o restringirlas mediante túneles seguros y listas blancas de IP.",
+      "Bloquear físicamente los puertos USB de los paneles HMI para impedir la ejecución de archivos o carga de proyectos no autorizados.",
+      "Validar rangos lógicos (límites de ingeniería) tanto en la HMI como en el propio PLC para que una interfaz comprometida no pueda ordenar valores físicamente peligrosos."
+    ],
+    "ejemplo": "# Endurecimiento básico de comunicaciones HMI <-> PLC\n- Red: VLAN dedicada Nivel 2 -> Nivel 1 con ACL.\n- Autenticación HMI: Usuario Operador (solo lectura/consigna acotada) vs Ingeniero.\n- Seguridad en PLC: Verificación de rango segura (0 <= setpoint <= MAX_SAFE_LIMIT).",
+    "entrevista": "La HMI es el puente entre el operador y el PLC en el Nivel 2 de Purdue; asegurarla requiere RBAC individual, deshabilitar acceso remoto inseguro como VNC sin cifrar, bloquear puertos USB y validar límites físicos en el PLC."
+  },
+  "IEC 62443": {
+    "que": "IEC 62443 es la familia internacional de estándares de ciberseguridad para Sistemas de Automatización y Control Industrial (IACS), que define requisitos técnicos y de procesos para propietarios de activos, integradores de sistemas y fabricantes de componentes.",
+    "para": "Proporciona un marco común y auditable para diseñar, implementar y mantener redes y dispositivos OT seguros a lo largo de todo su ciclo de vida, equilibrando la ciberseguridad con la disponibilidad y la seguridad física (safety).",
+    "como": "La norma se estructura en cuatro grupos: General (62443-1-x), Políticas y Procedimientos (62443-2-x, como requisitos para proveedores e integradores), Requisitos de Sistema (62443-3-x, destacando la evaluación de riesgos y arquitectura de Zonas y Conductos) y Requisitos de Componentes (62443-4-x, ciclo de vida de desarrollo seguro SDL y requisitos técnicos de dispositivos). Introduce el concepto de Niveles de Seguridad (SL-1 a SL-4) según la capacidad del atacante que la zona debe resistir (desde error accidental hasta actor con altos recursos). Cada zona agrupa activos con requisitos homogéneos y los conductos definen estrictamente los canales de comunicación permitidos entre zonas.",
+    "practicas": [
+      "Segmentar la planta mediante el modelo de Zonas y Conductos (IEC 62443-3-2) en lugar de usar una red plana o confiar solo en el perímetro IT/OT.",
+      "Definir el Nivel de Seguridad objetivo (SL-T) por zona tras evaluar el impacto en seguridad física y operativa, evitando sobrecostos innecesarios en zonas de bajo impacto.",
+      "Exigir certificación IEC 62443-4-1 (SDL) y 62443-4-2 (requisitos técnicos de producto) en las licitaciones de nuevos PLCs, RTUs y gateways.",
+      "Recordar que el cumplimiento exige tanto tecnología (3-3 / 4-2) como madurez organizativa y de mantenimiento del operador e integrador (2-1 / 2-4)."
+    ],
+    "ejemplo": "# Definición arquitectónica bajo IEC 62443-3-2 / 3-3\nZona A: Línea Envasado (SL-T = 2) <==[ Conducto C1: Firewall DPI, solo OPC UA cifrado ]==> Zona B: Historiador (SL-T = 3)\n# Principio: Ningún tráfico cruza entre zonas fuera de un conducto explícitamente documentado y filtrado.",
+    "entrevista": "IEC 62443 es el estándar de referencia para seguridad OT; organiza la responsabilidad entre fabricante, integrador y operador mediante niveles de seguridad (SL 1-4), desarrollo seguro (4-1/4-2) y segmentación en zonas y conductos (3-2/3-3)."
+  },
+  "IIoT": {
+    "que": "El IIoT (Industrial Internet of Things) es la aplicación de sensores conectados, dispositivos edge inteligentes, protocolos IP y plataformas analíticas en la nube dentro de entornos industriales, energéticos, logísticos y de manufactura.",
+    "para": "Habilita el mantenimiento predictivo, la optimización energética y la visibilidad global de múltiples plantas en tiempo real, ampliando las capacidades de los sistemas OT clásicos hacia modelos conectados a plataformas IT y cloud.",
+    "como": "A diferencia del IoT de consumo, el IIoT suele operar mediante pasarelas industriales (Edge Gateways) que recogen telemetría de buses locales o PLCs existentes (mediante Modbus, OPC UA o sensores inalámbricos como LoRaWAN/WirelessHART), la normalizan localmente y la envían de forma segura hacia brokers en la nube vía MQTT sobre TLS o HTTPS. Muchas arquitecturas integran computación en el borde (edge computing) para procesar anomalías con baja latencia sin depender de conectividad continua. Desde la seguridad, el IIoT introduce rutas de comunicación adicionales fuera del perímetro tradicional de planta que deben aislarse mediante IDMZ y autenticación fuerte por certificado.",
+    "practicas": [
+      "Canalizar la telemetría IIoT mediante conexiones salientes únicamente desde una IDMZ hacia la nube, evitando abrir puertos entrantes hacia la planta.",
+      "Separar las redes de sensores IIoT de monitorización respecto a las redes de control crítico (safety/PLCs) mediante segmentación o pasarelas unidireccionales.",
+      "Aplicar el principio de menor privilegio en credenciales cloud de los gateways (políticas por tópico en MQTT y rotación automática de certificados).",
+      "Evaluar la criticidad de los enlaces inalámbricos industriales frente a interferencias (jamming) o suplantación antes de depender de ellos para control."
+    ],
+    "ejemplo": "# Flujo seguro IIoT de lectura pasiva hacia nube\n[Sensores Vibración] --(BLE/LoRaWAN)--> [Edge Gateway en IDMZ]\n[Edge Gateway]       --(MQTT + mTLS:8883, solo Publish)--> [Broker Cloud IIoT]",
+    "entrevista": "El IIoT conecta sensores y procesos industriales con analítica cloud mediante gateways edge; para no comprometer el OT tradicional, debe aislarse de los lazos de control y usar comunicaciones salientes autenticadas por certificado desde una IDMZ."
+  },
+  "Identidad de dispositivo": {
+    "que": "La identidad de dispositivo es el conjunto único, verificable e inmutable de identificadores y material criptográfico que distingue inequívocamente a una unidad física de hardware dentro de una flota IoT/OT durante todo su ciclo de vida.",
+    "para": "Constituye la piedra angular para la autenticación fuerte, la autorización granular (qué recursos puede leer o publicar), la auditoría forense fiable y la gestión automatizada del ciclo de vida sin depender de identificadores triviales como direcciones IP o MAC.",
+    "como": "Una identidad sólida se ancla en hardware desde la fabricación mediante una clave privada única grabada o generada dentro de un Elemento Seguro, TPM o derivada de una Función Física No Clonable (PUF). Siguiendo el estándar IEEE 802.1AR, el fabricante emite una Identidad Inicial de Dispositivo (IDevID) respaldada por certificado X.509. Cuando el equipo entra en la red de un cliente u operador, utiliza su IDevID para demostrar su autenticidad durante el aprovisionamiento (Zero-Touch Provisioning) y obtener una Identidad Local de Dispositivo (LDevID) específica de ese dominio operativo, con su propio ciclo de renovación y revocación.",
+    "practicas": [
+      "Anclar la identidad en claves asimétricas no exportables dentro de hardware seguro (TPM/SE/PUF) en lugar de archivos en sistema de ficheros plano.",
+      "Adoptar la separación IDevID / LDevID (IEEE 802.1AR) para desacoplar la identidad de fábrica del ciclo de vida operativo del cliente.",
+      "No utilizar direcciones MAC, números de serie en texto claro o UUIDs autodeclarados como prueba de identidad.",
+      "Vincular la identidad del dispositivo con políticas de autorización explícitas en brokers o IAM (p. ej. restringir el client-id MQTT al CN del certificado)."
+    ],
+    "ejemplo": "# Regla en broker IoT vinculando identidad criptográfica (CN) con autorización de tópico\n# Solo el dispositivo cuyo certificado tiene CN=sensor-901 puede publicar en su tópico\npattern write telemetry/%c/#\n# Donde %c se sustituye automáticamente por el Common Name verificado en mTLS.",
+    "entrevista": "La identidad de dispositivo debe anclarse en claves hardware no exportables y certificados X.509 (como IDevID/LDevID en IEEE 802.1AR), permitiendo autenticar y autorizar cada nodo sin depender de MACs o secretos compartidos."
+  },
+  "Inventario de activos IoT": {
+    "que": "El inventario de activos IoT/OT es el registro continuo, preciso y contextualizado de todos los dispositivos conectados en el entorno, incluyendo su identidad de red, fabricante, modelo, versión de firmware, protocolos utilizados y nivel de criticidad operativa.",
+    "para": "Resuelve la imposibilidad de proteger lo que no se conoce: permite identificar dispositivos shadow, localizar equipos con vulnerabilidades conocidas sin parchear, diseñar la segmentación de red y responder con precisión ante incidentes.",
+    "como": "Dado que los activos IoT/OT no admiten agentes de inventario convencionales y los escaneos activos pueden provocar caídas en equipos sensibles, el inventario se construye principalmente mediante recolección pasiva y correlación multi-fuente. Sondas de red inspeccionan tráfico SPAN/TAP analizando campos DHCP, LLDP/CDP, mDNS, OUI de direcciones MAC, huellas TLS y cabeceras de protocolos industriales (como identificadores de vendor en Modbus, PROFINET o EtherNet/IP). Esta información se cruza con consultas seguras a controladores Wi-Fi, tablas ARP de switches y plataformas de gestión IoT para mantener un grafo actualizado de activos y sus flujos.",
+    "practicas": [
+      "Priorizar el descubrimiento pasivo de red y las integraciones vía API (switches, WLC, brokers) frente al escaneo activo intrusivo en redes OT.",
+      "Registrar atributos críticos más allá de la IP: versión exacta de firmware/hardware, responsable de negocio, criticidad de proceso y dependencias de comunicación.",
+      "Reconciliar automáticamente el inventario con bases de datos de vulnerabilidades (CVE) y notificaciones de seguridad de fabricantes (ICS-CERT).",
+      "Establecer alertas automáticas cuando aparezca un nuevo activo o cambie la huella de firmware/comunicación de un equipo existente."
+    ],
+    "ejemplo": "# Campos mínimos de un registro en inventario de activos IoT/OT\n{\n  \"asset_id\": \"PLC-LINEA2-04\",\n  \"ip\": \"10.40.12.15\", \"mac\": \"00:1B:1B:44:22:11\",\n  \"vendor\": \"Siemens\", \"model\": \"S7-1500\", \"firmware\": \"v2.9.4\",\n  \"purdue_level\": 1, \"owner\": \"Mantenimiento Planta Norte\", \"criticality\": \"Alta\"\n}",
+    "entrevista": "El inventario de activos IoT/OT debe alimentarse principalmente por descubrimiento pasivo e integración de infraestructura para identificar modelo, firmware y criticidad sin desestabilizar dispositivos sensibles."
+  },
+  "MQTT sobre TLS": {
+    "que": "MQTT sobre TLS (habitualmente en el puerto TCP 8883) es el uso del protocolo de mensajería publish/subscribe MQTT encapsulado dentro de una sesión TLS 1.2 o TLS 1.3 para garantizar confidencialidad, integridad y autenticación entre dispositivos IoT y el broker.",
+    "para": "Protege los payloads de telemetría, los comandos hacia actuadores y las credenciales de aplicación (que en MQTT plano viajan en texto legible en el paquete CONNECT) frente a escucha pasiva y manipulación en red.",
+    "como": "Antes de intercambiar paquetes MQTT, el cliente IoT establece una conexión TCP al puerto 8883 del broker y ejecuta el handshake TLS. El cliente verifica el certificado X.509 del broker contra su almacén de CAs de confianza para prevenir suplantación. En despliegues robustos se configura TLS mutuo (mTLS), donde el broker también exige y valida el certificado de cliente del dispositivo, extrayendo su Common Name o SAN para autorizar sus tópicos en las ACLs (sin necesidad de usuario/contraseña). Para minimizar consumo en microcontroladores restringidos, se emplean suites ECDSA con reanudación de sesión TLS (Session Resumption) o PSK.",
+    "practicas": [
+      "Utilizar mTLS (certificados de cliente y servidor) en lugar de combinar TLS solo-servidor con contraseñas estáticas en el paquete CONNECT.",
+      "Validar estrictamente el nombre de host (hostname verification) y la cadena de CA en el cliente IoT; nunca desactivar la verificación de certificados.",
+      "Habilitar reanudación de sesión TLS o TLS 1.3 0-RTT (con precaución ante replay) si el dispositivo entra en sueño profundo (deep sleep) con frecuencia.",
+      "Configurar ACLs por tópico vinculadas a la identidad TLS para evitar que un dispositivo comprometido publique o lea en tópicos de otros nodos."
+    ],
+    "ejemplo": "# Configuración segura básica de listener TLS mutuo en Mosquitto\nlistener 8883\nprotocol mqtt\ntls_version tlsv1.3\ncafile /etc/mosquitto/ca_certificates/iot-ca.pem\ncertfile /etc/mosquitto/certs/broker.pem\nkeyfile /etc/mosquitto/certs/broker.key\nrequire_certificate true\nuse_identity_as_username true",
+    "entrevista": "MQTT sobre TLS protege tanto el payload como el paquete CONNECT frente a intercepción; en entornos productivos debe acompañarse de mTLS y ACLs por tópico ligadas a la identidad del certificado."
+  },
+  "Matter": {
+    "que": "Matter (anteriormente Project CHIP, mantenido por la Connectivity Standards Alliance) es un estándar abierto e interoperable de capa de aplicación para hogar inteligente e IoT que opera sobre redes IP (Wi-Fi, Ethernet y Thread) con seguridad criptográfica obligatoria desde el diseño.",
+    "para": "Elimina la fragmentación de ecosistemas propietarios permitiendo que dispositivos de distintos fabricantes operen localmente en la misma red con autenticación mutua fuerte, cifrado extremo a extremo y actualizaciones OTA estandarizadas.",
+    "como": "En el diseño de seguridad de Matter, cada dispositivo certificado posee en fábrica un Device Attestation Certificate (DAC) anclado en una cadena de confianza verificada mediante el Distributed Compliance Ledger (DCL) en la fase de puesta en marcha (commissioning). El alta inicial utiliza protocolos PAKE (SPAKE2+ vía BLE o código QR) para establecer un canal seguro sin contraseñas débiles y entregar al nodo unas credenciales operativas (Node Operational Certificate, NOC) propias de ese hogar o red (Fabric). Todas las comunicaciones posteriores entre nodos y controladores dentro del Fabric utilizan sesiones CASE (Certificate Authenticated Session Establishment) cifradas con AES-128-CCM y protegidas por listas de control de acceso granulares.",
+    "practicas": [
+      "Verificar el Device Attestation Certificate (DAC) contra el DCL durante el commissioning para rechazar clones no certificados o dispositivos manipulados.",
+      "Aprovechar el soporte Multi-Admin con cautela: auditar qué controladores (Fabrics) están autorizados en el dispositivo para evitar accesos residuales.",
+      "Mantener actualizado el firmware vía Matter OTA para corregir vulnerabilidades en las implementaciones de pila compartidas (Matter SDK).",
+      "Aislar los dispositivos Matter en una VLAN dedicada IoT manteniendo el enrutamiento mDNS/IPv6 controlado hacia los Border Routers de Thread."
+    ],
+    "ejemplo": "# Flujo criptográfico de alta y operación en Matter\n1. Commissioning: QR/Setup Code -> SPAKE2+ (PASE) -> Verificación DAC contra DCL.\n2. Emisión Credencial: Fabric Admin emite NOC (X.509 comprimido Matter) al nodo.\n3. Operación Normal: Nodos establecen sesión CASE mutua con NOC -> Tráfico AES-CCM.",
+    "entrevista": "Matter impone seguridad obligatoria sobre IP mediante atestación de hardware en el alta (DAC + SPAKE2+), emisión de certificados operativos por dominio (NOC) y sesiones locales cifradas extremo a extremo (CASE)."
+  },
+  "Mirai": {
+    "que": "Mirai es una familia emblemática de malware IoT descubierta en 2016 que demostró a escala global el impacto de comprometer dispositivos embebidos mal configurados (cámaras IP, routers y DVRs) para conformar botnets capaces de ejecutar ataques de denegación de servicio distribuido masivos.",
+    "para": "En ciberseguridad IoT/OT sirve como caso de estudio fundamental para justificar el endurecimiento de dispositivos desde fábrica, la eliminación de credenciales predeterminadas y el control estricto de puertos administrativos expuestos.",
+    "como": "Desde una perspectiva arquitectónica, el ciclo operativo de Mirai y sus variantes posteriores se apoya en el descubrimiento continuo de interfaces de gestión accesibles en red (originalmente Telnet en puertos 23/2323 y más tarde exploits HTTP conocidos) seguido de intentos de acceso con un catálogo reducido de credenciales por defecto de fabricantes. El agente residente en memoria descarga módulos binarios compilados para múltiples arquitecturas embebidas (ARM, MIPS, PowerPC, x86) y se reporta a una infraestructura C2 para coordinar tráfico volumétrico. Su estudio impulsó normativas modernas como ETSI EN 303 645 y el estándar de arquitectura cero confianza en periferia.",
+    "practicas": [
+      "Deshabilitar Telnet y servicios administrativos innecesarios en imágenes de firmware de producción.",
+      "Sustituir credenciales de fábrica compartidas por contraseñas únicas de alta entropía o autenticación asimétrica desde el aprovisionamiento.",
+      "Aplicar filtrado BCP 38 (anti-spoofing) en redes de proveedores y control de egreso en perímetros empresariales para contener tráfico anómalo saliente.",
+      "Segmentar dispositivos IoT (como cámaras CCTV) en VLANs aisladas sin salida directa a Internet ni visibilidad hacia la red corporativa."
+    ],
+    "ejemplo": "# Controles defensivos clave frente al patrón histórico tipo Mirai\n1. Firmware: Sin servicio Telnet/SSH abierto por defecto en interfaz WAN.\n2. Acceso: Sin cuentas hardcoded; rotación obligatoria en primer arranque.\n3. Red: Bloqueo de tráfico saliente hacia puertos 23/2323 y DNS restringido.",
+    "entrevista": "Mirai evidenció el riesgo sistémico de las credenciales por defecto y puertos Telnet expuestos en dispositivos embebidos, impulsando la eliminación de contraseñas universales, la segmentación estricta y las normativas de seguridad IoT por diseño."
+  },
+  "Modelo de Purdue": {
+    "que": "El Modelo de Purdue (basado en la arquitectura PERA e incorporado en el estándar ISA-95/IEC 62443) es un modelo de referencia jerárquico que organiza los sistemas industriales y corporativos en niveles funcionales separados según su criticidad, determinismo y necesidad de conectividad.",
+    "para": "Sirve como plano arquitectónico maestro para implementar defensa en profundidad y segmentación de red en entornos OT/IIoT, evitando que un compromiso en la red corporativa (IT) alcance directamente los equipos físicos de planta.",
+    "como": "El modelo divide la infraestructura en dos zonas macro separadas por una Zona Desmilitarizada Industrial (Nivel 3.5 / IDMZ). En la zona OT: el Nivel 0 agrupa sensores y actuadores físicos; el Nivel 1 contiene los controladores de tiempo real (PLCs, RTUs, DCS); el Nivel 2 alberga sistemas de supervisión local (HMIs, estaciones de ingeniería); y el Nivel 3 gestiona las operaciones de planta (historiadores, MES, servidores de parches OT). En la zona IT: el Nivel 4 abarca sistemas empresariales (ERP, correo, directorio activo) y el Nivel 5 la red externa/cloud. Cada salto entre niveles debe atravesar controles de red (firewalls, proxies o diodos de datos) impidiendo comunicaciones transversales no autorizadas (como Nivel 4 hablando directo con Nivel 1).",
+    "practicas": [
+      "Implementar siempre un Nivel 3.5 (IDMZ) con terminación de protocolo para que ningún servidor del Nivel 4 establezca sesiones directas hacia los Niveles 0-3.",
+      "Adaptar el modelo a arquitecturas IIoT modernas: cuando un sensor conectado envía datos a la nube, hacerlo mediante gateways en IDMZ sin puentear el Nivel 1.",
+      "Aplicar microsegmentación también dentro del Nivel 1 y Nivel 2 (por celdas o líneas de producción) para contener movimientos laterales dentro de la planta.",
+      "Evitar compartir controladores de dominio Active Directory entre los Niveles 4 (IT) y 3 (OT) para prevenir compromisos en cascada."
+    ],
+    "ejemplo": "# Mapa de niveles del Modelo de Purdue\nNivel 5: Red Corporativa Externa / Cloud IIoT\nNivel 4: Sistemas IT Empresariales (ERP, Correo, AD Corporativo)\n--- [ Nivel 3.5: IDMZ (Brokers réplica, Bastion Hosts, Parches OT) ] ---\nNivel 3: Operaciones de Planta (Historiador OT, MES, AD OT dedicado)\nNivel 2: Supervisión de Área (HMIs, Estaciones de Ingeniería, SCADA)\nNivel 1: Control Básico (PLCs, RTUs, Controladores DCS)\nNivel 0: Proceso Físico (Sensores, Motores, Válvulas)",
+    "entrevista": "El Modelo de Purdue estructura la segmentación IT/OT en niveles jerárquicos separados por una IDMZ en el Nivel 3.5, garantizando que las redes corporativas y el cloud nunca accedan directamente a los controladores de planta."
+  }
+}
