@@ -1,0 +1,47 @@
+---
+titulo: "Service mesh (Istio / Linkerd)"
+categoria:
+  - "11. Redes de datos (vista práctica y moderna)"
+tags:
+  - "mapa-tecnologico"
+  - "nivel-conocer"
+  - "redes-de-datos-vista-práctica-y-moderna"
+nivel: conocer
+estrella: false
+relacionado_con:
+  - "[[CNI (Calico - Flannel - Cilium)]]"
+  - "[[ClusterIP - NodePort - LoadBalancer - Ingress]]"
+  - "[[CoreDNS]]"
+  - "[[Docker bridge - veth]]"
+  - "[[Kubernetes]]"
+  - "[[NetworkPolicy]]"
+  - "[[Tailscale]]"
+  - "[[VPN]]"
+  - "[[VXLAN - overlay]]"
+  - "[[WireGuard]]"
+---
+
+# Service mesh (Istio / Linkerd)
+
+> Nodo del **Mapa Tecnológico v2.6**.
+
+## Contexto en el mapa
+
+[[Kubernetes]], [[CNI (Calico - Flannel - Cilium)]], [[ClusterIP - NodePort - LoadBalancer - Ingress]], [[NetworkPolicy]], [[CoreDNS]], [[kube-proxy]], ➕ [[eBPF - Cilium]], [[Service mesh (Istio - Linkerd)]], [[VXLAN - overlay]], [[Docker bridge - veth]], [[Tailscale]], [[WireGuard]], [[VPN]], [[Zero Trust]]
+
+## Relaciones
+
+- [[CNI (Calico - Flannel - Cilium)]]
+- [[ClusterIP - NodePort - LoadBalancer - Ingress]]
+- [[CoreDNS]]
+- [[Docker bridge - veth]]
+- [[Kubernetes]]
+- [[NetworkPolicy]]
+- [[Tailscale]]
+- [[VPN]]
+- [[VXLAN - overlay]]
+- [[WireGuard]]
+
+## Mis notas
+
+Añade aquí tus ejemplos, proyectos, dudas y experiencias con esta tecnología.

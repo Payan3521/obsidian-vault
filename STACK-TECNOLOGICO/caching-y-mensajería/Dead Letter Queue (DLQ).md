@@ -1,0 +1,47 @@
+---
+titulo: "Dead Letter Queue (DLQ)"
+categoria:
+  - "10. Caching y mensajería"
+tags:
+  - "mapa-tecnologico"
+  - "nivel-conocer"
+  - "caching-y-mensajería"
+nivel: conocer
+estrella: false
+relacionado_con:
+  - "[[At-least-once - exactly-once]]"
+  - "[[EventBridge]]"
+  - "[[Idempotencia]]"
+  - "[[Kafka]]"
+  - "[[Kinesis]]"
+  - "[[NATS]]"
+  - "[[Outbox pattern]]"
+  - "[[Pub-Sub]]"
+  - "[[RabbitMQ]]"
+  - "[[SNS]]"
+---
+
+# Dead Letter Queue (DLQ)
+
+> Nodo del **Mapa Tecnológico v2.6**.
+
+## Contexto en el mapa
+
+**Colas y streams:** [[SQS]], [[SNS]], [[RabbitMQ]], [[Kafka]], [[Kinesis]], [[EventBridge]], ➕ [[NATS]], ➕ [[Dead Letter Queue (DLQ)]], ➕ [[Idempotencia]], ➕ [[Outbox pattern]], ➕ [[At-least-once - exactly-once]], ➕ [[Pub-Sub]], ➕ [[Saga - Compensación]].
+
+## Relaciones
+
+- [[At-least-once - exactly-once]]
+- [[EventBridge]]
+- [[Idempotencia]]
+- [[Kafka]]
+- [[Kinesis]]
+- [[NATS]]
+- [[Outbox pattern]]
+- [[Pub-Sub]]
+- [[RabbitMQ]]
+- [[SNS]]
+
+## Mis notas
+
+Añade aquí tus ejemplos, proyectos, dudas y experiencias con esta tecnología.

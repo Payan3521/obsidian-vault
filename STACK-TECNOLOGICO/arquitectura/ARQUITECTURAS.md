@@ -1,0 +1,3 @@
+[[CLEAN ARCHITECTURE (apunte propio)]]
+[[HEXAGONAL]]
+[[MICROSERVICIOS (apunte propio)|MICROSERVICIOS]]

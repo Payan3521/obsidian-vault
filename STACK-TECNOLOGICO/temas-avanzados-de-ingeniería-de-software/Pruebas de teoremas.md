@@ -1,0 +1,37 @@
+---
+titulo: "Pruebas de teoremas"
+categoria:
+  - "47. Temas avanzados de ingeniería de software"
+tags:
+  - "mapa-tecnologico"
+  - "nivel-conocer"
+  - "temas-avanzados-de-ingeniería-de-software"
+nivel: conocer
+estrella: false
+relacionado_con:
+  - "[[Model checking]]"
+  - "[[Refinamiento (software)]]"
+  - "[[SPIN - Promela]]"
+  - "[[TLA+]]"
+  - "[[Verificación formal]]"
+---
+
+# Pruebas de teoremas
+
+> Nodo del **Mapa Tecnológico v2.6**.
+
+## Contexto en el mapa
+
+**Verificación:** [[Verificación formal]], [[Model checking]], [[TLA+]], [[SPIN - Promela]], [[Pruebas de teoremas]], [[Refinamiento (software)]].
+
+## Relaciones
+
+- [[Model checking]]
+- [[Refinamiento (software)]]
+- [[SPIN - Promela]]
+- [[TLA+]]
+- [[Verificación formal]]
+
+## Mis notas
+
+Añade aquí tus ejemplos, proyectos, dudas y experiencias con esta tecnología.

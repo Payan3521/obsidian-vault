@@ -1,0 +1,43 @@
+---
+titulo: "Bubble Sort"
+categoria:
+  - "2. Estructuras de datos y algoritmos"
+tags:
+  - "mapa-tecnologico"
+  - "nivel-conocer"
+  - "estructuras-de-datos-y-algoritmos"
+nivel: conocer
+estrella: false
+relacionado_con:
+  - "[[Counting Sort]]"
+  - "[[Heap Sort]]"
+  - "[[Insertion Sort]]"
+  - "[[Merge Sort]]"
+  - "[[Quick Sort]]"
+  - "[[Radix Sort]]"
+  - "[[Selection Sort]]"
+  - "[[Timsort]]"
+---
+
+# Bubble Sort
+
+> Nodo del **Mapa Tecnológico v2.6**.
+
+## Contexto en el mapa
+
+**Ordenamiento:** [[Bubble Sort]], [[Counting Sort]], [[Merge Sort]], [[Quick Sort]], [[Radix Sort]], ➕ [[Insertion Sort]], ➕ [[Selection Sort]], ➕ [[Heap Sort]], ➕ [[Timsort]].
+
+## Relaciones
+
+- [[Counting Sort]]
+- [[Heap Sort]]
+- [[Insertion Sort]]
+- [[Merge Sort]]
+- [[Quick Sort]]
+- [[Radix Sort]]
+- [[Selection Sort]]
+- [[Timsort]]
+
+## Mis notas
+
+Añade aquí tus ejemplos, proyectos, dudas y experiencias con esta tecnología.

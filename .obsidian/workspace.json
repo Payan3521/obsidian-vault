@@ -1,0 +1,224 @@
+{
+  "main": {
+    "id": "cde79e768d854e0e",
+    "type": "split",
+    "children": [
+      {
+        "id": "ae9dd4d086a996a0",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "725ce37859dcacc6",
+            "type": "leaf",
+            "state": {
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Vista gráfica"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "53113d54ac10ee26",
+    "type": "split",
+    "children": [
+      {
+        "id": "1b372c9216081254",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "122264dcc11f21c8",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Explorador de archivos"
+            }
+          },
+          {
+            "id": "ac513d6cd045b073",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "cmmi",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Buscar"
+            }
+          },
+          {
+            "id": "13e670afa2f83a80",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-bookmark",
+              "title": "Marcadores"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "153825063231a8d3",
+    "type": "split",
+    "children": [
+      {
+        "id": "fe6da9b3222d8ffa",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "dba7d7c0e2262964",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Enlaces entrantes"
+            }
+          },
+          {
+            "id": "b98f35c89412d6cf",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Enlaces salientes"
+            }
+          },
+          {
+            "id": "3104a35e64bb7427",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Etiquetas"
+            }
+          },
+          {
+            "id": "eae28e627268c862",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "Todas las propiedades"
+            }
+          },
+          {
+            "id": "ac2170c59b0a8da1",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Esquema"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Abrir selector rápido": false,
+      "graph:Abrir vista gráfica": false,
+      "canvas:Crear nuevo lienzo": false,
+      "daily-notes:Abrir la nota de hoy": false,
+      "templates:Insertar plantilla": false,
+      "command-palette:Abrir paleta de comandos": false,
+      "bases:Crear nueva base": false
+    }
+  },
+  "active": "725ce37859dcacc6",
+  "lastOpenFiles": [
+    "SECDEV/SECDEV.md",
+    "Sin título 1.base",
+    "Sin título.base",
+    "STACK-TECNOLOGICO/SOFTWARE-ENGINEERING.md",
+    "STACK-TECNOLOGICO/frameworks-y-librerías/GraphQL.md",
+    "STACK-TECNOLOGICO/lenguajes-runtimes-y-build/Python.md",
+    "SECDEV",
+    "Sin título.md",
+    "INGLES",
+    "STACK-TECNOLOGICO/00-MOC.md",
+    "STACK-TECNOLOGICO/temas-avanzados-de-ingeniería-de-software/Evaluación de madurez.md",
+    "STACK-TECNOLOGICO/temas-avanzados-de-ingeniería-de-software/CMMI.md",
+    "STACK-TECNOLOGICO/devops-ci-cd-e-iac/SSM Parameter Store.md",
+    "STACK-TECNOLOGICO/devops-ci-cd-e-iac/AWS CDK.md",
+    "STACK-TECNOLOGICO/ia-nueva-era-sección-ampliada/OpenAI Agents SDK.md",
+    "STACK-TECNOLOGICO/ia-nueva-era-sección-ampliada/MCP tools - resources - prompts.md",
+    "STACK-TECNOLOGICO/PLAN-DE-GUIAS.md",
+    "STACK-TECNOLOGICO/redes-de-datos-vista-práctica-y-moderna/WireGuard.md",
+    "STACK-TECNOLOGICO/redes-de-datos-vista-práctica-y-moderna/Access Point.md",
+    "Límites y continuidad.md",
+    "STACK-TECNOLOGICO/formatos-y-serialización/Apache Avro.md",
+    "STACK-TECNOLOGICO/fundamentos-de-programación/Funciones y métodos.md",
+    "STACK-TECNOLOGICO/fundamentos-de-programación/Bucles.md",
+    "STACK-TECNOLOGICO/fundamentos-de-programación/Backpressure.md",
+    "STACK-TECNOLOGICO/fundamentos-de-programación/Condicionales.md",
+    "STACK-TECNOLOGICO/ia-nueva-era-sección-ampliada/Prompt negativo.md",
+    "STACK-TECNOLOGICO/ia-nueva-era-sección-ampliada/Orca.dev.md",
+    "STACK-TECNOLOGICO/ia-nueva-era-sección-ampliada/OpenCode.md",
+    "STACK-TECNOLOGICO/ia-nueva-era-sección-ampliada/Claude Extended Thinking.md",
+    "STACK-TECNOLOGICO/ia-nueva-era-sección-ampliada/Claude Code.md",
+    "STACK-TECNOLOGICO/Stack_Tecnologico_v2.3.pdf",
+    "STACK-TECNOLOGICO/testing",
+    "STACK-TECNOLOGICO/sistemas-operativos-lo-que-deberías-saber-hoy",
+    "STACK-TECNOLOGICO/seguridad",
+    "STACK-TECNOLOGICO/redes-de-datos-vista-práctica-y-moderna",
+    "STACK-TECNOLOGICO/productividad-conocimiento-y-colaboración",
+    "Sin título.canvas"
+  ]
+}
