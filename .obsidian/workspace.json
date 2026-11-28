@@ -4,17 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "10a5850011641092",
+        "id": "a0aefd3736525979",
         "type": "tabs",
         "children": [
           {
-            "id": "d7e26f6b64464e22",
+            "id": "b46c2f156f01d5fe",
             "type": "leaf",
             "state": {
-              "type": "graph",
+              "type": "empty",
               "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Vista gráfica"
+              "icon": "lucide-file",
+              "title": "Nueva pestaña"
             }
           }
         ]
@@ -181,18 +181,37 @@
       "bases:Crear nueva base": false
     }
   },
-  "active": "d7e26f6b64464e22",
+  "active": "b46c2f156f01d5fe",
   "lastOpenFiles": [
+    "INGLES/INGLES.md",
+    "INGLES/Números en la vida cotidiana.md",
+    "INGLES/El articulo indefinido.md",
+    "INGLES/El articulo definido.md",
+    "INGLES/El adjetivo.md",
+    "INGLES/Plurales irregulares.md",
+    "INGLES/El plural.md",
+    "INGLES/12 tiempos gramaticales/perfectos continuos/Futuro perfecto continuo.md",
+    "INGLES/12 tiempos gramaticales/perfectos continuos/Pasado perfecto continuo.md",
+    "INGLES/12 tiempos gramaticales/perfectos continuos/Presente perfecto continuo.md",
+    "INGLES/12 tiempos gramaticales/perfectos/Futuro perfecto.md",
+    "INGLES/12 tiempos gramaticales/perfectos/Pasado perfecto.md",
+    "INGLES/12 tiempos gramaticales/perfectos/Presente perfecto.md",
+    "INGLES/12 tiempos gramaticales/continuos/Futuro continuo.md",
+    "INGLES/12 tiempos gramaticales/continuos/Pasado continuo.md",
+    "INGLES/12 tiempos gramaticales/continuos/Presente continuo.md",
+    "INGLES/12 tiempos gramaticales/simples/Futuro simple.md",
+    "INGLES/12 tiempos gramaticales/perfectos continuos",
+    "INGLES/12 tiempos gramaticales/perfectos",
+    "INGLES/12 tiempos gramaticales/continuos",
+    "INGLES/12 tiempos gramaticales/simples",
+    "INGLES/12 tiempos gramaticales/simples/Pasado simple.md",
+    "INGLES/12 tiempos gramaticales/simples/Presente simple.md",
+    "INGLES/12 tiempos gramaticales",
+    "INGLES/Números ordinales.md",
     "SECDEV/Super_SECDEV_Seguridad_Software.pdf",
     "STACK-TECNOLOGICO/scripts/contenido/SECDEV/registro-monitoreo-y-detección__00.json",
     "STACK-TECNOLOGICO/scripts/contenido/STACK-TECNOLOGICO/temas-avanzados-de-ingeniería-de-software__01.json",
     "STACK-TECNOLOGICO/scripts/contenido/STACK-TECNOLOGICO/compiladores__00.json",
-    "STACK-TECNOLOGICO/scripts/contenido/SECDEV/threat-hunting__00.json",
-    "STACK-TECNOLOGICO/scripts/contenido/SECDEV/privacidad-legal-y-cumplimiento__00.json",
-    "STACK-TECNOLOGICO/scripts/contenido/SECDEV/criptografía-aplicada__00.json",
-    "STACK-TECNOLOGICO/scripts/contenido/SECDEV/pruebas-y-análisis-de-seguridad__00.json",
-    "STACK-TECNOLOGICO/scripts/contenido/STACK-TECNOLOGICO/ia-nueva-era-sección-ampliada__02.json",
-    "STACK-TECNOLOGICO/scripts/contenido/SECDEV/autorización-y-control-de-acceso__00.json",
-    "STACK-TECNOLOGICO/scripts/contenido/SECDEV/seguridad-en-iac-y-pipelines-ci-cd__00.json"
+    "STACK-TECNOLOGICO/scripts/contenido/SECDEV/threat-hunting__00.json"
   ]
 }
